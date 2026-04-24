@@ -10,6 +10,8 @@ const API_KEY = 'sk-ant-api03-Lqbe2d8_Ik9N2NRxaPkHffLP_8kEPxxd5cce4MJq95r_PAVxcw
 
 app.post('/api/claude', async (req, res) => {
   try {
+    console.log('Received request:', req.body);
+    
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -21,10 +23,17 @@ app.post('/api/claude', async (req, res) => {
     });
 
     const data = await response.json();
+    console.log('API Response status:', response.status);
+    
     res.status(response.status).json(data);
   } catch (error) {
+    console.error('Error:', error);
     res.status(500).json({ error: error.message });
   }
+});
+
+app.get('/', (req, res) => {
+  res.json({ status: 'API Server running' });
 });
 
 const PORT = process.env.PORT || 3000;
