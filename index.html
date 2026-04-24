@@ -1470,7 +1470,7 @@ function updateResults() {
 
 // ── API HELPER ────────────────────────────────────────────────
 async function callClaude(systemPrompt, messages) {
-  const response = await fetch('https://l2h-career-hub.dansphinx0.workers.dev/', {
+  const response = await fetch('https://l2h-career-hub.dansphinx0.workers.dev', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
