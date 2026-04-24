@@ -6,7 +6,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const API_KEY = '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';
+const API_KEY = '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';
 
 app.post('/api/claude', async (req, res) => {
   try {
