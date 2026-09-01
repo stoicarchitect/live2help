@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aila's 11+ Basecamp</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy-950:#12163a;
+    --navy-900:#171c46;
+    --navy-800:#1f2554;
+    --navy-700:#2a3168;
+    --paper:#faf6ec;
+    --ink:#1c2154;
+    --ink-soft:#4a4f7a;
+    --gold:#e8a33d;
+    --gold-soft:#f3c884;
+    --teal:#2f9e6e;
+    --teal-soft:#d7f0e4;
+    --coral:#e15b4f;
+    --coral-soft:#fbdedb;
+    --mist:#8892c4;
+    --line:#333a72;
+    --radius-card:14px;
+    --radius-pill:999px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--navy-950);
+    color:var(--paper);
+    font-family:'Space Grotesk',sans-serif;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  #app{
+    max-width:960px;
+    margin:0 auto;
+    padding:28px 20px 80px;
+  }
+
+  header.top{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:16px;
+    margin-bottom:18px;
+    flex-wrap:wrap;
+  }
+  .brand h1{ font-size:22px; margin:0 0 4px; letter-spacing:0.2px; }
+  .brand p{ margin:0; color:var(--mist); font-size:14px; }
+  .countdown{
+    text-align:right;
+    background:var(--navy-800);
+    border:1px solid var(--line);
+    border-radius:var(--radius-card);
+    padding:12px 18px;
+    min-width:150px;
+  }
+  .countdown .num{ font-size:30px; font-weight:700; color:var(--gold); line-height:1; }
+  .countdown .lbl{ font-size:12px; color:var(--mist); margin-top:4px; }
+  .countdown button{
+    background:none; border:none; color:var(--mist); font-size:11px;
+    text-decoration:underline; cursor:pointer; padding:6px 0 0; font-family:inherit;
+  }
+
+  .trail{ display:flex; gap:6px; margin:14px 0 24px; align-items:center; }
+  .trail-day{ flex:1; height:8px; border-radius:5px; background:var(--navy-800); border:1px solid var(--line); }
+  .trail-day.done{ background:var(--gold); border-color:var(--gold); }
+  .trail-day.today{ background:var(--teal); border-color:var(--teal); }
+  .trail-flag{ font-size:16px; margin-left:4px; }
+
+  /* ---- tip banner (large, exam technique) ---- */
+  .tip-banner{
+    background:linear-gradient(135deg,var(--gold),var(--gold-soft));
+    color:var(--navy-950);
+    border-radius:var(--radius-card);
+    padding:18px 22px;
+    margin-bottom:20px;
+    display:flex;
+    align-items:center;
+    gap:14px;
+  }
+  .tip-banner .icon{ font-size:26px; flex-shrink:0; }
+  .tip-banner .txt{ font-size:17px; font-weight:600; line-height:1.35; }
+  .tip-banner.compact{ padding:12px 18px; }
+  .tip-banner.compact .txt{ font-size:15px; }
+
+  /* ---- hero: start a test ---- */
+  .hero-card{
+    background:linear-gradient(135deg,var(--navy-800),var(--navy-700));
+    border:1px solid var(--line);
+    border-radius:var(--radius-card);
+    padding:22px;
+    margin-bottom:22px;
+  }
+  .hero-card h2{ margin:0 0 6px; font-size:19px; }
+  .hero-card p{ margin:0 0 16px; color:var(--mist); font-size:14px; max-width:56ch; }
+  .test-setup{ display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
+  .choice-group{ display:flex; gap:6px; flex-wrap:wrap; }
+  .choice-btn{
+    font-family:inherit; border:1px solid var(--line); background:var(--navy-900);
+    color:var(--paper); border-radius:var(--radius-pill); padding:8px 14px;
+    font-size:13px; cursor:pointer;
+  }
+  .choice-btn.active{ background:var(--gold); color:var(--navy-950); border-color:var(--gold); font-weight:600; }
+  .setup-label{ font-size:11px; color:var(--mist); width:100%; margin-bottom:-2px; }
+
+  .grid-two{ display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  @media (max-width:640px){ .grid-two{grid-template-columns:1fr;} }
+
+  .subject-panel{
+    background:var(--navy-800); border:1px solid var(--line);
+    border-radius:var(--radius-card); padding:18px;
+  }
+  .subject-panel h2{ font-size:15px; margin:0 0 14px; color:var(--gold-soft); display:flex; align-items:center; gap:8px; }
+  .topic-row{ display:flex; align-items:center; gap:12px; padding:10px 0; border-top:1px solid var(--line); }
+  .topic-row:first-of-type{ border-top:none; }
+  .topic-info{ flex:1; min-width:0; }
+  .topic-info .name{ font-size:14px; font-weight:600; }
+  .topic-info .status{ font-size:12px; color:var(--mist); margin-top:2px; }
+  .mastery-bar{ height:5px; border-radius:4px; background:var(--navy-900); margin-top:6px; overflow:hidden; }
+  .mastery-fill{ height:100%; background:var(--teal); border-radius:4px; }
+  .topic-actions{ display:flex; gap:6px; flex-shrink:0; }
+
+  button.btn{
+    font-family:inherit; border:none; border-radius:var(--radius-pill);
+    padding:8px 14px; font-size:12px; font-weight:600; cursor:pointer; transition:transform 0.12s ease;
+  }
+  button.btn:active{ transform:scale(0.96); }
+  .btn-gold{ background:var(--gold); color:var(--navy-950); }
+  .btn-outline{ background:none; border:1px solid var(--mist); color:var(--paper); }
+  .btn-outline:disabled{ opacity:0.35; cursor:not-allowed; }
+  .btn-teal{ background:var(--teal); color:#fff; }
+  .btn-ghost{ background:none; color:var(--mist); text-decoration:underline; padding:8px 4px; }
+  .btn-lg{ padding:12px 22px; font-size:14px; }
+
+  .paper{
+    background:var(--paper); color:var(--ink); border-radius:var(--radius-card);
+    padding:26px 28px; box-shadow:0 18px 40px rgba(0,0,0,0.35);
+  }
+  .paper .topic-tag{ font-size:12px; color:var(--ink-soft); margin-bottom:6px; }
+  .paper h2{ font-family:'Source Serif 4',serif; font-size:24px; margin:0 0 14px; }
+  .paper .passage, .paper .concept{ font-family:'Source Serif 4',serif; font-size:16px; line-height:1.65; max-width:65ch; }
+  .paper .worked{
+    background:#f0ead9; border-left:3px solid var(--gold); padding:12px 16px;
+    margin-top:14px; border-radius:0 8px 8px 0; font-size:14.5px; line-height:1.6;
+  }
+  .paper .worked strong{ display:block; margin-bottom:4px; color:var(--ink); }
+
+  .qtext{ font-family:'Source Serif 4',serif; font-size:17px; line-height:1.55; margin:6px 0 6px; white-space:pre-line; }
+  .hint-row{ margin:0 0 16px; }
+  .hint-toggle{
+    font-family:inherit; background:none; border:1px dashed var(--ink-soft); color:var(--ink-soft);
+    border-radius:8px; padding:6px 10px; font-size:12.5px; cursor:pointer;
+  }
+  .hint-box{
+    margin-top:8px; background:#eef3ee; border-left:3px solid var(--teal);
+    padding:9px 13px; border-radius:0 8px 8px 0; font-size:13.5px; color:#1c4b34; display:none;
+  }
+  .hint-box.shown{ display:block; }
+
+  .options{ display:flex; flex-direction:column; gap:9px; }
+  .option{
+    text-align:left; background:#fff; border:1.5px solid #ddd4bf; border-radius:10px;
+    padding:12px 14px; font-family:'Source Serif 4',serif; font-size:15px; cursor:pointer; display:flex; gap:10px;
+  }
+  .option .tag{ font-weight:700; color:var(--ink-soft); font-family:'Space Grotesk',sans-serif; }
+  .option:hover{ border-color:var(--gold); }
+  .option.correct{ background:var(--teal-soft); border-color:var(--teal); }
+  .option.incorrect{ background:var(--coral-soft); border-color:var(--coral); }
+  .option:disabled{ cursor:default; }
+
+  .feedback{ margin-top:16px; padding:14px 16px; border-radius:10px; font-size:14.5px; line-height:1.55; }
+  .feedback.good{ background:var(--teal-soft); color:#155c3d; }
+  .feedback.bad{ background:var(--coral-soft); color:#7c2620; }
+
+  .paper-foot{ display:flex; justify-content:space-between; align-items:center; margin-top:20px; flex-wrap:wrap; gap:10px; }
+  .progress-dots{ display:flex; gap:5px; flex-wrap:wrap; }
+  .progress-dots span{ width:7px; height:7px; border-radius:50%; background:#ddd4bf; }
+  .progress-dots span.done{ background:var(--ink-soft); }
+  .progress-dots span.now{ background:var(--gold); }
+
+  .timer-bar{ height:6px; background:#ecE4d0; border-radius:4px; overflow:hidden; margin-bottom:8px; }
+  .timer-fill{ height:100%; background:var(--coral); width:100%; transition:width 1s linear; }
+  .timer-label{ font-size:12px; color:var(--ink-soft); margin-bottom:6px; }
+
+  .top-bar-nav{ display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+
+  .results-score{ display:flex; align-items:baseline; gap:10px; margin:10px 0 18px; }
+  .results-score .big{ font-size:44px; font-weight:700; color:var(--gold); font-family:'Space Grotesk',sans-serif; }
+  .results-score .of{ color:var(--mist); font-size:15px; }
+  .breakdown-row{ display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .breakdown-row .label{ width:180px; font-size:13px; color:var(--paper); flex-shrink:0; }
+  .breakdown-row .bar{ flex:1; height:8px; background:var(--navy-800); border-radius:5px; overflow:hidden; }
+  .breakdown-row .fill{ height:100%; border-radius:5px; }
+  .breakdown-row .pct{ width:44px; text-align:right; font-size:12px; color:var(--mist); }
+  .verdict{
+    background:var(--navy-800); border:1px solid var(--line); border-radius:var(--radius-card);
+    padding:18px 20px; margin:16px 0; font-size:14px; line-height:1.6; color:var(--paper);
+  }
+  .verdict strong{ color:var(--gold-soft); }
+
+  .review-list{ margin:16px 0; }
+  .review-item{
+    display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-top:1px solid var(--line); font-size:13.5px;
+  }
+  .review-item:first-child{ border-top:none; }
+  .review-item .mark{ flex-shrink:0; font-size:15px; margin-top:1px; }
+  .review-item .mark.ok{ color:var(--teal); }
+  .review-item .mark.no{ color:var(--coral); }
+  .review-item .body .topic{ color:var(--mist); font-size:11.5px; margin-bottom:2px; }
+
+  footer.note{
+    margin-top:36px; font-size:12px; color:var(--mist); line-height:1.6;
+    border-top:1px solid var(--line); padding-top:16px;
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* =====================================================================
+   AILA'S 11+ BASECAMP
+   GL Assessment style, English and Maths. Questions and worked examples
+   are drawn from Aila's own revision sets. Add more by extending the
+   DATA object below, each topic keeps the same shape so new questions
+   or new topics slot straight in.
+   ===================================================================== */
+
+const TIPS = [
+  "Don't spend more than two minutes on any question the first time through. If it's hard, skip it and come back at the end.",
+  "Never leave a question blank. An educated guess has a chance of being right, a blank answer has no chance at all.",
+  "Read all five options before choosing. Work out your own answer first, then match it to a choice.",
+  "Show your working, even for the easy steps. If the final answer is wrong, working can still catch the mistake.",
+  "If you feel stuck, take three slow breaths. One hard question doesn't ruin the whole test.",
+  "Watch out for answers that use the wrong step, like forgetting to subtract. Cross out anything you know is wrong first.",
+  "Save the last few minutes to check any answers you weren't fully sure about.",
+  "A discount answer should always be smaller than the original price. Check your answer makes sense in real life."
+];
+function randomTip(){ return TIPS[Math.floor(Math.random()*TIPS.length)]; }
+
+const DATA = {
+  english: {
+    label: "English",
+    topics: [
+      {
+        id: "eng-comp",
+        name: "Comprehension",
+        timeSeconds: 90,
+        training: {
+          concept: "Comprehension questions test whether you understood what you read, not just whether you can remember it. Use the Evidence Method: read the question first, scan the passage for the relevant part, re-read that part carefully, then answer using that evidence rather than a guess.",
+          worked: "Question: why did Sarah's hands tremble as she opened the journal? Step 1: find the part of the text about the journal. Step 2: it describes memories of her grandfather and a storm she never forgot. Step 3: this points to strong emotion, not cold or being in a hurry."
+        },
+        questions: [
+          { id:"eng-comp-1", prompt:"Sarah had not visited Cliffside Lighthouse in almost ten years, not since her grandfather Thomas had passed the keeping duties to the harbour authority. As she climbed the worn stone steps, memories flooded back: the smell of salt and paraffin, the rhythmic sweep of the great lamp, and her grandfather's steady voice explaining the tides. The new keeper, a young man named Marcus, greeted her warmly at the top. 'Your grandfather kept detailed logbooks,' he said, handing her a weathered leather journal. 'I thought you might like to have this one. It's from your last summer here.'\n\nHow long had it been since Sarah last visited the lighthouse?", options:["Almost ten years","Two years","Twelve years","Six months"], correct:0, explanation:"The passage states directly that she had not visited 'in almost ten years'.", hint:"Scan the first sentence for a specific time reference." },
+          { id:"eng-comp-2", prompt:"Sarah had not visited Cliffside Lighthouse in almost ten years. The new keeper, a young man named Marcus, greeted her warmly at the top.\n\nWhat is the name of the new lighthouse keeper?", options:["Thomas","Marcus","Cliffside","Sarah"], correct:1, explanation:"The passage introduces him by name: 'a young man named Marcus'.", hint:"Look in the second part of the passage, where the new keeper is introduced." },
+          { id:"eng-comp-3", prompt:"He handed her a weathered leather journal.\n\nWhat does 'weathered' most likely mean, as used to describe the journal?", options:["Brand new","Worn and aged by time","Brightly coloured","Very heavy"], correct:1, explanation:"'Weathered' describes something that has been affected by age and exposure over time, so it means worn and aged.", hint:"Think about what happens to leather over many years." },
+          { id:"eng-comp-4", prompt:"Sarah's hands trembled slightly as she opened the first page. There, in her grandfather's careful handwriting, was an entry describing a fierce storm that had struck the coast that same week, the storm during which twelve year old Sarah had first understood the true importance of the lighthouse's beam.\n\nWhy do you think Sarah's hands trembled as she opened the journal?", options:["She was cold from the sea air","She was overwhelmed by the memories it brought back","She was in a hurry to leave","She had never met her grandfather"], correct:1, explanation:"The passage links the trembling to powerful memories of her grandfather and the storm, showing strong emotion rather than cold or haste.", hint:"Think about what the journal represents to her, not the weather." }
+        ]
+      },
+      {
+        id: "eng-syn",
+        name: "Synonyms",
+        timeSeconds: 45,
+        training: {
+          concept: "Synonym questions ask for the word closest in meaning. Try swapping the word into a sentence in your head and see which option keeps the same feeling.",
+          worked: "Same as PECULIAR? Step 1: PECULIAR means unusual or odd. Step 2: scan the options for a close match. Step 3: 'Strange' matches, while 'Normal' is closer to the opposite."
+        },
+        questions: [
+          { id:"eng-syn-1", prompt:"Choose the word that means the SAME as PECULIAR.", options:["Strange","Normal","Common","Boring"], correct:0, explanation:"PECULIAR means unusual or odd, which matches 'strange'." },
+          { id:"eng-syn-2", prompt:"Choose the word that means the SAME as CONCEAL.", options:["Hide","Reveal","Show","Display"], correct:0, explanation:"CONCEAL means to keep something out of sight, which matches 'hide'." },
+          { id:"eng-syn-3", prompt:"Choose the word that means the SAME as VICTORY.", options:["Triumph","Defeat","Loss","Failure"], correct:0, explanation:"VICTORY means winning, which matches 'triumph'." },
+          { id:"eng-syn-4", prompt:"Choose the word that means the SAME as DIFFICULT.", options:["Challenging","Simple","Easy","Basic"], correct:0, explanation:"DIFFICULT means hard to do, which matches 'challenging'." }
+        ]
+      },
+      {
+        id: "eng-ant",
+        name: "Antonyms",
+        timeSeconds: 45,
+        training: {
+          concept: "Antonym questions ask for the true opposite, not just a different word. Watch out for options that are similar in meaning to the original word rather than its opposite, cross those out first.",
+          worked: "Opposite of TRANQUIL? Step 1: TRANQUIL means calm and peaceful. Step 2: cross out any option that also means calm. Step 3: 'Chaotic' is the true opposite."
+        },
+        questions: [
+          { id:"eng-ant-1", prompt:"Choose the word that means the OPPOSITE of GENEROUS.", options:["Stingy","Kind","Wealthy","Happy"], correct:0, explanation:"GENEROUS means willing to give, so the opposite is 'stingy'." },
+          { id:"eng-ant-2", prompt:"Choose the word that means the OPPOSITE of TRANQUIL.", options:["Chaotic","Calm","Peaceful","Serene"], correct:0, explanation:"TRANQUIL means calm, so the opposite is 'chaotic'. The other options all mean calm too, so they can be ruled out." },
+          { id:"eng-ant-3", prompt:"Choose the word that means the OPPOSITE of ANCIENT.", options:["Modern","Old","Historic","Aged"], correct:0, explanation:"ANCIENT means very old, so the true opposite is 'modern', not another word for old." },
+          { id:"eng-ant-4", prompt:"Choose the word that means the OPPOSITE of ABUNDANT.", options:["Scarce","Plentiful","Full","Rich"], correct:0, explanation:"ABUNDANT means plentiful, so the opposite is 'scarce'." }
+        ]
+      },
+      {
+        id: "eng-word-assoc",
+        name: "Word associations",
+        timeSeconds: 45,
+        training: {
+          concept: "These questions give a pair of related words, then ask you to complete a second pair with the same relationship. Work out exactly how the first pair are connected before choosing.",
+          worked: "FISH is to SWIM as BIRD is to? Step 1: work out the relationship, a fish's typical movement is to swim. Step 2: apply the same relationship to bird. Step 3: a bird's typical movement is to fly."
+        },
+        questions: [
+          { id:"eng-wa-1", prompt:"FISH is to SWIM as BIRD is to:", options:["Fly","Feather","Nest","Sing"], correct:0, explanation:"A fish's typical way of moving is to swim, and a bird's typical way of moving is to fly." },
+          { id:"eng-wa-2", prompt:"DOCTOR is to HOSPITAL as TEACHER is to:", options:["School","Book","Student","Lesson"], correct:0, explanation:"A doctor works in a hospital, and a teacher works in a school." },
+          { id:"eng-wa-3", prompt:"NIGHT is to DAY as BLACK is to:", options:["White","Grey","Dark","Colour"], correct:0, explanation:"Night and day are opposites, and black and white are opposites." },
+          { id:"eng-wa-4", prompt:"BIRD is to NEST as BEE is to:", options:["Hive","Honey","Sting","Flower"], correct:0, explanation:"A bird lives in a nest, and a bee lives in a hive." }
+        ]
+      },
+      {
+        id: "eng-gram",
+        name: "Grammar & punctuation",
+        timeSeconds: 60,
+        training: {
+          concept: "Grammar questions check whether a sentence follows the rules for apostrophes, commas, and subject verb agreement. Read each option in your head, the one that sounds naturally correct is usually right.",
+          worked: "Which shows correct ownership, 'the dogs bone' or 'the dog's bone'? Step 1: one dog owns the bone. Step 2: singular ownership needs an apostrophe before the s. Step 3: 'the dog's bone' is correct."
+        },
+        questions: [
+          { id:"eng-gram-1", prompt:"Which sentence uses the apostrophe correctly?", options:["The dogs bone was buried in the garden.","The dog's bone was buried in the garden.","The dog's bone's were buried in the garden.","The dogs's bone was buried in the garden."], correct:1, explanation:"One dog owns the bone, so it needs an apostrophe before the s, dog's." },
+          { id:"eng-gram-2", prompt:"Which sentence is punctuated correctly?", options:["Before we left, we checked the map twice.","Before we left we checked, the map twice.","Before, we left we checked the map twice.","Before we left we, checked the map twice."], correct:0, explanation:"A comma follows the introductory clause, 'Before we left', not in the middle of the sentence." },
+          { id:"eng-gram-3", prompt:"Which word correctly completes: 'Neither the teacher nor the students ___ ready for the fire drill.'", options:["was","is","were","be"], correct:2, explanation:"With 'neither... nor', the verb agrees with the nearer subject, 'students', which is plural, so 'were' is correct.", hint:"Look at the subject closest to the gap, not the one furthest away." },
+          { id:"eng-gram-4", prompt:"Which sentence uses a semicolon correctly?", options:["I finished my homework; then I watched television.","I finished my homework, then; I watched television.","I finished; my homework then I watched television.","I finished my homework then; I watched television."], correct:0, explanation:"A semicolon joins two related complete sentences: 'I finished my homework' and 'then I watched television'." }
+        ]
+      },
+      {
+        id: "eng-spell",
+        name: "Spelling & word structure",
+        timeSeconds: 45,
+        training: {
+          concept: "Some questions ask you to spot the correctly spelled word among tricky look-alikes. Others test whether you know what a prefix or suffix means. Say the word slowly in your head, syllable by syllable.",
+          worked: "Which is correct, 'Neccessary' or 'Necessary'? Step 1: break it into sounds, ne-ces-sary. Step 2: it only has one c and one pair of s. Step 3: 'Necessary' is the only version that matches."
+        },
+        questions: [
+          { id:"eng-spell-1", prompt:"Which word is spelled correctly?", options:["Definately","Definitely","Definitly","Definetely"], correct:1, explanation:"'Definitely' comes from 'definite', so it keeps the 'ite' spelling." },
+          { id:"eng-spell-2", prompt:"Which word is spelled correctly?", options:["Neccessary","Necessary","Neccesary","Necesary"], correct:1, explanation:"'Necessary' has one c and a double s." },
+          { id:"eng-spell-3", prompt:"The prefix 'sub-' usually means...", options:["Above","Under","Again","Before"], correct:1, explanation:"'Sub-' means under or below, as in 'submarine' and 'subway'." },
+          { id:"eng-spell-4", prompt:"Which word is spelled correctly?", options:["Embarrassing","Embarassing","Embarrasing","Embarrissing"], correct:0, explanation:"'Embarrassing' has a double r and a double s." }
+        ]
+      },
+      {
+        id: "eng-cloze",
+        name: "Missing word",
+        timeSeconds: 60,
+        training: {
+          concept: "Cloze questions give a sentence with a gap. Read the whole sentence first so you understand the meaning, then test each option in the gap, both for sense and for grammar.",
+          worked: "'The detective examined the room ___, searching for any clue.' Step 1: the sentence describes a thorough search. Step 2: test each option, 'briefly' contradicts a thorough search. Step 3: 'carefully' fits best."
+        },
+        questions: [
+          { id:"eng-cloze-1", prompt:"The detective examined the room ___, searching for any clue the thief might have left behind.", options:["quick","carefully","loudly","briefly"], correct:1, explanation:"'Carefully' matches a thorough search, while 'briefly' contradicts it." },
+          { id:"eng-cloze-2", prompt:"Although the storm had passed, the streets were still ___ with fallen branches and debris.", options:["littered","empty","painted","organised"], correct:0, explanation:"'Littered' fits a street scattered with debris after a storm." },
+          { id:"eng-cloze-3", prompt:"The scientist's discovery was so ___ that it changed how doctors treated the illness.", options:["forgettable","significant","ordinary","quiet"], correct:1, explanation:"A discovery that changes treatment must be 'significant', not forgettable or ordinary." },
+          { id:"eng-cloze-4", prompt:"She spoke with such ___ that the whole audience fell silent to listen.", options:["confidence","confusion","silence","hesitation"], correct:0, explanation:"Speaking with 'confidence' fits an audience falling silent to listen closely." }
+        ]
+      }
+    ]
+  },
+
+  maths: {
+    label: "Maths",
+    topics: [
+      {
+        id: "mat-money",
+        name: "Money & currency",
+        timeSeconds: 75,
+        training: {
+          concept: "Money questions often involve more than one step. Highlight what the question actually asks, underline the numbers given, and work through in order rather than rushing to the answer.",
+          worked: "A restaurant bill comes to £284, plus a £24 service charge, split equally between 8 people. Step 1: add the total, 284 + 24 = 308. Step 2: divide by the number of people, 308 / 8 = 38.50."
+        },
+        questions: [
+          { id:"mat-money-1", prompt:"A restaurant bill comes to £284, plus a £24 service charge, is split equally between 8 people. How much does each person pay?", options:["£38.50","£36.00","£40.00","£34.50"], correct:0, explanation:"284 + 24 = 308, and 308 / 8 = 38.50." },
+          { id:"mat-money-2", prompt:"You have €45. The exchange rate is £1 = €1.18. How many pounds is this worth?", options:["£38.14","£53.10","£43.82","£40.00"], correct:0, explanation:"45 / 1.18 = 38.14, rounded to the nearest penny." },
+          { id:"mat-money-3", prompt:"£220 is converted to US dollars at a rate of £1 = $1.32. How many dollars is this?", options:["$290.40","$250.00","$266.20","$300.00"], correct:0, explanation:"220 x 1.32 = 290.40." },
+          { id:"mat-money-4", prompt:"A shared taxi bill of £342, plus a £27 tip, is split between 9 people. How much does each person pay?", options:["£41","£38","£45","£39"], correct:0, explanation:"342 + 27 = 369, and 369 / 9 = 41." }
+        ]
+      },
+      {
+        id: "mat-discount",
+        name: "Discount & percentages",
+        timeSeconds: 60,
+        training: {
+          concept: "The rule for discounts is: sale price = original price x (100% minus the discount%). For two discounts applied one after another, apply the second discount to the already reduced price, not the original.",
+          worked: "A laptop costs £600. First reduced by 30%, then a further 5% off the new price. Step 1: 600 x 0.7 = 420. Step 2: 420 x 0.95 = 399."
+        },
+        questions: [
+          { id:"mat-disc-1", prompt:"A bike costs £340 and is reduced by 15%. What is the sale price?", options:["£289","£51","£300","£280"], correct:0, explanation:"340 x 0.15 = 51, and 340 - 51 = 289." },
+          { id:"mat-disc-2", prompt:"A phone was £480, now £360. What percentage discount is this?", options:["25%","20%","30%","15%"], correct:0, explanation:"The reduction is £120, and (120 / 480) x 100 = 25%." },
+          { id:"mat-disc-3", prompt:"A laptop costs £600. First reduced by 30%, then a further 5% off the new price. What is the final price?", options:["£399","£390","£405","£410"], correct:0, explanation:"600 x 0.7 = 420, then 420 x 0.95 = 399.", hint:"Apply the second discount to the already reduced price, not the original £600." },
+          { id:"mat-disc-4", prompt:"A jacket costs £95 and is reduced by 20%. What is the sale price?", options:["£76","£19","£80","£72"], correct:0, explanation:"95 x 0.2 = 19, and 95 - 19 = 76." }
+        ]
+      },
+      {
+        id: "mat-ratio",
+        name: "Ratio & scale",
+        timeSeconds: 75,
+        training: {
+          concept: "For ratio sharing, add up the total number of parts, divide the total amount by that number to find the value of one part, then multiply by however many parts each share gets.",
+          worked: "Share £117 in the ratio 4:5. Step 1: total parts = 4 + 5 = 9. Step 2: one part = 117 / 9 = 13. Step 3: the smaller share is 4 x 13 = 52."
+        },
+        questions: [
+          { id:"mat-ratio-1", prompt:"Share £117 in the ratio 4:5. What is the smaller share?", options:["£52","£65","£58","£45"], correct:0, explanation:"Total parts = 9, one part = 13, smaller share = 4 x 13 = 52." },
+          { id:"mat-ratio-2", prompt:"A mix uses water to juice in the ratio 3:1. If 90ml of juice is used, how much water is needed?", options:["270ml","90ml","180ml","360ml"], correct:0, explanation:"One part = 90ml, and water = 3 x 90 = 270ml." },
+          { id:"mat-ratio-3", prompt:"£315 is shared in the ratio 2:3:4. What is the middle share?", options:["£105","£70","£140","£90"], correct:0, explanation:"Total parts = 9, one part = 35, middle share = 3 x 35 = 105." },
+          { id:"mat-ratio-4", prompt:"A map has a scale of 1cm to 15km. If two towns are 7cm apart on the map, how far apart are they in real life?", options:["105km","22km","150km","98km"], correct:0, explanation:"7 x 15 = 105km." }
+        ]
+      },
+      {
+        id: "mat-journey",
+        name: "Journey times",
+        timeSeconds: 75,
+        training: {
+          concept: "Break journey time questions into simple chunks, working up to the next whole hour first, rather than subtracting the times directly.",
+          worked: "A train leaves at 07:25 and arrives at 10:10. Step 1: 07:25 to 08:00 is 35 minutes. Step 2: 08:00 to 10:00 is 2 hours. Step 3: 10:00 to 10:10 is 10 minutes. Total: 2 hours 45 minutes."
+        },
+        questions: [
+          { id:"mat-jt-1", prompt:"A train leaves at 07:25 and arrives at 10:10. How long is the journey?", options:["2h 45min","2h 35min","2h 55min","3h 5min"], correct:0, explanation:"07:25 to 08:00 is 35 minutes, 08:00 to 10:00 is 2 hours, 10:00 to 10:10 is 10 minutes, total 2h 45min." },
+          { id:"mat-jt-2", prompt:"A coach leaves at 13:40. The journey takes 2 hours 35 minutes. What time does it arrive?", options:["16:15","16:05","16:25","15:55"], correct:0, explanation:"13:40 to 14:00 uses 20 minutes, leaving 2h 15min. 14:00 plus 2h 15min is 16:15." },
+          { id:"mat-jt-3", prompt:"A bus arrives at 15:20. The journey took 1 hour 50 minutes. What time did it depart?", options:["13:30","13:40","13:20","14:10"], correct:0, explanation:"15:20 minus 1 hour 50 minutes is 13:30." },
+          { id:"mat-jt-4", prompt:"A train leaves at 13:45. The journey takes 2 hours 50 minutes, with a 15 minute delay along the way. What time does it arrive?", options:["16:50","16:35","17:05","16:40"], correct:0, explanation:"13:45 plus 2h 50min is 16:35, then add the 15 minute delay to get 16:50.", hint:"Add the journey time first, then add the delay on top." }
+        ]
+      },
+      {
+        id: "mat-shape",
+        name: "Area, perimeter & volume",
+        timeSeconds: 75,
+        training: {
+          concept: "Area of a rectangle is length x width. Area of a triangle is (base x height) / 2. Volume of a box is length x width x height. Always check you have identified the right measurements before calculating.",
+          worked: "A rectangular field is 45m long, with an area of 900m². Step 1: area = length x width. Step 2: rearrange to find width, 900 / 45 = 20m."
+        },
+        questions: [
+          { id:"mat-shape-1", prompt:"A rectangle is 21m long and 8m wide. What is its area?", options:["168m\u00b2","29m\u00b2","84m\u00b2","175m\u00b2"], correct:0, explanation:"21 x 8 = 168m\u00b2." },
+          { id:"mat-shape-2", prompt:"A triangle has a base of 20cm and a height of 13cm. What is its area?", options:["130cm\u00b2","260cm\u00b2","33cm\u00b2","150cm\u00b2"], correct:0, explanation:"(20 x 13) / 2 = 130cm\u00b2." },
+          { id:"mat-shape-3", prompt:"A box is 12cm long, 7cm wide and 4cm high. What is its volume?", options:["336cm\u00b3","168cm\u00b3","252cm\u00b3","288cm\u00b3"], correct:0, explanation:"12 x 7 x 4 = 336cm\u00b3." },
+          { id:"mat-shape-4", prompt:"A rectangular field is 45m long. Its area is 900m\u00b2. What is its width?", options:["20m","45m","855m","25m"], correct:0, explanation:"900 / 45 = 20m.", hint:"Divide the area by the length to find the missing width." }
+        ]
+      },
+      {
+        id: "mat-algebra",
+        name: "Algebra & missing numbers",
+        timeSeconds: 60,
+        training: {
+          concept: "For simple equations, use inverse operations to work backwards. For 'think of a number' problems, reverse each step in the opposite order it was described.",
+          worked: "I think of a number, multiply by 6, then subtract 8, and the answer is 34. Step 1: reverse the subtraction, 34 + 8 = 42. Step 2: reverse the multiplication, 42 / 6 = 7."
+        },
+        questions: [
+          { id:"mat-alg-1", prompt:"Solve: 5x = 45", options:["9","225","40","50"], correct:0, explanation:"45 / 5 = 9." },
+          { id:"mat-alg-2", prompt:"I think of a number, multiply by 6, then subtract 8, and the answer is 34. What was the number?", options:["7","4","42","6"], correct:0, explanation:"Reverse the steps: 34 + 8 = 42, then 42 / 6 = 7.", hint:"Undo the steps in reverse order, add first, then divide." },
+          { id:"mat-alg-3", prompt:"Work out the missing number: (33 + 7) / 5 = ?", options:["8","9","7","10"], correct:0, explanation:"33 + 7 = 40, and 40 / 5 = 8." },
+          { id:"mat-alg-4", prompt:"6 x ? = 66. What is the missing number?", options:["11","10","12","9"], correct:0, explanation:"66 / 6 = 11." }
+        ]
+      },
+      {
+        id: "mat-data",
+        name: "Averages & sequences",
+        timeSeconds: 60,
+        training: {
+          concept: "The mean is the total divided by how many numbers there are. The median is the middle value once the numbers are placed in order. For sequences, work out the rule connecting each number to the next.",
+          worked: "Find the mean of 18, 24, 30, 36, 42. Step 1: add them all, 18+24+30+36+42 = 150. Step 2: divide by 5, 150 / 5 = 30."
+        },
+        questions: [
+          { id:"mat-data-1", prompt:"Find the mean of: 18, 24, 30, 36, 42", options:["30","28","32","26"], correct:0, explanation:"The total is 150, and 150 / 5 = 30." },
+          { id:"mat-data-2", prompt:"Find the median of: 8, 15, 19, 22, 27, 33, 41", options:["22","19","27","15"], correct:0, explanation:"Once ordered, the middle (4th) value out of 7 is 22." },
+          { id:"mat-data-3", prompt:"The rule for this sequence is: multiply by 2, then add 1. What comes after 47?", options:["95","94","96","93"], correct:0, explanation:"47 x 2 = 94, then 94 + 1 = 95." },
+          { id:"mat-data-4", prompt:"What is the square root of 324?", options:["18","17","19","16"], correct:0, explanation:"18 x 18 = 324." }
+        ]
+      },
+      {
+        id: "mat-fdp",
+        name: "Fractions, decimals & percentages",
+        timeSeconds: 60,
+        training: {
+          concept: "Fractions, decimals and percentages are three ways of writing the same value. To simplify a fraction, divide the top and bottom by the same number until it won't go any further.",
+          worked: "Simplify 28/35. Step 1: find a number that divides into both, 7 works. Step 2: 28 / 7 = 4, and 35 / 7 = 5. Step 3: the simplified fraction is 4/5."
+        },
+        questions: [
+          { id:"mat-fdp-1", prompt:"Simplify 28/35", options:["4/5","3/4","2/3","5/6"], correct:0, explanation:"Both 28 and 35 divide by 7, giving 4/5." },
+          { id:"mat-fdp-2", prompt:"What is 45% of 180?", options:["81","45","90","72"], correct:0, explanation:"45% is 0.45, and 0.45 x 180 = 81." },
+          { id:"mat-fdp-3", prompt:"Write 5/8 as a percentage.", options:["62.5%","58%","58.5%","60%"], correct:0, explanation:"5 divided by 8 is 0.625, which is 62.5%." },
+          { id:"mat-fdp-4", prompt:"Which fraction is equivalent to 0.6?", options:["3/5","6/100","2/3","3/6"], correct:0, explanation:"0.6 equals 6/10, which simplifies to 3/5." }
+        ]
+      }
+    ]
+  }
+};
+
+/* Flatten helpers */
+function allTopics(){
+  return [...DATA.english.topics.map(t=>({...t,subject:"english"})), ...DATA.maths.topics.map(t=>({...t,subject:"maths"}))];
+}
+function getTopic(id){ return allTopics().find(t=>t.id===id); }
+
+/* ---------------------------------------------------------------------
+   STATE
+   --------------------------------------------------------------------- */
+const STORE_KEY = "aila11plus_v2";
+function todayISO(d=new Date()){ return d.toISOString().slice(0,10); }
+function addDays(iso, n){ const d=new Date(iso); d.setDate(d.getDate()+n); return todayISO(d); }
+
+function loadState(){
+  let raw = null;
+  try{ raw = localStorage.getItem(STORE_KEY); }catch(e){ raw = null; }
+  if(raw){ try{ return JSON.parse(raw); }catch(e){ /* fall through */ } }
+  return {
+    startDate: todayISO(),
+    examDate: addDays(todayISO(), 14),
+    topics: {},
+    activeDates: {},
+    lastTest: null
+  };
+}
+let STATE = loadState();
+function saveState(){
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(STATE)); }catch(e){ /* session only */ }
+}
+function topicState(id){
+  if(!STATE.topics[id]) STATE.topics[id] = { trained:false, attempts:0, correct:0, seenQuestions:[] };
+  return STATE.topics[id];
+}
+
+/* ---------------------------------------------------------------------
+   ROUTER
+   --------------------------------------------------------------------- */
+let VIEW = { name:"dashboard" };
+let SETUP = { subject:"mixed", length:8, timed:false };
+let MINI = null; // { topics:[ids], index:0 }
+
+function render(){
+  const app = document.getElementById("app");
+  app.innerHTML = "";
+  app.appendChild(renderHeader());
+  if(VIEW.name==="dashboard") app.appendChild(renderDashboard());
+  if(VIEW.name==="training") app.appendChild(renderTraining());
+  if(VIEW.name==="quiz") app.appendChild(renderQuiz());
+  if(VIEW.name==="results") app.appendChild(renderResults());
+  app.appendChild(renderFooter());
+}
+
+function renderHeader(){
+  const wrap = document.createElement("div");
+  const days = Math.max(0, Math.ceil((new Date(STATE.examDate) - new Date(todayISO()))/86400000));
+  const dayIndex = Math.max(0, Math.min(13, Math.round((new Date(todayISO()) - new Date(STATE.startDate))/86400000)));
+
+  wrap.innerHTML = `
+    <header class="top">
+      <div class="brand">
+        <h1>Aila's 11+ Basecamp</h1>
+        <p>English and Maths, one topic at a time, all the way to exam day.</p>
+      </div>
+      <div class="countdown">
+        <div class="num">${days}</div>
+        <div class="lbl">${days===1 ? "day to go" : "days to go"}</div>
+        <button id="editExamDate">change exam date</button>
+      </div>
+    </header>
+  `;
+  const trail = document.createElement("div");
+  trail.className = "trail";
+  for(let i=0;i<14;i++){
+    const dateForDay = addDays(STATE.startDate, i);
+    let cls = "trail-day";
+    if(STATE.activeDates[dateForDay]) cls += " done";
+    if(i===dayIndex) cls += " today";
+    const d = document.createElement("div");
+    d.className = cls;
+    d.title = dateForDay;
+    trail.appendChild(d);
+  }
+  const flag = document.createElement("span");
+  flag.className = "trail-flag";
+  flag.textContent = "\u{1F3C1}";
+  trail.appendChild(flag);
+  wrap.appendChild(trail);
+
+  wrap.querySelector("#editExamDate").addEventListener("click", ()=>{
+    const input = prompt("Set the exam date (YYYY-MM-DD):", STATE.examDate);
+    if(input && /^\d{4}-\d{2}-\d{2}$/.test(input)){
+      STATE.examDate = input;
+      saveState();
+      render();
+    }
+  });
+  return wrap;
+}
+
+function statusLabel(ts){
+  if(ts.attempts===0) return ts.trained ? "Trained, not yet practiced" : "Not started";
+  const pct = Math.round((ts.correct/ts.attempts)*100);
+  if(pct>=80) return `Mastered, ${pct}%`;
+  return `Practiced, ${pct}%`;
+}
+
+function topicAccuracy(id){
+  const ts = topicState(id);
+  if(ts.attempts===0) return ts.trained ? 0.5 : -1;
+  return ts.correct/ts.attempts;
+}
+
+function weakestTopics(n){
+  return allTopics()
+    .map(t=>({ topic:t, pct:topicAccuracy(t.id) }))
+    .sort((a,b)=>a.pct-b.pct)
+    .slice(0,n);
+}
+
+/* ---------------------------------------------------------------------
+   DASHBOARD
+   --------------------------------------------------------------------- */
+function renderTestHero(){
+  const card = document.createElement("div");
+  card.className = "hero-card";
+  card.innerHTML = `
+    <h2>Start a test</h2>
+    <p>Pick a subject and length. Questions are mixed across topics, and after scoring, weak spots get their own mini training round.</p>
+    <div class="test-setup">
+      <div class="choice-group" data-group="subject">
+        <span class="setup-label">Subject</span>
+        <button class="choice-btn" data-val="english">English</button>
+        <button class="choice-btn" data-val="maths">Maths</button>
+        <button class="choice-btn" data-val="mixed">Mixed</button>
+      </div>
+      <div class="choice-group" data-group="length">
+        <span class="setup-label">Length</span>
+        <button class="choice-btn" data-val="8">Quick (8)</button>
+        <button class="choice-btn" data-val="16">Full test (16)</button>
+      </div>
+      <div class="choice-group" data-group="timed">
+        <span class="setup-label">Timing</span>
+        <button class="choice-btn" data-val="false">Untimed</button>
+        <button class="choice-btn" data-val="true">Timed</button>
+      </div>
+    </div>
+    <button class="btn btn-gold btn-lg" id="startTestBtn">Start test</button>
+  `;
+  function refreshActive(){
+    card.querySelectorAll(".choice-group").forEach(group=>{
+      const key = group.dataset.group;
+      group.querySelectorAll(".choice-btn").forEach(btn=>{
+        const val = key==="timed" ? btn.dataset.val==="true" : (key==="length" ? parseInt(btn.dataset.val,10) : btn.dataset.val);
+        btn.classList.toggle("active", val===SETUP[key]);
+      });
+    });
+  }
+  card.querySelectorAll(".choice-btn").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const group = btn.closest(".choice-group").dataset.group;
+      if(group==="timed") SETUP.timed = btn.dataset.val==="true";
+      else if(group==="length") SETUP.length = parseInt(btn.dataset.val,10);
+      else SETUP.subject = btn.dataset.val;
+      refreshActive();
+    });
+  });
+  refreshActive();
+  card.querySelector("#startTestBtn").addEventListener("click", ()=>{
+    startTest(SETUP.subject, SETUP.length, SETUP.timed);
+  });
+  return card;
+}
+
+function renderSubjectPanel(subjectKey){
+  const subject = DATA[subjectKey];
+  const panel = document.createElement("div");
+  panel.className = "subject-panel";
+  const icon = subjectKey==="english" ? "\u{1F4D6}" : "\u{1F522}";
+  panel.innerHTML = `<h2>${icon} ${subject.label}</h2>`;
+  subject.topics.forEach(topic=>{
+    const ts = topicState(topic.id);
+    const pct = ts.attempts>0 ? Math.round((ts.correct/ts.attempts)*100) : 0;
+    const row = document.createElement("div");
+    row.className = "topic-row";
+    row.innerHTML = `
+      <div class="topic-info">
+        <div class="name">${topic.name}</div>
+        <div class="status">${statusLabel(ts)}</div>
+        <div class="mastery-bar"><div class="mastery-fill" style="width:${pct}%"></div></div>
+      </div>
+      <div class="topic-actions">
+        <button class="btn btn-outline" data-train="${topic.id}">Train</button>
+        <button class="btn btn-outline" data-practice="${topic.id}" ${ts.trained ? "" : "disabled"}>Practice</button>
+      </div>
+    `;
+    panel.appendChild(row);
+  });
+  return panel;
+}
+
+function renderDashboard(){
+  const wrap = document.createElement("div");
+
+  const tip = document.createElement("div");
+  tip.className = "tip-banner compact";
+  tip.innerHTML = `<span class="icon">\u{1F4A1}</span><span class="txt">${randomTip()}</span>`;
+  wrap.appendChild(tip);
+
+  wrap.appendChild(renderTestHero());
+
+  const label = document.createElement("p");
+  label.style.cssText = "font-size:12px;color:var(--mist);margin:0 0 10px;";
+  label.textContent = "Or practice one topic at a time:";
+  wrap.appendChild(label);
+
+  const grid = document.createElement("div");
+  grid.className = "grid-two";
+  grid.appendChild(renderSubjectPanel("english"));
+  grid.appendChild(renderSubjectPanel("maths"));
+  wrap.appendChild(grid);
+
+  grid.querySelectorAll("[data-train]").forEach(b=>b.addEventListener("click", ()=>startTraining(b.dataset.train)));
+  grid.querySelectorAll("[data-practice]").forEach(b=>b.addEventListener("click", ()=>startQuiz([b.dataset.practice], "practice", false)));
+
+  return wrap;
+}
+
+/* ---------------------------------------------------------------------
+   TRAINING VIEW
+   --------------------------------------------------------------------- */
+function startTraining(topicId){
+  VIEW = { name:"training", topicId, returnTo:"dashboard" };
+  render();
+}
+function renderTraining(){
+  const topic = getTopic(VIEW.topicId);
+  const wrap = document.createElement("div");
+  const nav = document.createElement("div");
+  nav.className = "top-bar-nav";
+  nav.innerHTML = `<button class="btn btn-ghost" id="backHome">back to basecamp</button>`;
+  nav.querySelector("#backHome").addEventListener("click", ()=>{ VIEW={name:"dashboard"}; render(); });
+  wrap.appendChild(nav);
+
+  const paper = document.createElement("div");
+  paper.className = "paper";
+  const isMini = VIEW.returnTo === "mini";
+  paper.innerHTML = `
+    <div class="topic-tag">${DATA[topic.subject].label} \u00b7 ${isMini ? "mini training" : "training"}</div>
+    <h2>${topic.name}</h2>
+    <p class="concept">${topic.training.concept}</p>
+    <div class="worked"><strong>Worked example</strong>${topic.training.worked}</div>
+    <div class="paper-foot">
+      <span></span>
+      <button class="btn btn-gold" id="toPractice">${isMini ? "Try a few more" : "I'm ready, start practicing"}</button>
+    </div>
+  `;
+  paper.querySelector("#toPractice").addEventListener("click", ()=>{
+    topicState(topic.id).trained = true;
+    saveState();
+    if(isMini){
+      startQuiz([topic.id], "mini", false, 4);
+    } else {
+      startQuiz([topic.id], "practice", false);
+    }
+  });
+  wrap.appendChild(paper);
+  return wrap;
+}
+
+/* ---------------------------------------------------------------------
+   ADAPTIVE QUESTION SELECTION
+   --------------------------------------------------------------------- */
+function shuffle(arr){
+  const a = [...arr];
+  for(let i=a.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+function buildTestSet(subjectKey, length){
+  let topics;
+  if(subjectKey==="english") topics = DATA.english.topics.map(t=>({...t,subject:"english"}));
+  else if(subjectKey==="maths") topics = DATA.maths.topics.map(t=>({...t,subject:"maths"}));
+  else topics = allTopics();
+
+  // pull roughly equal spread across topics, favouring ones with lower accuracy first
+  const weighted = shuffle(topics).sort((a,b)=>topicAccuracy(a.id)-topicAccuracy(b.id));
+  return pickSpread(weighted, length);
+}
+function pickSpread(topicsSortedWeak, length){
+  // round robin across topics, weakest topics get first pick
+  const buckets = topicsSortedWeak.map(t=>shuffle(t.questions).map(q=>({...q, topicId:t.id, topicName:t.name, timeSeconds:t.timeSeconds||60})));
+  const out = [];
+  let i = 0;
+  while(out.length<length){
+    let addedAny = false;
+    for(let b=0;b<buckets.length;b++){
+      if(buckets[b][i]){ out.push(buckets[b][i]); addedAny = true; }
+      if(out.length>=length) break;
+    }
+    i++;
+    if(!addedAny) break;
+  }
+  return shuffle(out);
+}
+function buildQuestionSet(topicId, limit){
+  const topic = getTopic(topicId);
+  const qs = shuffle(topic.questions).map(q=>({...q, topicId:topic.id, topicName:topic.name, timeSeconds:topic.timeSeconds||60}));
+  return limit ? qs.slice(0, limit) : qs;
+}
+
+/* ---------------------------------------------------------------------
+   QUIZ ENGINE
+   --------------------------------------------------------------------- */
+let quizTimer = null;
+
+function startTest(subjectKey, length, timed){
+  const questions = buildTestSet(subjectKey, length);
+  VIEW = { name:"quiz", mode: timed ? "timed" : "practice", questions, index:0, answers:[], timeLeft:null, locked:false, isTest:true };
+  render();
+  if(timed) startTimer();
+}
+function startQuiz(topicIds, mode, timed, limit){
+  let questions = [];
+  topicIds.forEach(id=> questions = questions.concat(buildQuestionSet(id, limit)));
+  questions = shuffle(questions);
+  VIEW = { name:"quiz", mode, questions, index:0, answers:[], timeLeft:null, locked:false, isTest:(mode==="practice"||mode==="timed") && topicIds.length>1 };
+  render();
+  if(mode==="timed") startTimer();
+}
+function startTimer(){
+  clearInterval(quizTimer);
+  const q = VIEW.questions[VIEW.index];
+  VIEW.timeLeft = q.timeSeconds || 60;
+  quizTimer = setInterval(()=>{
+    if(VIEW.name!=="quiz"){ clearInterval(quizTimer); return; }
+    VIEW.timeLeft -= 1;
+    if(VIEW.timeLeft<=0){
+      clearInterval(quizTimer);
+      if(!VIEW.locked) submitAnswer(-1);
+      return;
+    }
+    updateTimerBarOnly();
+  },1000);
+}
+function updateTimerBarOnly(){
+  const q = VIEW.questions[VIEW.index];
+  const total = q.timeSeconds || 60;
+  const fill = document.querySelector(".timer-fill");
+  const label = document.querySelector(".timer-label");
+  if(fill){ fill.style.width = Math.max(0,(VIEW.timeLeft/total)*100) + "%"; }
+  if(label){ label.textContent = VIEW.timeLeft + "s left"; }
+}
+
+function renderQuiz(){
+  const q = VIEW.questions[VIEW.index];
+  const wrap = document.createElement("div");
+  const nav = document.createElement("div");
+  nav.className = "top-bar-nav";
+  nav.innerHTML = `<button class="btn btn-ghost" id="backHome">back to basecamp</button>`;
+  nav.querySelector("#backHome").addEventListener("click", ()=>{ clearInterval(quizTimer); VIEW={name:"dashboard"}; render(); });
+  wrap.appendChild(nav);
+
+  if(VIEW.mode==="timed" && VIEW.index%3===0){
+    const tip = document.createElement("div");
+    tip.className = "tip-banner";
+    tip.innerHTML = `<span class="icon">\u{1F4A1}</span><span class="txt">${randomTip()}</span>`;
+    wrap.appendChild(tip);
+  }
+
+  const paper = document.createElement("div");
+  paper.className = "paper";
+
+  let timerHtml = "";
+  if(VIEW.mode==="timed"){
+    const total = q.timeSeconds || 60;
+    timerHtml = `<div class="timer-label">${VIEW.timeLeft}s left</div><div class="timer-bar"><div class="timer-fill" style="width:${(VIEW.timeLeft/total)*100}%"></div></div>`;
+  }
+
+  const promptHtml = q.prompt.replace(/\n\n/g,"<br><br>");
+  const modeLabel = VIEW.mode==="timed" ? "timed" : (VIEW.mode==="mini" ? "mini training" : "practice");
+
+  paper.innerHTML = `
+    <div class="topic-tag">${q.topicName} \u00b7 ${modeLabel} \u00b7 question ${VIEW.index+1} of ${VIEW.questions.length}</div>
+    ${timerHtml}
+    <div class="qtext">${promptHtml}</div>
+    ${q.hint ? `<div class="hint-row"><button class="hint-toggle" id="hintBtn">Need a hint?</button><div class="hint-box" id="hintBox">${q.hint}</div></div>` : `<div class="hint-row"></div>`}
+    <div class="options">
+      ${q.options.map((opt,i)=>`<button class="option" data-i="${i}"><span class="tag">${String.fromCharCode(65+i)}</span><span>${opt}</span></button>`).join("")}
+    </div>
+    <div id="feedbackSlot"></div>
+    <div class="paper-foot">
+      <div class="progress-dots">
+        ${VIEW.questions.map((_,i)=>`<span class="${i<VIEW.index?'done':i===VIEW.index?'now':''}"></span>`).join("")}
+      </div>
+      <button class="btn btn-gold" id="nextBtn" style="display:none;">Next</button>
+    </div>
+  `;
+  if(q.hint){
+    paper.querySelector("#hintBtn").addEventListener("click", ()=>{
+      paper.querySelector("#hintBox").classList.toggle("shown");
+    });
+  }
+  paper.querySelectorAll(".option").forEach(btn=>{
+    btn.addEventListener("click", ()=> submitAnswer(parseInt(btn.dataset.i,10)));
+  });
+  wrap.appendChild(paper);
+  return wrap;
+}
+
+function submitAnswer(chosenIndex){
+  if(VIEW.locked) return;
+  VIEW.locked = true;
+  clearInterval(quizTimer);
+  const q = VIEW.questions[VIEW.index];
+  const isCorrect = chosenIndex === q.correct;
+  VIEW.answers.push({ topicId:q.topicId, topicName:q.topicName, prompt:q.prompt, correct:isCorrect });
+
+  const ts = topicState(q.topicId);
+  ts.attempts += 1;
+  if(isCorrect) ts.correct += 1;
+  if(!ts.seenQuestions.includes(q.id)) ts.seenQuestions.push(q.id);
+  STATE.activeDates[todayISO()] = true;
+  saveState();
+
+  const optionButtons = document.querySelectorAll(".option");
+  optionButtons.forEach((btn,i)=>{
+    btn.disabled = true;
+    if(i===q.correct) btn.classList.add("correct");
+    else if(i===chosenIndex) btn.classList.add("incorrect");
+  });
+
+  const slot = document.getElementById("feedbackSlot");
+  slot.innerHTML = `
+    <div class="feedback ${isCorrect?'good':'bad'}">
+      ${chosenIndex===-1 ? "Time's up. " : (isCorrect ? "Correct. " : "Not quite. ")}${q.explanation}
+    </div>
+  `;
+  document.getElementById("nextBtn").style.display = "inline-block";
+  document.getElementById("nextBtn").addEventListener("click", nextQuestion);
+}
+
+function nextQuestion(){
+  if(VIEW.index < VIEW.questions.length-1){
+    VIEW.index += 1;
+    VIEW.locked = false;
+    render();
+    if(VIEW.mode==="timed") startTimer();
+  } else {
+    if(VIEW.mode!=="mini"){
+      STATE.lastTest = { answers: VIEW.answers, mode: VIEW.mode };
+      saveState();
+    }
+    VIEW.name = "results";
+    render();
+  }
+}
+
+/* ---------------------------------------------------------------------
+   RESULTS
+   --------------------------------------------------------------------- */
+function renderResults(){
+  const wrap = document.createElement("div");
+  const nav = document.createElement("div");
+  nav.className = "top-bar-nav";
+  nav.innerHTML = `<button class="btn btn-ghost" id="backHome">back to basecamp</button>`;
+  nav.querySelector("#backHome").addEventListener("click", ()=>{ VIEW={name:"dashboard"}; render(); });
+  wrap.appendChild(nav);
+
+  const total = VIEW.answers.length;
+  const correct = VIEW.answers.filter(a=>a.correct).length;
+  const pct = total>0 ? Math.round((correct/total)*100) : 0;
+
+  const byTopic = {};
+  VIEW.answers.forEach(a=>{
+    if(!byTopic[a.topicId]) byTopic[a.topicId] = { name:a.topicName, correct:0, total:0 };
+    byTopic[a.topicId].total += 1;
+    if(a.correct) byTopic[a.topicId].correct += 1;
+  });
+  const weakFromThisTest = Object.entries(byTopic)
+    .map(([id,v])=>({ id, name:v.name, pct: v.correct/v.total, wrong: v.total-v.correct }))
+    .filter(t=>t.wrong>0)
+    .sort((a,b)=>a.pct-b.pct)
+    .slice(0,3);
+
+  const paper = document.createElement("div");
+  paper.className = "paper";
+  paper.innerHTML = `
+    <div class="topic-tag">${VIEW.mode==="timed" ? "Timed session" : "Practice session"} complete</div>
+    <h2>Well, let's see how it went</h2>
+    <div class="results-score">
+      <span class="big">${correct}/${total}</span>
+      <span class="of">${pct}% correct</span>
+    </div>
+    <div id="verdictSlot"></div>
+    <div id="breakdownSlot"></div>
+    <div id="reviewSlot"></div>
+    <div class="paper-foot">
+      <span></span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-outline" id="retryBtn">Take another test</button>
+        ${weakFromThisTest.length ? `<button class="btn btn-gold" id="miniBtn">Mini training on weak spots</button>` : ``}
+      </div>
+    </div>
+  `;
+
+  const verdict = document.createElement("div");
+  verdict.className = "verdict";
+  if(pct>=80){
+    verdict.innerHTML = `<strong>Strong result.</strong> This set is looking solid. A quick mini training round on anything still shaky will lock it in further.`;
+  } else if(pct>=50){
+    verdict.innerHTML = `<strong>Good progress.</strong> Some of this is landing well. A short mini training round on the weakest topics below should push this higher.`;
+  } else {
+    verdict.innerHTML = `<strong>This set needs another look.</strong> The mini training round below goes back through the topics that caused the most trouble before trying again.`;
+  }
+  paper.querySelector("#verdictSlot").appendChild(verdict);
+
+  const breakdown = document.createElement("div");
+  Object.values(byTopic).forEach(v=>{
+    const p = Math.round((v.correct/v.total)*100);
+    const color = p>=80 ? "var(--teal)" : (p>=50 ? "var(--gold)" : "var(--coral)");
+    const row = document.createElement("div");
+    row.className = "breakdown-row";
+    row.innerHTML = `<div class="label">${v.name}</div><div class="bar"><div class="fill" style="width:${p}%;background:${color};"></div></div><div class="pct">${p}%</div>`;
+    breakdown.appendChild(row);
+  });
+  paper.querySelector("#breakdownSlot").appendChild(breakdown);
+
+  const review = document.createElement("div");
+  review.className = "review-list";
+  const wrongOnes = VIEW.answers.filter(a=>!a.correct);
+  if(wrongOnes.length){
+    const heading = document.createElement("p");
+    heading.style.cssText = "font-size:12px;color:var(--ink-soft);margin:14px 0 4px;";
+    heading.textContent = "Questions to revisit:";
+    review.appendChild(heading);
+    wrongOnes.forEach(a=>{
+      const item = document.createElement("div");
+      item.className = "review-item";
+      const shortPrompt = a.prompt.length>90 ? a.prompt.slice(0,90)+"..." : a.prompt;
+      item.innerHTML = `<span class="mark no">\u2717</span><div class="body"><div class="topic">${a.topicName}</div>${shortPrompt.replace(/\n/g," ")}</div>`;
+      review.appendChild(item);
+    });
+  }
+  paper.querySelector("#reviewSlot").appendChild(review);
+
+  paper.querySelector("#retryBtn").addEventListener("click", ()=>{ VIEW={name:"dashboard"}; render(); });
+  const miniBtn = paper.querySelector("#miniBtn");
+  if(miniBtn){
+    miniBtn.addEventListener("click", ()=>{
+      MINI = { topics: weakFromThisTest.map(t=>t.id), index:0 };
+      runMiniStep();
+    });
+  }
+
+  wrap.appendChild(paper);
+  return wrap;
+}
+
+function runMiniStep(){
+  if(!MINI || MINI.index>=MINI.topics.length){
+    MINI = null;
+    VIEW = { name:"dashboard" };
+    render();
+    return;
+  }
+  const topicId = MINI.topics[MINI.index];
+  MINI.index += 1;
+  VIEW = { name:"training", topicId, returnTo:"mini" };
+  render();
+}
+
+/* wire mini training continuation after a mini quiz finishes */
+const originalNextQuestion = nextQuestion;
+nextQuestion = function(){
+  if(VIEW.mode==="mini" && VIEW.index>=VIEW.questions.length-1){
+    VIEW.locked = false;
+    const paper = document.querySelector(".paper");
+    setTimeout(()=>{ runMiniStep(); }, 150);
+    return;
+  }
+  originalNextQuestion();
+};
+
+/* ---------------------------------------------------------------------
+   FOOTER
+   --------------------------------------------------------------------- */
+function renderFooter(){
+  const f = document.createElement("footer");
+  f.className = "note";
+  f.innerHTML = `Progress and test history are saved on this device and browser for daily practice. Question bank is drawn from Aila's own revision sets, ready to expand further at any time.`;
+  return f;
+}
+
+render();
+</script>
+</body>
+</html>
