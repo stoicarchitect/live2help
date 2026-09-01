@@ -164,6 +164,14 @@
   .hint-box.shown{ display:block; }
 
   .options{ display:flex; flex-direction:column; gap:9px; }
+  .options.visual{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .options.visual .option{ flex-direction:column; align-items:center; justify-content:center; gap:2px; padding:10px; }
+  .options.visual .option .tag{ align-self:flex-start; }
+  .options.visual .option svg{ display:block; }
+  .diagram-box{
+    background:#fff; border:1.5px solid #ddd4bf; border-radius:10px;
+    padding:14px; margin:4px 0 16px; display:flex; justify-content:center;
+  }
   .option{
     text-align:left; background:#fff; border:1.5px solid #ddd4bf; border-radius:10px;
     padding:12px 14px; font-family:'Source Serif 4',serif; font-size:15px; cursor:pointer; display:flex; gap:10px;
@@ -226,10 +234,11 @@
 <script>
 /* =====================================================================
    AILA'S 11+ BASECAMP
-   GL Assessment style, English and Maths. Questions and worked examples
-   are drawn from Aila's own revision sets. Add more by extending the
-   DATA object below, each topic keeps the same shape so new questions
-   or new topics slot straight in.
+   GL Assessment style, covering English, Verbal Reasoning, Maths and
+   Non-Verbal Reasoning. Questions and worked examples are drawn from
+   Aila's own revision sets. Add more by extending the DATA object
+   below, each topic keeps the same shape so new questions or new
+   topics slot straight in.
    ===================================================================== */
 
 const TIPS = [
@@ -243,6 +252,57 @@ const TIPS = [
   "A discount answer should always be smaller than the original price. Check your answer makes sense in real life."
 ];
 function randomTip(){ return TIPS[Math.floor(Math.random()*TIPS.length)]; }
+
+/* ---------------------------------------------------------------------
+   NON-VERBAL REASONING SHAPE HELPERS
+   Builds real rotated/reflected/counted shape diagrams as inline SVG,
+   rather than relying on text symbols, so the pattern-spotting is
+   closer to genuine 11+ style shape questions.
+   --------------------------------------------------------------------- */
+const INK = "#1c2154";
+function svgWrap(inner, size){ return `<svg viewBox="0 0 80 80" width="${size||56}" height="${size||56}" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`; }
+function cellSvg(inner, x){ return `<svg x="${x}" y="0" width="60" height="60" viewBox="0 0 80 80">${inner}</svg>`; }
+function diagramRow(cells){
+  const w = cells.length*64;
+  const inner = cells.map((c,i)=>cellSvg(c, i*64)).join("");
+  return `<svg viewBox="0 0 ${w} 60" width="100%" height="60" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
+}
+function stackRows(rowsHtml){ return rowsHtml.map(r=>`<div style="margin-bottom:8px">${r}</div>`).join(""); }
+
+const QMARK = `<text x="40" y="52" font-size="40" text-anchor="middle" font-family="Space Grotesk, sans-serif" fill="${INK}">?</text>`;
+const CIRCLE_FILL = `<circle cx="40" cy="40" r="24" fill="${INK}"/>`;
+const CIRCLE_OUTLINE = `<circle cx="40" cy="40" r="22" fill="none" stroke="${INK}" stroke-width="6"/>`;
+const SQUARE_FILL = `<rect x="16" y="16" width="48" height="48" fill="${INK}"/>`;
+const SQUARE_OUTLINE = `<rect x="16" y="16" width="48" height="48" fill="none" stroke="${INK}" stroke-width="5"/>`;
+const CIRCLE_SMALL = `<circle cx="40" cy="40" r="12" fill="${INK}"/>`;
+const SQUARE_SMALL = `<rect x="28" y="28" width="24" height="24" fill="${INK}"/>`;
+
+const ARROW_UP = `<polygon points="40,10 58,42 46,42 46,70 34,70 34,42 22,42" fill="${INK}"/>`;
+function rotatedIcon(inner, deg){ return `<g transform="rotate(${deg} 40 40)">${inner}</g>`; }
+const ARROW_RIGHT = rotatedIcon(ARROW_UP, 90);
+const ARROW_DOWN = rotatedIcon(ARROW_UP, 180);
+const ARROW_LEFT = rotatedIcon(ARROW_UP, 270);
+
+function squareWithDot(corner){
+  const pos = {tl:[24,24], tr:[56,24], bl:[24,56], br:[56,56]}[corner];
+  return `<rect x="14" y="14" width="52" height="52" fill="none" stroke="${INK}" stroke-width="4"/><circle cx="${pos[0]}" cy="${pos[1]}" r="7" fill="${INK}"/>`;
+}
+function triCorner(pos){
+  const pts = { bl:"20,60 60,60 20,20", br:"20,60 60,60 60,20", tl:"20,20 60,20 20,60", tr:"20,20 60,20 60,60" }[pos];
+  return `<polygon points="${pts}" fill="none" stroke="${INK}" stroke-width="4"/>`;
+}
+function groupInner(kind, count){
+  const size = count<=3 ? 9 : 6;
+  const gap = 80/(count+1);
+  let out = "";
+  for(let i=1;i<=count;i++){
+    const x = gap*i, y = 40;
+    if(kind==="triangle") out += `<polygon points="${x},${y-size} ${x+size},${y+size} ${x-size},${y+size}" fill="${INK}"/>`;
+    if(kind==="circle") out += `<circle cx="${x}" cy="${y}" r="${size}" fill="${INK}"/>`;
+    if(kind==="square") out += `<rect x="${x-size}" y="${y-size}" width="${size*2}" height="${size*2}" fill="${INK}"/>`;
+  }
+  return out;
+}
 
 const DATA = {
   english: {
@@ -260,52 +320,10 @@ const DATA = {
           { id:"eng-comp-1", prompt:"Sarah had not visited Cliffside Lighthouse in almost ten years, not since her grandfather Thomas had passed the keeping duties to the harbour authority. As she climbed the worn stone steps, memories flooded back: the smell of salt and paraffin, the rhythmic sweep of the great lamp, and her grandfather's steady voice explaining the tides. The new keeper, a young man named Marcus, greeted her warmly at the top. 'Your grandfather kept detailed logbooks,' he said, handing her a weathered leather journal. 'I thought you might like to have this one. It's from your last summer here.'\n\nHow long had it been since Sarah last visited the lighthouse?", options:["Almost ten years","Two years","Twelve years","Six months"], correct:0, explanation:"The passage states directly that she had not visited 'in almost ten years'.", hint:"Scan the first sentence for a specific time reference." },
           { id:"eng-comp-2", prompt:"Sarah had not visited Cliffside Lighthouse in almost ten years. The new keeper, a young man named Marcus, greeted her warmly at the top.\n\nWhat is the name of the new lighthouse keeper?", options:["Thomas","Marcus","Cliffside","Sarah"], correct:1, explanation:"The passage introduces him by name: 'a young man named Marcus'.", hint:"Look in the second part of the passage, where the new keeper is introduced." },
           { id:"eng-comp-3", prompt:"He handed her a weathered leather journal.\n\nWhat does 'weathered' most likely mean, as used to describe the journal?", options:["Brand new","Worn and aged by time","Brightly coloured","Very heavy"], correct:1, explanation:"'Weathered' describes something that has been affected by age and exposure over time, so it means worn and aged.", hint:"Think about what happens to leather over many years." },
-          { id:"eng-comp-4", prompt:"Sarah's hands trembled slightly as she opened the first page. There, in her grandfather's careful handwriting, was an entry describing a fierce storm that had struck the coast that same week, the storm during which twelve year old Sarah had first understood the true importance of the lighthouse's beam.\n\nWhy do you think Sarah's hands trembled as she opened the journal?", options:["She was cold from the sea air","She was overwhelmed by the memories it brought back","She was in a hurry to leave","She had never met her grandfather"], correct:1, explanation:"The passage links the trembling to powerful memories of her grandfather and the storm, showing strong emotion rather than cold or haste.", hint:"Think about what the journal represents to her, not the weather." }
-        ]
-      },
-      {
-        id: "eng-syn",
-        name: "Synonyms",
-        timeSeconds: 45,
-        training: {
-          concept: "Synonym questions ask for the word closest in meaning. Try swapping the word into a sentence in your head and see which option keeps the same feeling.",
-          worked: "Same as PECULIAR? Step 1: PECULIAR means unusual or odd. Step 2: scan the options for a close match. Step 3: 'Strange' matches, while 'Normal' is closer to the opposite."
-        },
-        questions: [
-          { id:"eng-syn-1", prompt:"Choose the word that means the SAME as PECULIAR.", options:["Strange","Normal","Common","Boring"], correct:0, explanation:"PECULIAR means unusual or odd, which matches 'strange'." },
-          { id:"eng-syn-2", prompt:"Choose the word that means the SAME as CONCEAL.", options:["Hide","Reveal","Show","Display"], correct:0, explanation:"CONCEAL means to keep something out of sight, which matches 'hide'." },
-          { id:"eng-syn-3", prompt:"Choose the word that means the SAME as VICTORY.", options:["Triumph","Defeat","Loss","Failure"], correct:0, explanation:"VICTORY means winning, which matches 'triumph'." },
-          { id:"eng-syn-4", prompt:"Choose the word that means the SAME as DIFFICULT.", options:["Challenging","Simple","Easy","Basic"], correct:0, explanation:"DIFFICULT means hard to do, which matches 'challenging'." }
-        ]
-      },
-      {
-        id: "eng-ant",
-        name: "Antonyms",
-        timeSeconds: 45,
-        training: {
-          concept: "Antonym questions ask for the true opposite, not just a different word. Watch out for options that are similar in meaning to the original word rather than its opposite, cross those out first.",
-          worked: "Opposite of TRANQUIL? Step 1: TRANQUIL means calm and peaceful. Step 2: cross out any option that also means calm. Step 3: 'Chaotic' is the true opposite."
-        },
-        questions: [
-          { id:"eng-ant-1", prompt:"Choose the word that means the OPPOSITE of GENEROUS.", options:["Stingy","Kind","Wealthy","Happy"], correct:0, explanation:"GENEROUS means willing to give, so the opposite is 'stingy'." },
-          { id:"eng-ant-2", prompt:"Choose the word that means the OPPOSITE of TRANQUIL.", options:["Chaotic","Calm","Peaceful","Serene"], correct:0, explanation:"TRANQUIL means calm, so the opposite is 'chaotic'. The other options all mean calm too, so they can be ruled out." },
-          { id:"eng-ant-3", prompt:"Choose the word that means the OPPOSITE of ANCIENT.", options:["Modern","Old","Historic","Aged"], correct:0, explanation:"ANCIENT means very old, so the true opposite is 'modern', not another word for old." },
-          { id:"eng-ant-4", prompt:"Choose the word that means the OPPOSITE of ABUNDANT.", options:["Scarce","Plentiful","Full","Rich"], correct:0, explanation:"ABUNDANT means plentiful, so the opposite is 'scarce'." }
-        ]
-      },
-      {
-        id: "eng-word-assoc",
-        name: "Word associations",
-        timeSeconds: 45,
-        training: {
-          concept: "These questions give a pair of related words, then ask you to complete a second pair with the same relationship. Work out exactly how the first pair are connected before choosing.",
-          worked: "FISH is to SWIM as BIRD is to? Step 1: work out the relationship, a fish's typical movement is to swim. Step 2: apply the same relationship to bird. Step 3: a bird's typical movement is to fly."
-        },
-        questions: [
-          { id:"eng-wa-1", prompt:"FISH is to SWIM as BIRD is to:", options:["Fly","Feather","Nest","Sing"], correct:0, explanation:"A fish's typical way of moving is to swim, and a bird's typical way of moving is to fly." },
-          { id:"eng-wa-2", prompt:"DOCTOR is to HOSPITAL as TEACHER is to:", options:["School","Book","Student","Lesson"], correct:0, explanation:"A doctor works in a hospital, and a teacher works in a school." },
-          { id:"eng-wa-3", prompt:"NIGHT is to DAY as BLACK is to:", options:["White","Grey","Dark","Colour"], correct:0, explanation:"Night and day are opposites, and black and white are opposites." },
-          { id:"eng-wa-4", prompt:"BIRD is to NEST as BEE is to:", options:["Hive","Honey","Sting","Flower"], correct:0, explanation:"A bird lives in a nest, and a bee lives in a hive." }
+          { id:"eng-comp-4", prompt:"Sarah's hands trembled slightly as she opened the first page. There, in her grandfather's careful handwriting, was an entry describing a fierce storm that had struck the coast that same week, the storm during which twelve year old Sarah had first understood the true importance of the lighthouse's beam.\n\nWhy do you think Sarah's hands trembled as she opened the journal?", options:["She was cold from the sea air","She was overwhelmed by the memories it brought back","She was in a hurry to leave","She had never met her grandfather"], correct:1, explanation:"The passage links the trembling to powerful memories of her grandfather and the storm, showing strong emotion rather than cold or haste.", hint:"Think about what the journal represents to her, not the weather." },
+          { id:"eng-comp-5", prompt:"When Oakwood Primary School announced its new gardening club, Priya was one of the first to sign up. She had always loved watching things grow, ever since her grandmother taught her to plant tomato seeds in old yoghurt pots on the kitchen windowsill. The gardening club met every Wednesday after school, tending a small plot behind the science block. By half term, their carrots were barely thumb sized, and Priya worried they would never be ready for the summer fair. Mr Dean, who ran the club, reminded her that most vegetables take patience rather than luck. Sure enough, by July the carrots had grown long and orange, and Priya's class won first prize for their vegetable display.\n\nWhere did the gardening club meet each week?", options:["A plot behind the science block","In Priya's own garden","On the school field","In the school hall"], correct:0, explanation:"The passage states the club met 'tending a small plot behind the science block'." },
+          { id:"eng-comp-6", prompt:"By half term, their carrots were barely thumb sized, and Priya worried they would never be ready for the summer fair.\n\nWhy was Priya worried by half term?", options:["The gardening club had been cancelled","The carrots were still very small","She had lost her gardening tools","The weather had turned cold"], correct:1, explanation:"The passage says the carrots were 'barely thumb sized', explaining her worry." },
+          { id:"eng-comp-7", prompt:"Mr Dean, who ran the club, reminded her that most vegetables take patience rather than luck.\n\nWhat does the passage suggest about Mr Dean's attitude towards gardening?", options:["He believed patience mattered more than luck","He thought the carrots would fail completely","He was uninterested in the club","He preferred flowers to vegetables"], correct:0, explanation:"He directly tells Priya that vegetables take patience rather than luck.", hint:"Look at what Mr Dean says to Priya when she starts to worry." }
         ]
       },
       {
@@ -320,7 +338,9 @@ const DATA = {
           { id:"eng-gram-1", prompt:"Which sentence uses the apostrophe correctly?", options:["The dogs bone was buried in the garden.","The dog's bone was buried in the garden.","The dog's bone's were buried in the garden.","The dogs's bone was buried in the garden."], correct:1, explanation:"One dog owns the bone, so it needs an apostrophe before the s, dog's." },
           { id:"eng-gram-2", prompt:"Which sentence is punctuated correctly?", options:["Before we left, we checked the map twice.","Before we left we checked, the map twice.","Before, we left we checked the map twice.","Before we left we, checked the map twice."], correct:0, explanation:"A comma follows the introductory clause, 'Before we left', not in the middle of the sentence." },
           { id:"eng-gram-3", prompt:"Which word correctly completes: 'Neither the teacher nor the students ___ ready for the fire drill.'", options:["was","is","were","be"], correct:2, explanation:"With 'neither... nor', the verb agrees with the nearer subject, 'students', which is plural, so 'were' is correct.", hint:"Look at the subject closest to the gap, not the one furthest away." },
-          { id:"eng-gram-4", prompt:"Which sentence uses a semicolon correctly?", options:["I finished my homework; then I watched television.","I finished my homework, then; I watched television.","I finished; my homework then I watched television.","I finished my homework then; I watched television."], correct:0, explanation:"A semicolon joins two related complete sentences: 'I finished my homework' and 'then I watched television'." }
+          { id:"eng-gram-4", prompt:"Which sentence uses a semicolon correctly?", options:["I finished my homework; then I watched television.","I finished my homework, then; I watched television.","I finished; my homework then I watched television.","I finished my homework then; I watched television."], correct:0, explanation:"A semicolon joins two related complete sentences: 'I finished my homework' and 'then I watched television'." },
+          { id:"eng-gram-5", prompt:"Which sentence uses capital letters correctly?", options:["We visited london last summer.","We visited London last summer.","we visited London Last summer.","We Visited london last Summer."], correct:1, explanation:"Place names such as 'London' always need a capital letter, and only the start of the sentence and proper nouns need one." },
+          { id:"eng-gram-6", prompt:"Which option correctly completes: 'By the time we arrived, the film ___.'", options:["already started","had already started","starts already","will already start"], correct:1, explanation:"An action completed before another past action needs the past perfect tense, 'had already started'." }
         ]
       },
       {
@@ -335,7 +355,9 @@ const DATA = {
           { id:"eng-spell-1", prompt:"Which word is spelled correctly?", options:["Definately","Definitely","Definitly","Definetely"], correct:1, explanation:"'Definitely' comes from 'definite', so it keeps the 'ite' spelling." },
           { id:"eng-spell-2", prompt:"Which word is spelled correctly?", options:["Neccessary","Necessary","Neccesary","Necesary"], correct:1, explanation:"'Necessary' has one c and a double s." },
           { id:"eng-spell-3", prompt:"The prefix 'sub-' usually means...", options:["Above","Under","Again","Before"], correct:1, explanation:"'Sub-' means under or below, as in 'submarine' and 'subway'." },
-          { id:"eng-spell-4", prompt:"Which word is spelled correctly?", options:["Embarrassing","Embarassing","Embarrasing","Embarrissing"], correct:0, explanation:"'Embarrassing' has a double r and a double s." }
+          { id:"eng-spell-4", prompt:"Which word is spelled correctly?", options:["Embarrassing","Embarassing","Embarrasing","Embarrissing"], correct:0, explanation:"'Embarrassing' has a double r and a double s." },
+          { id:"eng-spell-5", prompt:"Which word is spelled correctly?", options:["Occasion","Occassion","Ocasion","Occasionn"], correct:0, explanation:"'Occasion' has a double c and a single s." },
+          { id:"eng-spell-6", prompt:"The suffix '-ful' usually means...", options:["Full of","Without","Before","Again"], correct:0, explanation:"'-ful' means full of, as in 'helpful' or 'hopeful'." }
         ]
       },
       {
@@ -350,7 +372,102 @@ const DATA = {
           { id:"eng-cloze-1", prompt:"The detective examined the room ___, searching for any clue the thief might have left behind.", options:["quick","carefully","loudly","briefly"], correct:1, explanation:"'Carefully' matches a thorough search, while 'briefly' contradicts it." },
           { id:"eng-cloze-2", prompt:"Although the storm had passed, the streets were still ___ with fallen branches and debris.", options:["littered","empty","painted","organised"], correct:0, explanation:"'Littered' fits a street scattered with debris after a storm." },
           { id:"eng-cloze-3", prompt:"The scientist's discovery was so ___ that it changed how doctors treated the illness.", options:["forgettable","significant","ordinary","quiet"], correct:1, explanation:"A discovery that changes treatment must be 'significant', not forgettable or ordinary." },
-          { id:"eng-cloze-4", prompt:"She spoke with such ___ that the whole audience fell silent to listen.", options:["confidence","confusion","silence","hesitation"], correct:0, explanation:"Speaking with 'confidence' fits an audience falling silent to listen closely." }
+          { id:"eng-cloze-4", prompt:"She spoke with such ___ that the whole audience fell silent to listen.", options:["confidence","confusion","silence","hesitation"], correct:0, explanation:"Speaking with 'confidence' fits an audience falling silent to listen closely." },
+          { id:"eng-cloze-5", prompt:"The mountain climbers pressed on, ___ by the thought of reaching the summit before nightfall.", options:["motivated","discouraged","confused","delayed"], correct:0, explanation:"'Motivated' fits climbers who keep going, driven on by a goal." },
+          { id:"eng-cloze-6", prompt:"Despite the ___ instructions, everyone still managed to assemble the tent correctly.", options:["confusing","clear","missing","short"], correct:0, explanation:"'Despite' signals a contrast, so the instructions must have made things harder, matching 'confusing'." }
+        ]
+      }
+    ]
+  },
+
+  verbal: {
+    label: "Verbal Reasoning",
+    topics: [
+      {
+        id: "vr-syn",
+        name: "Synonyms",
+        timeSeconds: 45,
+        training: {
+          concept: "Synonym questions ask for the word closest in meaning. Try swapping the word into a sentence in your head and see which option keeps the same feeling.",
+          worked: "Same as PECULIAR? Step 1: PECULIAR means unusual or odd. Step 2: scan the options for a close match. Step 3: 'Strange' matches, while 'Normal' is closer to the opposite."
+        },
+        questions: [
+          { id:"vr-syn-1", prompt:"Choose the word that means the SAME as PECULIAR.", options:["Strange","Normal","Common","Boring"], correct:0, explanation:"PECULIAR means unusual or odd, which matches 'strange'." },
+          { id:"vr-syn-2", prompt:"Choose the word that means the SAME as CONCEAL.", options:["Hide","Reveal","Show","Display"], correct:0, explanation:"CONCEAL means to keep something out of sight, which matches 'hide'." },
+          { id:"vr-syn-3", prompt:"Choose the word that means the SAME as VICTORY.", options:["Triumph","Defeat","Loss","Failure"], correct:0, explanation:"VICTORY means winning, which matches 'triumph'." },
+          { id:"vr-syn-4", prompt:"Choose the word that means the SAME as DIFFICULT.", options:["Challenging","Simple","Easy","Basic"], correct:0, explanation:"DIFFICULT means hard to do, which matches 'challenging'." },
+          { id:"vr-syn-5", prompt:"Choose the word that means the SAME as JOYFUL.", options:["Happy","Sad","Angry","Tired"], correct:0, explanation:"JOYFUL means full of joy, which matches 'happy'." },
+          { id:"vr-syn-6", prompt:"Choose the word that means the SAME as ORIGIN.", options:["Source","End","Middle","Copy"], correct:0, explanation:"ORIGIN means where something starts, which matches 'source'." },
+          { id:"vr-syn-7", prompt:"Choose the word that means the SAME as ENORMOUS.", options:["Huge","Tiny","Average","Narrow"], correct:0, explanation:"ENORMOUS means very large, which matches 'huge'." }
+        ]
+      },
+      {
+        id: "vr-ant",
+        name: "Antonyms",
+        timeSeconds: 45,
+        training: {
+          concept: "Antonym questions ask for the true opposite, not just a different word. Watch out for options that are similar in meaning to the original word rather than its opposite, cross those out first.",
+          worked: "Opposite of TRANQUIL? Step 1: TRANQUIL means calm and peaceful. Step 2: cross out any option that also means calm. Step 3: 'Chaotic' is the true opposite."
+        },
+        questions: [
+          { id:"vr-ant-1", prompt:"Choose the word that means the OPPOSITE of GENEROUS.", options:["Stingy","Kind","Wealthy","Happy"], correct:0, explanation:"GENEROUS means willing to give, so the opposite is 'stingy'." },
+          { id:"vr-ant-2", prompt:"Choose the word that means the OPPOSITE of TRANQUIL.", options:["Chaotic","Calm","Peaceful","Serene"], correct:0, explanation:"TRANQUIL means calm, so the opposite is 'chaotic'. The other options all mean calm too, so they can be ruled out." },
+          { id:"vr-ant-3", prompt:"Choose the word that means the OPPOSITE of ANCIENT.", options:["Modern","Old","Historic","Aged"], correct:0, explanation:"ANCIENT means very old, so the true opposite is 'modern', not another word for old." },
+          { id:"vr-ant-4", prompt:"Choose the word that means the OPPOSITE of ABUNDANT.", options:["Scarce","Plentiful","Full","Rich"], correct:0, explanation:"ABUNDANT means plentiful, so the opposite is 'scarce'." },
+          { id:"vr-ant-5", prompt:"Choose the word that means the OPPOSITE of PERMIT.", options:["Forbid","Allow","Enable","Grant"], correct:0, explanation:"PERMIT means to allow, so the opposite is 'forbid'." },
+          { id:"vr-ant-6", prompt:"Choose the word that means the OPPOSITE of GENUINE.", options:["Fake","Real","Honest","True"], correct:0, explanation:"GENUINE means real, so the opposite is 'fake'." },
+          { id:"vr-ant-7", prompt:"Choose the word that means the OPPOSITE of BRAVE.", options:["Cowardly","Bold","Fearless","Strong"], correct:0, explanation:"BRAVE means showing courage, so the opposite is 'cowardly'." },
+          { id:"vr-ant-8", prompt:"Choose the word that means the OPPOSITE of TRANSPARENT.", options:["Opaque","Clear","Visible","Glossy"], correct:0, explanation:"TRANSPARENT means you can see through it, so the opposite is 'opaque'." }
+        ]
+      },
+      {
+        id: "vr-word-assoc",
+        name: "Word relationships",
+        timeSeconds: 45,
+        training: {
+          concept: "These questions give a pair of related words, then ask you to complete a second pair with the same relationship. Work out exactly how the first pair are connected before choosing.",
+          worked: "FISH is to SWIM as BIRD is to? Step 1: work out the relationship, a fish's typical movement is to swim. Step 2: apply the same relationship to bird. Step 3: a bird's typical movement is to fly."
+        },
+        questions: [
+          { id:"vr-wa-1", prompt:"FISH is to SWIM as BIRD is to:", options:["Fly","Feather","Nest","Sing"], correct:0, explanation:"A fish's typical way of moving is to swim, and a bird's typical way of moving is to fly." },
+          { id:"vr-wa-2", prompt:"DOCTOR is to HOSPITAL as TEACHER is to:", options:["School","Book","Student","Lesson"], correct:0, explanation:"A doctor works in a hospital, and a teacher works in a school." },
+          { id:"vr-wa-3", prompt:"NIGHT is to DAY as BLACK is to:", options:["White","Grey","Dark","Colour"], correct:0, explanation:"Night and day are opposites, and black and white are opposites." },
+          { id:"vr-wa-4", prompt:"BIRD is to NEST as BEE is to:", options:["Hive","Honey","Sting","Flower"], correct:0, explanation:"A bird lives in a nest, and a bee lives in a hive." },
+          { id:"vr-wa-5", prompt:"PENCIL is to WRITE as SCISSORS is to:", options:["Cut","Sharpen","Draw","Break"], correct:0, explanation:"A pencil is used to write, and scissors are used to cut." },
+          { id:"vr-wa-6", prompt:"CATERPILLAR is to BUTTERFLY as TADPOLE is to:", options:["Frog","Fish","Newt","Toad"], correct:0, explanation:"A caterpillar becomes a butterfly, and a tadpole becomes a frog." }
+        ]
+      },
+      {
+        id: "vr-codes",
+        name: "Letter codes",
+        timeSeconds: 60,
+        training: {
+          concept: "Letter code questions shift every letter in a word by the same amount through the alphabet. Work out the shift on the example given, then apply that same shift, letter by letter, to the new word.",
+          worked: "If PEN is coded as SHQ, what is the shift? Step 1: P to S is 3 letters forward. Step 2: E to H is also 3 forward, N to Q is 3 forward, so the rule is +3. Step 3: apply +3 to any new word, one letter at a time."
+        },
+        questions: [
+          { id:"vr-codes-1", prompt:"If PEN is coded as SHQ (each letter shifts +3), what is CUP coded as?", options:["FXS","FWS","EXS","FXR"], correct:0, explanation:"C+3=F, U+3=X, P+3=S, giving FXS." },
+          { id:"vr-codes-2", prompt:"If the code for MAP is PDS (+3 shift), what is the code for TOY?", options:["WRB","WRA","VRB","WQB"], correct:0, explanation:"T+3=W, O+3=R, Y+3=B (wrapping round the alphabet), giving WRB." },
+          { id:"vr-codes-3", prompt:"If DESK is coded as HIWO (+4 shift), what is LAMP coded as?", options:["PEQT","PEQS","OEQT","PEPT"], correct:0, explanation:"L+4=P, A+4=E, M+4=Q, P+4=T, giving PEQT." },
+          { id:"vr-codes-4", prompt:"If the code for RAIN is VEMR (+4 shift), what is the code for SNOW?", options:["WRSA","WRSZ","VRSA","WRRA"], correct:0, explanation:"S+4=W, N+4=R, O+4=S, W+4=A (wrapping round), giving WRSA." },
+          { id:"vr-codes-5", prompt:"If GATE is coded as JDWH (+3 shift), what is DOOR coded as?", options:["GRRU","GRRT","FRRU","GRRV"], correct:0, explanation:"D+3=G, O+3=R, O+3=R, R+3=U, giving GRRU." }
+        ]
+      },
+      {
+        id: "vr-alpha-seq",
+        name: "Alphabet sequences",
+        timeSeconds: 45,
+        training: {
+          concept: "These questions give a run of letters that move a fixed number of steps through the alphabet each time. Work out the gap between the first two letters, check it holds for the rest, then apply it to find the missing one.",
+          worked: "F, J, N, R, ? Step 1: F to J is 4 letters forward. Step 2: J to N is also 4, N to R is also 4, so the rule is +4. Step 3: R+4 = V."
+        },
+        questions: [
+          { id:"vr-as-1", prompt:"What letter comes next: F, J, N, R, ?", options:["V","U","W","T"], correct:0, explanation:"Each letter moves 4 forward: F(6), J(10), N(14), R(18), next = 22 = V." },
+          { id:"vr-as-2", prompt:"What letter comes next: S, P, M, J, ?", options:["G","H","F","I"], correct:0, explanation:"Each letter moves 3 back: S(19), P(16), M(13), J(10), next = 7 = G." },
+          { id:"vr-as-3", prompt:"What letter is missing: D, H, ?, P, T", options:["L","K","M","J"], correct:0, explanation:"Each letter moves 4 forward: D(4), H(8), next = 12 = L, then P(16), T(20)." },
+          { id:"vr-as-4", prompt:"What letter comes next: A, E, I, M, ?", options:["Q","P","R","O"], correct:0, explanation:"Each letter moves 4 forward: A(1), E(5), I(9), M(13), next = 17 = Q." },
+          { id:"vr-as-5", prompt:"What letter comes next: C, F, I, L, ?", options:["O","N","P","M"], correct:0, explanation:"Each letter moves 3 forward: C(3), F(6), I(9), L(12), next = 15 = O." },
+          { id:"vr-as-6", prompt:"What letter comes next: Y, W, U, S, ?", options:["Q","R","P","T"], correct:0, explanation:"Each letter moves 2 back: Y(25), W(23), U(21), S(19), next = 17 = Q." }
         ]
       }
     ]
@@ -371,7 +488,12 @@ const DATA = {
           { id:"mat-money-1", prompt:"A restaurant bill comes to £284, plus a £24 service charge, is split equally between 8 people. How much does each person pay?", options:["£38.50","£36.00","£40.00","£34.50"], correct:0, explanation:"284 + 24 = 308, and 308 / 8 = 38.50." },
           { id:"mat-money-2", prompt:"You have €45. The exchange rate is £1 = €1.18. How many pounds is this worth?", options:["£38.14","£53.10","£43.82","£40.00"], correct:0, explanation:"45 / 1.18 = 38.14, rounded to the nearest penny." },
           { id:"mat-money-3", prompt:"£220 is converted to US dollars at a rate of £1 = $1.32. How many dollars is this?", options:["$290.40","$250.00","$266.20","$300.00"], correct:0, explanation:"220 x 1.32 = 290.40." },
-          { id:"mat-money-4", prompt:"A shared taxi bill of £342, plus a £27 tip, is split between 9 people. How much does each person pay?", options:["£41","£38","£45","£39"], correct:0, explanation:"342 + 27 = 369, and 369 / 9 = 41." }
+          { id:"mat-money-4", prompt:"A shared taxi bill of £342, plus a £27 tip, is split between 9 people. How much does each person pay?", options:["£41","£38","£45","£39"], correct:0, explanation:"342 + 27 = 369, and 369 / 9 = 41." },
+          { id:"mat-money-5", prompt:"A meal costs £259, plus a £21 delivery charge, is split between 7 people. How much does each person pay?", options:["£40","£38","£42","£36"], correct:0, explanation:"259 + 21 = 280, and 280 / 7 = 40." },
+          { id:"mat-money-6", prompt:"£150 is converted to euros at a rate of £1 = €1.14. How many euros is this?", options:["€171","€164","€178","€150"], correct:0, explanation:"150 x 1.14 = 171." },
+          { id:"mat-money-7", prompt:"A meal costs £137.50, plus a £12 tip, split equally between 5 people. How much does each person pay?", options:["£29.90","£27.50","£31.10","£25.90"], correct:0, explanation:"137.50 + 12 = 149.50, and 149.50 / 5 = 29.90." },
+          { id:"mat-money-8", prompt:"You have €14. The exchange rate is £1 = €1.16. How many pounds is this worth?", options:["£12.07","£16.24","£13.50","£10.85"], correct:0, explanation:"14 / 1.16 = 12.07, rounded to the nearest penny." },
+          { id:"mat-money-9", prompt:"£200 is converted to US dollars at a rate of £1 = $1.28. How many dollars is this?", options:["$256","$228","$264","$240"], correct:0, explanation:"200 x 1.28 = 256." }
         ]
       },
       {
@@ -386,7 +508,12 @@ const DATA = {
           { id:"mat-disc-1", prompt:"A bike costs £340 and is reduced by 15%. What is the sale price?", options:["£289","£51","£300","£280"], correct:0, explanation:"340 x 0.15 = 51, and 340 - 51 = 289." },
           { id:"mat-disc-2", prompt:"A phone was £480, now £360. What percentage discount is this?", options:["25%","20%","30%","15%"], correct:0, explanation:"The reduction is £120, and (120 / 480) x 100 = 25%." },
           { id:"mat-disc-3", prompt:"A laptop costs £600. First reduced by 30%, then a further 5% off the new price. What is the final price?", options:["£399","£390","£405","£410"], correct:0, explanation:"600 x 0.7 = 420, then 420 x 0.95 = 399.", hint:"Apply the second discount to the already reduced price, not the original £600." },
-          { id:"mat-disc-4", prompt:"A jacket costs £95 and is reduced by 20%. What is the sale price?", options:["£76","£19","£80","£72"], correct:0, explanation:"95 x 0.2 = 19, and 95 - 19 = 76." }
+          { id:"mat-disc-4", prompt:"A jacket costs £95 and is reduced by 20%. What is the sale price?", options:["£76","£19","£80","£72"], correct:0, explanation:"95 x 0.2 = 19, and 95 - 19 = 76." },
+          { id:"mat-disc-5", prompt:"A jumper costs £85 and is reduced by 40%. What is the sale price?", options:["£51","£34","£55","£45"], correct:0, explanation:"85 x 0.4 = 34, and 85 - 34 = 51." },
+          { id:"mat-disc-6", prompt:"A book costs £48 and is reduced by 12.5%. How much is the discount in pounds?", options:["£6","£12","£4","£8"], correct:0, explanation:"48 x 0.125 = 6." },
+          { id:"mat-disc-7", prompt:"A watch costs £640 and is reduced by 22%. What is the sale price?", options:["£499.20","£480.00","£512.80","£460.00"], correct:0, explanation:"640 x 0.22 = 140.80, and 640 - 140.80 = 499.20." },
+          { id:"mat-disc-8", prompt:"A price drops from £64 to £48. What percentage discount is this?", options:["25%","20%","30%","16%"], correct:0, explanation:"The reduction is £16, and (16 / 64) x 100 = 25%." },
+          { id:"mat-disc-9", prompt:"A television costs £250, first reduced by 20%, then a further 5% off the new price. What is the final price?", options:["£190","£188","£200","£175"], correct:0, explanation:"250 x 0.8 = 200, then 200 x 0.95 = 190." }
         ]
       },
       {
@@ -401,7 +528,12 @@ const DATA = {
           { id:"mat-ratio-1", prompt:"Share £117 in the ratio 4:5. What is the smaller share?", options:["£52","£65","£58","£45"], correct:0, explanation:"Total parts = 9, one part = 13, smaller share = 4 x 13 = 52." },
           { id:"mat-ratio-2", prompt:"A mix uses water to juice in the ratio 3:1. If 90ml of juice is used, how much water is needed?", options:["270ml","90ml","180ml","360ml"], correct:0, explanation:"One part = 90ml, and water = 3 x 90 = 270ml." },
           { id:"mat-ratio-3", prompt:"£315 is shared in the ratio 2:3:4. What is the middle share?", options:["£105","£70","£140","£90"], correct:0, explanation:"Total parts = 9, one part = 35, middle share = 3 x 35 = 105." },
-          { id:"mat-ratio-4", prompt:"A map has a scale of 1cm to 15km. If two towns are 7cm apart on the map, how far apart are they in real life?", options:["105km","22km","150km","98km"], correct:0, explanation:"7 x 15 = 105km." }
+          { id:"mat-ratio-4", prompt:"A map has a scale of 1cm to 15km. If two towns are 7cm apart on the map, how far apart are they in real life?", options:["105km","22km","150km","98km"], correct:0, explanation:"7 x 15 = 105km." },
+          { id:"mat-ratio-5", prompt:"Share £96 in the ratio 3:5. What is the smaller share?", options:["£36","£60","£48","£24"], correct:0, explanation:"Total parts = 8, one part = 12, smaller share = 3 x 12 = 36." },
+          { id:"mat-ratio-6", prompt:"A mix uses sand to cement in the ratio 4:1. If 40kg of sand is used, how much cement is needed?", options:["10kg","8kg","12kg","16kg"], correct:0, explanation:"One part = 40 / 4 = 10, so cement = 1 x 10 = 10kg." },
+          { id:"mat-ratio-7", prompt:"£270 is shared in the ratio 2:3:4. What is the largest share?", options:["£120","£90","£60","£108"], correct:0, explanation:"Total parts = 9, one part = 30, largest share = 4 x 30 = 120." },
+          { id:"mat-ratio-8", prompt:"A model bridge is built at a scale where 6cm represents 54m of the real bridge. How many metres does 1cm represent?", options:["9m","8m","10m","6m"], correct:0, explanation:"54 / 6 = 9m." },
+          { id:"mat-ratio-9", prompt:"£108 is shared in the ratio 4:5. What is the larger share?", options:["£60","£48","£54","£72"], correct:0, explanation:"Total parts = 9, one part = 12, larger share = 5 x 12 = 60." }
         ]
       },
       {
@@ -416,7 +548,11 @@ const DATA = {
           { id:"mat-jt-1", prompt:"A train leaves at 07:25 and arrives at 10:10. How long is the journey?", options:["2h 45min","2h 35min","2h 55min","3h 5min"], correct:0, explanation:"07:25 to 08:00 is 35 minutes, 08:00 to 10:00 is 2 hours, 10:00 to 10:10 is 10 minutes, total 2h 45min." },
           { id:"mat-jt-2", prompt:"A coach leaves at 13:40. The journey takes 2 hours 35 minutes. What time does it arrive?", options:["16:15","16:05","16:25","15:55"], correct:0, explanation:"13:40 to 14:00 uses 20 minutes, leaving 2h 15min. 14:00 plus 2h 15min is 16:15." },
           { id:"mat-jt-3", prompt:"A bus arrives at 15:20. The journey took 1 hour 50 minutes. What time did it depart?", options:["13:30","13:40","13:20","14:10"], correct:0, explanation:"15:20 minus 1 hour 50 minutes is 13:30." },
-          { id:"mat-jt-4", prompt:"A train leaves at 13:45. The journey takes 2 hours 50 minutes, with a 15 minute delay along the way. What time does it arrive?", options:["16:50","16:35","17:05","16:40"], correct:0, explanation:"13:45 plus 2h 50min is 16:35, then add the 15 minute delay to get 16:50.", hint:"Add the journey time first, then add the delay on top." }
+          { id:"mat-jt-4", prompt:"A train leaves at 13:45. The journey takes 2 hours 50 minutes, with a 15 minute delay along the way. What time does it arrive?", options:["16:50","16:35","17:05","16:40"], correct:0, explanation:"13:45 plus 2h 50min is 16:35, then add the 15 minute delay to get 16:50.", hint:"Add the journey time first, then add the delay on top." },
+          { id:"mat-jt-5", prompt:"A train leaves at 08:45 and arrives at 11:20. How long is the journey?", options:["2h 35min","2h 45min","2h 25min","3h 5min"], correct:0, explanation:"08:45 to 09:00 is 15 minutes, 09:00 to 11:00 is 2 hours, 11:00 to 11:20 is 20 minutes, total 2h 35min." },
+          { id:"mat-jt-6", prompt:"A coach leaves at 14:50. The journey takes 1 hour 55 minutes. What time does it arrive?", options:["16:45","16:35","16:55","16:25"], correct:0, explanation:"14:50 to 15:00 uses 10 minutes, leaving 1h 45min. 15:00 plus 1h 45min is 16:45." },
+          { id:"mat-jt-7", prompt:"A bus leaves at 09:10 and arrives at 11:35. How long is the journey?", options:["2h 25min","2h 35min","2h 15min","1h 55min"], correct:0, explanation:"09:10 to 10:00 is 50 minutes, 10:00 to 11:00 is 1 hour, 11:00 to 11:35 is 35 minutes, total 2h 25min." },
+          { id:"mat-jt-8", prompt:"A bus arrives at 16:10. The journey took 2 hours 20 minutes. What time did it depart?", options:["13:50","14:00","13:40","14:10"], correct:0, explanation:"16:10 minus 2 hours 20 minutes is 13:50." }
         ]
       },
       {
@@ -431,7 +567,12 @@ const DATA = {
           { id:"mat-shape-1", prompt:"A rectangle is 21m long and 8m wide. What is its area?", options:["168m\u00b2","29m\u00b2","84m\u00b2","175m\u00b2"], correct:0, explanation:"21 x 8 = 168m\u00b2." },
           { id:"mat-shape-2", prompt:"A triangle has a base of 20cm and a height of 13cm. What is its area?", options:["130cm\u00b2","260cm\u00b2","33cm\u00b2","150cm\u00b2"], correct:0, explanation:"(20 x 13) / 2 = 130cm\u00b2." },
           { id:"mat-shape-3", prompt:"A box is 12cm long, 7cm wide and 4cm high. What is its volume?", options:["336cm\u00b3","168cm\u00b3","252cm\u00b3","288cm\u00b3"], correct:0, explanation:"12 x 7 x 4 = 336cm\u00b3." },
-          { id:"mat-shape-4", prompt:"A rectangular field is 45m long. Its area is 900m\u00b2. What is its width?", options:["20m","45m","855m","25m"], correct:0, explanation:"900 / 45 = 20m.", hint:"Divide the area by the length to find the missing width." }
+          { id:"mat-shape-4", prompt:"A rectangular field is 45m long. Its area is 900m\u00b2. What is its width?", options:["20m","45m","855m","25m"], correct:0, explanation:"900 / 45 = 20m.", hint:"Divide the area by the length to find the missing width." },
+          { id:"mat-shape-5", prompt:"A rectangle is 16m long and 9m wide. What is its area?", options:["144m\u00b2","25m\u00b2","72m\u00b2","150m\u00b2"], correct:0, explanation:"16 x 9 = 144m\u00b2." },
+          { id:"mat-shape-6", prompt:"A triangle has a base of 18cm and a height of 7cm. What is its area?", options:["63cm\u00b2","126cm\u00b2","25cm\u00b2","90cm\u00b2"], correct:0, explanation:"(18 x 7) / 2 = 63cm\u00b2." },
+          { id:"mat-shape-7", prompt:"A box is 8cm long, 6cm wide and 5cm high. What is its volume?", options:["240cm\u00b3","19cm\u00b3","120cm\u00b3","180cm\u00b3"], correct:0, explanation:"8 x 6 x 5 = 240cm\u00b3." },
+          { id:"mat-shape-8", prompt:"A tank has a volume of 36,000cm\u00b3. How many litres can it hold?", options:["36 litres","3.6 litres","360 litres","3,600 litres"], correct:0, explanation:"36,000 / 1000 = 36 litres." },
+          { id:"mat-shape-9", prompt:"A water tank measures 80cm by 50cm by 40cm. How many litres does it hold when full?", options:["160 litres","16 litres","1,600 litres","80 litres"], correct:0, explanation:"80 x 50 x 40 = 160,000cm\u00b3, and 160,000 / 1000 = 160 litres." }
         ]
       },
       {
@@ -446,7 +587,11 @@ const DATA = {
           { id:"mat-alg-1", prompt:"Solve: 5x = 45", options:["9","225","40","50"], correct:0, explanation:"45 / 5 = 9." },
           { id:"mat-alg-2", prompt:"I think of a number, multiply by 6, then subtract 8, and the answer is 34. What was the number?", options:["7","4","42","6"], correct:0, explanation:"Reverse the steps: 34 + 8 = 42, then 42 / 6 = 7.", hint:"Undo the steps in reverse order, add first, then divide." },
           { id:"mat-alg-3", prompt:"Work out the missing number: (33 + 7) / 5 = ?", options:["8","9","7","10"], correct:0, explanation:"33 + 7 = 40, and 40 / 5 = 8." },
-          { id:"mat-alg-4", prompt:"6 x ? = 66. What is the missing number?", options:["11","10","12","9"], correct:0, explanation:"66 / 6 = 11." }
+          { id:"mat-alg-4", prompt:"6 x ? = 66. What is the missing number?", options:["11","10","12","9"], correct:0, explanation:"66 / 6 = 11." },
+          { id:"mat-alg-5", prompt:"Solve: 3x - 5 = 19", options:["8","7","9","6"], correct:0, explanation:"Add 5 to both sides, 3x = 24, then divide by 3, x = 8." },
+          { id:"mat-alg-6", prompt:"A number is doubled, then 7 is added, giving 29. What was the original number?", options:["11","14","9","12"], correct:0, explanation:"Reverse the steps: 29 - 7 = 22, then 22 / 2 = 11." },
+          { id:"mat-alg-7", prompt:"Solve: 4x + 6 = 30", options:["6","5","7","8"], correct:0, explanation:"Subtract 6 from both sides, 4x = 24, then divide by 4, x = 6." },
+          { id:"mat-alg-8", prompt:"Solve: 63 / x = 7", options:["9","7","56","70"], correct:0, explanation:"63 / 7 = 9, so x = 9." }
         ]
       },
       {
@@ -461,7 +606,12 @@ const DATA = {
           { id:"mat-data-1", prompt:"Find the mean of: 18, 24, 30, 36, 42", options:["30","28","32","26"], correct:0, explanation:"The total is 150, and 150 / 5 = 30." },
           { id:"mat-data-2", prompt:"Find the median of: 8, 15, 19, 22, 27, 33, 41", options:["22","19","27","15"], correct:0, explanation:"Once ordered, the middle (4th) value out of 7 is 22." },
           { id:"mat-data-3", prompt:"The rule for this sequence is: multiply by 2, then add 1. What comes after 47?", options:["95","94","96","93"], correct:0, explanation:"47 x 2 = 94, then 94 + 1 = 95." },
-          { id:"mat-data-4", prompt:"What is the square root of 324?", options:["18","17","19","16"], correct:0, explanation:"18 x 18 = 324." }
+          { id:"mat-data-4", prompt:"What is the square root of 324?", options:["18","17","19","16"], correct:0, explanation:"18 x 18 = 324." },
+          { id:"mat-data-5", prompt:"Find the mean of: 8, 12, 16, 20, 24", options:["16","18","14","20"], correct:0, explanation:"The total is 80, and 80 / 5 = 16." },
+          { id:"mat-data-6", prompt:"Find the median of: 4, 7, 9, 15, 18, 22, 31", options:["15","9","18","22"], correct:0, explanation:"Once ordered, the middle (4th) value out of 7 is 15." },
+          { id:"mat-data-7", prompt:"Which number is the mode of this list: 5, 8, 5, 9, 5, 8, 3?", options:["5","8","9","3"], correct:0, explanation:"5 appears 3 times, more often than any other number, so 5 is the mode." },
+          { id:"mat-data-8", prompt:"The rule for this sequence is: subtract 8 each time. What comes after 76?", options:["68","84","60","72"], correct:0, explanation:"76 - 8 = 68." },
+          { id:"mat-data-9", prompt:"What is the square root of 289?", options:["17","16","18","15"], correct:0, explanation:"17 x 17 = 289." }
         ]
       },
       {
@@ -476,7 +626,79 @@ const DATA = {
           { id:"mat-fdp-1", prompt:"Simplify 28/35", options:["4/5","3/4","2/3","5/6"], correct:0, explanation:"Both 28 and 35 divide by 7, giving 4/5." },
           { id:"mat-fdp-2", prompt:"What is 45% of 180?", options:["81","45","90","72"], correct:0, explanation:"45% is 0.45, and 0.45 x 180 = 81." },
           { id:"mat-fdp-3", prompt:"Write 5/8 as a percentage.", options:["62.5%","58%","58.5%","60%"], correct:0, explanation:"5 divided by 8 is 0.625, which is 62.5%." },
-          { id:"mat-fdp-4", prompt:"Which fraction is equivalent to 0.6?", options:["3/5","6/100","2/3","3/6"], correct:0, explanation:"0.6 equals 6/10, which simplifies to 3/5." }
+          { id:"mat-fdp-4", prompt:"Which fraction is equivalent to 0.6?", options:["3/5","6/100","2/3","3/6"], correct:0, explanation:"0.6 equals 6/10, which simplifies to 3/5." },
+          { id:"mat-fdp-5", prompt:"What is 11/25 as a decimal?", options:["0.44","0.25","0.55","0.11"], correct:0, explanation:"11 divided by 25 is 0.44." },
+          { id:"mat-fdp-6", prompt:"Which decimal is the largest: 0.45, 0.5, 0.65, 0.6?", options:["0.65","0.5","0.6","0.45"], correct:0, explanation:"0.65 has the highest value of the four." },
+          { id:"mat-fdp-7", prompt:"What is 35% of 260?", options:["91","78","104","86"], correct:0, explanation:"35% is 0.35, and 0.35 x 260 = 91." },
+          { id:"mat-fdp-8", prompt:"180 out of 240 is what percentage?", options:["75%","60%","80%","70%"], correct:0, explanation:"180 / 240 = 0.75, which is 75%." },
+          { id:"mat-fdp-9", prompt:"A price of £90 is increased by 30%. What is the new price?", options:["£117","£120","£108","£99"], correct:0, explanation:"90 x 0.3 = 27, and 90 + 27 = 117." }
+        ]
+      }
+    ]
+  },
+
+  nonverbal: {
+    label: "Non-Verbal Reasoning",
+    note: "This covers shape sequences, reflections, rotations and matrices with real diagrams. Cube nets and 3D folding are much harder to do well as a flat quiz, so those are best left to the tuition centre's materials alongside this.",
+    topics: [
+      {
+        id: "nv-seq",
+        name: "Shape sequences",
+        timeSeconds: 60,
+        training: {
+          concept: "Non-verbal sequences repeat a shape, alternate between two versions of it, or grow by a fixed amount each time. Look at exactly what changes from one shape to the next, then apply that same change to find what comes next.",
+          worked: "Filled circle, outline circle, filled circle, outline circle, filled circle, ? Step 1: the pattern alternates between filled and outline. Step 2: after a filled circle should come an outline circle. Step 3: the answer is an outline circle."
+        },
+        questions: [
+          { id:"nv-seq-1", prompt:"What comes next in the pattern?", diagram: diagramRow([CIRCLE_FILL, CIRCLE_OUTLINE, CIRCLE_FILL, CIRCLE_OUTLINE, CIRCLE_FILL, QMARK]), visual:true, options:[svgWrap(CIRCLE_OUTLINE),svgWrap(CIRCLE_FILL),svgWrap(groupInner("triangle",1)),svgWrap(SQUARE_OUTLINE)], correct:0, explanation:"The pattern alternates filled and outline circles, so an outline circle comes next." },
+          { id:"nv-seq-2", prompt:"How many triangles come next in this growing pattern?", diagram: diagramRow([groupInner("triangle",1), groupInner("triangle",2), groupInner("triangle",3), groupInner("triangle",4), QMARK]), visual:true, options:[svgWrap(groupInner("triangle",5)),svgWrap(groupInner("triangle",3)),svgWrap(groupInner("triangle",4)),svgWrap(groupInner("triangle",6))], correct:0, explanation:"The pattern adds one triangle each time, so five triangles come next.", hint:"Count how many shapes are added from one box to the next." },
+          { id:"nv-seq-3", prompt:"This arrow rotates 90 degrees clockwise each step. What comes next?", diagram: diagramRow([ARROW_UP, ARROW_RIGHT, ARROW_DOWN, ARROW_LEFT, QMARK]), visual:true, options:[svgWrap(ARROW_UP),svgWrap(ARROW_RIGHT),svgWrap(ARROW_LEFT),svgWrap(ARROW_DOWN)], correct:0, explanation:"After a full clockwise turn back to left, the next 90 degree turn returns the arrow to pointing up." },
+          { id:"nv-seq-4", prompt:"How many circles come next in this growing pattern?", diagram: diagramRow([groupInner("circle",1), groupInner("circle",2), groupInner("circle",3), QMARK]), visual:true, options:[svgWrap(groupInner("circle",4)),svgWrap(groupInner("circle",2)),svgWrap(groupInner("circle",3)),svgWrap(groupInner("circle",5))], correct:0, explanation:"The pattern adds one circle each time, so four circles come next." }
+        ]
+      },
+      {
+        id: "nv-reflect",
+        name: "Reflections",
+        timeSeconds: 60,
+        training: {
+          concept: "A reflection flips a shape left to right, as if a mirror were placed down the middle. Anything marked on one side, like a dot in a corner, moves to the matching position on the other side, while the top and bottom stay the same.",
+          worked: "A square has a dot in its top right corner. Step 1: imagine a mirror line down the middle. Step 2: the dot flips across to the top left corner. Step 3: everything else about the square stays the same."
+        },
+        questions: [
+          { id:"nv-refl-1", prompt:"Which option shows this shape reflected left to right, like a mirror image?", diagram: svgWrap(squareWithDot("tr"), 90), visual:true, options:[svgWrap(squareWithDot("tl")),svgWrap(squareWithDot("tr")),svgWrap(squareWithDot("br")),svgWrap(squareWithDot("bl"))], correct:0, explanation:"A left-right flip moves the dot from the top right corner to the top left corner." },
+          { id:"nv-refl-2", prompt:"Which option shows this shape reflected left to right, like a mirror image?", diagram: svgWrap(squareWithDot("bl"), 90), visual:true, options:[svgWrap(squareWithDot("br")),svgWrap(squareWithDot("bl")),svgWrap(squareWithDot("tl")),svgWrap(squareWithDot("tr"))], correct:0, explanation:"A left-right flip moves the dot from the bottom left corner to the bottom right corner." },
+          { id:"nv-refl-3", prompt:"Which option shows this triangle reflected left to right, like a mirror image?", diagram: svgWrap(triCorner("bl"), 90), visual:true, options:[svgWrap(triCorner("br")),svgWrap(triCorner("bl")),svgWrap(triCorner("tl")),svgWrap(triCorner("tr"))], correct:0, explanation:"The right-angle corner moves from bottom left to bottom right, while staying on the bottom.", hint:"The top and bottom of the shape don't swap, only left and right." },
+          { id:"nv-refl-4", prompt:"Which option shows this triangle reflected left to right, like a mirror image?", diagram: svgWrap(triCorner("tl"), 90), visual:true, options:[svgWrap(triCorner("tr")),svgWrap(triCorner("tl")),svgWrap(triCorner("bl")),svgWrap(triCorner("br"))], correct:0, explanation:"The right-angle corner moves from top left to top right, while staying on the top." }
+        ]
+      },
+      {
+        id: "nv-rotate",
+        name: "Rotations",
+        timeSeconds: 60,
+        training: {
+          concept: "Rotating a shape turns it around its centre point, like turning a steering wheel. Work out how many degrees it has turned and in which direction, clockwise or anticlockwise, then apply the same turn to find the answer.",
+          worked: "An arrow points up. Rotated 90 degrees clockwise, clockwise motion from up goes to the right, so the arrow now points right."
+        },
+        questions: [
+          { id:"nv-rot-1", prompt:"This arrow is rotated 90 degrees clockwise. What does it look like next?", diagram: svgWrap(ARROW_UP, 90), visual:true, options:[svgWrap(ARROW_RIGHT),svgWrap(ARROW_LEFT),svgWrap(ARROW_DOWN),svgWrap(ARROW_UP)], correct:0, explanation:"Clockwise from pointing up takes the arrow to pointing right." },
+          { id:"nv-rot-2", prompt:"This arrow is rotated 90 degrees anticlockwise. What does it look like next?", diagram: svgWrap(ARROW_RIGHT, 90), visual:true, options:[svgWrap(ARROW_UP),svgWrap(ARROW_DOWN),svgWrap(ARROW_LEFT),svgWrap(ARROW_RIGHT)], correct:0, explanation:"Anticlockwise from pointing right takes the arrow back to pointing up.", hint:"Anticlockwise is the opposite direction to the way clock hands move." },
+          { id:"nv-rot-3", prompt:"This triangle is rotated 180 degrees. What does it look like next?", diagram: svgWrap(triCorner("bl"), 90), visual:true, options:[svgWrap(triCorner("tr")),svgWrap(triCorner("bl")),svgWrap(triCorner("br")),svgWrap(triCorner("tl"))], correct:0, explanation:"A 180 degree turn moves the right-angle corner to the exact opposite corner, from bottom left to top right." },
+          { id:"nv-rot-4", prompt:"This arrow is rotated 90 degrees clockwise. What does it look like next?", diagram: svgWrap(ARROW_DOWN, 90), visual:true, options:[svgWrap(ARROW_LEFT),svgWrap(ARROW_RIGHT),svgWrap(ARROW_UP),svgWrap(ARROW_DOWN)], correct:0, explanation:"Clockwise from pointing down takes the arrow to pointing left." }
+        ]
+      },
+      {
+        id: "nv-matrix",
+        name: "Odd one out & matrices",
+        timeSeconds: 60,
+        training: {
+          concept: "These questions ask you to spot which shape breaks a pattern, or to complete a grid where each row follows its own rule. Check every shape against the others before deciding, and for grids, check what changes along the row.",
+          worked: "Four squares are outlined and one is filled solid. The filled one doesn't match the others, so it's the odd one out."
+        },
+        questions: [
+          { id:"nv-mx-1", prompt:"Which shape is the odd one out?", diagram: diagramRow([SQUARE_OUTLINE, SQUARE_OUTLINE, SQUARE_FILL, SQUARE_OUTLINE]), options:["First","Second","Third","Fourth"], correct:2, explanation:"The third shape is filled solid while the rest are outlines only." },
+          { id:"nv-mx-2", prompt:"Looking at the pattern in each row, which shape completes the grid?", diagram: stackRows([ diagramRow([groupInner("circle",1), groupInner("circle",2), groupInner("circle",3)]), diagramRow([groupInner("triangle",1), groupInner("triangle",2), groupInner("triangle",3)]), diagramRow([groupInner("square",1), groupInner("square",2), QMARK]) ]), visual:true, options:[svgWrap(groupInner("square",3)),svgWrap(groupInner("square",2)),svgWrap(groupInner("square",1)),svgWrap(groupInner("square",4))], correct:0, explanation:"Every row grows by one shape moving left to right, so the missing shape is three squares.", hint:"Look along the row, not up and down, to find the rule." },
+          { id:"nv-mx-3", prompt:"Which shape is the odd one out?", diagram: diagramRow([CIRCLE_FILL, CIRCLE_FILL, CIRCLE_FILL, CIRCLE_OUTLINE]), options:["First","Second","Third","Fourth"], correct:3, explanation:"The fourth shape is an outline while the rest are filled solid." },
+          { id:"nv-mx-4", prompt:"The first shape relates to the second in the same way the third relates to the missing fourth. Which option completes it?", diagram: diagramRow([CIRCLE_FILL, CIRCLE_SMALL, SQUARE_FILL, QMARK]), visual:true, options:[svgWrap(SQUARE_SMALL),svgWrap(SQUARE_FILL),svgWrap(CIRCLE_SMALL),svgWrap(CIRCLE_FILL)], correct:0, explanation:"The relationship is 'shrink the same shape', so the large square becomes a small square." }
         ]
       }
     ]
@@ -484,8 +706,13 @@ const DATA = {
 };
 
 /* Flatten helpers */
+const SUBJECT_KEYS = ["english","verbal","maths","nonverbal"];
 function allTopics(){
-  return [...DATA.english.topics.map(t=>({...t,subject:"english"})), ...DATA.maths.topics.map(t=>({...t,subject:"maths"}))];
+  let out = [];
+  SUBJECT_KEYS.forEach(key=>{
+    out = out.concat(DATA[key].topics.map(t=>({...t, subject:key})));
+  });
+  return out;
 }
 function getTopic(id){ return allTopics().find(t=>t.id===id); }
 
@@ -544,7 +771,7 @@ function renderHeader(){
     <header class="top">
       <div class="brand">
         <h1>Aila's 11+ Basecamp</h1>
-        <p>English and Maths, one topic at a time, all the way to exam day.</p>
+        <p>English, Verbal Reasoning, Maths and Non-Verbal Reasoning, one topic at a time, all the way to exam day.</p>
       </div>
       <div class="countdown">
         <div class="num">${days}</div>
@@ -615,7 +842,9 @@ function renderTestHero(){
       <div class="choice-group" data-group="subject">
         <span class="setup-label">Subject</span>
         <button class="choice-btn" data-val="english">English</button>
+        <button class="choice-btn" data-val="verbal">Verbal</button>
         <button class="choice-btn" data-val="maths">Maths</button>
+        <button class="choice-btn" data-val="nonverbal">Non-verbal</button>
         <button class="choice-btn" data-val="mixed">Mixed</button>
       </div>
       <div class="choice-group" data-group="length">
@@ -660,8 +889,14 @@ function renderSubjectPanel(subjectKey){
   const subject = DATA[subjectKey];
   const panel = document.createElement("div");
   panel.className = "subject-panel";
-  const icon = subjectKey==="english" ? "\u{1F4D6}" : "\u{1F522}";
-  panel.innerHTML = `<h2>${icon} ${subject.label}</h2>`;
+  const icons = { english:"\u{1F4D6}", verbal:"\u{1F5E3}\u{FE0F}", maths:"\u{1F522}", nonverbal:"\u{25FB}\u{FE0F}" };
+  panel.innerHTML = `<h2>${icons[subjectKey]||""} ${subject.label}</h2>`;
+  if(subject.note){
+    const note = document.createElement("p");
+    note.style.cssText = "font-size:12px;color:var(--mist);margin:-8px 0 12px;line-height:1.5;";
+    note.textContent = subject.note;
+    panel.appendChild(note);
+  }
   subject.topics.forEach(topic=>{
     const ts = topicState(topic.id);
     const pct = ts.attempts>0 ? Math.round((ts.correct/ts.attempts)*100) : 0;
@@ -700,8 +935,7 @@ function renderDashboard(){
 
   const grid = document.createElement("div");
   grid.className = "grid-two";
-  grid.appendChild(renderSubjectPanel("english"));
-  grid.appendChild(renderSubjectPanel("maths"));
+  SUBJECT_KEYS.forEach(key=> grid.appendChild(renderSubjectPanel(key)));
   wrap.appendChild(grid);
 
   grid.querySelectorAll("[data-train]").forEach(b=>b.addEventListener("click", ()=>startTraining(b.dataset.train)));
@@ -743,7 +977,7 @@ function renderTraining(){
     topicState(topic.id).trained = true;
     saveState();
     if(isMini){
-      startQuiz([topic.id], "mini", false, 4);
+      startMiniRound();
     } else {
       startQuiz([topic.id], "practice", false);
     }
@@ -763,11 +997,16 @@ function shuffle(arr){
   }
   return a;
 }
+/* Randomizes the display order of a question's options each time it is
+   served, so the correct answer's position isn't predictable. */
+function withShuffledOptions(q){
+  const order = shuffle(q.options.map((_,i)=>i));
+  return { ...q, options: order.map(i=>q.options[i]), correct: order.indexOf(q.correct) };
+}
 function buildTestSet(subjectKey, length){
-  let topics;
-  if(subjectKey==="english") topics = DATA.english.topics.map(t=>({...t,subject:"english"}));
-  else if(subjectKey==="maths") topics = DATA.maths.topics.map(t=>({...t,subject:"maths"}));
-  else topics = allTopics();
+  const topics = SUBJECT_KEYS.includes(subjectKey)
+    ? DATA[subjectKey].topics.map(t=>({...t, subject:subjectKey}))
+    : allTopics();
 
   // pull roughly equal spread across topics, favouring ones with lower accuracy first
   const weighted = shuffle(topics).sort((a,b)=>topicAccuracy(a.id)-topicAccuracy(b.id));
@@ -775,7 +1014,7 @@ function buildTestSet(subjectKey, length){
 }
 function pickSpread(topicsSortedWeak, length){
   // round robin across topics, weakest topics get first pick
-  const buckets = topicsSortedWeak.map(t=>shuffle(t.questions).map(q=>({...q, topicId:t.id, topicName:t.name, timeSeconds:t.timeSeconds||60})));
+  const buckets = topicsSortedWeak.map(t=>shuffle(t.questions).map(q=>({...withShuffledOptions(q), topicId:t.id, topicName:t.name, timeSeconds:t.timeSeconds||60})));
   const out = [];
   let i = 0;
   while(out.length<length){
@@ -791,8 +1030,25 @@ function pickSpread(topicsSortedWeak, length){
 }
 function buildQuestionSet(topicId, limit){
   const topic = getTopic(topicId);
-  const qs = shuffle(topic.questions).map(q=>({...q, topicId:topic.id, topicName:topic.name, timeSeconds:topic.timeSeconds||60}));
+  const qs = shuffle(topic.questions).map(q=>({...withShuffledOptions(q), topicId:topic.id, topicName:topic.name, timeSeconds:topic.timeSeconds||60}));
   return limit ? qs.slice(0, limit) : qs;
+}
+
+const MINI_ROUND_SIZE = 4;
+const MINI_ROUND_CAP = 3;
+
+function startMiniRound(){
+  if(!MINI || !MINI.currentTopicId){ VIEW = { name:"dashboard" }; render(); return; }
+  const topic = getTopic(MINI.currentTopicId);
+  const wrongIds = MINI.lastWrongIds || [];
+  const preferred = topic.questions.filter(q=>wrongIds.includes(q.id));
+  const rest = shuffle(topic.questions.filter(q=>!wrongIds.includes(q.id)));
+  const targetSize = Math.min(topic.questions.length, Math.max(MINI_ROUND_SIZE, preferred.length));
+  const fillCount = Math.max(0, targetSize - preferred.length);
+  const combined = shuffle([...preferred, ...rest.slice(0, fillCount)]);
+  const questions = combined.map(q=>({...withShuffledOptions(q), topicId:topic.id, topicName:topic.name, timeSeconds:topic.timeSeconds||60}));
+  VIEW = { name:"quiz", mode:"mini", questions, index:0, answers:[], timeLeft:null, locked:false, roundNum: MINI.roundNum };
+  render();
 }
 
 /* ---------------------------------------------------------------------
@@ -853,6 +1109,12 @@ function renderQuiz(){
     tip.innerHTML = `<span class="icon">\u{1F4A1}</span><span class="txt">${randomTip()}</span>`;
     wrap.appendChild(tip);
   }
+  if(VIEW.mode==="mini" && VIEW.roundNum>1 && VIEW.index===0){
+    const roundTip = document.createElement("div");
+    roundTip.className = "tip-banner";
+    roundTip.innerHTML = `<span class="icon">\u{1F501}</span><span class="txt">Round ${VIEW.roundNum} of ${MINI_ROUND_CAP}, let's nail down the ones missed last time.</span>`;
+    wrap.appendChild(roundTip);
+  }
 
   const paper = document.createElement("div");
   paper.className = "paper";
@@ -864,14 +1126,17 @@ function renderQuiz(){
   }
 
   const promptHtml = q.prompt.replace(/\n\n/g,"<br><br>");
-  const modeLabel = VIEW.mode==="timed" ? "timed" : (VIEW.mode==="mini" ? "mini training" : "practice");
+  const modeLabel = VIEW.mode==="timed" ? "timed" : (VIEW.mode==="mini" ? `mini training, round ${VIEW.roundNum||1}` : "practice");
+  const diagramHtml = q.diagram ? `<div class="diagram-box">${q.diagram}</div>` : "";
+  const optionsClass = q.visual ? "options visual" : "options";
 
   paper.innerHTML = `
     <div class="topic-tag">${q.topicName} \u00b7 ${modeLabel} \u00b7 question ${VIEW.index+1} of ${VIEW.questions.length}</div>
     ${timerHtml}
     <div class="qtext">${promptHtml}</div>
+    ${diagramHtml}
     ${q.hint ? `<div class="hint-row"><button class="hint-toggle" id="hintBtn">Need a hint?</button><div class="hint-box" id="hintBox">${q.hint}</div></div>` : `<div class="hint-row"></div>`}
-    <div class="options">
+    <div class="${optionsClass}">
       ${q.options.map((opt,i)=>`<button class="option" data-i="${i}"><span class="tag">${String.fromCharCode(65+i)}</span><span>${opt}</span></button>`).join("")}
     </div>
     <div id="feedbackSlot"></div>
@@ -900,7 +1165,7 @@ function submitAnswer(chosenIndex){
   clearInterval(quizTimer);
   const q = VIEW.questions[VIEW.index];
   const isCorrect = chosenIndex === q.correct;
-  VIEW.answers.push({ topicId:q.topicId, topicName:q.topicName, prompt:q.prompt, correct:isCorrect });
+  VIEW.answers.push({ id:q.id, topicId:q.topicId, topicName:q.topicName, prompt:q.prompt, correct:isCorrect });
 
   const ts = topicState(q.topicId);
   ts.attempts += 1;
@@ -1052,17 +1317,37 @@ function runMiniStep(){
   }
   const topicId = MINI.topics[MINI.index];
   MINI.index += 1;
+  MINI.currentTopicId = topicId;
+  MINI.roundNum = 1;
+  MINI.lastWrongIds = [];
   VIEW = { name:"training", topicId, returnTo:"mini" };
   render();
 }
 
-/* wire mini training continuation after a mini quiz finishes */
+/* wire mini training continuation: retry the topic on anything still wrong,
+   up to MINI_ROUND_CAP rounds, before moving on to the next weak topic.
+   Guarded against double-clicks and stale MINI state from rapid input. */
+let miniAdvancing = false;
 const originalNextQuestion = nextQuestion;
 nextQuestion = function(){
+  if(miniAdvancing) return;
+  const btn = document.getElementById("nextBtn");
+  if(btn) btn.disabled = true;
   if(VIEW.mode==="mini" && VIEW.index>=VIEW.questions.length-1){
+    miniAdvancing = true;
     VIEW.locked = false;
-    const paper = document.querySelector(".paper");
-    setTimeout(()=>{ runMiniStep(); }, 150);
+    const wrongIds = VIEW.answers.filter(a=>!a.correct).map(a=>a.id);
+    setTimeout(()=>{
+      miniAdvancing = false;
+      if(!MINI || !MINI.currentTopicId){ VIEW = { name:"dashboard" }; render(); return; }
+      if(wrongIds.length===0 || MINI.roundNum>=MINI_ROUND_CAP){
+        runMiniStep();
+      } else {
+        MINI.roundNum += 1;
+        MINI.lastWrongIds = wrongIds;
+        startMiniRound();
+      }
+    }, 150);
     return;
   }
   originalNextQuestion();
