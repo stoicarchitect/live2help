@@ -35,38 +35,33 @@ body {
 h1, h2, .serif { font-family: 'Cormorant Garamond', Georgia, serif; }
 
 header {
-  padding: 48px 20px 30px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 28px;
   border-bottom: 1px solid var(--bdr);
-  position: relative;
-}
-header::after {
-  content: "";
-  position: absolute;
-  bottom: -1px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 120px;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  background: rgba(255,255,255,0.02);
 }
 .brand-logo {
-  height: 44px;
+  height: 40px;
   width: auto;
-  margin: 0 auto 22px;
   display: block;
-  border-radius: 6px;
 }
-header h1 { font-size: 36px; font-weight: 700; color: var(--tx); letter-spacing: 0.01em; }
-header p { color: var(--tx2); margin-top: 10px; font-size: 14px; letter-spacing: 0.02em; }
+.header-text { display: flex; flex-direction: column; }
+header h1 { font-size: 18px; font-weight: 600; color: var(--tx); letter-spacing: 0.01em; line-height: 1.2; }
+header p { color: var(--tx3); margin-top: 2px; font-size: 12px; letter-spacing: 0.02em; }
 
 main {
   max-width: 760px;
   margin: 0 auto;
-  padding: 32px 20px 80px;
+  padding: 40px 20px 80px;
 }
 
 #status { color: var(--tx3); font-size: 13px; margin-bottom: 20px; text-align: center; }
+
+.page-heading { text-align: center; margin-bottom: 28px; }
+.page-heading h2 { font-size: 30px; font-weight: 700; color: var(--tx); }
+.page-heading .page-sub { color: var(--tx2); margin-top: 6px; font-size: 14px; }
 
 .job-card {
   background: var(--card);
@@ -145,11 +140,17 @@ footer {
 
 <header>
   <img class="brand-logo" src="assets/logo.png" alt="Live 2 Help Recruitment">
-  <h1 class="serif">Live Roles</h1>
-  <p>Current opportunities from Live 2 Help Recruitment</p>
+  <div class="header-text">
+    <h1>Live 2 Help Recruitment</h1>
+    <p>Anyone &middot; Anywhere &middot; Anytime</p>
+  </div>
 </header>
 
 <main>
+  <div class="page-heading">
+    <h2 class="serif">Live Roles</h2>
+    <p class="page-sub">Current opportunities</p>
+  </div>
   <div id="status">Loading current roles…</div>
   <div id="job-list"></div>
 </main>
