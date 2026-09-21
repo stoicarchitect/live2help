@@ -106,6 +106,22 @@ main {
   font-weight: 500;
 }
 .job-apply:hover { background: var(--gold-l); }
+.job-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.job-share {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--tx2);
+  background: transparent;
+  border: 1px solid var(--bdr);
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.job-share:hover { border-color: var(--bdr-h); color: var(--tx); }
+.job-share.copied { color: var(--gold-l); border-color: var(--bdr-h); }
 
 .empty-state {
   text-align: center;
@@ -174,7 +190,11 @@ async function loadJobs() {
           ${job.remote ? `<span class="job-tag">Remote</span>` : ''}
           ${job.employment_type ? `<span class="job-tag">${escapeHtml(job.employment_type)}</span>` : ''}
         </div>
-        ${job.url ? `<a class="job-apply" href="${escapeAttr(job.url)}" target="_blank" rel="noopener">View & Apply</a>` : ''}
+        ${job.url ? `
+        <div class="job-actions">
+          <a class="job-apply" href="${escapeAttr(job.url)}" target="_blank" rel="noopener">View & Apply</a>
+          <button class="job-share" onclick="shareJob('${escapeAttr(job.url)}', this)" type="button">🔗 Copy Link</button>
+        </div>` : ''}
       </div>
     `).join('');
   } catch (err) {
@@ -187,6 +207,22 @@ function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function escapeAttr(str) { return escapeHtml(str); }
+
+async function shareJob(url, btn) {
+  const originalText = btn.textContent;
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: 'Live 2 Help Recruitment - Live Role', url });
+      return;
+    }
+    await navigator.clipboard.writeText(url);
+    btn.textContent = '✓ Link copied';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = originalText; btn.classList.remove('copied'); }, 2000);
+  } catch (err) {
+    console.error('Share/copy failed:', err);
+  }
+}
 
 loadJobs();
 </script>
