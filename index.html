@@ -35,21 +35,18 @@ body {
 h1, h2, .serif { font-family: 'Cormorant Garamond', Georgia, serif; }
 
 header {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 18px 28px;
+  text-align: center;
+  padding: 50px 20px 34px;
   border-bottom: 1px solid var(--bdr);
-  background: rgba(255,255,255,0.02);
 }
 .brand-logo {
-  height: 40px;
+  height: 56px;
   width: auto;
+  margin: 0 auto 26px;
   display: block;
 }
-.header-text { display: flex; flex-direction: column; }
-header h1 { font-size: 18px; font-weight: 600; color: var(--tx); letter-spacing: 0.01em; line-height: 1.2; }
-header p { color: var(--tx3); margin-top: 2px; font-size: 12px; letter-spacing: 0.02em; }
+header h1 { font-size: 32px; font-weight: 700; color: var(--tx); letter-spacing: 0.01em; }
+header p { color: var(--tx2); margin-top: 8px; font-size: 14px; letter-spacing: 0.02em; }
 
 main {
   max-width: 760px;
@@ -58,10 +55,6 @@ main {
 }
 
 #status { color: var(--tx3); font-size: 13px; margin-bottom: 20px; text-align: center; }
-
-.page-heading { text-align: center; margin-bottom: 28px; }
-.page-heading h2 { font-size: 30px; font-weight: 700; color: var(--tx); }
-.page-heading .page-sub { color: var(--tx2); margin-top: 6px; font-size: 14px; }
 
 .job-card {
   background: var(--card);
@@ -140,17 +133,11 @@ footer {
 
 <header>
   <img class="brand-logo" src="assets/logo.png" alt="Live 2 Help Recruitment">
-  <div class="header-text">
-    <h1>Live 2 Help Recruitment</h1>
-    <p>Anyone &middot; Anywhere &middot; Anytime</p>
-  </div>
+  <h1 class="serif">Live Roles</h1>
+  <p>Current opportunities from Live 2 Help Recruitment</p>
 </header>
 
 <main>
-  <div class="page-heading">
-    <h2 class="serif">Live Roles</h2>
-    <p class="page-sub">Current opportunities</p>
-  </div>
   <div id="status">Loading current roles…</div>
   <div id="job-list"></div>
 </main>
