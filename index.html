@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="icon" href="assets/logo.png" type="image/png">
 <style>
 :root {
   --gold: #C9A84C;
@@ -24,7 +25,9 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
   font-family: 'DM Sans', sans-serif;
-  background: var(--dark);
+  background:
+    radial-gradient(ellipse 900px 500px at 50% -10%, rgba(201,168,76,0.10), transparent 60%),
+    var(--dark);
   color: var(--tx);
   min-height: 100vh;
   font-size: 14px;
@@ -32,21 +35,30 @@ body {
 h1, h2, .serif { font-family: 'Cormorant Garamond', Georgia, serif; }
 
 header {
-  padding: 40px 20px 24px;
+  padding: 48px 20px 30px;
   text-align: center;
   border-bottom: 1px solid var(--bdr);
+  position: relative;
 }
-header h1 { font-size: 34px; font-weight: 700; color: var(--tx); }
-header p { color: var(--tx2); margin-top: 8px; font-size: 14px; }
-.back-link {
-  display: inline-block;
-  margin-top: 14px;
-  color: var(--gold);
-  text-decoration: none;
-  font-size: 13px;
-  border-bottom: 1px solid transparent;
+header::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
 }
-.back-link:hover { border-bottom-color: var(--gold); }
+.brand-logo {
+  height: 44px;
+  width: auto;
+  margin: 0 auto 22px;
+  display: block;
+  border-radius: 6px;
+}
+header h1 { font-size: 36px; font-weight: 700; color: var(--tx); letter-spacing: 0.01em; }
+header p { color: var(--tx2); margin-top: 10px; font-size: 14px; letter-spacing: 0.02em; }
 
 main {
   max-width: 760px;
@@ -62,9 +74,10 @@ main {
   border-radius: var(--radius);
   padding: 20px 22px;
   margin-bottom: 14px;
-  transition: border-color 0.15s;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.25);
+  transition: border-color 0.15s, transform 0.15s;
 }
-.job-card:hover { border-color: var(--bdr-h); }
+.job-card:hover { border-color: var(--bdr-h); transform: translateY(-1px); }
 .job-title { font-size: 18px; font-weight: 600; color: var(--tx); margin-bottom: 6px; }
 .job-meta {
   display: flex;
@@ -115,6 +128,7 @@ footer {
 <body>
 
 <header>
+  <img class="brand-logo" src="assets/logo.png" alt="Live 2 Help Recruitment">
   <h1 class="serif">Live Roles</h1>
   <p>Current opportunities from Live 2 Help Recruitment</p>
 </header>
