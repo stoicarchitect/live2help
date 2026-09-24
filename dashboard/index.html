@@ -795,11 +795,16 @@ async function confirmDelete(){
 
 async function syncSubmissions(){
   try{
+    console.log('Starting sync at', new Date().toLocaleTimeString());
     const res = await fetch(`${API_BASE}/api/sync-submissions`, {method: 'POST'});
     if(res.ok){
+      const data = await res.json();
+      console.log('Sync successful:', data);
       await new Promise(r => setTimeout(r, 500));
       await loadCandidates();
       updateSyncTime();
+    } else {
+      console.error('Sync failed - status', res.status);
     }
   }catch(e){
     console.log('Auto-sync failed:', e.message);
@@ -832,8 +837,9 @@ function updateSyncDisplay(){
 window._autoSyncInterval = null;
 function startAutoSync(){
   if(window._autoSyncInterval) return;
+  console.log('Starting auto-sync - initial sync now, then every 1 minute');
   syncSubmissions();
-  window._autoSyncInterval = setInterval(syncSubmissions, 5 * 60 * 1000);
+  window._autoSyncInterval = setInterval(syncSubmissions, 1 * 60 * 1000);
   setInterval(updateSyncDisplay, 1000);
 }
 
