@@ -220,21 +220,9 @@
   .simple-form .actions .save{background:var(--dark);color:var(--white);border:1px solid var(--dark);}
   .simple-form .actions .cancel{background:var(--white);color:var(--grey);border:1px solid var(--border);}
 
-  /* ---- Tabs ---- */
-  #tabs{
-    display:flex;gap:0;border-bottom:1px solid var(--border);background:var(--white);padding:0 24px;
-  }
-  .tab-btn{
-    padding:14px 0;margin:0 20px;font-size:13.5px;color:#999;border:none;background:none;
-    cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;font-family:inherit;
-  }
-  .tab-btn.active{color:var(--dark);border-bottom-color:var(--gold);font-weight:500;}
-  .tab-btn:hover{color:var(--dark);}
-
   /* ---- Clients View ---- */
-  #candidatesView{flex:1;display:flex;flex-direction:column;}
-  #clientsView{display:none;flex:1;flex-direction:column;}
-  #clientsView.visible{display:flex;}
+  #clientsView{display:none;}
+  #clientsView.visible{display:flex;flex-direction:column;}
   #clientsHeader{
     padding:16px 24px 14px;display:flex;justify-content:space-between;align-items:center;
     border-bottom:1px solid var(--border);
@@ -280,113 +268,9 @@
   .confirm-modal .confirm-actions .cancel-btn{background:var(--white);color:var(--grey);border-color:var(--border);}
   .confirm-modal .confirm-actions .cancel-btn:hover{background:#f9f9f9;}
 
-  /* ---- Workflow Modal ---- */
-  .workflow-modal{
-    background:var(--white);width:100%;max-width:520px;border-radius:2px;padding:32px;
-  }
-  .workflow-header{
-    margin-bottom:28px;
-  }
-  .workflow-header h2{
-    font-size:20px;color:var(--dark);font-weight:normal;margin-bottom:8px;
-  }
-  .workflow-step-indicator{
-    font-size:12px;color:#999;letter-spacing:0.5px;
-  }
-  .workflow-field{
-    margin-bottom:20px;
-  }
-  .workflow-field label{
-    display:block;font-size:11px;color:#999;letter-spacing:0.5px;margin-bottom:6px;font-weight:500;
-  }
-  .workflow-field input{
-    width:100%;padding:11px 12px;border:1px solid var(--border);border-radius:2px;
-    font-size:14px;font-family:inherit;
-  }
-  .workflow-field input:focus{
-    outline:none;border-color:var(--gold);box-shadow:0 0 0 2px rgba(201, 168, 76, .1);
-  }
-  .workflow-actions{
-    display:flex;gap:12px;margin-top:28px;justify-content:flex-end;
-  }
-  .workflow-actions button{
-    padding:10px 20px;border:1px solid var(--border);background:var(--white);
-    color:var(--dark);font-family:inherit;font-size:13.5px;border-radius:2px;cursor:pointer;
-  }
-  .workflow-actions button.next{
-    background:var(--dark);color:var(--white);border-color:var(--dark);
-  }
-  .workflow-actions button.next:hover{background:#2c2c2c;}
-  .workflow-actions button.cancel:hover{background:#f5f5f5;}
-  
-  /* Contact list in workflow */
-  .contacts-added{
-    background:var(--lightbg);border:1px solid var(--border);border-radius:2px;padding:16px;
-    margin-bottom:20px;max-height:240px;overflow-y:auto;
-  }
-  .contact-item{
-    background:var(--white);border:1px solid var(--border);border-radius:2px;padding:12px;
-    margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;
-  }
-  .contact-item-info{
-    flex:1;
-  }
-  .contact-item-name{
-    font-size:13.5px;font-weight:500;color:var(--dark);
-  }
-  .contact-item-title{
-    font-size:12px;color:#999;margin-top:2px;
-  }
-  .contact-item-email{
-    font-size:12px;color:var(--gold);margin-top:4px;
-  }
-  .contact-item-remove{
-    background:none;border:none;color:var(--danger);font-size:16px;cursor:pointer;
-    padding:0;margin-left:12px;
-  }
-  .contact-item-remove:hover{opacity:0.7;}
-
   .sync-status{
     position:fixed;bottom:20px;right:20px;font-size:11px;color:#999;background:var(--white);
     border:1px solid var(--border);padding:6px 10px;border-radius:2px;z-index:400;
-  }
-
-  /* ---- Splash Screen ---- */
-  #splashScreen{
-    position:fixed;inset:0;background:linear-gradient(135deg, var(--dark) 0%, #2c2410 100%);
-    display:flex;align-items:center;justify-content:center;z-index:1000;flex-direction:column;padding:2rem;
-  }
-  #splashScreen.hidden{display:none;}
-  .splash-logo{
-    width:120px;height:120px;margin-bottom:40px;opacity:0.95;
-  }
-  .splash-content{
-    text-align:center;margin-bottom:50px;
-  }
-  .splash-content h1{
-    font-size:32px;color:var(--white);margin-bottom:12px;font-weight:normal;
-  }
-  .splash-content p{
-    font-size:15px;color:#bbb;
-  }
-  .splash-buttons{
-    display:flex;gap:20px;flex-wrap:wrap;justify-content:center;
-  }
-  .splash-btn{
-    padding:18px 40px;border:2px solid transparent;border-radius:2px;font-size:16px;
-    font-family:inherit;cursor:pointer;transition:all .2s;min-width:220px;
-  }
-  .splash-btn.candidates{
-    background:var(--white);color:var(--dark);font-weight:500;
-  }
-  .splash-btn.candidates:hover{
-    background:var(--gold);transform:translateY(-2px);box-shadow:0 8px 16px rgba(201, 168, 76, .3);
-  }
-  .splash-btn.clients{
-    background:var(--gold);color:var(--dark);font-weight:500;
-  }
-  .splash-btn.clients:hover{
-    background:var(--white);transform:translateY(-2px);box-shadow:0 8px 16px rgba(255, 255, 255, .2);
   }
 
   .toast{
@@ -426,23 +310,6 @@
   </div>
 </div>
 
-<div id="splashScreen">
-  <svg class="splash-logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-    <rect width="100" height="100" fill="none"/>
-    <g fill="var(--gold)" opacity="0.8">
-      <text x="50" y="70" text-anchor="middle" font-size="60" font-weight="bold">2H</text>
-    </g>
-  </svg>
-  <div class="splash-content">
-    <h1>Live 2 Help</h1>
-    <p>Recruitment Pipeline</p>
-  </div>
-  <div class="splash-buttons">
-    <button class="splash-btn candidates" onclick="chooseDashboard('candidates')">View Candidates</button>
-    <button class="splash-btn clients" onclick="chooseDashboard('clients')">Manage Clients</button>
-  </div>
-</div>
-
 <div id="app">
   <div id="sidebar">
     <div class="brand">
@@ -454,12 +321,6 @@
   </div>
 
   <div id="main">
-    <div id="tabs">
-      <button class="tab-btn active" data-tab="candidates" onclick="switchTab('candidates')">Candidates</button>
-      <button class="tab-btn" data-tab="clients" onclick="switchTab('clients')">Clients</button>
-    </div>
-    
-    <div id="candidatesView" class="visible">
     <div id="topbar">
       <div class="titles">
         <div class="company-name" id="tbCompany">-</div>
@@ -470,15 +331,6 @@
       <button id="addCandBtn" onclick="openAddCandidate()" style="display:none;padding:10px 16px;background:var(--dark);color:var(--white);border:none;border-radius:2px;font-family:inherit;font-size:12.5px;cursor:pointer;">+ Add candidate</button>
     </div>
     <div id="board"></div>
-    </div>
-
-    <div id="clientsView">
-      <div id="clientsHeader">
-        <h2>Client Accounts</h2>
-        <button id="addClientBtn" onclick="openAddClientModal()">Add Client</button>
-      </div>
-      <div id="clientsGrid"></div>
-    </div>
   </div>
 </div>
 
@@ -547,17 +399,8 @@
   </div>
 </div>
 
-<div class="modal-overlay" id="addClientWorkflow">
-  <div class="workflow-modal">
-    <div class="modal-close" style="position:absolute;top:16px;right:16px;background:none;border:none;font-size:18px;color:#999;cursor:pointer;" onclick="closeModal('addClientWorkflow')">×</div>
-    
-    <div id="workflowContent"></div>
-  </div>
-</div>
-
 <div class="toast" id="toast"></div>
 
-<script src="clients-update.js"></script>
 <script>
 const STAGES = [
   {key:"submitted", label:"Submitted"},
@@ -1059,7 +902,6 @@ document.querySelectorAll('.modal-overlay').forEach(ov => {
   ov.addEventListener('click', e => { if(e.target === ov) ov.classList.remove('visible'); });
 });
 
-loadClients();
 startAutoSync();
 </script>
 
