@@ -244,6 +244,34 @@ app.get('/api/sync-submissions', async (req, res) => {
   }
 });
 
+
+// Delete a candidate by id
+app.delete('/api/candidates/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!id) {
+      return res.status(400).json({ error: 'id is required' });
+    }
+    const sheets = getSheetsClient();
+    const rows = await readAllRows();
+    const rowIndex = rows.findIndex(r => r[0] === id);
+
+    if (rowIndex === -1) {
+      return res.status(404).json({ error: 'candidate not found' });
+    }
+
+    const sheetRowNumber = rowIndex + 2;
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: SHEET_ID,
+      range: `${TAB}!A${sheetRowNumber}:J${sheetRowNumber}`,
+    });
+    res.json({ ok: true, deleted: id });
+  } catch (e) {
+    console.error('DELETE /api/candidates/:id error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/', (req, res) => {
   res.json({ status: 'API Server running' });
 });
