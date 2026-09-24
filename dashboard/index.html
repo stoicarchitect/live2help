@@ -256,6 +256,7 @@
         <div class="role-name" id="tbRole">Select a role</div>
         <div class="meta" id="tbMeta"></div>
       </div>
+      <button id="addCandBtn" onclick="openAddCandidate()" style="display:none;padding:10px 16px;background:var(--dark);color:var(--white);border:none;border-radius:2px;font-family:inherit;font-size:12.5px;cursor:pointer;">+ Add candidate</button>
     </div>
     <div id="board"></div>
   </div>
@@ -283,6 +284,28 @@
         <div class="actions">
           <button class="cancel" onclick="closeModal('addRoleOverlay')">Cancel</button>
           <button class="save" onclick="saveNewRole()">Create role</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="addCandOverlay">
+  <div class="modal">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="closeModal('addCandOverlay')">&times;</button>
+      <h2>New candidate</h2>
+      <div class="role-sub" id="addCandRoleSub"></div>
+      <div class="simple-form">
+        <label>Candidate name</label>
+        <input id="newCandName" placeholder="e.g. Priya K">
+        <label>Email (optional)</label>
+        <input id="newCandEmail" placeholder="candidate@email.com">
+        <label>Phone (optional)</label>
+        <input id="newCandPhone" placeholder="07000 000000">
+        <div class="actions">
+          <button class="cancel" onclick="closeModal('addCandOverlay')">Cancel</button>
+          <button class="save" onclick="saveNewCandidate()">Add to Submitted</button>
         </div>
       </div>
     </div>
@@ -318,24 +341,44 @@ const PROMPTS = {
   month1: "Complete the Month 1 check-in call with the candidate.",
 };
 
-let DATA = {
-  "Ceasefire Industries UK": {
-    "Regional Sales Manager - Midlands": [
-      {id:"c1", name:"Joseph", stage:"submitted", date:"2026-09-20", notes:"", salary:"", email:"", phone:""},
-    ]
-  },
-  "Venesta / RSBP Ltd": {
-    "Group Buyer - Stoke-on-Trent": [
-      {id:"c2", name:"Matthew B", stage:"submitted", date:"2026-09-15", notes:"", salary:"", email:"", phone:""},
-      {id:"c3", name:"Yihsin C", stage:"submitted", date:"2026-09-16", notes:"", salary:"", email:"", phone:""},
-      {id:"c4", name:"Jade R", stage:"interview_scheduled", date:"2026-09-10", notes:"Interview prep pack sent, awaiting confirmed date/time from Guy Saunders.", salary:"", email:"", phone:""},
-    ],
-    "Intercompany Admin Coordinator": [
-      {id:"c5", name:"Lisa-Maria F", stage:"interview_scheduled", date:"2026-09-12", notes:"Follow-up interview with Natalie.", salary:"", email:"", phone:""},
-      {id:"c6", name:"Jeanne G", stage:"submitted", date:"2026-09-14", notes:"", salary:"", email:"", phone:""},
-    ]
+const API_BASE = "https://l2h-api.onrender.com";
+let DATA = {};
+let dataLoaded = false;
+
+async function loadCandidates(){
+  const board = document.getElementById('board');
+  try{
+    const res = await fetch(`${API_BASE}/api/candidates`);
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    const json = await res.json();
+    DATA = json.data || {};
+    dataLoaded = true;
+    renderSidebar();
+    renderBoard();
+  }catch(e){
+    dataLoaded = false;
+    board.innerHTML = `<div class="stage-empty" style="padding-top:40px;max-width:420px;">
+      Could not load live pipeline data (${e.message}). The dashboard backend may not be configured yet - check the Sheet tab, sharing, and Render environment variables.
+    </div>`;
+    showToast('Could not reach the pipeline backend');
   }
-};
+}
+
+async function saveCandidate(c){
+  try{
+    const res = await fetch(`${API_BASE}/api/candidates`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(c)
+    });
+    if(!res.ok){
+      const err = await res.json().catch(()=>({}));
+      throw new Error(err.error || ('Server returned ' + res.status));
+    }
+  }catch(e){
+    showToast('Could not save to backend: ' + e.message);
+  }
+}
 
 let currentCompany = null;
 let currentRole = null;
@@ -358,6 +401,7 @@ function tryUnlock(){
     document.getElementById('app').classList.add('visible');
     try{ localStorage.setItem('l2h_unlocked','1'); }catch(e){}
     renderSidebar();
+    loadCandidates();
   } else {
     document.getElementById('gateErr').textContent = "Incorrect password";
   }
@@ -370,6 +414,7 @@ document.getElementById('gatePw').addEventListener('keydown', e => { if(e.key ==
       document.getElementById('gate').style.display = 'none';
       document.getElementById('app').classList.add('visible');
       renderSidebar();
+      loadCandidates();
     }
   }catch(e){}
 })();
@@ -413,14 +458,17 @@ function renderBoard(){
   const tbCompany = document.getElementById('tbCompany');
   const tbRole = document.getElementById('tbRole');
   const tbMeta = document.getElementById('tbMeta');
+  const addBtn = document.getElementById('addCandBtn');
 
   if(!currentRole){
     board.innerHTML = '<div class="stage-empty" style="padding-top:40px;">Select a company and role from the left to view its pipeline.</div>';
     tbCompany.textContent = '-';
     tbRole.textContent = 'Select a role';
     tbMeta.textContent = '';
+    addBtn.style.display = 'none';
     return;
   }
+  addBtn.style.display = 'inline-block';
 
   const candidates = DATA[currentCompany][currentRole];
   tbCompany.textContent = currentCompany.toUpperCase();
@@ -557,30 +605,23 @@ function captureFieldsFromModal(c){
   if(phoneEl) c.phone = phoneEl.value;
 }
 
-function saveNotesOnly(){
+async function saveNotesOnly(){
   const c = findCandidate(openCandidateId);
   captureFieldsFromModal(c);
   showToast('Saved');
   renderBoard();
   closeModal('candModalOverlay');
+  await saveCandidate(c);
+
+  if(newStage === 'offer'){
+    openCandidateModal(c.id);
+    showToast('Enter the agreed salary - needed for the invoice reminder');
+  }
 }
 
-function advanceStage(newStage){
+async function advanceStage(newStage){
   const c = findCandidate(openCandidateId);
   captureFieldsFromModal(c);
-
-  if(newStage === 'offer' && !c.salary){
-    const salaryPrompt = document.getElementById('salaryInput');
-    if(!salaryPrompt){
-      c.stage = newStage;
-      c.date = new Date().toISOString().slice(0,10);
-      renderBoard();
-      closeModal('candModalOverlay');
-      openCandidateModal(c.id);
-      showToast('Enter the agreed salary before moving on');
-      return;
-    }
-  }
 
   c.stage = newStage;
   c.date = new Date().toISOString().slice(0,10);
@@ -593,6 +634,12 @@ function advanceStage(newStage){
 
   renderBoard();
   closeModal('candModalOverlay');
+  await saveCandidate(c);
+
+  if(newStage === 'offer'){
+    openCandidateModal(c.id);
+    showToast('Enter the agreed salary - needed for the invoice reminder');
+  }
 }
 
 function openAddRole(){
@@ -613,7 +660,43 @@ function saveNewRole(){
   closeModal('addRoleOverlay');
   renderSidebar();
   selectRole(company, role);
-  showToast('Role created');
+  showToast('Role created - add a candidate to save it to the sheet');
+}
+
+function openAddCandidate(){
+  if(!currentRole) return;
+  document.getElementById('newCandName').value = '';
+  document.getElementById('newCandEmail').value = '';
+  document.getElementById('newCandPhone').value = '';
+  document.getElementById('addCandRoleSub').textContent = currentRole + ' - ' + currentCompany;
+  document.getElementById('addCandOverlay').classList.add('visible');
+}
+
+async function saveNewCandidate(){
+  const name = document.getElementById('newCandName').value.trim();
+  if(!name){
+    showToast('Enter a candidate name');
+    return;
+  }
+  const c = {
+    id: 'c_' + Date.now(),
+    company: currentCompany,
+    role: currentRole,
+    name: name,
+    stage: 'submitted',
+    date: new Date().toISOString().slice(0,10),
+    notes: '',
+    salary: '',
+    email: document.getElementById('newCandEmail').value.trim(),
+    phone: document.getElementById('newCandPhone').value.trim(),
+  };
+  if(!DATA[currentCompany]) DATA[currentCompany] = {};
+  if(!DATA[currentCompany][currentRole]) DATA[currentCompany][currentRole] = [];
+  DATA[currentCompany][currentRole].push(c);
+  closeModal('addCandOverlay');
+  renderBoard();
+  showToast('Candidate added');
+  await saveCandidate(c);
 }
 
 function closeModal(id){
