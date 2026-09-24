@@ -281,7 +281,11 @@ app.delete('/api/candidates/:id', async (req, res) => {
 
 const CLIENT_SHEET_ID = '1gFoG7F9OU_ax-cJ7AJYPzXBPYPHGxronprXCXA2u5so';
 const CLIENT_TAB = 'Dashboard';
-const CLIENT_RANGE = `${CLIENT_TAB}!A2:I`;
+const CLIENT_RANGE = `${CLIENT_TAB}!A2:J`;
+const INVOICES_TAB = 'Invoices';
+const INVOICES_RANGE = `${INVOICES_TAB}!A2:E`;
+const KPI_TARGETS_TAB = 'KPI Targets';
+const KPI_TARGETS_RANGE = `${KPI_TARGETS_TAB}!A2:D`;
 
 function rowToClient(row) {
   return {
@@ -294,6 +298,7 @@ function rowToClient(row) {
     email: row[6] || '',
     phone: row[7] || '',
     folderCreated: row[8] || 'No',
+    notes: row[9] || '',
   };
 }
 
@@ -308,6 +313,7 @@ function clientToRow(c) {
     c.email || '',
     c.phone || '',
     c.folderCreated || 'No',
+    c.notes || '',
   ];
 }
 
@@ -336,7 +342,7 @@ app.get('/api/clients', async (req, res) => {
 // POST add new client
 app.post('/api/clients', async (req, res) => {
   try {
-    const { company, address, postcode, contactName, jobTitle, email, phone } = req.body;
+    const { company, address, postcode, contactName, jobTitle, email, phone, notes } = req.body;
     
     if (!company || !email) {
       return res.status(400).json({ error: 'company and email are required' });
@@ -353,6 +359,7 @@ app.post('/api/clients', async (req, res) => {
       email,
       phone,
       folderCreated: 'No',
+      notes: notes || '',
     };
 
     await sheets.spreadsheets.values.append({
@@ -366,6 +373,227 @@ app.post('/api/clients', async (req, res) => {
     res.json({ ok: true, client: newClient });
   } catch (e) {
     console.error('POST /api/clients error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* ======================================================================
+   Invoices - Dan only
+   
+   Columns: Invoice Number | Invoice Date | Invoice Amount | Paid Status | Payment Date
+====================================================================== */
+
+function rowToInvoice(row) {
+  return {
+    number: row[0] || '',
+    date: row[1] || '',
+    amount: parseFloat(row[2]) || 0,
+    paidStatus: row[3] || 'No',
+    paymentDate: row[4] || '',
+  };
+}
+
+function invoiceToRow(inv) {
+  return [
+    inv.number || '',
+    inv.date || '',
+    inv.amount || 0,
+    inv.paidStatus || 'No',
+    inv.paymentDate || '',
+  ];
+}
+
+async function readInvoiceRows() {
+  const sheets = getSheetsClient();
+  const result = await sheets.spreadsheets.values.get({
+    spreadsheetId: CLIENT_SHEET_ID,
+    range: INVOICES_RANGE,
+  });
+  return result.data.values || [];
+}
+
+// GET all invoices
+app.get('/api/invoices', async (req, res) => {
+  try {
+    const rows = await readInvoiceRows();
+    const invoices = rows.map(r => rowToInvoice(r));
+    res.json({ data: invoices });
+  } catch (e) {
+    console.error('GET /api/invoices error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST add new invoice
+app.post('/api/invoices', async (req, res) => {
+  try {
+    const { number, date, amount, paidStatus, paymentDate } = req.body;
+    
+    if (!number || !date || !amount) {
+      return res.status(400).json({ error: 'number, date, and amount are required' });
+    }
+
+    const sheets = getSheetsClient();
+    const newInvoice = {
+      number,
+      date,
+      amount: parseFloat(amount),
+      paidStatus: paidStatus || 'No',
+      paymentDate: paymentDate || '',
+    };
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: CLIENT_SHEET_ID,
+      range: INVOICES_RANGE,
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: [invoiceToRow(newInvoice)] },
+    });
+
+    res.json({ ok: true, invoice: newInvoice });
+  } catch (e) {
+    console.error('POST /api/invoices error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PUT update invoice (paid status, payment date)
+app.put('/api/invoices/:number', async (req, res) => {
+  try {
+    const { number } = req.params;
+    const { paidStatus, paymentDate } = req.body;
+    
+    const sheets = getSheetsClient();
+    const rows = await readInvoiceRows();
+    
+    const rowIndex = rows.findIndex(r => r[0] === number);
+    if (rowIndex === -1) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+
+    const updatedRow = [...rows[rowIndex]];
+    if (paidStatus !== undefined) updatedRow[3] = paidStatus;
+    if (paymentDate !== undefined) updatedRow[4] = paymentDate;
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: CLIENT_SHEET_ID,
+      range: `${INVOICES_TAB}!A${rowIndex + 3}:E${rowIndex + 3}`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [updatedRow] },
+    });
+
+    res.json({ ok: true, invoice: rowToInvoice(updatedRow) });
+  } catch (e) {
+    console.error('PUT /api/invoices error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* ======================================================================
+   KPI Targets - Dan sets, Ella views
+   
+   Columns: Quarter | Target Roles | Target New Clients | Target Avg Fill Speed Days
+====================================================================== */
+
+function rowToKPITarget(row) {
+  return {
+    quarter: row[0] || '',
+    targetRoles: parseInt(row[1]) || 0,
+    targetNewClients: parseInt(row[2]) || 0,
+    targetAvgFillSpeedDays: parseInt(row[3]) || 0,
+  };
+}
+
+function kpiTargetToRow(kpi) {
+  return [
+    kpi.quarter || '',
+    kpi.targetRoles || 0,
+    kpi.targetNewClients || 0,
+    kpi.targetAvgFillSpeedDays || 0,
+  ];
+}
+
+async function readKPITargetRows() {
+  const sheets = getSheetsClient();
+  const result = await sheets.spreadsheets.values.get({
+    spreadsheetId: CLIENT_SHEET_ID,
+    range: KPI_TARGETS_RANGE,
+  });
+  return result.data.values || [];
+}
+
+// GET all KPI targets
+app.get('/api/kpi-targets', async (req, res) => {
+  try {
+    const rows = await readKPITargetRows();
+    const targets = rows.map(r => rowToKPITarget(r));
+    res.json({ data: targets });
+  } catch (e) {
+    console.error('GET /api/kpi-targets error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST add/update KPI target
+app.post('/api/kpi-targets', async (req, res) => {
+  try {
+    const { quarter, targetRoles, targetNewClients, targetAvgFillSpeedDays } = req.body;
+    
+    if (!quarter) {
+      return res.status(400).json({ error: 'quarter is required' });
+    }
+
+    const sheets = getSheetsClient();
+    const rows = await readKPITargetRows();
+    
+    const newKPI = {
+      quarter,
+      targetRoles: parseInt(targetRoles) || 0,
+      targetNewClients: parseInt(targetNewClients) || 0,
+      targetAvgFillSpeedDays: parseInt(targetAvgFillSpeedDays) || 0,
+    };
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: CLIENT_SHEET_ID,
+      range: KPI_TARGETS_RANGE,
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: [kpiTargetToRow(newKPI)] },
+    });
+
+    res.json({ ok: true, kpiTarget: newKPI });
+  } catch (e) {
+    console.error('POST /api/kpi-targets error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* ======================================================================
+   Bulk Import - Import 32 existing client records
+====================================================================== */
+
+app.post('/api/bulk-import-clients', async (req, res) => {
+  try {
+    const { clients } = req.body;
+    
+    if (!Array.isArray(clients) || clients.length === 0) {
+      return res.status(400).json({ error: 'clients array is required and must not be empty' });
+    }
+
+    const sheets = getSheetsClient();
+    const rows = clients.map(c => clientToRow(c));
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: CLIENT_SHEET_ID,
+      range: CLIENT_RANGE,
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: rows },
+    });
+
+    res.json({ ok: true, imported: clients.length });
+  } catch (e) {
+    console.error('POST /api/bulk-import-clients error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
