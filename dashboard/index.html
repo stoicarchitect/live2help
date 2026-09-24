@@ -772,7 +772,7 @@ async function confirmDelete(){
   const reason = document.getElementById('deleteReasonInput').value.trim();
   
   try{
-    const res = await fetch(`${API_BASE}/api/candidates/${c.id}`, {
+    const res = await fetch(`${API_BASE}/api/candidates/${encodeURIComponent(c.id)}`, {
       method: 'DELETE',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({reason: reason || 'Deleted from pipeline'})
