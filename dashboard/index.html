@@ -784,6 +784,17 @@ async function confirmDelete(){
     }
     
     DATA[currentCompany][currentRole] = DATA[currentCompany][currentRole].filter(x => x.id !== c.id);
+    
+    if(DATA[currentCompany][currentRole].length === 0){
+      delete DATA[currentCompany][currentRole];
+      if(Object.keys(DATA[currentCompany]).length === 0){
+        delete DATA[currentCompany];
+      }
+      currentRole = null;
+      currentCompany = null;
+      renderSidebar();
+    }
+    
     closeModal('deleteConfirmOverlay');
     closeModal('candModalOverlay');
     renderBoard();
