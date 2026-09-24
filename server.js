@@ -118,11 +118,11 @@ function candidateToRow(c) {
   ];
 }
 
-// Parse filename pattern: "Candidate Submission [Name] [Role]"
+// Parse filename pattern: "Candidate Submission [FirstName] [LastInitial] [Role]"
 function parseSubmissionFilename(filename) {
-  const match = filename.match(/^Candidate Submission\s+(.+)\s+([^.]+)(?:\..+)?$/i);
+  const match = filename.match(/^Candidate Submission\s+(\S+)\s+(\S)\s+(.+?)(?:\..+)?$/i);
   if (!match) return null;
-  return { name: match[1].trim(), role: match[2].trim() };
+  return { name: (match[1] + ' ' + match[2]).trim(), role: match[3].trim() };
 }
 
 async function listFolderContents(folderId) {
@@ -191,7 +191,7 @@ app.post('/api/candidates', async (req, res) => {
 });
 
 // Sync submissions folder - detect new candidate submission files and auto-create rows
-app.get('/api/sync-submissions', async (req, res) => {
+app.post('/api/sync-submissions', async (req, res) => {
   try {
     const companyFolders = await listFolderContents(SUBMISSIONS_FOLDER_ID);
     const existingRows = await readAllRows();
