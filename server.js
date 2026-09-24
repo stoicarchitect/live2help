@@ -120,7 +120,7 @@ function candidateToRow(c) {
 
 // Parse filename pattern: "Candidate Submission [Name] [Role]"
 function parseSubmissionFilename(filename) {
-  const match = filename.match(/^Candidate Submission\s+(.+?)\s+([^.]+)(?:\..+)?$/i);
+  const match = filename.match(/^Candidate Submission\s+(.+)\s+([^.]+)(?:\..+)?$/i);
   if (!match) return null;
   return { name: match[1].trim(), role: match[2].trim() };
 }
