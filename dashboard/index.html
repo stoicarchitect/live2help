@@ -110,6 +110,13 @@
   #topbar .role-name{font-size:19px;color:var(--dark);margin-top:2px;}
   #topbar .meta{font-size:12px;color:#888;margin-top:3px;}
 
+  .sync-status{
+    font-size:11px;color:#999;display:flex;align-items:center;gap:6px;
+  }
+  .sync-dot{
+    display:inline-block;width:6px;height:6px;border-radius:50%;background:#4CAF50;
+  }
+
   #board{
     flex:1;overflow-x:auto;overflow-y:hidden;padding:18px 24px;
     display:flex;gap:14px;align-items:flex-start;
@@ -276,6 +283,7 @@
         <div class="role-name" id="tbRole">Select a role</div>
         <div class="meta" id="tbMeta"></div>
       </div>
+      <div class="sync-status" id="syncStatus"><span class="sync-dot"></span><span id="syncTime">Last synced: never</span></div>
       <button id="addCandBtn" onclick="openAddCandidate()" style="display:none;padding:10px 16px;background:var(--dark);color:var(--white);border:none;border-radius:2px;font-family:inherit;font-size:12.5px;cursor:pointer;">+ Add candidate</button>
     </div>
     <div id="board"></div>
@@ -784,10 +792,34 @@ async function syncSubmissions(){
     if(res.ok){
       await new Promise(r => setTimeout(r, 500));
       await loadCandidates();
+      updateSyncTime();
     }
   }catch(e){
     console.log('Auto-sync failed:', e.message);
   }
+}
+
+function updateSyncTime(){
+  window._lastSyncTime = Date.now();
+  const el = document.getElementById('syncTime');
+  if(el) el.textContent = 'Last synced: just now';
+}
+
+function formatSyncTime(){
+  if(!window._lastSyncTime) return 'Last synced: never';
+  const diff = Date.now() - window._lastSyncTime;
+  const mins = Math.floor(diff / 60000);
+  if(mins === 0) return 'Last synced: just now';
+  if(mins === 1) return 'Last synced: 1 minute ago';
+  if(mins < 60) return `Last synced: ${mins} minutes ago`;
+  const hours = Math.floor(mins / 60);
+  if(hours === 1) return 'Last synced: 1 hour ago';
+  return `Last synced: ${hours} hours ago`;
+}
+
+function updateSyncDisplay(){
+  const el = document.getElementById('syncTime');
+  if(el && window._lastSyncTime) el.textContent = formatSyncTime();
 }
 
 window._autoSyncInterval = null;
@@ -795,6 +827,7 @@ function startAutoSync(){
   if(window._autoSyncInterval) return;
   syncSubmissions();
   window._autoSyncInterval = setInterval(syncSubmissions, 5 * 60 * 1000);
+  setInterval(updateSyncDisplay, 1000);
 }
 
 document.querySelectorAll('.modal-overlay').forEach(ov => {
