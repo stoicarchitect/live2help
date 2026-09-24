@@ -12,7 +12,16 @@ let workflowState = {
 
 function chooseDashboard(view) {
   document.getElementById('splashScreen').classList.add('hidden');
+  document.getElementById('app').classList.add('visible');
   switchTab(view);
+}
+
+function setSplashLogo() {
+  const gateImg = document.getElementById('brandLogoImg');
+  const splashImg = document.getElementById('splashLogoImg');
+  if (gateImg && splashImg) {
+    splashImg.src = gateImg.src;
+  }
 }
 
 async function loadClients() {
