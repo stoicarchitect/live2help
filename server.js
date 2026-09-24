@@ -272,6 +272,104 @@ app.delete('/api/candidates/:id', async (req, res) => {
   }
 });
 
+/* ======================================================================
+   Client Management - L2H Client Contacts sheet.
+   
+   Uses CLIENT_SHEET_ID and CLIENT_TAB with columns:
+   Timestamp | Company | Address | Postcode | Contact Name | Job Title | Email | Phone | Folder Created
+   ====================================================================== */
+
+const CLIENT_SHEET_ID = '1gFoG7F9OU_ax-cJ7AJYPzXBPYPHGxronprXCXA2u5so';
+const CLIENT_TAB = 'Dashboard';
+const CLIENT_RANGE = `${CLIENT_TAB}!A2:I`;
+
+function rowToClient(row) {
+  return {
+    timestamp: row[0] || '',
+    company: row[1] || '',
+    address: row[2] || '',
+    postcode: row[3] || '',
+    contactName: row[4] || '',
+    jobTitle: row[5] || '',
+    email: row[6] || '',
+    phone: row[7] || '',
+    folderCreated: row[8] || 'No',
+  };
+}
+
+function clientToRow(c) {
+  return [
+    c.timestamp || new Date().toISOString(),
+    c.company || '',
+    c.address || '',
+    c.postcode || '',
+    c.contactName || '',
+    c.jobTitle || '',
+    c.email || '',
+    c.phone || '',
+    c.folderCreated || 'No',
+  ];
+}
+
+async function readClientRows() {
+  if (!CLIENT_SHEET_ID) throw new Error('CLIENT_SHEET_ID is not set');
+  const sheets = getSheetsClient();
+  const result = await sheets.spreadsheets.values.get({
+    spreadsheetId: CLIENT_SHEET_ID,
+    range: CLIENT_RANGE,
+  });
+  return result.data.values || [];
+}
+
+// GET all clients
+app.get('/api/clients', async (req, res) => {
+  try {
+    const rows = await readClientRows();
+    const clients = rows.filter(r => r[1]).map(r => rowToClient(r));
+    res.json({ data: clients });
+  } catch (e) {
+    console.error('GET /api/clients error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST add new client
+app.post('/api/clients', async (req, res) => {
+  try {
+    const { company, address, postcode, contactName, jobTitle, email, phone } = req.body;
+    
+    if (!company || !email) {
+      return res.status(400).json({ error: 'company and email are required' });
+    }
+
+    const sheets = getSheetsClient();
+    const newClient = {
+      timestamp: new Date().toISOString(),
+      company,
+      address,
+      postcode,
+      contactName,
+      jobTitle,
+      email,
+      phone,
+      folderCreated: 'No',
+    };
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: CLIENT_SHEET_ID,
+      range: CLIENT_RANGE,
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: [clientToRow(newClient)] },
+    });
+
+    res.json({ ok: true, client: newClient });
+  } catch (e) {
+    console.error('POST /api/clients error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/', (req, res) => {
   res.json({ status: 'API Server running' });
 });
