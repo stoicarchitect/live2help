@@ -202,6 +202,26 @@
   .simple-form .actions .save{background:var(--dark);color:var(--white);border:1px solid var(--dark);}
   .simple-form .actions .cancel{background:var(--white);color:var(--grey);border:1px solid var(--border);}
 
+  .confirm-modal{
+    background:var(--white);width:100%;max-width:380px;border-radius:2px;padding:24px;
+  }
+  .confirm-modal h2{font-size:17px;color:var(--dark);margin-bottom:12px;}
+  .confirm-modal p{font-size:13.5px;color:var(--grey);line-height:1.5;margin-bottom:14px;}
+  .confirm-modal .field-row{margin-bottom:14px;}
+  .confirm-modal .field-row label{display:block;font-size:11px;color:#999;letter-spacing:0.5px;margin-bottom:4px;}
+  .confirm-modal textarea{width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-size:13.5px;font-family:inherit;min-height:60px;resize:vertical;}
+  .confirm-modal .confirm-actions{display:flex;gap:8px;margin-top:18px;}
+  .confirm-modal .confirm-actions button{flex:1;padding:10px;border-radius:2px;font-family:inherit;font-size:12.5px;cursor:pointer;border:1px solid;}
+  .confirm-modal .confirm-actions .delete-btn{background:var(--danger);color:var(--white);border-color:var(--danger);}
+  .confirm-modal .confirm-actions .delete-btn:hover{opacity:.9;}
+  .confirm-modal .confirm-actions .cancel-btn{background:var(--white);color:var(--grey);border-color:var(--border);}
+  .confirm-modal .confirm-actions .cancel-btn:hover{background:#f9f9f9;}
+
+  .sync-status{
+    position:fixed;bottom:20px;right:20px;font-size:11px;color:#999;background:var(--white);
+    border:1px solid var(--border);padding:6px 10px;border-radius:2px;z-index:400;
+  }
+
   .toast{
     position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
     background:var(--dark);color:var(--white);padding:11px 20px;border-radius:2px;
@@ -308,6 +328,21 @@
           <button class="save" onclick="saveNewCandidate()">Add to Submitted</button>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="deleteConfirmOverlay">
+  <div class="confirm-modal">
+    <h2>Delete from pipeline?</h2>
+    <p>This removes the candidate from the pipeline. You cannot undo this action.</p>
+    <div class="field-row">
+      <label>Reason for removal (optional)</label>
+      <textarea id="deleteReasonInput" placeholder="e.g. Candidate withdrew, no longer pursuing, etc."></textarea>
+    </div>
+    <div class="confirm-actions">
+      <button class="cancel-btn" onclick="closeModal('deleteConfirmOverlay')">Cancel</button>
+      <button class="delete-btn" onclick="confirmDelete()">Delete</button>
     </div>
   </div>
 </div>
@@ -590,6 +625,7 @@ function buildStageButtons(c){
     html += `<button class="reject" onclick="advanceStage('rejected')">Reject candidate</button>`;
   }
   html += `<button onclick="saveNotesOnly()">Save notes</button>`;
+  html += `<button class="reject" onclick="openDeleteConfirm()" style="margin-top:8px;width:100%;">Delete from pipeline</button>`;
   html += '</div>';
   return html;
 }
@@ -711,9 +747,61 @@ function showToast(msg){
   window._toastTimer = setTimeout(() => { t.style.display = 'none'; }, 3200);
 }
 
+function openDeleteConfirm(){
+  document.getElementById('deleteReasonInput').value = '';
+  document.getElementById('deleteConfirmOverlay').classList.add('visible');
+}
+
+async function confirmDelete(){
+  const c = findCandidate(openCandidateId);
+  const reason = document.getElementById('deleteReasonInput').value.trim();
+  
+  try{
+    const res = await fetch(`${API_BASE}/api/candidates/${c.id}`, {
+      method: 'DELETE',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({reason: reason || 'Deleted from pipeline'})
+    });
+    
+    if(!res.ok){
+      const err = await res.json().catch(()=>({}));
+      throw new Error(err.error || ('Server returned ' + res.status));
+    }
+    
+    DATA[currentCompany][currentRole] = DATA[currentCompany][currentRole].filter(x => x.id !== c.id);
+    closeModal('deleteConfirmOverlay');
+    closeModal('candModalOverlay');
+    renderBoard();
+    showToast('Candidate removed from pipeline');
+  }catch(e){
+    showToast('Could not delete: ' + e.message);
+  }
+}
+
+async function syncSubmissions(){
+  try{
+    const res = await fetch(`${API_BASE}/api/sync-submissions`, {method: 'POST'});
+    if(res.ok){
+      await new Promise(r => setTimeout(r, 500));
+      await loadCandidates();
+    }
+  }catch(e){
+    console.log('Auto-sync failed:', e.message);
+  }
+}
+
+window._autoSyncInterval = null;
+function startAutoSync(){
+  if(window._autoSyncInterval) return;
+  syncSubmissions();
+  window._autoSyncInterval = setInterval(syncSubmissions, 5 * 60 * 1000);
+}
+
 document.querySelectorAll('.modal-overlay').forEach(ov => {
   ov.addEventListener('click', e => { if(e.target === ov) ov.classList.remove('visible'); });
 });
+
+startAutoSync();
 </script>
 
 </body>
