@@ -47,13 +47,14 @@ app.post('/api/claude', async (req, res) => {
 ---------------------------------------------------------------------- */
 
 const SHEET_ID = process.env.SHEET_ID;
+const SUBMISSIONS_FOLDER_ID = '1MplgUUbCNy64ZxDz4EQtc8GtnZ7S9Ipo';
 const TAB = 'Dashboard';
 const RANGE = `${TAB}!A2:J`;
 
 let sheetsClientCache = null;
+let driveClientCache = null;
 
-function getSheetsClient() {
-  if (sheetsClientCache) return sheetsClientCache;
+function getAuthClient() {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   if (!raw) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON is not set on this server');
   let creds;
@@ -62,14 +63,26 @@ function getSheetsClient() {
   } catch (e) {
     throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON - paste the full key file contents as-is');
   }
-  const auth = new google.auth.JWT(
+  return new google.auth.JWT(
     creds.client_email,
     null,
     creds.private_key,
-    ['https://www.googleapis.com/auth/spreadsheets']
+    ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
   );
+}
+
+function getSheetsClient() {
+  if (sheetsClientCache) return sheetsClientCache;
+  const auth = getAuthClient();
   sheetsClientCache = google.sheets({ version: 'v4', auth });
   return sheetsClientCache;
+}
+
+function getDriveClient() {
+  if (driveClientCache) return driveClientCache;
+  const auth = getAuthClient();
+  driveClientCache = google.drive({ version: 'v3', auth });
+  return driveClientCache;
 }
 
 async function readAllRows() {
@@ -103,6 +116,24 @@ function candidateToRow(c) {
     c.date || new Date().toISOString().slice(0, 10),
     c.notes || '', c.salary || '', c.email || '', c.phone || '',
   ];
+}
+
+// Parse filename pattern: "Candidate Submission [Name] [Role]"
+function parseSubmissionFilename(filename) {
+  const match = filename.match(/^Candidate Submission\s+(.+?)\s+([^.]+)(?:\..+)?$/i);
+  if (!match) return null;
+  return { name: match[1].trim(), role: match[2].trim() };
+}
+
+async function listFolderContents(folderId) {
+  const drive = getDriveClient();
+  const result = await drive.files.list({
+    q: `'${folderId}' in parents and trashed=false`,
+    spaces: 'drive',
+    pageSize: 100,
+    fields: 'files(id, name, mimeType)',
+  });
+  return result.data.files || [];
 }
 
 // GET all candidates, grouped by company then role - shape the dashboard expects
@@ -144,7 +175,7 @@ app.post('/api/candidates', async (req, res) => {
         requestBody: { values },
       });
     } else {
-      const sheetRowNumber = rowIndex + 2; // +1 for header, +1 for 1-indexing
+      const sheetRowNumber = rowIndex + 2;
       await sheets.spreadsheets.values.update({
         spreadsheetId: SHEET_ID,
         range: `${TAB}!A${sheetRowNumber}:J${sheetRowNumber}`,
@@ -155,6 +186,60 @@ app.post('/api/candidates', async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error('POST /api/candidates error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Sync submissions folder - detect new candidate submission files and auto-create rows
+app.get('/api/sync-submissions', async (req, res) => {
+  try {
+    const companyFolders = await listFolderContents(SUBMISSIONS_FOLDER_ID);
+    const existingRows = await readAllRows();
+    const existingIds = new Set(existingRows.map(r => r[0]));
+
+    let created = 0;
+
+    for (const companyFolder of companyFolders) {
+      if (companyFolder.mimeType !== 'application/vnd.google-apps.folder') continue;
+
+      const submissionFiles = await listFolderContents(companyFolder.id);
+      const docFiles = submissionFiles.filter(f => !f.mimeType.includes('folder'));
+
+      for (const file of docFiles) {
+        const parsed = parseSubmissionFilename(file.name);
+        if (!parsed) continue;
+
+        const candidateId = `${companyFolder.name.toLowerCase().replace(/\s+/g, '-')}-${parsed.name.toLowerCase().replace(/\s+/g, '-')}`;
+
+        if (!existingIds.has(candidateId)) {
+          const newCandidate = {
+            id: candidateId,
+            company: companyFolder.name,
+            role: parsed.role,
+            name: parsed.name,
+            stage: 'submitted',
+            date: new Date().toISOString().slice(0, 10),
+            notes: '',
+            salary: '',
+            email: '',
+            phone: '',
+          };
+
+          await fetch(`http://localhost:${process.env.PORT || 10000}/api/candidates`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newCandidate),
+          });
+
+          created++;
+          console.log(`Auto-created candidate: ${parsed.name} for ${parsed.role} at ${companyFolder.name}`);
+        }
+      }
+    }
+
+    res.json({ synced: true, created });
+  } catch (e) {
+    console.error('GET /api/sync-submissions error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
