@@ -1585,6 +1585,262 @@ app.get('/api/init-bulk-clients', async (req, res) => {
   }
 });
 
+/* Tasks - stored in "Tasks" sheet of SHEET_ID */
+const TASKS_TAB = 'Tasks';
+const TASKS_RANGE = `${TASKS_TAB}!A2:H`;
+
+async function getTasksSheet() {
+  const sheets = getSheetsClient();
+  try {
+    const result = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: TASKS_RANGE,
+    });
+    return result.data.values || [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function rowToTask(row) {
+  return {
+    id: row[0],
+    user: row[1],
+    title: row[2],
+    priority: row[3],
+    dueDate: row[4],
+    context: row[5],
+    status: row[6],
+    recurring: row[7] || 'none',
+    archived: row[8] === 'true'
+  };
+}
+
+function taskToRow(task) {
+  return [
+    task.id,
+    task.user,
+    task.title,
+    task.priority,
+    task.dueDate,
+    task.context,
+    task.status,
+    task.recurring,
+    task.archived ? 'true' : 'false'
+  ];
+}
+
+app.get('/api/tasks', async (req, res) => {
+  try {
+    const userRole = req.headers['x-user-role'] || 'dan';
+    const rows = await getTasksSheet();
+    
+    const tasks = rows.map(rowToTask).filter(t => {
+      if (t.archived) return false;
+      if (userRole === 'dan') return true;
+      return t.user === 'ella';
+    });
+    
+    res.json(tasks);
+  } catch (e) {
+    console.error('GET /api/tasks error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/tasks/archive', async (req, res) => {
+  try {
+    const userRole = req.headers['x-user-role'] || 'dan';
+    const rows = await getTasksSheet();
+    
+    const tasks = rows.map(rowToTask).filter(t => {
+      if (!t.archived) return false;
+      if (userRole === 'dan') return true;
+      return t.user === 'ella';
+    });
+    
+    res.json(tasks);
+  } catch (e) {
+    console.error('GET /api/tasks/archive error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/tasks', async (req, res) => {
+  try {
+    const userRole = req.headers['x-user-role'] || 'dan';
+    const { title, priority, dueDate, context, recurring } = req.body;
+    const taskId = `task-${Date.now()}`;
+    
+    const task = {
+      id: taskId,
+      user: userRole,
+      title,
+      priority,
+      dueDate,
+      context,
+      status: 'Open',
+      recurring: recurring || 'none',
+      archived: false
+    };
+    
+    const sheets = getSheetsClient();
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: TASKS_RANGE,
+      valueInputOption: 'RAW',
+      requestBody: { values: [taskToRow(task)] }
+    });
+    
+    res.json(task);
+  } catch (e) {
+    console.error('POST /api/tasks error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.put('/api/tasks/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, priority, dueDate, context, status, recurring } = req.body;
+    
+    const rows = await getTasksSheet();
+    const rowIndex = rows.findIndex(r => r[0] === id);
+    
+    if (rowIndex === -1) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+    
+    const task = {
+      ...rowToTask(rows[rowIndex]),
+      title: title || rows[rowIndex][2],
+      priority: priority || rows[rowIndex][3],
+      dueDate: dueDate || rows[rowIndex][4],
+      context: context || rows[rowIndex][5],
+      status: status || rows[rowIndex][6],
+      recurring: recurring || rows[rowIndex][7]
+    };
+    
+    const sheets = getSheetsClient();
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: `${TASKS_TAB}!A${rowIndex + 2}:H${rowIndex + 2}`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [taskToRow(task)] }
+    });
+    
+    res.json(task);
+  } catch (e) {
+    console.error('PUT /api/tasks/:id error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/tasks/:id/complete', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const rows = await getTasksSheet();
+    const rowIndex = rows.findIndex(r => r[0] === id);
+    
+    if (rowIndex === -1) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+    
+    const originalTask = rowToTask(rows[rowIndex]);
+    let newTask = { ...originalTask, status: 'Complete', archived: true };
+    
+    const sheets = getSheetsClient();
+    
+    // Archive the completed task
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: `${TASKS_TAB}!A${rowIndex + 2}:H${rowIndex + 2}`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [taskToRow(newTask)] }
+    });
+    
+    // If recurring, create next instance
+    if (originalTask.recurring !== 'none') {
+      const nextDate = calculateNextDate(originalTask.dueDate, originalTask.recurring);
+      const nextTask = {
+        id: `task-${Date.now()}`,
+        user: originalTask.user,
+        title: originalTask.title,
+        priority: originalTask.priority,
+        dueDate: nextDate,
+        context: originalTask.context,
+        status: 'Open',
+        recurring: originalTask.recurring,
+        archived: false
+      };
+      
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SHEET_ID,
+        range: TASKS_RANGE,
+        valueInputOption: 'RAW',
+        requestBody: { values: [taskToRow(nextTask)] }
+      });
+      
+      res.json({ completed: newTask, next: nextTask });
+    } else {
+      res.json({ completed: newTask });
+    }
+  } catch (e) {
+    console.error('POST /api/tasks/:id/complete error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/tasks/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const rows = await getTasksSheet();
+    const rowIndex = rows.findIndex(r => r[0] === id);
+    
+    if (rowIndex === -1) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+    
+    const sheets = getSheetsClient();
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: {
+        requests: [{
+          deleteRange: {
+            range: {
+              sheetId: 0,
+              startRowIndex: rowIndex + 1,
+              endRowIndex: rowIndex + 2
+            },
+            shiftDimension: 'ROWS'
+          }
+        }]
+      }
+    });
+    
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('DELETE /api/tasks/:id error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+function calculateNextDate(dateStr, recurring) {
+  const date = new Date(dateStr);
+  if (recurring === 'daily') {
+    date.setDate(date.getDate() + 1);
+  } else if (recurring === 'weekly') {
+    date.setDate(date.getDate() + 7);
+  } else if (recurring === 'biweekly') {
+    date.setDate(date.getDate() + 14);
+  } else if (recurring === 'monthly') {
+    date.setMonth(date.getMonth() + 1);
+  }
+  return date.toISOString().split('T')[0];
+}
+
 app.get('/', (req, res) => {
   res.json({ status: 'API Server running' });
 });
