@@ -1915,8 +1915,103 @@ function editClient(company){
   openAddClientModal(contacts[0]);
 }
 
+function initializeClientModals(){
+  if(!document.getElementById('addClientOverlay')){
+    const overlay = document.createElement('div');
+    overlay.id = 'addClientOverlay';
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-inner">
+          <button class="modal-close" onclick="closeModal('addClientOverlay')">×</button>
+          <h2>Add Client Contact</h2>
+          <div class="simple-form">
+            <label>Company Name</label>
+            <input type="text" id="clientCompanyInput" placeholder="Company name" required>
+            
+            <label>Address</label>
+            <input type="text" id="clientAddressInput" placeholder="Street address">
+            
+            <label>Postcode</label>
+            <input type="text" id="clientPostcodeInput" placeholder="Postcode">
+            
+            <label>Contact Name</label>
+            <input type="text" id="clientContactNameInput" placeholder="Full name" required>
+            
+            <label>Job Title</label>
+            <input type="text" id="clientJobTitleInput" placeholder="Job title">
+            
+            <label>Email</label>
+            <input type="email" id="clientEmailInput" placeholder="Email address" required>
+            
+            <label>Phone</label>
+            <input type="tel" id="clientPhoneInput" placeholder="Phone number">
+            
+            <label>Notes</label>
+            <textarea id="clientNotesInput" placeholder="Additional notes"></textarea>
+            
+            <div class="actions">
+              <button class="cancel" onclick="closeModal('addClientOverlay')">Cancel</button>
+              <button class="save" onclick="submitAddClient()">Save Client</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => { if(e.target === overlay) overlay.classList.remove('visible'); });
+  }
+  
+  if(!document.getElementById('addLeadClientOverlay')){
+    const overlay = document.createElement('div');
+    overlay.id = 'addLeadClientOverlay';
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-inner">
+          <button class="modal-close" onclick="closeModal('addLeadClientOverlay')">×</button>
+          <h2>Add Lead Client</h2>
+          <div class="simple-form">
+            <label>Company Name</label>
+            <input type="text" id="leadCompanyInput" placeholder="Company name" required>
+            
+            <label>Address</label>
+            <input type="text" id="leadAddressInput" placeholder="Street address">
+            
+            <label>Postcode</label>
+            <input type="text" id="leadPostcodeInput" placeholder="Postcode">
+            
+            <label>Contact Name</label>
+            <input type="text" id="leadContactNameInput" placeholder="Full name" required>
+            
+            <label>Job Title</label>
+            <input type="text" id="leadJobTitleInput" placeholder="Job title">
+            
+            <label>Email</label>
+            <input type="email" id="leadEmailInput" placeholder="Email address" required>
+            
+            <label>Phone</label>
+            <input type="tel" id="leadPhoneInput" placeholder="Phone number">
+            
+            <label>Notes</label>
+            <textarea id="leadNotesInput" placeholder="Additional notes"></textarea>
+            
+            <div class="actions">
+              <button class="cancel" onclick="closeModal('addLeadClientOverlay')">Cancel</button>
+              <button class="save" onclick="submitAddLeadClient()">Save Lead Client</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => { if(e.target === overlay) overlay.classList.remove('visible'); });
+  }
+}
+
 function openAddClientModal(client){
-  const overlay = document.getElementById('addClientOverlay') || createAddClientModal();
+  const overlay = document.getElementById('addClientOverlay');
+  if(!overlay) return;
   const form = overlay.querySelector('.simple-form');
   
   if(client){
@@ -1935,104 +2030,11 @@ function openAddClientModal(client){
   overlay.classList.add('visible');
 }
 
-function createAddClientModal(){
-  const overlay = document.createElement('div');
-  overlay.id = 'addClientOverlay';
-  overlay.className = 'modal-overlay';
-  overlay.innerHTML = `
-    <div class="modal">
-      <div class="modal-inner">
-        <button class="modal-close" onclick="closeModal('addClientOverlay')">×</button>
-        <h2>Add Client Contact</h2>
-        <div class="simple-form">
-          <label>Company Name</label>
-          <input type="text" id="clientCompanyInput" placeholder="Company name" required>
-          
-          <label>Address</label>
-          <input type="text" id="clientAddressInput" placeholder="Street address">
-          
-          <label>Postcode</label>
-          <input type="text" id="clientPostcodeInput" placeholder="Postcode">
-          
-          <label>Contact Name</label>
-          <input type="text" id="clientContactNameInput" placeholder="Full name" required>
-          
-          <label>Job Title</label>
-          <input type="text" id="clientJobTitleInput" placeholder="Job title">
-          
-          <label>Email</label>
-          <input type="email" id="clientEmailInput" placeholder="Email address" required>
-          
-          <label>Phone</label>
-          <input type="tel" id="clientPhoneInput" placeholder="Phone number">
-          
-          <label>Notes</label>
-          <textarea id="clientNotesInput" placeholder="Additional notes"></textarea>
-          
-          <div class="actions">
-            <button class="cancel" onclick="closeModal('addClientOverlay')">Cancel</button>
-            <button class="save" onclick="submitAddClient()">Save Client</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => { if(e.target === overlay) overlay.classList.remove('visible'); });
-  return overlay;
-}
-
 function openAddLeadClientModal(){
-  const overlay = document.getElementById('addLeadClientOverlay') || createAddLeadClientModal();
+  const overlay = document.getElementById('addLeadClientOverlay');
+  if(!overlay) return;
   overlay.querySelector('.simple-form').reset();
   overlay.classList.add('visible');
-}
-
-function createAddLeadClientModal(){
-  const overlay = document.createElement('div');
-  overlay.id = 'addLeadClientOverlay';
-  overlay.className = 'modal-overlay';
-  overlay.innerHTML = `
-    <div class="modal">
-      <div class="modal-inner">
-        <button class="modal-close" onclick="closeModal('addLeadClientOverlay')">×</button>
-        <h2>Add Lead Client</h2>
-        <div class="simple-form">
-          <label>Company Name</label>
-          <input type="text" id="leadCompanyInput" placeholder="Company name" required>
-          
-          <label>Address</label>
-          <input type="text" id="leadAddressInput" placeholder="Street address">
-          
-          <label>Postcode</label>
-          <input type="text" id="leadPostcodeInput" placeholder="Postcode">
-          
-          <label>Contact Name</label>
-          <input type="text" id="leadContactNameInput" placeholder="Full name" required>
-          
-          <label>Job Title</label>
-          <input type="text" id="leadJobTitleInput" placeholder="Job title">
-          
-          <label>Email</label>
-          <input type="email" id="leadEmailInput" placeholder="Email address" required>
-          
-          <label>Phone</label>
-          <input type="tel" id="leadPhoneInput" placeholder="Phone number">
-          
-          <label>Notes</label>
-          <textarea id="leadNotesInput" placeholder="Additional notes"></textarea>
-          
-          <div class="actions">
-            <button class="cancel" onclick="closeModal('addLeadClientOverlay')">Cancel</button>
-            <button class="save" onclick="submitAddLeadClient()">Save Lead Client</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => { if(e.target === overlay) overlay.classList.remove('visible'); });
-  return overlay;
 }
 
 async function submitAddClient(){
@@ -2106,6 +2108,7 @@ async function submitAddLeadClient(){
 }
 
 setSplashLogo();
+initializeClientModals();
 loadClients();
 startAutoSync();
 </script>
