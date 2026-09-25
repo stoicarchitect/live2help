@@ -1724,7 +1724,7 @@ app.put('/api/tasks/:id', async (req, res) => {
     const sheets = getSheetsClient();
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: `${TASKS_TAB}!A${rowIndex + 2}:H${rowIndex + 2}`,
+      range: `${TASKS_TAB}!A${rowIndex + 2}:I${rowIndex + 2}`,
       valueInputOption: 'RAW',
       requestBody: { values: [taskToRow(task)] }
     });
@@ -1755,7 +1755,7 @@ app.post('/api/tasks/:id/complete', async (req, res) => {
     // Archive the completed task
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: `${TASKS_TAB}!A${rowIndex + 2}:H${rowIndex + 2}`,
+      range: `${TASKS_TAB}!A${rowIndex + 2}:I${rowIndex + 2}`,
       valueInputOption: 'RAW',
       requestBody: { values: [taskToRow(newTask)] }
     });
@@ -1828,7 +1828,9 @@ app.delete('/api/tasks/:id', async (req, res) => {
 });
 
 function calculateNextDate(dateStr, recurring) {
-  const date = new Date(dateStr);
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  
   if (recurring === 'daily') {
     date.setDate(date.getDate() + 1);
   } else if (recurring === 'weekly') {
@@ -1838,7 +1840,11 @@ function calculateNextDate(dateStr, recurring) {
   } else if (recurring === 'monthly') {
     date.setMonth(date.getMonth() + 1);
   }
-  return date.toISOString().split('T')[0];
+  
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 app.get('/', (req, res) => {
