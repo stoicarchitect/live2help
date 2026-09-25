@@ -282,6 +282,27 @@
   .confirm-modal .confirm-actions .cancel-btn{background:var(--white);color:var(--grey);border-color:var(--border);}
   .confirm-modal .confirm-actions .cancel-btn:hover{background:#f9f9f9;}
 
+  /* ---- Screening Answers Modal ---- */
+  #screeningAnswersModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;padding:1rem;}
+  #screeningAnswersModal.visible{display:flex;}
+  .screening-modal{background:var(--white);border-radius:2px;padding:2rem;max-width:600px;max-height:75vh;overflow-y:auto;width:100%;}
+  .screening-modal h2{font-size:17px;color:var(--dark);margin-bottom:1.5rem;display:flex;justify-content:space-between;align-items:center;}
+  .screening-modal .close-btn{background:none;border:none;font-size:20px;cursor:pointer;color:var(--grey);}
+  .screening-modal .field-group{margin-bottom:1.5rem;padding-bottom:1.5rem;border-bottom:1px solid var(--border);}
+  .screening-modal .field-group:last-of-type{border-bottom:none;}
+  .screening-modal .field-label{font-size:11px;color:#999;letter-spacing:0.5px;margin-bottom:6px;font-weight:600;text-transform:uppercase;}
+  .screening-modal .field-value{font-size:13.5px;color:var(--grey);word-break:break-word;line-height:1.5;}
+  .screening-modal .action-buttons{display:flex;gap:8px;margin-top:2rem;justify-content:flex-end;}
+  .screening-modal .action-buttons button{padding:10px 16px;border:1px solid var(--border);background:var(--white);border-radius:2px;cursor:pointer;font-size:13px;font-family:inherit;}
+  .screening-modal .action-buttons button.primary{background:var(--dark);color:var(--white);border-color:var(--dark);}
+  .cv-section{margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid var(--border);}
+  .cv-section label{display:block;font-size:11px;color:#999;letter-spacing:0.5px;margin-bottom:8px;font-weight:600;text-transform:uppercase;}
+  .cv-action-buttons{display:flex;gap:8px;}
+  .cv-action-buttons button{padding:8px 12px;font-size:12.5px;border:1px solid var(--border);background:var(--white);border-radius:2px;cursor:pointer;font-family:inherit;}
+  .cv-action-buttons button:hover{background:var(--lightbg);}
+  .cv-action-buttons input[type="file"]{display:none;}
+  .cv-status{font-size:12px;color:#999;margin-top:8px;}
+
   /* ---- Workflow Modal ---- */
   .workflow-modal{
     background:var(--white);width:100%;max-width:520px;border-radius:2px;padding:32px;
@@ -553,9 +574,24 @@
   </div>
 </div>
 
+<div id="screeningAnswersModal">
+  <div class="screening-modal">
+    <h2>
+      <span>Screening Form Answers</span>
+      <button class="close-btn" onclick="closeModal('screeningAnswersModal')">&times;</button>
+    </h2>
+    <div id="screeningAnswersContent"></div>
+    <div class="action-buttons">
+      <button onclick="downloadScreeningAnswersPDF()">Download PDF</button>
+      <button class="primary" onclick="closeModal('screeningAnswersModal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="clients-update.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script>
 const STAGES = [
   {key:"applied", label:"Applied"},
@@ -864,10 +900,27 @@ function openCandidateModal(id){
     </div>
   `;
 
+  if(c.stage === 'applied' && currentCompany !== UNASSIGNED_LABEL){
+    html += `
+      <div class="cv-section">
+        <label>CV & Screening Answers</label>
+        <button onclick="viewScreeningAnswers()" style="width:100%;margin-bottom:8px;padding:10px;background:var(--gold);border:1px solid var(--gold);color:var(--dark);border-radius:2px;cursor:pointer;font-size:13px;font-weight:600;">View Screening Form Answers</button>
+        <div class="cv-action-buttons">
+          <button onclick="uploadCV()">Upload CV</button>
+          <button onclick="downloadCV()">Download CV</button>
+        </div>
+        <div class="cv-status" id="cvStatus">Checking...</div>
+      </div>
+    `;
+  }
+
   html += buildStageButtons(c);
 
   document.getElementById('candModalBody').innerHTML = html;
   document.getElementById('candModalOverlay').classList.add('visible');
+  if(c.stage === 'applied' && currentCompany !== UNASSIGNED_LABEL){
+    setTimeout(refreshCVStatus, 100);
+  }
 }
 
 function onApplicationCompanyChange(){
@@ -1116,8 +1169,126 @@ function startAutoSync(){
   setInterval(updateSyncDisplay, 1000);
 }
 
+// Screening answers and CV functions
+async function viewScreeningAnswers(){
+  const c = findCandidate(openCandidateId);
+  try{
+    const res = await fetch(`${API_BASE}/api/candidates/${c.id}/screening-answers?role=${encodeURIComponent(currentRole)}`);
+    if(!res.ok) throw new Error('Could not load screening answers');
+    const json = await res.json();
+    const answers = json.data;
+    let html = '';
+    for(const key in answers){
+      const field = answers[key];
+      const value = field.value || '(not provided)';
+      html += `
+        <div class="field-group">
+          <div class="field-label">${field.label}</div>
+          <div class="field-value">${value}</div>
+        </div>
+      `;
+    }
+    document.getElementById('screeningAnswersContent').innerHTML = html;
+    document.getElementById('screeningAnswersModal').classList.add('visible');
+  }catch(e){
+    showToast('Could not load screening answers: ' + e.message);
+  }
+}
+
+function downloadScreeningAnswersPDF(){
+  const c = findCandidate(openCandidateId);
+  const element = document.getElementById('screeningAnswersContent');
+  const opt = {
+    margin: 10,
+    filename: `${c.name} - Screening Answers.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2 },
+    jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' }
+  };
+  if(window.html2pdf){
+    const content = `
+      <div style="font-family: Arial, sans-serif; padding: 20px;">
+        <h1 style="font-size: 18px; margin-bottom: 20px;">${c.name} - Screening Form Answers</h1>
+        <div style="font-size: 11px; color: #999; margin-bottom: 20px;">
+          Role: ${currentRole}<br>Company: ${currentCompany}<br>Date: ${new Date().toLocaleDateString()}
+        </div>
+        ${document.getElementById('screeningAnswersContent').innerHTML}
+      </div>
+    `;
+    html2pdf().set(opt).fromString(content).save();
+  }else{
+    showToast('PDF library not ready, try again in a moment');
+  }
+}
+
+async function uploadCV(){
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.pdf,.doc,.docx';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const c = findCandidate(openCandidateId);
+      try{
+        const base64 = ev.target.result.split(',')[1];
+        const res = await fetch(`${API_BASE}/api/candidates/${c.id}/cv`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            company: currentCompany,
+            name: c.name,
+            fileData: base64,
+            fileName: file.name
+          })
+        });
+        if(!res.ok) throw new Error('Upload failed');
+        showToast('CV uploaded successfully');
+        refreshCVStatus();
+      }catch(e){
+        showToast('Could not upload CV: ' + e.message);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+}
+
+async function downloadCV(){
+  const c = findCandidate(openCandidateId);
+  try{
+    const res = await fetch(`${API_BASE}/api/candidates/${c.id}/cv?company=${encodeURIComponent(currentCompany)}&name=${encodeURIComponent(c.name)}`);
+    if(!res.ok) throw new Error('CV not found');
+    const json = await res.json();
+    const cvFile = json.data;
+    window.open(cvFile.link, '_blank');
+  }catch(e){
+    showToast('No CV on file for this candidate');
+  }
+}
+
+function refreshCVStatus(){
+  const el = document.getElementById('cvStatus');
+  if(el){
+    const c = findCandidate(openCandidateId);
+    fetch(`${API_BASE}/api/candidates/${c.id}/cv?company=${encodeURIComponent(currentCompany)}&name=${encodeURIComponent(c.name)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(json => {
+        if(json && json.data){
+          el.textContent = `CV on file: ${json.data.fileName}`;
+        }else{
+          el.textContent = 'No CV uploaded';
+        }
+      });
+  }
+}
+
 document.querySelectorAll('.modal-overlay').forEach(ov => {
   ov.addEventListener('click', e => { if(e.target === ov) ov.classList.remove('visible'); });
+});
+document.getElementById('screeningAnswersModal').addEventListener('click', e => {
+  if(e.target === document.getElementById('screeningAnswersModal')) closeModal('screeningAnswersModal');
 });
 
 setSplashLogo();
