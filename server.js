@@ -735,6 +735,16 @@ const emailTransporter = nodemailer.createTransport({
   },
 });
 
+// Restricts invoice create/update/delete to Dan's login. The dashboard sends
+// its role in this header on invoice-mutating requests. Not a real auth
+// system - just stops Ella's UI (or a casual API call) from touching invoices.
+function requireDan(req, res, next) {
+  if (req.get('X-User-Role') !== 'dan') {
+    return res.status(403).json({ error: 'Only Dan can generate or manage invoices' });
+  }
+  next();
+}
+
 // GET all invoices
 app.get('/api/invoices', async (req, res) => {
   try {
@@ -750,7 +760,7 @@ app.get('/api/invoices', async (req, res) => {
 // POST generate a new invoice for a placed candidate.
 // Body: { candidateId, company, role, candidateName, salary }
 // Fee is always calculated server-side from salary - never trust a client-sent amount.
-app.post('/api/invoices', async (req, res) => {
+app.post('/api/invoices', requireDan, async (req, res) => {
   try {
     const { candidateId, company, role, candidateName, salary } = req.body;
     if (!company || !candidateName || !salary) {
@@ -811,7 +821,7 @@ app.post('/api/invoices', async (req, res) => {
 });
 
 // PUT update invoice status (pending / sent / paid) and payment date
-app.put('/api/invoices/:number', async (req, res) => {
+app.put('/api/invoices/:number', requireDan, async (req, res) => {
   try {
     const { number } = req.params;
     const { status, paymentDate } = req.body;
@@ -843,7 +853,7 @@ app.put('/api/invoices/:number', async (req, res) => {
 });
 
 // DELETE an invoice record
-app.delete('/api/invoices/:number', async (req, res) => {
+app.delete('/api/invoices/:number', requireDan, async (req, res) => {
   try {
     const { number } = req.params;
     const sheets = getSheetsClient();
