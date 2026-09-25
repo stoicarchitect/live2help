@@ -136,17 +136,76 @@ async function listFolderContents(folderId) {
   return result.data.files || [];
 }
 
-// GET all candidates, grouped by company then role - shape the dashboard expects
+// Pseudo-company bucket for form applications not yet assigned to a client
+const UNASSIGNED_LABEL = 'Unassigned - New Applications';
+
+// Helper: read from Applications tabs and convert to candidates with 'applied' stage
+async function readApplicationsRows() {
+  const sheets = getSheetsClient();
+  const allApplications = [];
+  try {
+    const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
+    const tabs = spreadsheet.data.sheets;
+
+    for (const tab of tabs) {
+      const tabName = tab.properties.title;
+      if (!tabName.startsWith('Applications -')) continue;
+
+      const result = await sheets.spreadsheets.values.get({
+        spreadsheetId: SHEET_ID,
+        range: `'${tabName}'!A2:T`,
+      });
+
+      const rows = result.data.values || [];
+      rows.forEach(row => {
+        if (!row[2]) return; // Skip if no candidate name (col C)
+        allApplications.push({
+          id: row[0] || '',
+          company: row[17] || '', // Company is column R
+          contact: row[18] || '', // Contact is column S
+          role: tabName.replace('Applications - ', ''),
+          name: row[2] || '', // Candidate name is column C
+          stage: row[19] || 'applied', // Status is column T
+          date: row[1] || '', // Date Applied is column B
+          notes: '',
+          salary: row[15] || '', // Salary Expectation is column P
+          email: row[3] || '', // Email is column D
+          phone: row[4] || '', // Phone is column E
+          sourceTab: 'application'
+        });
+      });
+    }
+  } catch (e) {
+    console.error('Error reading Applications tabs:', e.message);
+  }
+  return allApplications;
+}
+
+// GET all candidates, grouped by company then role - shape the dashboard expects.
+// Includes Dashboard tab rows plus form Applications tab rows. Applications with
+// no company assigned yet are grouped under UNASSIGNED_LABEL so Ella can see and
+// assign them from the board, rather than being silently dropped.
 app.get('/api/candidates', async (req, res) => {
   try {
-    const rows = await readAllRows();
+    const dashboardRows = await readAllRows();
+    const applicationRows = await readApplicationsRows();
+
     const grouped = {};
-    rows.filter(r => r[0]).forEach(r => {
+
+    dashboardRows.filter(r => r[0]).forEach(r => {
       const c = rowToCandidate(r);
       if (!grouped[c.company]) grouped[c.company] = {};
       if (!grouped[c.company][c.role]) grouped[c.company][c.role] = [];
       grouped[c.company][c.role].push(c);
     });
+
+    applicationRows.forEach(c => {
+      const companyKey = c.company || UNASSIGNED_LABEL;
+      if (!grouped[companyKey]) grouped[companyKey] = {};
+      if (!grouped[companyKey][c.role]) grouped[companyKey][c.role] = [];
+      grouped[companyKey][c.role].push(c);
+    });
+
     res.json({ data: grouped });
   } catch (e) {
     console.error('GET /api/candidates error:', e.message);
@@ -154,14 +213,55 @@ app.get('/api/candidates', async (req, res) => {
   }
 });
 
-// Create or update a single candidate (upsert by id)
+// Create or update a single candidate (upsert by id).
+// Applications-tab candidates (sourceTab === 'application') are written back to
+// their "Applications - <Role>" tab, matched by candidate name - this is how
+// Ella's company/contact assignment gets saved. Everything else goes to Dashboard.
 app.post('/api/candidates', async (req, res) => {
   try {
     const c = req.body;
-    if (!c.id || !c.company || !c.role || !c.name) {
-      return res.status(400).json({ error: 'id, company, role and name are required' });
+    if (!c.id || !c.role || !c.name) {
+      return res.status(400).json({ error: 'id, role and name are required' });
     }
     const sheets = getSheetsClient();
+
+    if (c.sourceTab === 'application') {
+      const tabName = `Applications - ${c.role}`;
+      const allRows = await sheets.spreadsheets.values.get({
+        spreadsheetId: SHEET_ID,
+        range: `'${tabName}'!A2:T`,
+      });
+      const rows = allRows.data.values || [];
+      const rowIndex = rows.findIndex(r => (r[2] || '').trim().toLowerCase() === c.name.trim().toLowerCase());
+
+      if (rowIndex === -1) {
+        return res.status(404).json({ error: `Candidate not found in ${tabName}` });
+      }
+
+      const sheetRowNumber = rowIndex + 2;
+      const existing = rows[rowIndex];
+      const appRow = [
+        existing[0] || c.id, existing[1], existing[2], c.email || existing[3], c.phone || existing[4],
+        existing[5], existing[6], existing[7], existing[8], existing[9], existing[10], existing[11],
+        existing[12], existing[13], existing[14], c.salary || existing[15], existing[16],
+        c.company !== undefined ? c.company : (existing[17] || ''),
+        c.contact !== undefined ? c.contact : (existing[18] || ''),
+        c.stage || existing[19] || 'applied',
+      ];
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID,
+        range: `'${tabName}'!A${sheetRowNumber}:T${sheetRowNumber}`,
+        valueInputOption: 'RAW',
+        requestBody: { values: [appRow] },
+      });
+      return res.json({ ok: true });
+    }
+
+    if (!c.company) {
+      return res.status(400).json({ error: 'company is required for Dashboard candidates' });
+    }
+
     const rows = await readAllRows();
     const rowIndex = rows.findIndex(r => r[0] === c.id);
     const values = [candidateToRow(c)];
@@ -190,7 +290,43 @@ app.post('/api/candidates', async (req, res) => {
   }
 });
 
-// Sync submissions folder - detect new candidate submission files and auto-create rows
+// If this candidate came in through a screening form, mark their existing
+// Applications tab row as submitted (and lock in the company) rather than
+// letting the code below create a separate, duplicate Dashboard row.
+async function tryMarkApplicationSubmitted(companyName, role, candidateName) {
+  const sheets = getSheetsClient();
+  const tabName = `Applications - ${role}`;
+  try {
+    const allRows = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: `'${tabName}'!A2:T`,
+    });
+    const rows = allRows.data.values || [];
+    const rowIndex = rows.findIndex(r => (r[2] || '').trim().toLowerCase() === candidateName.trim().toLowerCase());
+    if (rowIndex === -1) return false;
+
+    const sheetRowNumber = rowIndex + 2;
+    const existing = rows[rowIndex];
+    existing[17] = companyName;       // Company
+    existing[19] = 'submitted';       // Status
+    while (existing.length < 20) existing.push('');
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: `'${tabName}'!A${sheetRowNumber}:T${sheetRowNumber}`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [existing] },
+    });
+    return true;
+  } catch (e) {
+    // Tab probably doesn't exist for this role - candidate wasn't sourced from a form
+    return false;
+  }
+}
+
+// Sync submissions folder - detect new candidate submission files.
+// Prefers updating a matching Applications tab row (form-sourced candidates);
+// only creates a new Dashboard row when no Applications tab match is found.
 app.post('/api/sync-submissions', async (req, res) => {
   try {
     const companyFolders = await listFolderContents(SUBMISSIONS_FOLDER_ID);
@@ -198,6 +334,7 @@ app.post('/api/sync-submissions', async (req, res) => {
     const existingIds = new Set(existingRows.map(r => r[0]));
 
     let created = 0;
+    let updated = 0;
 
     for (const companyFolder of companyFolders) {
       if (companyFolder.mimeType !== 'application/vnd.google-apps.folder') continue;
@@ -208,6 +345,13 @@ app.post('/api/sync-submissions', async (req, res) => {
       for (const file of docFiles) {
         const parsed = parseSubmissionFilename(file.name);
         if (!parsed) continue;
+
+        const matchedApplication = await tryMarkApplicationSubmitted(companyFolder.name, parsed.role, parsed.name);
+        if (matchedApplication) {
+          updated++;
+          console.log(`Marked as submitted: ${parsed.name} for ${parsed.role} at ${companyFolder.name}`);
+          continue;
+        }
 
         const candidateId = `${companyFolder.name.toLowerCase().replace(/\s+/g, '-')}-${parsed.name.toLowerCase().replace(/\s+/g, '-')}`;
 
@@ -237,7 +381,7 @@ app.post('/api/sync-submissions', async (req, res) => {
       }
     }
 
-    res.json({ synced: true, created });
+    res.json({ synced: true, created, updated });
   } catch (e) {
     console.error('GET /api/sync-submissions error:', e.message);
     res.status(500).json({ error: e.message });
