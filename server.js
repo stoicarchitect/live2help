@@ -2,6 +2,13 @@ import express from 'express';
 import cors from 'cors';
 import fetch from 'node-fetch';
 import { google } from 'googleapis';
+import PDFDocument from 'pdfkit';
+import nodemailer from 'nodemailer';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(cors());
@@ -43,13 +50,14 @@ app.post('/api/claude', async (req, res) => {
      SHEET_ID                     - the tracker spreadsheet ID
 
    Expects a tab named "Dashboard" in that spreadsheet with header row:
-     id | company | role | name | stage | date | notes | salary | email | phone
+     id | company | role | name | stage | date | notes | salary | email | phone |
+     invoice_number | start_date
 ---------------------------------------------------------------------- */
 
 const SHEET_ID = process.env.SHEET_ID;
 const SUBMISSIONS_FOLDER_ID = '1MplgUUbCNy64ZxDz4EQtc8GtnZ7S9Ipo';
 const TAB = 'Dashboard';
-const RANGE = `${TAB}!A2:J`;
+const RANGE = `${TAB}!A2:L`;
 
 let sheetsClientCache = null;
 let driveClientCache = null;
@@ -107,6 +115,8 @@ function rowToCandidate(row) {
     salary: row[7] || '',
     email: row[8] || '',
     phone: row[9] || '',
+    invoiceNumber: row[10] || '',
+    startDate: row[11] || '',
   };
 }
 
@@ -115,6 +125,7 @@ function candidateToRow(c) {
     c.id, c.company, c.role, c.name, c.stage || 'submitted',
     c.date || new Date().toISOString().slice(0, 10),
     c.notes || '', c.salary || '', c.email || '', c.phone || '',
+    c.invoiceNumber || '', c.startDate || '',
   ];
 }
 
@@ -225,6 +236,23 @@ app.post('/api/candidates', async (req, res) => {
     }
     const sheets = getSheetsClient();
 
+    // Graduate to Dashboard: once a form-sourced candidate reaches offer stage
+    // or later, they need fields (start date, invoice tracking) that the
+    // Applications tab doesn't have. From this point on they live as a normal
+    // Dashboard row and stop being written back to the Applications tab.
+    const GRADUATE_STAGES = ['offer', 'start_date', 'day1', 'week1', 'month1'];
+    if (c.sourceTab === 'application' && GRADUATE_STAGES.includes(c.stage) && c.company) {
+      const dashboardId = `${c.company}-${c.name}`.toLowerCase().replace(/\s+/g, '-');
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SHEET_ID,
+        range: RANGE,
+        valueInputOption: 'RAW',
+        insertDataOption: 'INSERT_ROWS',
+        requestBody: { values: [candidateToRow({ ...c, id: dashboardId })] },
+      });
+      return res.json({ ok: true, migrated: true, id: dashboardId });
+    }
+
     if (c.sourceTab === 'application') {
       const tabName = `Applications - ${c.role}`;
       const allRows = await sheets.spreadsheets.values.get({
@@ -278,7 +306,7 @@ app.post('/api/candidates', async (req, res) => {
       const sheetRowNumber = rowIndex + 2;
       await sheets.spreadsheets.values.update({
         spreadsheetId: SHEET_ID,
-        range: `${TAB}!A${sheetRowNumber}:J${sheetRowNumber}`,
+        range: `${TAB}!A${sheetRowNumber}:L${sheetRowNumber}`,
         valueInputOption: 'RAW',
         requestBody: { values },
       });
@@ -499,7 +527,7 @@ app.delete('/api/candidates/:id', async (req, res) => {
     const sheetRowNumber = rowIndex + 2;
     await sheets.spreadsheets.values.clear({
       spreadsheetId: SHEET_ID,
-      range: `${TAB}!A${sheetRowNumber}:J${sheetRowNumber}`,
+      range: `${TAB}!A${sheetRowNumber}:L${sheetRowNumber}`,
     });
     res.json({ ok: true, deleted: id });
   } catch (e) {
@@ -519,7 +547,7 @@ const CLIENT_SHEET_ID = '1gFoG7F9OU_ax-cJ7AJYPzXBPYPHGxronprXCXA2u5so';
 const CLIENT_TAB = 'Dashboard';
 const CLIENT_RANGE = `${CLIENT_TAB}!A2:J`;
 const INVOICES_TAB = 'Invoices';
-const INVOICES_RANGE = `${INVOICES_TAB}!A2:E`;
+const INVOICES_RANGE = `${INVOICES_TAB}!A2:K`;
 const KPI_TARGETS_TAB = 'KPI Targets';
 const KPI_TARGETS_RANGE = `${KPI_TARGETS_TAB}!A2:D`;
 
@@ -615,27 +643,75 @@ app.post('/api/clients', async (req, res) => {
 
 /* ======================================================================
    Invoices - Dan only
-   
-   Columns: Invoice Number | Invoice Date | Invoice Amount | Paid Status | Payment Date
+
+   Columns: invoice_number | invoice_date | due_date | company | role |
+            candidate_name | salary | fee_percentage | amount | status |
+            payment_date
 ====================================================================== */
+
+const GOLD = '#C9A84C';
+const DARK = '#1A1A1A';
+const GREY = '#444444';
+const LIGHT_GREY = '#888888';
+const BORDER = '#DDDDDD';
+
+function calculatePlacementFee(salary) {
+  const s = Number(salary) || 0;
+  let rate;
+  if (s <= 22000) rate = 0.12;
+  else if (s <= 30000) rate = 0.15;
+  else if (s <= 40000) rate = 0.20;
+  else rate = 0.25;
+  return { rate, fee: Math.round(s * rate * 100) / 100 };
+}
+
+function generateInvoiceNumber(date = new Date()) {
+  const dd = String(date.getDate()).padStart(2, '0');
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const yy = String(date.getFullYear()).slice(-2);
+  return `RS${dd}${mm}${yy}`;
+}
+
+function addDays(date, days) {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+function toISODate(date) {
+  return new Date(date).toISOString().slice(0, 10);
+}
+
+function formatDateUK(dateStr) {
+  if (!dateStr) return '';
+  return new Date(dateStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function formatCurrency(amount) {
+  return `£${Number(amount).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
 
 function rowToInvoice(row) {
   return {
     number: row[0] || '',
     date: row[1] || '',
-    amount: parseFloat(row[2]) || 0,
-    paidStatus: row[3] || 'No',
-    paymentDate: row[4] || '',
+    dueDate: row[2] || '',
+    company: row[3] || '',
+    role: row[4] || '',
+    candidateName: row[5] || '',
+    salary: row[6] || '',
+    feePercentage: row[7] || '',
+    amount: parseFloat(row[8]) || 0,
+    status: row[9] || 'pending',
+    paymentDate: row[10] || '',
   };
 }
 
 function invoiceToRow(inv) {
   return [
-    inv.number || '',
-    inv.date || '',
-    inv.amount || 0,
-    inv.paidStatus || 'No',
-    inv.paymentDate || '',
+    inv.number || '', inv.date || '', inv.dueDate || '', inv.company || '',
+    inv.role || '', inv.candidateName || '', inv.salary || '', inv.feePercentage || '',
+    inv.amount || 0, inv.status || 'pending', inv.paymentDate || '',
   ];
 }
 
@@ -648,11 +724,22 @@ async function readInvoiceRows() {
   return result.data.values || [];
 }
 
+// Brevo SMTP transporter for the daily invoice reminder email
+const emailTransporter = nodemailer.createTransport({
+  host: 'smtp-relay.brevo.com',
+  port: 587,
+  secure: false,
+  auth: {
+    user: process.env.BREVO_SMTP_USER,
+    pass: process.env.BREVO_SMTP_PASS,
+  },
+});
+
 // GET all invoices
 app.get('/api/invoices', async (req, res) => {
   try {
     const rows = await readInvoiceRows();
-    const invoices = rows.map(r => rowToInvoice(r));
+    const invoices = rows.filter(r => r[0]).map(r => rowToInvoice(r));
     res.json({ data: invoices });
   } catch (e) {
     console.error('GET /api/invoices error:', e.message);
@@ -660,22 +747,31 @@ app.get('/api/invoices', async (req, res) => {
   }
 });
 
-// POST add new invoice
+// POST generate a new invoice for a placed candidate.
+// Body: { candidateId, company, role, candidateName, salary }
+// Fee is always calculated server-side from salary - never trust a client-sent amount.
 app.post('/api/invoices', async (req, res) => {
   try {
-    const { number, date, amount, paidStatus, paymentDate } = req.body;
-    
-    if (!number || !date || !amount) {
-      return res.status(400).json({ error: 'number, date, and amount are required' });
+    const { candidateId, company, role, candidateName, salary } = req.body;
+    if (!company || !candidateName || !salary) {
+      return res.status(400).json({ error: 'company, candidateName and salary are required' });
     }
 
     const sheets = getSheetsClient();
+    const today = new Date();
+    const { rate, fee } = calculatePlacementFee(salary);
     const newInvoice = {
-      number,
-      date,
-      amount: parseFloat(amount),
-      paidStatus: paidStatus || 'No',
-      paymentDate: paymentDate || '',
+      number: generateInvoiceNumber(today),
+      date: toISODate(today),
+      dueDate: toISODate(addDays(today, 30)),
+      company,
+      role: role || '',
+      candidateName,
+      salary,
+      feePercentage: `${rate * 100}%`,
+      amount: fee,
+      status: 'pending',
+      paymentDate: '',
     };
 
     await sheets.spreadsheets.values.append({
@@ -686,6 +782,27 @@ app.post('/api/invoices', async (req, res) => {
       requestBody: { values: [invoiceToRow(newInvoice)] },
     });
 
+    // Best-effort: stamp the invoice number back onto the Dashboard candidate
+    // row so the daily reminder check knows not to remind about this one again.
+    if (candidateId) {
+      try {
+        const rows = await readAllRows();
+        const rowIndex = rows.findIndex(r => r[0] === candidateId);
+        if (rowIndex !== -1) {
+          const updated = [...rows[rowIndex]];
+          updated[10] = newInvoice.number;
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: SHEET_ID,
+            range: `${TAB}!A${rowIndex + 2}:L${rowIndex + 2}`,
+            valueInputOption: 'RAW',
+            requestBody: { values: [updated] },
+          });
+        }
+      } catch (e) {
+        console.error('Could not stamp invoice number onto Dashboard row:', e.message);
+      }
+    }
+
     res.json({ ok: true, invoice: newInvoice });
   } catch (e) {
     console.error('POST /api/invoices error:', e.message);
@@ -693,27 +810,27 @@ app.post('/api/invoices', async (req, res) => {
   }
 });
 
-// PUT update invoice (paid status, payment date)
+// PUT update invoice status (pending / sent / paid) and payment date
 app.put('/api/invoices/:number', async (req, res) => {
   try {
     const { number } = req.params;
-    const { paidStatus, paymentDate } = req.body;
-    
+    const { status, paymentDate } = req.body;
+
     const sheets = getSheetsClient();
     const rows = await readInvoiceRows();
-    
+
     const rowIndex = rows.findIndex(r => r[0] === number);
     if (rowIndex === -1) {
       return res.status(404).json({ error: 'Invoice not found' });
     }
 
     const updatedRow = [...rows[rowIndex]];
-    if (paidStatus !== undefined) updatedRow[3] = paidStatus;
-    if (paymentDate !== undefined) updatedRow[4] = paymentDate;
+    if (status !== undefined) updatedRow[9] = status;
+    if (paymentDate !== undefined) updatedRow[10] = paymentDate;
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: CLIENT_SHEET_ID,
-      range: `${INVOICES_TAB}!A${rowIndex + 3}:E${rowIndex + 3}`,
+      range: `${INVOICES_TAB}!A${rowIndex + 2}:K${rowIndex + 2}`,
       valueInputOption: 'RAW',
       requestBody: { values: [updatedRow] },
     });
@@ -721,6 +838,165 @@ app.put('/api/invoices/:number', async (req, res) => {
     res.json({ ok: true, invoice: rowToInvoice(updatedRow) });
   } catch (e) {
     console.error('PUT /api/invoices error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE an invoice record
+app.delete('/api/invoices/:number', async (req, res) => {
+  try {
+    const { number } = req.params;
+    const sheets = getSheetsClient();
+    const rows = await readInvoiceRows();
+    const rowIndex = rows.findIndex(r => r[0] === number);
+    if (rowIndex === -1) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: CLIENT_SHEET_ID,
+      range: `${INVOICES_TAB}!A${rowIndex + 2}:K${rowIndex + 2}`,
+    });
+    res.json({ ok: true, deleted: number });
+  } catch (e) {
+    console.error('DELETE /api/invoices error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET branded invoice PDF, matching the Live 2 Help RS-format layout
+app.get('/api/invoices/:number/pdf', async (req, res) => {
+  try {
+    const { number } = req.params;
+    const rows = await readInvoiceRows();
+    const row = rows.find(r => r[0] === number);
+    if (!row) return res.status(404).json({ error: 'Invoice not found' });
+    const inv = rowToInvoice(row);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=${inv.number}.pdf`);
+
+    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    doc.pipe(res);
+
+    try {
+      doc.image(path.join(__dirname, 'assets', 'Logo_3.png'), 50, 45, { width: 160 });
+    } catch (e) { /* logo optional */ }
+
+    doc.font('Helvetica-Bold').fontSize(32).fillColor(DARK).text('INVOICE', 0, 55, { align: 'right' });
+    doc.font('Helvetica').fontSize(11).fillColor(LIGHT_GREY).text(inv.number, 0, 90, { align: 'right' });
+    doc.moveTo(50, 130).lineTo(545, 130).strokeColor(GOLD).lineWidth(2).stroke();
+
+    const colY = 150;
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(GOLD).text('FROM', 50, colY);
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text('Live 2 Help Recruitment Ltd', 50, colY + 14);
+    doc.font('Helvetica').fontSize(9).fillColor(GREY)
+      .text('dan.brown@live2helprecruitment.co.uk', 50, colY + 30)
+      .text('07424 087576', 50, colY + 43)
+      .text('www.live2helprecruitment.co.uk', 50, colY + 56);
+
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(GOLD).text('BILLED TO', 220, colY);
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text(inv.company, 220, colY + 14);
+
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(GOLD).text('INVOICE DATE', 400, colY);
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text(formatDateUK(inv.date), 400, colY + 14);
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(GOLD).text('DUE DATE', 400, colY + 40);
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text(formatDateUK(inv.dueDate), 400, colY + 54);
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(GOLD).text('PAYMENT TERMS', 400, colY + 80);
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text('30 days', 400, colY + 94);
+
+    doc.moveTo(50, 260).lineTo(545, 260).strokeColor(BORDER).lineWidth(1).stroke();
+
+    const tableTop = 280;
+    doc.rect(50, tableTop, 495, 26).fill(DARK);
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#FFFFFF')
+      .text('DESCRIPTION', 60, tableTop + 8)
+      .text('QTY', 340, tableTop + 8)
+      .text('UNIT PRICE', 400, tableTop + 8)
+      .text('AMOUNT', 480, tableTop + 8);
+
+    const rowY = tableTop + 36;
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK)
+      .text(`Supply of Permanent Staff - ${inv.candidateName}`, 60, rowY, { width: 260 });
+    doc.font('Helvetica').fontSize(8).fillColor(LIGHT_GREY).text('Permanent placement fee', 60, rowY + 14, { width: 260 });
+    doc.font('Helvetica').fontSize(10).fillColor(DARK)
+      .text('1', 340, rowY)
+      .text(formatCurrency(inv.amount), 400, rowY)
+      .text(formatCurrency(inv.amount), 480, rowY);
+
+    const totalsTop = rowY + 50;
+    doc.moveTo(340, totalsTop).lineTo(545, totalsTop).strokeColor(BORDER).lineWidth(1).stroke();
+    doc.font('Helvetica').fontSize(10).fillColor(GREY)
+      .text('Subtotal', 400, totalsTop + 10)
+      .text(formatCurrency(inv.amount), 480, totalsTop + 10);
+
+    doc.rect(340, totalsTop + 30, 205, 28).fill(GOLD);
+    doc.font('Helvetica-Bold').fontSize(11).fillColor('#FFFFFF')
+      .text('TOTAL DUE', 350, totalsTop + 39)
+      .text(formatCurrency(inv.amount), 480, totalsTop + 39);
+
+    const payTop = totalsTop + 90;
+    doc.moveTo(50, payTop).lineTo(545, payTop).strokeColor(BORDER).lineWidth(1).stroke();
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(GOLD).text('PAYMENT DETAILS', 50, payTop + 16);
+
+    const details = [
+      ['Account Name:', 'Live 2 Help Recruitment Ltd'],
+      ['Account Number:', '12847344'],
+      ['Sort Code:', '60-83-71'],
+      ['Reference:', inv.number],
+    ];
+    let detailY = payTop + 36;
+    details.forEach(([label, value]) => {
+      doc.font('Helvetica').fontSize(9).fillColor(GREY).text(label, 130, detailY);
+      doc.font('Helvetica-Bold').fontSize(9).fillColor(DARK).text(value, 260, detailY);
+      detailY += 16;
+    });
+
+    doc.moveTo(50, 760).lineTo(545, 760).strokeColor(BORDER).lineWidth(1).stroke();
+    doc.font('Helvetica-Oblique').fontSize(8).fillColor(LIGHT_GREY)
+      .text('Live 2 Help Recruitment Ltd  •  Anyone · Anywhere · Anytime', 50, 772, { align: 'center', width: 495 });
+
+    doc.end();
+  } catch (e) {
+    console.error('GET /api/invoices/:number/pdf error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET daily check - candidates starting tomorrow with no invoice generated yet.
+// Called once a day by an external scheduler (EasyCron).
+app.get('/api/check-invoice-reminders', async (req, res) => {
+  try {
+    const rows = await readAllRows();
+    const tomorrow = toISODate(addDays(new Date(), 1));
+
+    const due = rows.filter(r => {
+      const candidate = rowToCandidate(r);
+      return candidate.stage === 'start_date' && candidate.startDate === tomorrow && !candidate.invoiceNumber;
+    }).map(rowToCandidate);
+
+    for (const candidate of due) {
+      const { rate, fee } = calculatePlacementFee(candidate.salary);
+      await emailTransporter.sendMail({
+        from: process.env.BREVO_SENDER_EMAIL,
+        to: process.env.REMINDER_EMAIL_TO || process.env.BREVO_SENDER_EMAIL,
+        subject: `Invoice Reminder - ${candidate.name} starts tomorrow`,
+        text: `Hi Dan,
+
+${candidate.name} is starting at ${candidate.company} tomorrow (${formatDateUK(candidate.startDate)}).
+
+Salary: £${candidate.salary}
+Placement Fee: £${fee} (${rate * 100}%)
+
+Generate and send the invoice from the dashboard's Invoices tab.
+
+Thanks,
+Live 2 Help System`,
+      });
+    }
+
+    res.json({ remindersSent: due.length, candidates: due.map(c => c.name) });
+  } catch (e) {
+    console.error('GET /api/check-invoice-reminders error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
