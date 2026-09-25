@@ -589,14 +589,14 @@ const API_BASE = "https://l2h-api.onrender.com";
 const UNASSIGNED_LABEL = "Unassigned - New Applications";
 let DATA = {};
 let dataLoaded = false;
-let CLIENTS = [];
+let APPLICANT_CLIENT_LIST = [];
 
-async function loadClients(){
+async function loadApplicantClientList(){
   try{
     const res = await fetch(`${API_BASE}/api/clients`);
     if(!res.ok) return;
     const json = await res.json();
-    CLIENTS = json.data || [];
+    APPLICANT_CLIENT_LIST = json.data || [];
   }catch(e){
     console.error('Could not load clients list', e);
   }
@@ -668,14 +668,14 @@ function tryUnlock(){
     document.getElementById('splashScreen').classList.remove('hidden');
     renderSidebar();
     loadCandidates();
-    loadClients();
+    loadApplicantClientList();
   } else if(pw === "l2h2026"){
     currentUserRole = 'ella';
     document.getElementById('gate').style.display = 'none';
     document.getElementById('splashScreen').classList.remove('hidden');
     renderSidebar();
     loadCandidates();
-    loadClients();
+    loadApplicantClientList();
   } else {
     document.getElementById('gateErr').textContent = "Incorrect password";
   }
@@ -811,15 +811,15 @@ function openCandidateModal(id){
   }
 
   if(c.stage === 'applied'){
-    const companies = [...new Set(CLIENTS.map(cl => cl.company).filter(Boolean))].sort();
-    const contactsForCompany = CLIENTS.filter(cl => cl.company === (c.company || ''));
+    const companies = [...new Set(APPLICANT_CLIENT_LIST.map(cl => cl.company).filter(Boolean))].sort();
+    const contactsForCompany = APPLICANT_CLIENT_LIST.filter(cl => cl.company === (c.company || ''));
     html += `
       <div class="assign-box">
         <div class="assign-label">Assign to client</div>
         <div class="two-col">
           <div class="field-row">
             <label>Company</label>
-            <select id="companyInput" onchange="onAssignCompanyChange()">
+            <select id="companyInput" onchange="onApplicationCompanyChange()">
               <option value="">Select company...</option>
               ${companies.map(co => `<option value="${co}" ${co === c.company ? 'selected' : ''}>${co}</option>`).join('')}
             </select>
@@ -870,10 +870,10 @@ function openCandidateModal(id){
   document.getElementById('candModalOverlay').classList.add('visible');
 }
 
-function onAssignCompanyChange(){
+function onApplicationCompanyChange(){
   const companyVal = document.getElementById('companyInput').value;
   const contactSel = document.getElementById('contactInput');
-  const contactsForCompany = CLIENTS.filter(cl => cl.company === companyVal);
+  const contactsForCompany = APPLICANT_CLIENT_LIST.filter(cl => cl.company === companyVal);
   contactSel.innerHTML = '<option value="">Select contact...</option>' +
     contactsForCompany.map(cl => `<option value="${cl.contactName}">${cl.contactName}${cl.jobTitle ? ' - ' + cl.jobTitle : ''}</option>`).join('');
 }
