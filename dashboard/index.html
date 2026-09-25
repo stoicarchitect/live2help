@@ -1710,7 +1710,7 @@ async function completeTask(id){
     });
     if(!res.ok) throw new Error('Server returned ' + res.status);
     showToast('Task completed');
-    loadTasks('active');
+    setTimeout(() => loadTasks('active'), 500);
   }catch(e){
     showToast('Error: ' + e.message);
   }
