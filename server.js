@@ -1635,11 +1635,18 @@ app.get('/api/tasks', async (req, res) => {
     const userRole = req.headers['x-user-role'] || 'dan';
     const rows = await getTasksSheet();
     
-    const tasks = rows.map(rowToTask).filter(t => {
-      if (t.archived) return false;
-      if (userRole === 'dan') return true;
-      return t.user === 'ella';
-    });
+    const tasks = rows
+      .map(rowToTask)
+      .filter(t => {
+        // Skip if archived
+        if (t.archived === true) return false;
+        
+        // Filter by user
+        if (userRole === 'dan') return true;
+        if (userRole === 'ella' && t.user === 'ella') return true;
+        
+        return false;
+      });
     
     res.json(tasks);
   } catch (e) {
@@ -1653,11 +1660,18 @@ app.get('/api/tasks/archive', async (req, res) => {
     const userRole = req.headers['x-user-role'] || 'dan';
     const rows = await getTasksSheet();
     
-    const tasks = rows.map(rowToTask).filter(t => {
-      if (!t.archived) return false;
-      if (userRole === 'dan') return true;
-      return t.user === 'ella';
-    });
+    const tasks = rows
+      .map(rowToTask)
+      .filter(t => {
+        // Only archived tasks
+        if (t.archived !== true) return false;
+        
+        // Filter by user
+        if (userRole === 'dan') return true;
+        if (userRole === 'ella' && t.user === 'ella') return true;
+        
+        return false;
+      });
     
     res.json(tasks);
   } catch (e) {
@@ -1739,16 +1753,22 @@ app.put('/api/tasks/:id', async (req, res) => {
 app.post('/api/tasks/:id/complete', async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`[Tasks] Completing task: ${id}`);
     
     const rows = await getTasksSheet();
     const rowIndex = rows.findIndex(r => r[0] === id);
+    console.log(`[Tasks] Found at row index: ${rowIndex}`);
     
     if (rowIndex === -1) {
       return res.status(404).json({ error: 'Task not found' });
     }
     
     const originalTask = rowToTask(rows[rowIndex]);
-    let newTask = { ...originalTask, status: 'Complete', archived: true };
+    console.log(`[Tasks] Original task:`, originalTask);
+    
+    const newTask = { ...originalTask, status: 'Complete', archived: true };
+    console.log(`[Tasks] New task:`, newTask);
+    console.log(`[Tasks] Task row to save:`, taskToRow(newTask));
     
     const sheets = getSheetsClient();
     
@@ -1759,6 +1779,8 @@ app.post('/api/tasks/:id/complete', async (req, res) => {
       valueInputOption: 'RAW',
       requestBody: { values: [taskToRow(newTask)] }
     });
+    
+    console.log(`[Tasks] Task archived successfully`);
     
     // If recurring, create next instance
     if (originalTask.recurring !== 'none') {
@@ -1782,12 +1804,14 @@ app.post('/api/tasks/:id/complete', async (req, res) => {
         requestBody: { values: [taskToRow(nextTask)] }
       });
       
+      console.log(`[Tasks] Next recurring task created`);
       res.json({ completed: newTask, next: nextTask });
     } else {
       res.json({ completed: newTask });
     }
   } catch (e) {
     console.error('POST /api/tasks/:id/complete error:', e.message);
+    console.error(e);
     res.status(500).json({ error: e.message });
   }
 });
