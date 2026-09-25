@@ -2012,8 +2012,6 @@ function initializeClientModals(){
 function openAddClientModal(client){
   const overlay = document.getElementById('addClientOverlay');
   if(!overlay) return;
-  const form = overlay.querySelector('.simple-form');
-  if(!form) return;
   
   if(client){
     document.getElementById('clientCompanyInput').value = client.company;
@@ -2025,7 +2023,14 @@ function openAddClientModal(client){
     document.getElementById('clientPhoneInput').value = client.phone || '';
     document.getElementById('clientNotesInput').value = client.notes || '';
   } else {
-    form.reset();
+    document.getElementById('clientCompanyInput').value = '';
+    document.getElementById('clientAddressInput').value = '';
+    document.getElementById('clientPostcodeInput').value = '';
+    document.getElementById('clientContactNameInput').value = '';
+    document.getElementById('clientJobTitleInput').value = '';
+    document.getElementById('clientEmailInput').value = '';
+    document.getElementById('clientPhoneInput').value = '';
+    document.getElementById('clientNotesInput').value = '';
   }
   
   overlay.classList.add('visible');
@@ -2034,9 +2039,14 @@ function openAddClientModal(client){
 function openAddLeadClientModal(){
   const overlay = document.getElementById('addLeadClientOverlay');
   if(!overlay) return;
-  const form = overlay.querySelector('.simple-form');
-  if(!form) return;
-  form.reset();
+  document.getElementById('leadCompanyInput').value = '';
+  document.getElementById('leadAddressInput').value = '';
+  document.getElementById('leadPostcodeInput').value = '';
+  document.getElementById('leadContactNameInput').value = '';
+  document.getElementById('leadJobTitleInput').value = '';
+  document.getElementById('leadEmailInput').value = '';
+  document.getElementById('leadPhoneInput').value = '';
+  document.getElementById('leadNotesInput').value = '';
   overlay.classList.add('visible');
 }
 
