@@ -1,0 +1,13 @@
+name: Daily Invoice Reminder
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+
+jobs:
+  reminder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger invoice reminder
+        run: |
+          curl -X GET https://l2h-api.onrender.com/api/check-invoice-reminders
