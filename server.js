@@ -245,6 +245,79 @@ app.post('/api/sync-submissions', async (req, res) => {
 });
 
 
+// Applications intake - form submissions from screening forms
+app.post('/api/applications/:role', async (req, res) => {
+  try {
+    const { role } = req.params;
+    const {
+      name,
+      email,
+      phone,
+      employmentStatus,
+      noticePeriod,
+      transportBackground,
+      recentRole,
+      liaisonHauliers,
+      kpiComfort,
+      excelSkill,
+      priorityRating,
+      workEnvironment,
+      location,
+      commute,
+      salaryExpectation,
+      additionalInfo
+    } = req.body;
+
+    if (!name || !email || !phone) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const sheets = getSheetsClient();
+    const applicationId = `${role}-${Date.now()}`;
+    const dateApplied = new Date().toISOString();
+    
+    // Tab name format: "Applications - Transport Coordinator"
+    const tabName = `Applications - ${role.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}`;
+    const range = `'${tabName}'!A:T`;
+
+    const row = [
+      applicationId,
+      dateApplied,
+      name,
+      email,
+      phone,
+      employmentStatus,
+      noticePeriod,
+      transportBackground,
+      recentRole,
+      liaisonHauliers,
+      kpiComfort,
+      excelSkill,
+      priorityRating,
+      workEnvironment,
+      location,
+      salaryExpectation,
+      additionalInfo || '',
+      '',        // Company - assigned by Ella
+      '',        // Contact - assigned by Ella
+      'applied'  // Status
+    ];
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: range,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [row] }
+    });
+
+    res.json({ success: true, applicationId });
+
+  } catch (err) {
+    console.error('POST /api/applications error:', err);
+    res.status(500).json({ error: 'Failed to save application' });
+  }
+});
+
 // Delete a candidate by id
 app.delete('/api/candidates/:id', async (req, res) => {
   try {
