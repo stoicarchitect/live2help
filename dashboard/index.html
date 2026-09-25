@@ -2013,6 +2013,7 @@ function openAddClientModal(client){
   const overlay = document.getElementById('addClientOverlay');
   if(!overlay) return;
   const form = overlay.querySelector('.simple-form');
+  if(!form) return;
   
   if(client){
     document.getElementById('clientCompanyInput').value = client.company;
@@ -2033,7 +2034,9 @@ function openAddClientModal(client){
 function openAddLeadClientModal(){
   const overlay = document.getElementById('addLeadClientOverlay');
   if(!overlay) return;
-  overlay.querySelector('.simple-form').reset();
+  const form = overlay.querySelector('.simple-form');
+  if(!form) return;
+  form.reset();
   overlay.classList.add('visible');
 }
 
