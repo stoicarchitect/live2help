@@ -237,6 +237,45 @@
   #candidatesView{flex:1;display:flex;flex-direction:column;}
   #clientsView{display:none;flex:1;flex-direction:column;}
   #clientsView.visible{display:flex;}
+  #invoicesView{display:none;flex:1;flex-direction:column;}
+  #invoicesView.visible{display:flex;}
+  #invoicesHeader{
+    padding:16px 24px 14px;display:flex;justify-content:space-between;align-items:center;
+    border-bottom:1px solid var(--border);
+  }
+  #invoicesHeader h2{font-size:18px;color:var(--dark);font-weight:normal;}
+  #addInvoiceBtn{
+    padding:9px 18px;background:var(--gold);color:var(--white);border:none;
+    border-radius:2px;font-size:13.5px;cursor:pointer;font-family:inherit;font-weight:600;
+  }
+  #addInvoiceBtn:hover{background:#b8963f;}
+  #invoicesGrid{
+    flex:1;overflow-y:auto;padding:18px 24px;display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));gap:18px;
+  }
+  .invoice-card{
+    background:var(--white);border:1px solid var(--border);border-left:4px solid #999;
+    border-radius:2px;padding:16px;
+  }
+  .invoice-card.status-sent{border-left-color:#3B7BC4;}
+  .invoice-card.status-paid{border-left-color:var(--success);}
+  .invoice-card-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  .invoice-number{font-size:13.5px;font-weight:700;color:var(--dark);}
+  .invoice-status-select{
+    border:1px solid var(--border);border-radius:2px;padding:4px 6px;font-size:11px;
+    color:var(--grey);font-family:inherit;background:var(--white);
+  }
+  .invoice-company{font-size:13px;color:var(--grey);}
+  .invoice-candidate{font-size:12.5px;color:#999;margin-bottom:8px;}
+  .invoice-amount{font-size:24px;font-weight:700;color:var(--gold);margin:4px 0 8px;}
+  .invoice-dates{font-size:11px;color:#999;margin-bottom:12px;}
+  .invoice-card-actions{display:flex;gap:8px;}
+  .invoice-card-actions button{
+    flex:1;padding:7px;border:1px solid var(--border);background:var(--lightbg);
+    border-radius:2px;font-size:11.5px;color:var(--dark);cursor:pointer;font-family:inherit;
+  }
+  .invoice-card-actions button:hover{border-color:var(--gold);}
+  .invoice-card-actions button.danger{color:var(--danger);}
   #clientsHeader{
     padding:16px 24px 14px;display:flex;justify-content:space-between;align-items:center;
     border-bottom:1px solid var(--border);
@@ -486,6 +525,7 @@
     <div id="tabs">
       <button class="tab-btn active" data-tab="candidates" onclick="switchTab('candidates')">Candidates</button>
       <button class="tab-btn" data-tab="clients" onclick="switchTab('clients')">Clients</button>
+      <button class="tab-btn" data-tab="invoices" onclick="switchTab('invoices')">Invoices</button>
     </div>
     
     <div id="candidatesView" class="visible">
@@ -507,6 +547,37 @@
         <button id="addClientBtn" onclick="openAddClientModal()">Add Client</button>
       </div>
       <div id="clientsGrid"></div>
+    </div>
+
+    <div id="invoicesView">
+      <div id="invoicesHeader">
+        <h2>Invoices</h2>
+        <button id="addInvoiceBtn" onclick="openGenerateInvoiceModal()">+ Generate Invoice</button>
+      </div>
+      <div id="invoicesGrid"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="generateInvoiceOverlay">
+  <div class="modal">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="closeModal('generateInvoiceOverlay')">&times;</button>
+      <h2>Generate Invoice</h2>
+      <div class="simple-form">
+        <label>Candidate</label>
+        <select id="invoiceCandidateSelect" onchange="updateInvoicePreview()"></select>
+        <div id="invoicePreviewBox" style="display:none;margin-top:14px;padding:12px;background:var(--lightbg);border-radius:2px;font-size:13px;color:var(--grey);line-height:1.7;">
+          <div><strong>Company:</strong> <span id="pvCompany"></span></div>
+          <div><strong>Candidate:</strong> <span id="pvCandidate"></span></div>
+          <div><strong>Salary:</strong> £<span id="pvSalary"></span></div>
+          <div><strong>Fee:</strong> <span id="pvRate"></span>% = <strong style="color:var(--gold);">£<span id="pvFee"></span></strong></div>
+        </div>
+        <div class="actions">
+          <button class="cancel" onclick="closeModal('generateInvoiceOverlay')">Cancel</button>
+          <button class="save" onclick="submitGenerateInvoice()">Generate &amp; Download</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -903,6 +974,19 @@ function openCandidateModal(id){
       </div>`;
   }
 
+  if(c.stage === 'start_date' || c.stage === 'day1' || c.stage === 'week1' || c.stage === 'month1'){
+    html += `
+      <div class="field-row">
+        <label>Candidate's start date</label>
+        <input type="date" id="startDateInput" value="${c.startDate || ''}">
+      </div>`;
+    if(c.invoiceNumber){
+      html += `<div class="prompt-box">Invoice <strong>${c.invoiceNumber}</strong> already generated for this placement.</div>`;
+    } else if(c.salary && c.startDate){
+      html += `<button onclick="generateInvoiceForCandidate()" style="width:100%;margin:6px 0 0;padding:10px;background:var(--gold);border:none;color:var(--white);border-radius:2px;cursor:pointer;font-size:13px;font-weight:600;">Generate Invoice</button>`;
+    }
+  }
+
   html += `
     <div class="field-row">
       <label>Notes</label>
@@ -965,6 +1049,8 @@ function captureFieldsFromModal(c){
   if(notesEl) c.notes = notesEl.value;
   const salEl = document.getElementById('salaryInput');
   if(salEl) c.salary = salEl.value;
+  const startDateEl = document.getElementById('startDateInput');
+  if(startDateEl) c.startDate = startDateEl.value;
   const emailEl = document.getElementById('emailInput');
   if(emailEl) c.email = emailEl.value;
   const phoneEl = document.getElementById('phoneInput');
@@ -1383,6 +1469,216 @@ document.querySelectorAll('.modal-overlay').forEach(ov => {
 document.getElementById('screeningAnswersModal').addEventListener('click', e => {
   if(e.target === document.getElementById('screeningAnswersModal')) closeModal('screeningAnswersModal');
 });
+
+/* ============================================================
+   Invoices tab - view switching, cards, generate modal, PDF
+   ============================================================ */
+
+// Redefines switchTab to add the Invoices tab alongside the existing
+// Candidates / Clients toggle. Keeps calling loadClients() so the
+// Clients tab behaves exactly as before.
+function switchTab(tab){
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.getElementById('candidatesView').style.display = tab === 'candidates' ? 'flex' : 'none';
+  document.getElementById('clientsView').classList.toggle('visible', tab === 'clients');
+  document.getElementById('invoicesView').classList.toggle('visible', tab === 'invoices');
+  if(tab === 'clients' && typeof loadClients === 'function') loadClients();
+  if(tab === 'invoices') loadInvoices();
+}
+
+function calculateFeePreview(salary){
+  const s = Number(salary) || 0;
+  let rate;
+  if(s <= 22000) rate = 0.12;
+  else if(s <= 30000) rate = 0.15;
+  else if(s <= 40000) rate = 0.20;
+  else rate = 0.25;
+  return { rate, fee: Math.round(s * rate * 100) / 100 };
+}
+
+function fmtDateShort(dateStr){
+  if(!dateStr) return '';
+  return new Date(dateStr).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+}
+
+async function loadInvoices(){
+  const grid = document.getElementById('invoicesGrid');
+  grid.innerHTML = '<div class="stage-empty">Loading invoices...</div>';
+  try{
+    const res = await fetch(`${API_BASE}/api/invoices`);
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    const json = await res.json();
+    const invoices = json.data || [];
+    if(!invoices.length){
+      grid.innerHTML = '<div class="stage-empty">No invoices generated yet.</div>';
+      return;
+    }
+    grid.innerHTML = invoices.slice().reverse().map(renderInvoiceCard).join('');
+  }catch(e){
+    grid.innerHTML = `<div class="stage-empty">Could not load invoices (${e.message}).</div>`;
+  }
+}
+
+function renderInvoiceCard(inv){
+  const statusClass = inv.status === 'paid' ? 'status-paid' : inv.status === 'sent' ? 'status-sent' : '';
+  return `
+    <div class="invoice-card ${statusClass}">
+      <div class="invoice-card-top">
+        <span class="invoice-number">${inv.number}</span>
+        <select class="invoice-status-select" onchange="updateInvoiceStatus('${inv.number}', this.value)">
+          <option value="pending" ${inv.status === 'pending' ? 'selected' : ''}>Pending</option>
+          <option value="sent" ${inv.status === 'sent' ? 'selected' : ''}>Sent</option>
+          <option value="paid" ${inv.status === 'paid' ? 'selected' : ''}>Paid</option>
+        </select>
+      </div>
+      <div class="invoice-company">${inv.company}</div>
+      <div class="invoice-candidate">${inv.candidateName}${inv.role ? ' &middot; ' + inv.role : ''}</div>
+      <div class="invoice-amount">£${Number(inv.amount).toLocaleString('en-GB', {minimumFractionDigits:2})}</div>
+      <div class="invoice-dates">${fmtDateShort(inv.date)} &rarr; ${fmtDateShort(inv.dueDate)}</div>
+      <div class="invoice-card-actions">
+        <button onclick="downloadInvoicePDF('${inv.number}')">Download PDF</button>
+        <button class="danger" onclick="deleteInvoiceCard('${inv.number}')">Delete</button>
+      </div>
+    </div>
+  `;
+}
+
+// Eligible candidates = anyone at Offer stage or later with a salary and no
+// invoice generated yet, gathered across every company/role currently loaded.
+function getInvoiceEligibleCandidates(){
+  const eligible = [];
+  const eligibleStages = ['offer', 'start_date', 'day1', 'week1', 'month1'];
+  Object.keys(DATA).forEach(company => {
+    Object.keys(DATA[company]).forEach(role => {
+      DATA[company][role].forEach(c => {
+        if(eligibleStages.includes(c.stage) && c.salary && !c.invoiceNumber){
+          eligible.push({ ...c, company, role });
+        }
+      });
+    });
+  });
+  return eligible;
+}
+
+function openGenerateInvoiceModal(){
+  const select = document.getElementById('invoiceCandidateSelect');
+  const eligible = getInvoiceEligibleCandidates();
+
+  if(!eligible.length){
+    select.innerHTML = '<option value="">No eligible candidates - salary must be entered at Offer stage</option>';
+  } else {
+    select.innerHTML = eligible.map((c, i) =>
+      `<option value="${i}">${c.name} - ${c.company}</option>`
+    ).join('');
+  }
+  window._invoiceEligible = eligible;
+  document.getElementById('invoicePreviewBox').style.display = 'none';
+  document.getElementById('generateInvoiceOverlay').classList.add('visible');
+  if(eligible.length) updateInvoicePreview();
+}
+
+function updateInvoicePreview(){
+  const select = document.getElementById('invoiceCandidateSelect');
+  const eligible = window._invoiceEligible || [];
+  const c = eligible[Number(select.value)];
+  if(!c) return;
+  const { rate, fee } = calculateFeePreview(c.salary);
+  document.getElementById('pvCompany').textContent = c.company;
+  document.getElementById('pvCandidate').textContent = c.name;
+  document.getElementById('pvSalary').textContent = Number(c.salary).toLocaleString();
+  document.getElementById('pvRate').textContent = rate * 100;
+  document.getElementById('pvFee').textContent = fee.toLocaleString();
+  document.getElementById('invoicePreviewBox').style.display = 'block';
+}
+
+async function submitGenerateInvoice(){
+  const select = document.getElementById('invoiceCandidateSelect');
+  const eligible = window._invoiceEligible || [];
+  const c = eligible[Number(select.value)];
+  if(!c) return;
+
+  try{
+    const res = await fetch(`${API_BASE}/api/invoices`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        candidateId: c.id,
+        company: c.company,
+        role: c.role,
+        candidateName: c.name,
+        salary: c.salary
+      })
+    });
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    const json = await res.json();
+
+    closeModal('generateInvoiceOverlay');
+    showToast(`Invoice ${json.invoice.number} generated`);
+    downloadInvoicePDF(json.invoice.number);
+    loadInvoices();
+
+    // reflect locally so the candidate modal shows it's invoiced without a reload
+    const local = DATA[c.company] && DATA[c.company][c.role] && DATA[c.company][c.role].find(x => x.id === c.id);
+    if(local) local.invoiceNumber = json.invoice.number;
+  }catch(e){
+    showToast('Could not generate invoice: ' + e.message);
+  }
+}
+
+// Called from the candidate modal's "Generate Invoice" button at Start Date+ stages
+async function generateInvoiceForCandidate(){
+  const c = findCandidate(openCandidateId);
+  captureFieldsFromModal(c);
+  await saveCandidate(c);
+  try{
+    const res = await fetch(`${API_BASE}/api/invoices`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        candidateId: c.id,
+        company: currentCompany,
+        role: currentRole,
+        candidateName: c.name,
+        salary: c.salary
+      })
+    });
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    const json = await res.json();
+    c.invoiceNumber = json.invoice.number;
+    showToast(`Invoice ${json.invoice.number} generated`);
+    downloadInvoicePDF(json.invoice.number);
+    openCandidateModal(c.id);
+  }catch(e){
+    showToast('Could not generate invoice: ' + e.message);
+  }
+}
+
+async function updateInvoiceStatus(number, status){
+  try{
+    await fetch(`${API_BASE}/api/invoices/${number}`, {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ status })
+    });
+    loadInvoices();
+  }catch(e){
+    showToast('Could not update invoice status');
+  }
+}
+
+function downloadInvoicePDF(number){
+  window.open(`${API_BASE}/api/invoices/${number}/pdf`, '_blank');
+}
+
+async function deleteInvoiceCard(number){
+  if(!confirm(`Delete invoice ${number}? This cannot be undone.`)) return;
+  try{
+    await fetch(`${API_BASE}/api/invoices/${number}`, { method: 'DELETE' });
+    loadInvoices();
+  }catch(e){
+    showToast('Could not delete invoice');
+  }
+}
 
 setSplashLogo();
 loadClients();
