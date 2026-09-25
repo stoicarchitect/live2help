@@ -1258,48 +1258,51 @@ async function selectFromPicker(idx, selectedName, attemptedName){
 
 function downloadScreeningAnswersPDF(){
   const c = findCandidate(openCandidateId);
-  if(!window.html2pdf){
-    showToast('PDF library not ready, try again in a moment');
-    return;
+  
+  try{
+    if(!window.html2pdf){
+      showToast('PDF library loading... try again in a moment');
+      return;
+    }
+    
+    const contentHtml = document.getElementById('screeningAnswersContent').innerHTML;
+    const timestamp = new Date().toLocaleDateString();
+    
+    const element = document.createElement('div');
+    element.innerHTML = `
+      <div style="font-family: 'Gill Sans', Arial, sans-serif; padding: 20px; max-width: 900px;">
+        <div style="border-bottom: 3px solid #C9A84C; padding-bottom: 16px; margin-bottom: 24px;">
+          <h1 style="font-size: 24px; margin: 0 0 6px 0; color: #1A1A1A; font-weight: 600;">${c.name}</h1>
+          <div style="font-size: 12px; color: #999;">Screening Form Answers</div>
+        </div>
+        
+        <div style="font-size: 12px; color: #666; margin-bottom: 28px; line-height: 1.8;">
+          <div><strong>Role:</strong> ${currentRole}</div>
+          <div><strong>Date:</strong> ${timestamp}</div>
+          <div><strong>Email:</strong> ${c.email || 'Not provided'}</div>
+          <div><strong>Phone:</strong> ${c.phone || 'Not provided'}</div>
+        </div>
+        
+        <div style="font-size: 13px; color: #333; line-height: 1.7;">
+          ${contentHtml}
+        </div>
+      </div>
+    `;
+    
+    const opt = {
+      margin: 12,
+      filename: `${c.name} - Screening Answers.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2 },
+      jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' }
+    };
+    
+    html2pdf().set(opt).from(element).save();
+    showToast('PDF downloaded');
+  }catch(e){
+    console.error('Download error:', e);
+    showToast('Error downloading PDF: ' + e.message);
   }
-  
-  const contentHtml = document.getElementById('screeningAnswersContent').innerHTML;
-  const opt = {
-    margin: 15,
-    filename: `${c.name} - Screening Answers.pdf`,
-    image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2 },
-    jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' }
-  };
-  
-  const html = `
-    <div style="font-family: 'Gill Sans', Arial, sans-serif; max-width: 900px;">
-      <div style="border-bottom: 3px solid #C9A84C; padding-bottom: 12px; margin-bottom: 20px;">
-        <h1 style="font-size: 22px; margin: 0 0 4px 0; color: #1A1A1A;">${c.name}</h1>
-        <div style="font-size: 11px; color: #999; margin: 0;">Screening Form Answers</div>
-      </div>
-      
-      <div style="font-size: 11px; color: #999; margin-bottom: 24px; line-height: 1.6;">
-        <strong>Role:</strong> ${currentRole}<br>
-        <strong>Date:</strong> ${new Date().toLocaleDateString()}<br>
-        <strong>Email:</strong> ${c.email || '(not provided)'}<br>
-        <strong>Phone:</strong> ${c.phone || '(not provided)'}
-      </div>
-      
-      <div style="font-size: 13px; color: #444;">
-        ${contentHtml.replace(/screening-field-group/g, 'field-group-print').replace(/screening-field-question/g, 'field-q-print').replace(/screening-field-answer/g, 'field-a-print')}
-      </div>
-      
-      <style>
-        .field-group-print{margin-bottom: 18px; padding-bottom: 12px; border-bottom: 1px solid #DDD;}
-        .field-group-print:last-child{border-bottom: none;}
-        .field-q-print{display: block; font-size: 12px; color: #1A1A1A; margin-bottom: 6px; font-weight: 600;}
-        .field-a-print{font-size: 12px; color: #444; line-height: 1.5; background: #F7F6F3; padding: 10px; border-radius: 2px;}
-      </style>
-    </div>
-  `;
-  
-  html2pdf().set(opt).fromString(html).save();
 }
 
 async function uploadCV(){
