@@ -1587,7 +1587,7 @@ app.get('/api/init-bulk-clients', async (req, res) => {
 
 /* Tasks - stored in "Tasks" sheet of SHEET_ID */
 const TASKS_TAB = 'Tasks';
-const TASKS_RANGE = `${TASKS_TAB}!A2:H`;
+const TASKS_RANGE = `${TASKS_TAB}!A2:I`;
 
 async function getTasksSheet() {
   const sheets = getSheetsClient();
@@ -1603,6 +1603,10 @@ async function getTasksSheet() {
 }
 
 function rowToTask(row) {
+  // Safely get archived value - default to false if missing
+  let archivedValue = row[8];
+  const isArchived = archivedValue && archivedValue.toString().toLowerCase().trim() === 'true';
+  
   return {
     id: row[0],
     user: row[1],
@@ -1612,7 +1616,7 @@ function rowToTask(row) {
     context: row[5],
     status: row[6],
     recurring: row[7] || 'none',
-    archived: (row[8] && row[8].toString().toLowerCase() === 'true')
+    archived: isArchived
   };
 }
 
@@ -1638,7 +1642,7 @@ app.get('/api/tasks', async (req, res) => {
     const tasks = rows
       .map(rowToTask)
       .filter(t => {
-        // Skip if archived
+        // Skip if explicitly archived (true)
         if (t.archived === true) return false;
         
         // Filter by user
