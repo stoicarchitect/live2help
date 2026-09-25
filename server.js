@@ -882,9 +882,9 @@ const SCREENING_FORM_FIELDS = [
   { key: 'additional_info', label: 'Additional Info', col: 16 },
 ];
 
-// Helper: find screening answers row for a candidate
-// candidateId format: "company-name-lower"
-async function findApplicationRow(candidateId, role) {
+// Helper: find screening answers row for a candidate by name
+// Tries full name first, then first-name-initial fallback
+async function findApplicationRow(candidateName, role) {
   const sheets = getSheetsClient();
   const tabName = `Applications - ${role}`;
   try {
@@ -893,14 +893,37 @@ async function findApplicationRow(candidateId, role) {
       range: `'${tabName}'!A2:T`,
     });
     const rows = result.data.values || [];
-    const namePart = candidateId.split('-').pop(); // Get the last part (name)
-    const rowIndex = rows.findIndex(r => 
-      (r[2] || '').toLowerCase().replace(/\s+/g, '-') === namePart
+    
+    // Try exact full name match first (case-insensitive, trim spaces)
+    const nameNormalized = candidateName.toLowerCase().trim();
+    let rowIndex = rows.findIndex(r => 
+      (r[2] || '').toLowerCase().trim() === nameNormalized
     );
-    return rowIndex !== -1 ? rows[rowIndex] : null;
+    
+    if (rowIndex !== -1) {
+      return { row: rows[rowIndex], matchType: 'full', index: rowIndex };
+    }
+    
+    // Fallback to first-name-initial match (e.g. "Kelly B" matches "Kelly Brammer")
+    const parts = candidateName.split(' ');
+    if (parts.length >= 2) {
+      const firstName = parts[0].toLowerCase();
+      const initial = parts[1].charAt(0).toLowerCase();
+      rowIndex = rows.findIndex(r => {
+        const fullName = (r[2] || '').toLowerCase().trim();
+        const nameParts = fullName.split(' ');
+        return nameParts[0] === firstName && nameParts[1] && nameParts[1].charAt(0) === initial;
+      });
+      if (rowIndex !== -1) {
+        return { row: rows[rowIndex], matchType: 'initial', index: rowIndex };
+      }
+    }
+    
+    // No match found - return all rows for manual picker
+    return { row: null, matchType: 'none', allRows: rows };
   } catch (e) {
-    console.error(`Error finding application row for ${candidateId} in ${tabName}:`, e.message);
-    return null;
+    console.error(`Error finding application row for ${candidateName} in ${tabName}:`, e.message);
+    return { row: null, matchType: 'error' };
   }
 }
 
@@ -936,17 +959,36 @@ async function getOrCreateCandidateFolder(companyFolderId, candidateName) {
 }
 
 // GET screening form answers for a candidate
+// Pass candidateName in query: ?name=Kelly+Brammer&role=Transport+Coordinator
 app.get('/api/candidates/:id/screening-answers', async (req, res) => {
   try {
-    const { id } = req.params;
-    const { role } = req.query;
-    if (!role) {
-      return res.status(400).json({ error: 'role query parameter required' });
+    const { name, role } = req.query;
+    if (!name || !role) {
+      return res.status(400).json({ error: 'name and role query parameters required' });
     }
-    const row = await findApplicationRow(id, role);
-    if (!row) {
+    
+    const result = await findApplicationRow(name, role);
+    
+    if (!result.row) {
+      // No match found - return all candidates for manual picker
+      if (result.allRows) {
+        const allApplicants = result.allRows.map(r => ({
+          name: r[2] || '',
+          email: r[3] || '',
+          dateApplied: r[1] || ''
+        })).filter(a => a.name); // Only rows with names
+        
+        return res.status(404).json({ 
+          error: 'No exact match found',
+          needsManualPick: true,
+          applicants: allApplicants,
+          matchType: result.matchType
+        });
+      }
       return res.status(404).json({ error: 'Screening answers not found' });
     }
+    
+    const row = result.row;
     const answers = {};
     SCREENING_FORM_FIELDS.forEach(field => {
       answers[field.key] = {
@@ -954,7 +996,12 @@ app.get('/api/candidates/:id/screening-answers', async (req, res) => {
         value: row[field.col] || ''
       };
     });
-    res.json({ data: answers });
+    
+    res.json({ 
+      data: answers,
+      fullName: row[2] || '',
+      matchType: result.matchType
+    });
   } catch (e) {
     console.error('GET /api/candidates/:id/screening-answers error:', e.message);
     res.status(500).json({ error: e.message });
