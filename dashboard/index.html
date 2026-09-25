@@ -790,6 +790,7 @@ function tryUnlock(){
     currentUserRole = 'ella';
     document.getElementById('gate').style.display = 'none';
     document.getElementById('splashScreen').classList.remove('hidden');
+    document.querySelector('.tab-btn[data-tab="invoices"]').style.display = 'none';
     renderSidebar();
     loadCandidates();
     loadApplicantClientList();
@@ -982,7 +983,7 @@ function openCandidateModal(id){
       </div>`;
     if(c.invoiceNumber){
       html += `<div class="prompt-box">Invoice <strong>${c.invoiceNumber}</strong> already generated for this placement.</div>`;
-    } else if(c.salary && c.startDate){
+    } else if(c.salary && c.startDate && currentUserRole === 'dan'){
       html += `<button onclick="generateInvoiceForCandidate()" style="width:100%;margin:6px 0 0;padding:10px;background:var(--gold);border:none;color:var(--white);border-radius:2px;cursor:pointer;font-size:13px;font-weight:600;">Generate Invoice</button>`;
     }
   }
@@ -1478,6 +1479,7 @@ document.getElementById('screeningAnswersModal').addEventListener('click', e => 
 // Candidates / Clients toggle. Keeps calling loadClients() so the
 // Clients tab behaves exactly as before.
 function switchTab(tab){
+  if(tab === 'invoices' && currentUserRole !== 'dan') return;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.getElementById('candidatesView').style.display = tab === 'candidates' ? 'flex' : 'none';
   document.getElementById('clientsView').classList.toggle('visible', tab === 'clients');
@@ -1600,7 +1602,7 @@ async function submitGenerateInvoice(){
   try{
     const res = await fetch(`${API_BASE}/api/invoices`, {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      headers: {'Content-Type':'application/json', 'X-User-Role': currentUserRole},
       body: JSON.stringify({
         candidateId: c.id,
         company: c.company,
@@ -1633,7 +1635,7 @@ async function generateInvoiceForCandidate(){
   try{
     const res = await fetch(`${API_BASE}/api/invoices`, {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      headers: {'Content-Type':'application/json', 'X-User-Role': currentUserRole},
       body: JSON.stringify({
         candidateId: c.id,
         company: currentCompany,
@@ -1657,7 +1659,7 @@ async function updateInvoiceStatus(number, status){
   try{
     await fetch(`${API_BASE}/api/invoices/${number}`, {
       method: 'PUT',
-      headers: {'Content-Type':'application/json'},
+      headers: {'Content-Type':'application/json', 'X-User-Role': currentUserRole},
       body: JSON.stringify({ status })
     });
     loadInvoices();
@@ -1673,7 +1675,7 @@ function downloadInvoicePDF(number){
 async function deleteInvoiceCard(number){
   if(!confirm(`Delete invoice ${number}? This cannot be undone.`)) return;
   try{
-    await fetch(`${API_BASE}/api/invoices/${number}`, { method: 'DELETE' });
+    await fetch(`${API_BASE}/api/invoices/${number}`, { method: 'DELETE', headers: {'X-User-Role': currentUserRole} });
     loadInvoices();
   }catch(e){
     showToast('Could not delete invoice');
