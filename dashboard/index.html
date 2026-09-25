@@ -188,11 +188,13 @@
   .modal .field-row{margin-bottom:14px;}
   .modal .field-row label{display:block;font-size:11px;color:#999;letter-spacing:0.5px;margin-bottom:4px;}
   .modal .field-row .val{font-size:13.5px;color:var(--grey);}
-  .modal input, .modal textarea{
+  .modal input, .modal textarea, .modal select{
     width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;
-    font-size:13.5px;font-family:inherit;
+    font-size:13.5px;font-family:inherit;background:#fff;
   }
   .modal textarea{min-height:70px;resize:vertical;}
+  .assign-box{background:#FBF6EA;border-left:3px solid var(--gold, #C9A84C);padding:14px 14px 2px;margin-bottom:14px;}
+  .assign-box .assign-label{font-size:11px;color:#8a7638;letter-spacing:0.5px;margin-bottom:10px;font-weight:600;text-transform:uppercase;}
   .prompt-box{
     background:var(--lightbg);border-left:3px solid var(--gold);padding:12px 14px;
     font-size:13px;color:var(--grey);margin:16px 0;line-height:1.5;
@@ -556,6 +558,7 @@
 <script src="clients-update.js"></script>
 <script>
 const STAGES = [
+  {key:"applied", label:"Applied"},
   {key:"submitted", label:"Submitted"},
   {key:"interview_requested", label:"Interview Requested"},
   {key:"interview_scheduled", label:"Interview Scheduled"},
@@ -569,6 +572,7 @@ const STAGES = [
 ];
 
 const PROMPTS = {
+  applied: "New application from the careers site. Assign a company and contact below to move this candidate into that client's pipeline.",
   submitted: "Candidate submitted to client. Awaiting response - if no reply by 4pm the day after submission, call the client and send a follow-up email.",
   interview_requested: "Call candidate for availability.",
   interview_scheduled: "Confirm interview date and time with the client. Send Interview Confirmation email pack and site onboarding pack. Send calendar invite to client and candidate.",
@@ -582,8 +586,21 @@ const PROMPTS = {
 };
 
 const API_BASE = "https://l2h-api.onrender.com";
+const UNASSIGNED_LABEL = "Unassigned - New Applications";
 let DATA = {};
 let dataLoaded = false;
+let CLIENTS = [];
+
+async function loadClients(){
+  try{
+    const res = await fetch(`${API_BASE}/api/clients`);
+    if(!res.ok) return;
+    const json = await res.json();
+    CLIENTS = json.data || [];
+  }catch(e){
+    console.error('Could not load clients list', e);
+  }
+}
 
 async function loadCandidates(){
   const board = document.getElementById('board');
@@ -651,12 +668,14 @@ function tryUnlock(){
     document.getElementById('splashScreen').classList.remove('hidden');
     renderSidebar();
     loadCandidates();
+    loadClients();
   } else if(pw === "l2h2026"){
     currentUserRole = 'ella';
     document.getElementById('gate').style.display = 'none';
     document.getElementById('splashScreen').classList.remove('hidden');
     renderSidebar();
     loadCandidates();
+    loadClients();
   } else {
     document.getElementById('gateErr').textContent = "Incorrect password";
   }
@@ -666,7 +685,12 @@ document.getElementById('gatePw').addEventListener('keydown', e => { if(e.key ==
 function renderSidebar(){
   const list = document.getElementById('companyList');
   list.innerHTML = '';
-  Object.keys(DATA).forEach(company => {
+  const companies = Object.keys(DATA).sort((a,b) => {
+    if(a === UNASSIGNED_LABEL) return -1;
+    if(b === UNASSIGNED_LABEL) return 1;
+    return a.localeCompare(b);
+  });
+  companies.forEach(company => {
     const block = document.createElement('div');
     block.className = 'company-block' + (company === currentCompany ? ' open' : '');
     const head = document.createElement('div');
@@ -786,6 +810,32 @@ function openCandidateModal(id){
     html += `<div class="prompt-box"><strong>Next step:</strong> ${prompt}</div>`;
   }
 
+  if(c.stage === 'applied'){
+    const companies = [...new Set(CLIENTS.map(cl => cl.company).filter(Boolean))].sort();
+    const contactsForCompany = CLIENTS.filter(cl => cl.company === (c.company || ''));
+    html += `
+      <div class="assign-box">
+        <div class="assign-label">Assign to client</div>
+        <div class="two-col">
+          <div class="field-row">
+            <label>Company</label>
+            <select id="companyInput" onchange="onAssignCompanyChange()">
+              <option value="">Select company...</option>
+              ${companies.map(co => `<option value="${co}" ${co === c.company ? 'selected' : ''}>${co}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field-row">
+            <label>Contact</label>
+            <select id="contactInput">
+              <option value="">Select contact...</option>
+              ${contactsForCompany.map(cl => `<option value="${cl.contactName}" ${cl.contactName === c.contact ? 'selected' : ''}>${cl.contactName}${cl.jobTitle ? ' - ' + cl.jobTitle : ''}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   html += `
     <div class="two-col">
       <div class="field-row">
@@ -820,6 +870,14 @@ function openCandidateModal(id){
   document.getElementById('candModalOverlay').classList.add('visible');
 }
 
+function onAssignCompanyChange(){
+  const companyVal = document.getElementById('companyInput').value;
+  const contactSel = document.getElementById('contactInput');
+  const contactsForCompany = CLIENTS.filter(cl => cl.company === companyVal);
+  contactSel.innerHTML = '<option value="">Select contact...</option>' +
+    contactsForCompany.map(cl => `<option value="${cl.contactName}">${cl.contactName}${cl.jobTitle ? ' - ' + cl.jobTitle : ''}</option>`).join('');
+}
+
 function buildStageButtons(c){
   const order = STAGES.map(s => s.key).filter(k => k !== 'rejected');
   const idx = order.indexOf(c.stage);
@@ -848,6 +906,10 @@ function captureFieldsFromModal(c){
   if(emailEl) c.email = emailEl.value;
   const phoneEl = document.getElementById('phoneInput');
   if(phoneEl) c.phone = phoneEl.value;
+  const companyEl = document.getElementById('companyInput');
+  if(companyEl) c.company = companyEl.value;
+  const contactEl = document.getElementById('contactInput');
+  if(contactEl) c.contact = contactEl.value;
 }
 
 async function saveNotesOnly(){
@@ -867,6 +929,12 @@ async function saveNotesOnly(){
 async function advanceStage(newStage){
   const c = findCandidate(openCandidateId);
   captureFieldsFromModal(c);
+
+  if(c.stage === 'applied' && !c.company){
+    showToast('Assign a company before moving this candidate forward');
+    openCandidateModal(c.id);
+    return;
+  }
 
   c.stage = newStage;
   c.date = new Date().toISOString().slice(0,10);
