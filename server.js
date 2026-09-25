@@ -302,13 +302,31 @@ async function tryMarkApplicationSubmitted(companyName, role, candidateName) {
       range: `'${tabName}'!A2:T`,
     });
     const rows = allRows.data.values || [];
-    const rowIndex = rows.findIndex(r => (r[2] || '').trim().toLowerCase() === candidateName.trim().toLowerCase());
+    
+    // Try exact full name match first (case-insensitive)
+    const nameNormalized = candidateName.trim().toLowerCase();
+    let rowIndex = rows.findIndex(r => (r[2] || '').trim().toLowerCase() === nameNormalized);
+    
+    if (rowIndex === -1) {
+      // Fallback to first-name-initial match (e.g. "Kelly B" matches "Kelly Brammer")
+      const parts = candidateName.split(' ');
+      if (parts.length >= 2) {
+        const firstName = parts[0].toLowerCase();
+        const initial = parts[1].charAt(0).toLowerCase();
+        rowIndex = rows.findIndex(r => {
+          const fullName = (r[2] || '').toLowerCase().trim();
+          const nameParts = fullName.split(' ');
+          return nameParts[0] === firstName && nameParts[1] && nameParts[1].charAt(0) === initial;
+        });
+      }
+    }
+    
     if (rowIndex === -1) return false;
 
     const sheetRowNumber = rowIndex + 2;
     const existing = rows[rowIndex];
-    existing[17] = companyName;       // Company
-    existing[19] = 'submitted';       // Status
+    existing[17] = companyName;       // Company (column R)
+    existing[19] = 'submitted';       // Status (column T)
     while (existing.length < 20) existing.push('');
 
     await sheets.spreadsheets.values.update({
@@ -320,6 +338,7 @@ async function tryMarkApplicationSubmitted(companyName, role, candidateName) {
     return true;
   } catch (e) {
     // Tab probably doesn't exist for this role - candidate wasn't sourced from a form
+    console.error(`Error marking application submitted for ${candidateName} in ${tabName}:`, e.message);
     return false;
   }
 }
