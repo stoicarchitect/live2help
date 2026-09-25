@@ -546,6 +546,8 @@ app.delete('/api/candidates/:id', async (req, res) => {
 const CLIENT_SHEET_ID = '1gFoG7F9OU_ax-cJ7AJYPzXBPYPHGxronprXCXA2u5so';
 const CLIENT_TAB = 'Dashboard';
 const CLIENT_RANGE = `${CLIENT_TAB}!A2:J`;
+const LEAD_CLIENT_TAB = 'Lead Clients';
+const LEAD_CLIENT_RANGE = `${LEAD_CLIENT_TAB}!A2:J`;
 const INVOICES_TAB = 'Invoices';
 const INVOICES_RANGE = `${INVOICES_TAB}!A2:K`;
 const KPI_TARGETS_TAB = 'KPI Targets';
@@ -589,6 +591,21 @@ async function readClientRows() {
     range: CLIENT_RANGE,
   });
   return result.data.values || [];
+}
+
+async function readLeadClientRows() {
+  if (!CLIENT_SHEET_ID) throw new Error('CLIENT_SHEET_ID is not set');
+  const sheets = getSheetsClient();
+  try {
+    const result = await sheets.spreadsheets.values.get({
+      spreadsheetId: CLIENT_SHEET_ID,
+      range: LEAD_CLIENT_RANGE,
+    });
+    return result.data.values || [];
+  } catch (e) {
+    // Tab doesn't exist yet - return empty
+    return [];
+  }
 }
 
 // GET all clients
@@ -637,6 +654,145 @@ app.post('/api/clients', async (req, res) => {
     res.json({ ok: true, client: newClient });
   } catch (e) {
     console.error('POST /api/clients error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE client(s) by company
+app.delete('/api/clients/:company', async (req, res) => {
+  try {
+    const { company } = req.params;
+    const sheets = getSheetsClient();
+    const rows = await readClientRows();
+    
+    const indicesToDelete = [];
+    rows.forEach((row, index) => {
+      if (row[1] && row[1].trim() === decodeURIComponent(company)) {
+        indicesToDelete.push(index + 2);
+      }
+    });
+    
+    if (indicesToDelete.length === 0) {
+      return res.status(404).json({ error: 'No clients found for that company' });
+    }
+    
+    for (let i = indicesToDelete.length - 1; i >= 0; i--) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: CLIENT_SHEET_ID,
+        requestBody: {
+          requests: [{
+            deleteDimension: {
+              range: {
+                sheetId: 0,
+                dimension: 'ROWS',
+                startIndex: indicesToDelete[i] - 1,
+                endIndex: indicesToDelete[i],
+              },
+            },
+          }],
+        },
+      });
+    }
+    
+    res.json({ ok: true, deleted: indicesToDelete.length });
+  } catch (e) {
+    console.error('DELETE /api/clients error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* ======================================================================
+   Lead Clients - prospect management
+   ====================================================================== */
+
+// GET all lead clients
+app.get('/api/lead-clients', async (req, res) => {
+  try {
+    const rows = await readLeadClientRows();
+    const clients = rows.filter(r => r[1]).map(r => rowToClient(r));
+    res.json({ data: clients });
+  } catch (e) {
+    console.error('GET /api/lead-clients error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST add new lead client
+app.post('/api/lead-clients', async (req, res) => {
+  try {
+    const { company, address, postcode, contactName, jobTitle, email, phone, notes } = req.body;
+    
+    if (!company || !email) {
+      return res.status(400).json({ error: 'company and email are required' });
+    }
+
+    const sheets = getSheetsClient();
+    const newLeadClient = {
+      timestamp: new Date().toISOString(),
+      company,
+      address,
+      postcode,
+      contactName,
+      jobTitle,
+      email,
+      phone,
+      folderCreated: 'No',
+      notes: notes || '',
+    };
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: CLIENT_SHEET_ID,
+      range: LEAD_CLIENT_RANGE,
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: [clientToRow(newLeadClient)] },
+    });
+
+    res.json({ ok: true, client: newLeadClient });
+  } catch (e) {
+    console.error('POST /api/lead-clients error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE lead client by company and contact name
+app.delete('/api/lead-clients/:company/:contactName', async (req, res) => {
+  try {
+    const { company, contactName } = req.params;
+    const sheets = getSheetsClient();
+    const rows = await readLeadClientRows();
+    
+    const companyName = decodeURIComponent(company);
+    const contactNameDecoded = decodeURIComponent(contactName);
+    
+    const rowIndex = rows.findIndex(row =>
+      row[1] && row[1].trim() === companyName &&
+      row[4] && row[4].trim() === contactNameDecoded
+    );
+    
+    if (rowIndex === -1) {
+      return res.status(404).json({ error: 'Lead client not found' });
+    }
+    
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: CLIENT_SHEET_ID,
+      requestBody: {
+        requests: [{
+          deleteDimension: {
+            range: {
+              sheetId: 0,
+              dimension: 'ROWS',
+              startIndex: rowIndex + 1,
+              endIndex: rowIndex + 2,
+            },
+          },
+        }],
+      },
+    });
+    
+    res.json({ ok: true, deleted: true });
+  } catch (e) {
+    console.error('DELETE /api/lead-clients error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
