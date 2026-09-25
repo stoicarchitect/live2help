@@ -1612,7 +1612,7 @@ function rowToTask(row) {
     context: row[5],
     status: row[6],
     recurring: row[7] || 'none',
-    archived: row[8] === 'true'
+    archived: (row[8] && row[8].toString().toLowerCase() === 'true')
   };
 }
 
