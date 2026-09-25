@@ -855,6 +855,204 @@ const INITIAL_CLIENTS = [
   {"timestamp": "2026-09-24T00:00:00Z", "company": "Cambridge Manufacturing", "address": "Cambridge", "postcode": "", "contactName": "Operations", "jobTitle": "Facilities", "email": "careers@cambridge-mfg.com", "phone": "", "folderCreated": "No", "notes": "Fire safety site visits through ERS Medical"}
 ];
 
+/* ======================================================================
+   Screening answers & CV management - form application data & file storage.
+   
+   Screening answers come from Applications tabs - we retrieve them as structured
+   answers mapped to form field labels for display in the dashboard.
+   
+   CV files are stored in Drive next to submission docs for easy reference.
+   ====================================================================== */
+
+const SCREENING_FORM_FIELDS = [
+  { key: 'name', label: 'Candidate Name', col: 2 },
+  { key: 'email', label: 'Email', col: 3 },
+  { key: 'phone', label: 'Phone', col: 4 },
+  { key: 'employment_status', label: 'Current Employment Status', col: 5 },
+  { key: 'notice_period', label: 'Notice Period', col: 6 },
+  { key: 'transport_background', label: 'Transport Background', col: 7 },
+  { key: 'recent_role', label: 'Recent Role Description', col: 8 },
+  { key: 'customer_liaison', label: 'Customer/Haulier Liaison', col: 9 },
+  { key: 'kpi_comfort', label: 'KPI/OTIF Comfort', col: 10 },
+  { key: 'excel_skill', label: 'Excel Skill Level', col: 11 },
+  { key: 'multi_priority', label: 'Multi-priority Rating', col: 12 },
+  { key: 'work_environment', label: 'Ideal Work Environment', col: 13 },
+  { key: 'location_commute', label: 'Location/Trentham Commute', col: 14 },
+  { key: 'salary_expectation', label: 'Salary Expectation', col: 15 },
+  { key: 'additional_info', label: 'Additional Info', col: 16 },
+];
+
+// Helper: find screening answers row for a candidate
+// candidateId format: "company-name-lower"
+async function findApplicationRow(candidateId, role) {
+  const sheets = getSheetsClient();
+  const tabName = `Applications - ${role}`;
+  try {
+    const result = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: `'${tabName}'!A2:T`,
+    });
+    const rows = result.data.values || [];
+    const namePart = candidateId.split('-').pop(); // Get the last part (name)
+    const rowIndex = rows.findIndex(r => 
+      (r[2] || '').toLowerCase().replace(/\s+/g, '-') === namePart
+    );
+    return rowIndex !== -1 ? rows[rowIndex] : null;
+  } catch (e) {
+    console.error(`Error finding application row for ${candidateId} in ${tabName}:`, e.message);
+    return null;
+  }
+}
+
+// Helper: find or create a candidate folder in a company Drive folder
+async function getOrCreateCandidateFolder(companyFolderId, candidateName) {
+  const drive = google.drive({ version: 'v3', auth: getAuthClient() });
+  try {
+    // Look for existing folder
+    const query = `'${companyFolderId}' in parents and name='${candidateName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const list = await drive.files.list({
+      q: query,
+      spaces: 'drive',
+      pageSize: 1,
+      fields: 'files(id, name)',
+    });
+    if (list.data.files.length > 0) {
+      return list.data.files[0].id;
+    }
+    // Create new folder
+    const folder = await drive.files.create({
+      resource: {
+        name: candidateName,
+        mimeType: 'application/vnd.google-apps.folder',
+        parents: [companyFolderId],
+      },
+      fields: 'id',
+    });
+    return folder.data.id;
+  } catch (e) {
+    console.error(`Error getting/creating candidate folder:`, e.message);
+    return null;
+  }
+}
+
+// GET screening form answers for a candidate
+app.get('/api/candidates/:id/screening-answers', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role } = req.query;
+    if (!role) {
+      return res.status(400).json({ error: 'role query parameter required' });
+    }
+    const row = await findApplicationRow(id, role);
+    if (!row) {
+      return res.status(404).json({ error: 'Screening answers not found' });
+    }
+    const answers = {};
+    SCREENING_FORM_FIELDS.forEach(field => {
+      answers[field.key] = {
+        label: field.label,
+        value: row[field.col] || ''
+      };
+    });
+    res.json({ data: answers });
+  } catch (e) {
+    console.error('GET /api/candidates/:id/screening-answers error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST CV file upload for a candidate
+app.post('/api/candidates/:id/cv', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { company, name, fileData, fileName } = req.body;
+    if (!company || !name || !fileData || !fileName) {
+      return res.status(400).json({ error: 'company, name, fileData, fileName required' });
+    }
+    const companyFolders = await listFolderContents(SUBMISSIONS_FOLDER_ID);
+    const companyFolder = companyFolders.find(f => f.name === company && f.mimeType === 'application/vnd.google-apps.folder');
+    if (!companyFolder) {
+      return res.status(404).json({ error: `Company folder not found: ${company}` });
+    }
+    const candidateFolderId = await getOrCreateCandidateFolder(companyFolder.id, name);
+    if (!candidateFolderId) {
+      return res.status(500).json({ error: 'Could not create candidate folder' });
+    }
+    const drive = google.drive({ version: 'v3', auth: getAuthClient() });
+    const buffer = Buffer.from(fileData, 'base64');
+    const file = await drive.files.create({
+      resource: {
+        name: fileName,
+        parents: [candidateFolderId],
+      },
+      media: {
+        mimeType: 'application/pdf',
+        body: require('stream').Readable.from([buffer]),
+      },
+      fields: 'id, webViewLink',
+    });
+    res.json({ 
+      ok: true, 
+      fileId: file.data.id,
+      fileName: fileName,
+      link: file.data.webViewLink 
+    });
+  } catch (e) {
+    console.error('POST /api/candidates/:id/cv error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET CV file for a candidate (returns file data or link)
+app.get('/api/candidates/:id/cv', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { company, name } = req.query;
+    if (!company || !name) {
+      return res.status(400).json({ error: 'company and name query params required' });
+    }
+    const drive = google.drive({ version: 'v3', auth: getAuthClient() });
+    const companyFolders = await listFolderContents(SUBMISSIONS_FOLDER_ID);
+    const companyFolder = companyFolders.find(f => f.name === company && f.mimeType === 'application/vnd.google-apps.folder');
+    if (!companyFolder) {
+      return res.status(404).json({ error: `Company folder not found: ${company}` });
+    }
+    const query = `'${companyFolder.id}' in parents and name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const list = await drive.files.list({
+      q: query,
+      spaces: 'drive',
+      pageSize: 1,
+      fields: 'files(id)',
+    });
+    if (list.data.files.length === 0) {
+      return res.status(404).json({ error: 'Candidate folder not found' });
+    }
+    const candidateFolderId = list.data.files[0].id;
+    const cvQuery = `'${candidateFolderId}' in parents and (mimeType='application/pdf' or name contains 'CV' or name contains 'cv') and trashed=false`;
+    const cvList = await drive.files.list({
+      q: cvQuery,
+      spaces: 'drive',
+      pageSize: 1,
+      fields: 'files(id, name, webViewLink, mimeType)',
+    });
+    if (cvList.data.files.length === 0) {
+      return res.status(404).json({ error: 'No CV found for this candidate' });
+    }
+    const cvFile = cvList.data.files[0];
+    res.json({ 
+      data: {
+        fileId: cvFile.id,
+        fileName: cvFile.name,
+        link: cvFile.webViewLink,
+        mimeType: cvFile.mimeType
+      }
+    });
+  } catch (e) {
+    console.error('GET /api/candidates/:id/cv error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/init-bulk-clients', async (req, res) => {
   try {
     const sheets = getSheetsClient();
