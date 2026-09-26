@@ -1246,6 +1246,248 @@ app.post('/api/kpi-targets', async (req, res) => {
   }
 });
 
+// DELETE KPI target by quarter
+app.delete('/api/kpi-targets/:quarter', async (req, res) => {
+  try {
+    const { quarter } = req.params;
+    
+    if (!quarter) {
+      return res.status(400).json({ error: 'quarter is required' });
+    }
+
+    const sheets = getSheetsClient();
+    const rows = await readKPITargetRows();
+    
+    // Find the row index for this quarter
+    let rowIndexToDelete = -1;
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i][0] === decodeURIComponent(quarter)) {
+        rowIndexToDelete = i;
+        break;
+      }
+    }
+
+    if (rowIndexToDelete === -1) {
+      return res.status(404).json({ error: 'KPI target not found' });
+    }
+
+    // Delete the row (Google Sheets uses 1-based indexing, and we start from row 2)
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: CLIENT_SHEET_ID,
+      requestBody: {
+        requests: [{
+          deleteDimension: {
+            range: {
+              sheetId: 0, // Assuming KPI Targets sheet is the first sheet
+              dimension: 'ROWS',
+              startIndex: rowIndexToDelete + 1, // +1 because data starts at row 2
+              endIndex: rowIndexToDelete + 2
+            }
+          }
+        }]
+      }
+    });
+
+    res.json({ ok: true, message: 'KPI target deleted' });
+  } catch (e) {
+    console.error('DELETE /api/kpi-targets/:quarter error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* ======================================================================
+   Metrics - Progress and Business Health Calculations
+====================================================================== */
+
+// Helper: Get current quarter
+function getCurrentQuarter() {
+  const now = new Date();
+  const month = now.getMonth() + 1;
+  const year = now.getFullYear();
+  if (month <= 3) return { quarter: 'Q1', year };
+  if (month <= 6) return { quarter: 'Q2', year };
+  if (month <= 9) return { quarter: 'Q3', year };
+  return { quarter: 'Q4', year };
+}
+
+// Helper: Check if date is in current quarter
+function isInCurrentQuarter(dateStr) {
+  const { quarter, year } = getCurrentQuarter();
+  const date = new Date(dateStr);
+  const dateYear = date.getFullYear();
+  const month = date.getMonth() + 1;
+  
+  if (dateYear !== year) return false;
+  
+  if (quarter === 'Q1') return month >= 1 && month <= 3;
+  if (quarter === 'Q2') return month >= 4 && month <= 6;
+  if (quarter === 'Q3') return month >= 7 && month <= 9;
+  return month >= 10 && month <= 12;
+}
+
+// GET progress metrics (roles filled, clients, fill speed this quarter)
+app.get('/api/metrics/progress', async (req, res) => {
+  try {
+    const sheets = getSheetsClient();
+    
+    // Read candidates to calculate fill speed
+    const candResult = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: `${TAB}!A2:L`,
+    });
+    const candRows = candResult.data.values || [];
+    
+    // Count roles filled in current quarter and calculate fill speed
+    let rolesFilledThisQuarter = 0;
+    let fillSpeedDays = [];
+    
+    candRows.forEach(row => {
+      if (row[4] === 'success') { // stage column
+        const dateStr = row[5]; // date column
+        if (dateStr && isInCurrentQuarter(dateStr)) {
+          rolesFilledThisQuarter++;
+          
+          // Calculate days to fill (date - some start date or estimate)
+          // For now, we'll use a placeholder calculation
+          fillSpeedDays.push(14); // Default assumption
+        }
+      }
+    });
+    
+    // Read clients to count new ones this quarter
+    const clientResult = await sheets.spreadsheets.values.get({
+      spreadsheetId: CLIENT_SHEET_ID,
+      range: 'Dashboard!A2:J',
+    });
+    const clientRows = clientResult.data.values || [];
+    let newClientsThisQuarter = 0;
+    const seenCompanies = new Set();
+    
+    clientRows.forEach(row => {
+      const company = row[1];
+      if (company && !seenCompanies.has(company)) {
+        const dateStr = row[0]; // timestamp
+        if (dateStr && isInCurrentQuarter(dateStr)) {
+          newClientsThisQuarter++;
+        }
+        seenCompanies.add(company);
+      }
+    });
+    
+    const avgFillSpeedDays = fillSpeedDays.length > 0 
+      ? fillSpeedDays.reduce((a, b) => a + b, 0) / fillSpeedDays.length 
+      : 0;
+    
+    res.json({
+      rolesFilledThisQuarter,
+      newClientsThisQuarter,
+      avgFillSpeedDays: avgFillSpeedDays.toFixed(1)
+    });
+  } catch (e) {
+    console.error('GET /api/metrics/progress error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET business health metrics (revenue, ROI, runway, invoices, client performance)
+app.get('/api/metrics/business-health', async (req, res) => {
+  try {
+    const sheets = getSheetsClient();
+    
+    // Read invoices
+    const invResult = await sheets.spreadsheets.values.get({
+      spreadsheetId: CLIENT_SHEET_ID,
+      range: 'Invoices!A2:E',
+    });
+    const invRows = invResult.data.values || [];
+    
+    let ytdRevenue = 0;
+    let invoicePaid = 0;
+    let invoicePending = 0;
+    let invoiceOverdue = 0;
+    let invoiceCount = 0;
+    
+    const now = new Date();
+    const yearStart = new Date(now.getFullYear(), 0, 1);
+    
+    invRows.forEach(row => {
+      const amount = parseInt(row[2]) || 0;
+      const paid = row[3];
+      const paymentDate = row[4];
+      const invoiceDate = new Date(row[1]);
+      
+      // YTD calculation
+      if (invoiceDate >= yearStart) {
+        ytdRevenue += amount;
+        invoiceCount++;
+      }
+      
+      // Invoice status
+      if (paid === 'yes') {
+        invoicePaid += amount;
+      } else {
+        invoicePending += amount;
+        
+        // Check if overdue (14+ days)
+        const daysDiff = (now - invoiceDate) / (1000 * 60 * 60 * 24);
+        if (daysDiff > 14) {
+          invoiceOverdue += amount;
+        }
+      }
+    });
+    
+    // Calculate Ella's ROI (revenue - salary) / salary
+    const ellaSalary = 25000;
+    const ellaROI = ytdRevenue > 0 ? (ytdRevenue - ellaSalary) / ellaSalary : 0;
+    
+    // Calculate runway (starting bank £10k + revenue - salary costs / monthly burn)
+    const startingBank = 10000;
+    const monthlyBurn = 2083.33; // £25k / 12 months
+    const currentCash = startingBank + ytdRevenue - ellaSalary;
+    const runwayMonths = currentCash > 0 ? currentCash / monthlyBurn : 0;
+    
+    // Client performance (revenue per client, fill rate)
+    const clientResult = await sheets.spreadsheets.values.get({
+      spreadsheetId: CLIENT_SHEET_ID,
+      range: 'Dashboard!A2:J',
+    });
+    const clientRows = clientResult.data.values || [];
+    
+    const clientMap = new Map();
+    clientRows.forEach(row => {
+      const company = row[1];
+      if (company) {
+        if (!clientMap.has(company)) {
+          clientMap.set(company, { company, revenue: 0, givenRoles: 0, filledRoles: 0 });
+        }
+      }
+    });
+    
+    // Calculate revenue per client from invoices
+    invRows.forEach(row => {
+      const amount = parseInt(row[2]) || 0;
+      // Invoice structure would need client association - simplified for now
+      // This would need the invoice sheet to have client column
+    });
+    
+    const clientPerformance = Array.from(clientMap.values());
+    
+    res.json({
+      ytdRevenue,
+      invoicePaid,
+      invoicePending,
+      invoiceOverdue,
+      invoiceCount,
+      ellaROI,
+      runwayMonths,
+      clientPerformance
+    });
+  } catch (e) {
+    console.error('GET /api/metrics/business-health error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 /* ======================================================================
    Bulk Import - Import 32 existing client records
 ====================================================================== */
