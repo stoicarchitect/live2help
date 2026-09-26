@@ -1393,6 +1393,7 @@ app.get('/api/metrics/progress', async (req, res) => {
 app.get('/api/metrics/business-health', async (req, res) => {
   try {
     const sheets = getSheetsClient();
+    const filterYear = req.query.year ? parseInt(req.query.year) : new Date().getFullYear();
     
     // Read invoices
     const invResult = await sheets.spreadsheets.values.get({
@@ -1408,7 +1409,8 @@ app.get('/api/metrics/business-health', async (req, res) => {
     let invoiceCount = 0;
     
     const now = new Date();
-    const yearStart = new Date(now.getFullYear(), 0, 1);
+    const yearStart = new Date(filterYear, 0, 1);
+    const yearEnd = new Date(filterYear, 11, 31);
     
     invRows.forEach(row => {
       const amount = parseInt(row[2]) || 0;
@@ -1416,13 +1418,13 @@ app.get('/api/metrics/business-health', async (req, res) => {
       const paymentDate = row[4];
       const invoiceDate = new Date(row[1]);
       
-      // YTD calculation
-      if (invoiceDate >= yearStart) {
+      // Year calculation (based on selected year for reporting)
+      if (invoiceDate >= yearStart && invoiceDate <= yearEnd) {
         ytdRevenue += amount;
         invoiceCount++;
       }
       
-      // Invoice status
+      // Invoice status (always current, not year-filtered)
       if (paid === 'yes') {
         invoicePaid += amount;
       } else {
@@ -1440,13 +1442,7 @@ app.get('/api/metrics/business-health', async (req, res) => {
     const ellaSalary = 25000;
     const ellaROI = ytdRevenue > 0 ? (ytdRevenue - ellaSalary) / ellaSalary : 0;
     
-    // Calculate runway (starting bank £10k + revenue - salary costs / monthly burn)
-    const startingBank = 10000;
-    const monthlyBurn = 2083.33; // £25k / 12 months
-    const currentCash = startingBank + ytdRevenue - ellaSalary;
-    const runwayMonths = currentCash > 0 ? currentCash / monthlyBurn : 0;
-    
-    // Client performance (revenue per client, fill rate)
+    // Client performance - count roles given in the selected year
     const clientResult = await sheets.spreadsheets.values.get({
       spreadsheetId: CLIENT_SHEET_ID,
       range: 'Dashboard!A2:J',
@@ -1454,8 +1450,11 @@ app.get('/api/metrics/business-health', async (req, res) => {
     const clientRows = clientResult.data.values || [];
     
     const clientMap = new Map();
+    
+    // First pass: create all clients from dashboard
     clientRows.forEach(row => {
       const company = row[1];
+      const dateStr = row[5];
       if (company) {
         if (!clientMap.has(company)) {
           clientMap.set(company, { company, revenue: 0, givenRoles: 0, filledRoles: 0 });
@@ -1463,12 +1462,38 @@ app.get('/api/metrics/business-health', async (req, res) => {
       }
     });
     
-    // Calculate revenue per client from invoices
-    invRows.forEach(row => {
-      const amount = parseInt(row[2]) || 0;
-      // Invoice structure would need client association - simplified for now
-      // This would need the invoice sheet to have client column
+    // Second pass: count roles given (created) in the selected year
+    clientRows.forEach(row => {
+      const company = row[1];
+      const dateStr = row[5];
+      
+      if (company && clientMap.has(company)) {
+        // Parse the date when role was created
+        const createdDate = new Date(dateStr);
+        if (createdDate >= yearStart && createdDate <= yearEnd) {
+          clientMap.get(company).givenRoles += 1;
+        }
+      }
     });
+    
+    // Third pass: count filled roles (in offer/start/completion stages) in the selected year
+    clientRows.forEach(row => {
+      const company = row[1];
+      const stage = row[4];
+      const dateStr = row[5];
+      
+      if (company && clientMap.has(company)) {
+        const stageDate = new Date(dateStr);
+        const filledStages = ['offer', 'start_date', 'day1', 'week1', 'month1'];
+        
+        if (filledStages.includes(stage) && stageDate >= yearStart && stageDate <= yearEnd) {
+          clientMap.get(company).filledRoles += 1;
+        }
+      }
+    });
+    
+    // Calculate revenue per client from invoices (needs to match company to invoice company if available)
+    // For now, simplified - revenue would come from invoices sheet with company column
     
     const clientPerformance = Array.from(clientMap.values());
     
@@ -1479,7 +1504,6 @@ app.get('/api/metrics/business-health', async (req, res) => {
       invoiceOverdue,
       invoiceCount,
       ellaROI,
-      runwayMonths,
       clientPerformance
     });
   } catch (e) {
