@@ -241,6 +241,26 @@
   #clientsView.visible{display:flex;}
   #invoicesView{display:none;flex:1;flex-direction:column;}
   #invoicesView.visible{display:flex;}
+  #kpiReportingView{display:none;flex:1;flex-direction:column;}
+  #kpiReportingView.visible{display:flex;}
+  #kpiHeader{
+    padding:16px 24px 14px;display:flex;justify-content:space-between;align-items:center;
+    border-bottom:1px solid var(--border);
+  }
+  #kpiHeader h2{font-size:18px;color:var(--dark);font-weight:normal;}
+  #addKPIBtn{
+    padding:9px 18px;background:var(--gold);color:var(--white);border:none;
+    border-radius:2px;font-size:13.5px;cursor:pointer;font-family:inherit;font-weight:600;
+  }
+  #addKPIBtn:hover{background:#b8963f;}
+  .kpi-row{display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:0;border-bottom:1px solid var(--border);align-items:center;}
+  .kpi-cell{padding:14px 16px;font-size:13px;color:var(--grey);}
+  .kpi-quarter{color:var(--dark);font-weight:500;}
+  .kpi-target{color:var(--dark);font-weight:600;}
+  .kpi-actions{display:flex;gap:6px;padding:14px 16px;justify-content:flex-end;}
+  .kpi-actions button{padding:6px 10px;border:1px solid var(--border);background:var(--white);border-radius:2px;font-size:11px;color:var(--grey);cursor:pointer;font-family:inherit;transition:all .2s;}
+  .kpi-actions button:hover{border-color:var(--gold);color:var(--dark);}
+  .kpi-actions button.delete:hover{border-color:var(--danger);color:var(--danger);}
   #invoicesHeader{
     padding:16px 24px 14px;display:flex;justify-content:space-between;align-items:center;
     border-bottom:1px solid var(--border);
@@ -584,6 +604,7 @@
       <button class="tab-btn" data-tab="clients" onclick="switchTab('clients')">Clients</button>
       <button class="tab-btn" data-tab="invoices" onclick="switchTab('invoices')">Invoices</button>
       <button class="tab-btn" data-tab="tasks" onclick="switchTab('tasks')">Tasks</button>
+      <button class="tab-btn" data-tab="kpi" onclick="switchTab('kpi')">KPI Reporting</button>
     </div>
     
     <div id="candidatesView" class="visible">
@@ -645,6 +666,106 @@
         <div id="tasksEmpty" style="text-align:center;padding:40px 20px;color:#999;display:none;"><p style="font-size:14px;">No tasks yet. Add one to get started.</p></div>
       </div>
     </div>
+
+    <div id="kpiReportingView" style="display:none;flex:1;flex-direction:column;">
+      <div id="kpiHeader">
+        <h2>KPI Reporting</h2>
+        <button id="addKPIBtn" onclick="openAddKPIModal()">+ Add Target</button>
+      </div>
+      <div id="kpiContent" style="flex:1;overflow-y:auto;padding:18px 24px;">
+        
+        <!-- KPI Targets Section -->
+        <div style="margin-bottom:32px;">
+          <h3 style="font-size:16px;color:var(--dark);margin-bottom:14px;font-weight:500;">Quarterly Targets</h3>
+          <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;overflow:hidden;">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:0;background:var(--lightbg);border-bottom:1px solid var(--border);">
+              <div style="padding:12px 16px;font-size:12px;font-weight:500;color:var(--dark);">Quarter</div>
+              <div style="padding:12px 16px;font-size:12px;font-weight:500;color:var(--dark);">Target Roles</div>
+              <div style="padding:12px 16px;font-size:12px;font-weight:500;color:var(--dark);">Target New Clients</div>
+              <div style="padding:12px 16px;font-size:12px;font-weight:500;color:var(--dark);">Target Avg Fill Speed</div>
+              <div style="padding:12px 16px;font-size:12px;font-weight:500;color:var(--dark);text-align:center;">Actions</div>
+            </div>
+            <div id="kpiBody"></div>
+          </div>
+          <div id="kpiEmpty" style="text-align:center;padding:40px 20px;color:#999;display:none;"><p style="font-size:14px;">No KPI targets set. Add one to get started.</p></div>
+        </div>
+
+        <!-- Progress Metrics Section -->
+        <div style="margin-bottom:32px;">
+          <h3 style="font-size:16px;color:var(--dark);margin-bottom:14px;font-weight:500;">This Quarter - Progress</h3>
+          <div id="progressMetricsContainer" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:16px;">
+            <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;padding:16px;">
+              <div style="font-size:12px;color:#999;margin-bottom:8px;">Roles Filled</div>
+              <div style="font-size:28px;color:var(--gold);font-weight:600;" id="rolesFilledMetric">-</div>
+              <div style="font-size:11px;color:#999;margin-top:4px;" id="rolesFilledTarget">Target: -</div>
+            </div>
+            <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;padding:16px;">
+              <div style="font-size:12px;color:#999;margin-bottom:8px;">New Clients Onboarded</div>
+              <div style="font-size:28px;color:var(--gold);font-weight:600;" id="clientsOnboardedMetric">-</div>
+              <div style="font-size:11px;color:#999;margin-top:4px;" id="clientsOnboardedTarget">Target: -</div>
+            </div>
+            <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;padding:16px;">
+              <div style="font-size:12px;color:#999;margin-bottom:8px;">Avg Fill Speed (days)</div>
+              <div style="font-size:28px;color:var(--gold);font-weight:600;" id="avgFillSpeedMetric">-</div>
+              <div style="font-size:11px;color:#999;margin-top:4px;" id="avgFillSpeedTarget">Target: -</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Business Health Dashboard (Dan Only) -->
+        <div id="businessHealthSection" style="display:none;">
+          <h3 style="font-size:16px;color:var(--dark);margin-bottom:14px;font-weight:500;">Business Health</h3>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:16px;margin-bottom:24px;">
+            <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;padding:16px;">
+              <div style="font-size:12px;color:#999;margin-bottom:8px;">YTD Revenue</div>
+              <div style="font-size:28px;color:var(--gold);font-weight:600;" id="ytdRevenueMetric">£-</div>
+              <div style="font-size:11px;color:#999;margin-top:4px;" id="ytdRevenueDetail">-</div>
+            </div>
+            <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;padding:16px;">
+              <div style="font-size:12px;color:#999;margin-bottom:8px;">Ella - ROI</div>
+              <div style="font-size:28px;color:var(--gold);font-weight:600;" id="ellaROIMetric">-</div>
+              <div style="font-size:11px;color:#999;margin-top:4px;" id="ellaROIDetail">Salary: £25,000 YTD</div>
+            </div>
+            <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;padding:16px;">
+              <div style="font-size:12px;color:#999;margin-bottom:8px;">Runway (months)</div>
+              <div style="font-size:28px;color:var(--gold);font-weight:600;" id="runwayMetric">-</div>
+              <div style="font-size:11px;color:#999;margin-top:4px;" id="runwayDetail">-</div>
+            </div>
+          </div>
+
+          <!-- Invoice Status -->
+          <h4 style="font-size:14px;color:var(--dark);margin:20px 0 12px;font-weight:500;">Invoice Status</h4>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:14px;margin-bottom:24px;">
+            <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;padding:14px;text-align:center;">
+              <div style="font-size:11px;color:#999;margin-bottom:6px;">Paid</div>
+              <div style="font-size:22px;font-weight:600;color:var(--success);" id="invoicePaidMetric">£-</div>
+            </div>
+            <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;padding:14px;text-align:center;">
+              <div style="font-size:11px;color:#999;margin-bottom:6px;">Pending</div>
+              <div style="font-size:22px;font-weight:600;color:#3B7BC4;" id="invoicePendingMetric">£-</div>
+            </div>
+            <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;padding:14px;text-align:center;">
+              <div style="font-size:11px;color:#999;margin-bottom:6px;">Overdue</div>
+              <div style="font-size:22px;font-weight:600;color:var(--danger);" id="invoiceOverdueMetric">£-</div>
+            </div>
+          </div>
+
+          <!-- Client Performance -->
+          <h4 style="font-size:14px;color:var(--dark);margin:20px 0 12px;font-weight:500;">Client Performance</h4>
+          <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;overflow:hidden;">
+            <div style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:0;background:var(--lightbg);border-bottom:1px solid var(--border);">
+              <div style="padding:12px 16px;font-size:12px;font-weight:500;color:var(--dark);">Client</div>
+              <div style="padding:12px 16px;font-size:12px;font-weight:500;color:var(--dark);">YTD Revenue</div>
+              <div style="padding:12px 16px;font-size:12px;font-weight:500;color:var(--dark);">Given / Filled</div>
+              <div style="padding:12px 16px;font-size:12px;font-weight:500;color:var(--dark);">Fill Rate</div>
+            </div>
+            <div id="clientPerformanceBody"></div>
+          </div>
+          <div id="clientPerformanceEmpty" style="text-align:center;padding:20px;color:#999;font-size:13px;display:none;">No client data yet</div>
+        </div>
+
+      </div>
+    </div>
   </div>
 </div>
 
@@ -693,6 +814,33 @@
         <div class="actions">
           <button class="cancel" onclick="closeModal('addRoleOverlay')">Cancel</button>
           <button class="save" onclick="saveNewRole()">Create role</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="addKPIOverlay">
+  <div class="modal">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="closeModal('addKPIOverlay')">×</button>
+      <h2>Add KPI Target</h2>
+      <div class="simple-form">
+        <label>Quarter</label>
+        <input type="text" id="kpiQuarterInput" placeholder="e.g. Q1 2026" required>
+        
+        <label>Target Roles to Fill</label>
+        <input type="number" id="kpiTargetRolesInput" placeholder="e.g. 8" min="0" required>
+        
+        <label>Target New Clients</label>
+        <input type="number" id="kpiTargetClientsInput" placeholder="e.g. 2" min="0" required>
+        
+        <label>Target Avg Fill Speed (days)</label>
+        <input type="number" id="kpiTargetFillSpeedInput" placeholder="e.g. 28" min="0" required>
+        
+        <div class="actions">
+          <button class="cancel" onclick="closeModal('addKPIOverlay')">Cancel</button>
+          <button class="save" onclick="submitAddKPI()">Add Target</button>
         </div>
       </div>
     </div>
@@ -1609,16 +1757,19 @@ document.getElementById('screeningAnswersModal').addEventListener('click', e => 
 // Clients tab behaves exactly as before.
 function switchTab(tab){
   if(tab === 'invoices' && currentUserRole !== 'dan') return;
+  if(tab === 'kpi' && currentUserRole !== 'dan') return;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.getElementById('candidatesView').style.display = tab === 'candidates' ? 'flex' : 'none';
   document.getElementById('leadClientsView').classList.toggle('visible', tab === 'leadClients');
   document.getElementById('clientsView').classList.toggle('visible', tab === 'clients');
   document.getElementById('invoicesView').classList.toggle('visible', tab === 'invoices');
   document.getElementById('tasksView').style.display = tab === 'tasks' ? 'flex' : 'none';
+  document.getElementById('kpiReportingView').classList.toggle('visible', tab === 'kpi');
   if(tab === 'leadClients') loadLeadClients();
   if(tab === 'clients') loadClients();
   if(tab === 'invoices') loadInvoices();
   if(tab === 'tasks') loadTasks('active');
+  if(tab === 'kpi') loadKPITargets();
 }
 
 function switchTaskView(view){
@@ -2310,6 +2461,212 @@ async function submitAddLeadClient(){
     loadLeadClients();
   }catch(e){
     showToast('Could not add lead client: ' + e.message);
+  }
+}
+
+/* ======================================================================
+   KPI Reporting Functions
+====================================================================== */
+
+async function loadKPITargets(){
+  const body = document.getElementById('kpiBody');
+  const empty = document.getElementById('kpiEmpty');
+  
+  try{
+    const res = await fetch(`${API_BASE}/api/kpi-targets`);
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    const data = await res.json();
+    const targets = data.data || [];
+    
+    body.innerHTML = '';
+    
+    if(targets.length === 0){
+      empty.style.display = 'block';
+    } else {
+      empty.style.display = 'none';
+      targets.forEach(target => {
+        const row = document.createElement('div');
+        row.className = 'kpi-row';
+        row.innerHTML = `
+          <div class="kpi-cell kpi-quarter">${target.quarter}</div>
+          <div class="kpi-cell kpi-target">${target.targetRoles}</div>
+          <div class="kpi-cell kpi-target">${target.targetNewClients}</div>
+          <div class="kpi-cell kpi-target">${target.targetAvgFillSpeedDays}</div>
+          <div class="kpi-actions">
+            <button class="delete" onclick="deleteKPITarget('${target.quarter}')">Delete</button>
+          </div>
+        `;
+        body.appendChild(row);
+      });
+    }
+    
+    // Load progress metrics after targets
+    await loadProgressMetrics(targets);
+    
+    // Load business health if Dan
+    if(currentUserRole === 'dan'){
+      document.getElementById('businessHealthSection').style.display = 'block';
+      await loadBusinessHealth();
+    }
+  }catch(e){
+    console.error('Error loading KPI targets:', e);
+    body.innerHTML = '<div style="padding:20px;color:var(--danger);">Error loading targets</div>';
+  }
+}
+
+async function loadProgressMetrics(targets){
+  try{
+    const res = await fetch(`${API_BASE}/api/metrics/progress`);
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    const metrics = await res.json();
+    
+    // Get current quarter target
+    const currentQuarter = getQuarter(new Date());
+    const currentTarget = targets.find(t => t.quarter.includes(currentQuarter) || t.quarter.includes(new Date().getFullYear().toString()));
+    
+    // Update roles filled
+    document.getElementById('rolesFilledMetric').textContent = metrics.rolesFilledThisQuarter || 0;
+    if(currentTarget){
+      document.getElementById('rolesFilledTarget').textContent = `Target: ${currentTarget.targetRoles}`;
+    }
+    
+    // Update clients onboarded
+    document.getElementById('clientsOnboardedMetric').textContent = metrics.newClientsThisQuarter || 0;
+    if(currentTarget){
+      document.getElementById('clientsOnboardedTarget').textContent = `Target: ${currentTarget.targetNewClients}`;
+    }
+    
+    // Update avg fill speed
+    const avgFillSpeed = metrics.avgFillSpeedDays ? metrics.avgFillSpeedDays.toFixed(1) : '-';
+    document.getElementById('avgFillSpeedMetric').textContent = avgFillSpeed;
+    if(currentTarget){
+      document.getElementById('avgFillSpeedTarget').textContent = `Target: ${currentTarget.targetAvgFillSpeedDays} days`;
+    }
+  }catch(e){
+    console.error('Error loading progress metrics:', e);
+  }
+}
+
+async function loadBusinessHealth(){
+  try{
+    const res = await fetch(`${API_BASE}/api/metrics/business-health`);
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    const metrics = await res.json();
+    
+    // YTD Revenue
+    document.getElementById('ytdRevenueMetric').textContent = `£${(metrics.ytdRevenue || 0).toLocaleString('en-GB', {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
+    document.getElementById('ytdRevenueDetail').textContent = `${metrics.invoiceCount || 0} invoices processed`;
+    
+    // Ella ROI
+    const ellaROI = metrics.ellaROI || 0;
+    const roiPercent = (ellaROI * 100).toFixed(0);
+    document.getElementById('ellaROIMetric').textContent = roiPercent + '%';
+    document.getElementById('ellaROIDetail').textContent = `Revenue: £${(metrics.ytdRevenue || 0).toLocaleString('en-GB', {minimumFractionDigits: 0})} / Cost: £25,000`;
+    
+    // Runway
+    const runway = metrics.runwayMonths || 0;
+    const runwayColor = runway < 1 ? 'var(--danger)' : runway < 3 ? '#c9703f' : 'var(--success)';
+    document.getElementById('runwayMetric').style.color = runwayColor;
+    document.getElementById('runwayMetric').textContent = runway.toFixed(1);
+    document.getElementById('runwayDetail').textContent = `Based on current burn rate`;
+    
+    // Invoice Status
+    document.getElementById('invoicePaidMetric').textContent = `£${(metrics.invoicePaid || 0).toLocaleString('en-GB', {minimumFractionDigits: 0})}`;
+    document.getElementById('invoicePendingMetric').textContent = `£${(metrics.invoicePending || 0).toLocaleString('en-GB', {minimumFractionDigits: 0})}`;
+    document.getElementById('invoiceOverdueMetric').textContent = `£${(metrics.invoiceOverdue || 0).toLocaleString('en-GB', {minimumFractionDigits: 0})}`;
+    
+    // Client Performance
+    const body = document.getElementById('clientPerformanceBody');
+    body.innerHTML = '';
+    
+    if(!metrics.clientPerformance || metrics.clientPerformance.length === 0){
+      document.getElementById('clientPerformanceEmpty').style.display = 'block';
+    } else {
+      document.getElementById('clientPerformanceEmpty').style.display = 'none';
+      metrics.clientPerformance.forEach(client => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:0;border-bottom:1px solid var(--border);align-items:center;';
+        
+        const fillRate = client.givenRoles > 0 ? ((client.filledRoles / client.givenRoles) * 100).toFixed(0) : 0;
+        const fillRateColor = fillRate >= 80 ? 'var(--success)' : fillRate >= 50 ? '#c9703f' : 'var(--danger)';
+        
+        row.innerHTML = `
+          <div style="padding:12px 16px;font-size:13px;color:var(--dark);font-weight:500;">${client.company}</div>
+          <div style="padding:12px 16px;font-size:13px;color:var(--gold);font-weight:600;">£${(client.revenue || 0).toLocaleString('en-GB', {minimumFractionDigits: 0})}</div>
+          <div style="padding:12px 16px;font-size:13px;color:var(--grey);">${client.filledRoles} / ${client.givenRoles}</div>
+          <div style="padding:12px 16px;font-size:13px;font-weight:600;color:${fillRateColor};">${fillRate}%</div>
+        `;
+        body.appendChild(row);
+      });
+    }
+  }catch(e){
+    console.error('Error loading business health:', e);
+  }
+}
+
+function getQuarter(date){
+  const month = date.getMonth() + 1;
+  if(month <= 3) return 'Q1';
+  if(month <= 6) return 'Q2';
+  if(month <= 9) return 'Q3';
+  return 'Q4';
+}
+
+function openAddKPIModal(){
+  const overlay = document.getElementById('addKPIOverlay');
+  if(!overlay) return;
+  document.getElementById('kpiQuarterInput').value = '';
+  document.getElementById('kpiTargetRolesInput').value = '';
+  document.getElementById('kpiTargetClientsInput').value = '';
+  document.getElementById('kpiTargetFillSpeedInput').value = '';
+  overlay.classList.add('visible');
+}
+
+async function submitAddKPI(){
+  const quarter = document.getElementById('kpiQuarterInput').value.trim();
+  const targetRoles = parseInt(document.getElementById('kpiTargetRolesInput').value) || 0;
+  const targetNewClients = parseInt(document.getElementById('kpiTargetClientsInput').value) || 0;
+  const targetAvgFillSpeedDays = parseInt(document.getElementById('kpiTargetFillSpeedInput').value) || 0;
+  
+  if(!quarter){
+    showToast('Quarter is required');
+    return;
+  }
+  
+  try{
+    const res = await fetch(`${API_BASE}/api/kpi-targets`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        quarter,
+        targetRoles,
+        targetNewClients,
+        targetAvgFillSpeedDays
+      })
+    });
+    
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    showToast('KPI target added successfully');
+    closeModal('addKPIOverlay');
+    loadKPITargets();
+  }catch(e){
+    showToast('Could not add KPI target: ' + e.message);
+  }
+}
+
+async function deleteKPITarget(quarter){
+  if(!confirm('Delete this KPI target?')) return;
+  
+  try{
+    const res = await fetch(`${API_BASE}/api/kpi-targets/${encodeURIComponent(quarter)}`, {
+      method: 'DELETE'
+    });
+    
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    showToast('KPI target deleted');
+    loadKPITargets();
+  }catch(e){
+    showToast('Could not delete KPI target: ' + e.message);
   }
 }
 
