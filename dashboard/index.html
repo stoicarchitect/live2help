@@ -1757,7 +1757,6 @@ document.getElementById('screeningAnswersModal').addEventListener('click', e => 
 // Clients tab behaves exactly as before.
 function switchTab(tab){
   if(tab === 'invoices' && currentUserRole !== 'dan') return;
-  if(tab === 'kpi' && currentUserRole !== 'dan') return;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.getElementById('candidatesView').style.display = tab === 'candidates' ? 'flex' : 'none';
   document.getElementById('leadClientsView').classList.toggle('visible', tab === 'leadClients');
@@ -2472,6 +2471,9 @@ async function loadKPITargets(){
   const body = document.getElementById('kpiBody');
   const empty = document.getElementById('kpiEmpty');
   
+  // Hide Add Target button for Ella
+  document.getElementById('addKPIBtn').style.display = currentUserRole === 'dan' ? 'block' : 'none';
+  
   try{
     const res = await fetch(`${API_BASE}/api/kpi-targets`);
     if(!res.ok) throw new Error('Server returned ' + res.status);
@@ -2487,13 +2489,19 @@ async function loadKPITargets(){
       targets.forEach(target => {
         const row = document.createElement('div');
         row.className = 'kpi-row';
+        
+        // Hide delete button for Ella
+        const deleteBtn = currentUserRole === 'dan' 
+          ? `<button class="delete" onclick="deleteKPITarget('${target.quarter}')">Delete</button>`
+          : '';
+        
         row.innerHTML = `
           <div class="kpi-cell kpi-quarter">${target.quarter}</div>
           <div class="kpi-cell kpi-target">${target.targetRoles}</div>
           <div class="kpi-cell kpi-target">${target.targetNewClients}</div>
           <div class="kpi-cell kpi-target">${target.targetAvgFillSpeedDays}</div>
           <div class="kpi-actions">
-            <button class="delete" onclick="deleteKPITarget('${target.quarter}')">Delete</button>
+            ${deleteBtn}
           </div>
         `;
         body.appendChild(row);
@@ -2503,10 +2511,12 @@ async function loadKPITargets(){
     // Load progress metrics after targets
     await loadProgressMetrics(targets);
     
-    // Load business health if Dan
+    // Load business health if Dan only
     if(currentUserRole === 'dan'){
       document.getElementById('businessHealthSection').style.display = 'block';
       await loadBusinessHealth();
+    } else {
+      document.getElementById('businessHealthSection').style.display = 'none';
     }
   }catch(e){
     console.error('Error loading KPI targets:', e);
