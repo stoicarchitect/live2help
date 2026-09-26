@@ -715,6 +715,25 @@
         <!-- Business Health Dashboard (Dan Only) -->
         <div id="businessHealthSection" style="display:none;">
           <h3 style="font-size:16px;color:var(--dark);margin-bottom:14px;font-weight:500;">Business Health</h3>
+          
+          <!-- Controls -->
+          <div style="display:flex;gap:16px;margin-bottom:20px;align-items:flex-end;flex-wrap:wrap;">
+            <div style="flex:1;min-width:200px;">
+              <label style="display:block;font-size:12px;color:#999;margin-bottom:6px;letter-spacing:0.5px;">View Year</label>
+              <select id="healthYearSelector" onchange="loadBusinessHealth()" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-size:13px;font-family:inherit;background:#fff;">
+                <option value="2026">2026</option>
+                <option value="2027">2027</option>
+              </select>
+            </div>
+            <div style="flex:1;min-width:220px;">
+              <label style="display:block;font-size:12px;color:#999;margin-bottom:6px;letter-spacing:0.5px;">Bank Balance (£)</label>
+              <div style="display:flex;gap:8px;">
+                <input type="text" id="bankBalanceInput" placeholder="e.g. 15000" style="flex:1;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-size:13px;font-family:inherit;background:#fff;">
+                <button onclick="saveBankBalance()" style="padding:9px 18px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap;">Save</button>
+              </div>
+            </div>
+          </div>
+          
           <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:16px;margin-bottom:24px;">
             <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;padding:16px;">
               <div style="font-size:12px;color:#999;margin-bottom:8px;">YTD Revenue</div>
@@ -2559,9 +2578,22 @@ async function loadProgressMetrics(targets){
 
 async function loadBusinessHealth(){
   try{
-    const res = await fetch(`${API_BASE}/api/metrics/business-health`);
+    // Get selected year
+    const year = document.getElementById('healthYearSelector')?.value || '2026';
+    
+    // Load bank balance from localStorage
+    const savedBankBalance = localStorage.getItem('l2h-bank-balance');
+    if(savedBankBalance){
+      document.getElementById('bankBalanceInput').value = savedBankBalance;
+    }
+    
+    // Fetch metrics with year parameter
+    const res = await fetch(`${API_BASE}/api/metrics/business-health?year=${year}`);
     if(!res.ok) throw new Error('Server returned ' + res.status);
     const metrics = await res.json();
+    
+    // Get bank balance from input or saved
+    const bankBalance = savedBankBalance ? parseInt(savedBankBalance) : 10000;
     
     // YTD Revenue
     document.getElementById('ytdRevenueMetric').textContent = `£${(metrics.ytdRevenue || 0).toLocaleString('en-GB', {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
@@ -2573,12 +2605,16 @@ async function loadBusinessHealth(){
     document.getElementById('ellaROIMetric').textContent = roiPercent + '%';
     document.getElementById('ellaROIDetail').textContent = `Revenue: £${(metrics.ytdRevenue || 0).toLocaleString('en-GB', {minimumFractionDigits: 0})} / Cost: £25,000`;
     
-    // Runway
-    const runway = metrics.runwayMonths || 0;
+    // Calculate runway with bank balance + 3% pension burn
+    const ellaSalary = 25000;
+    const monthlyBurn = (ellaSalary / 12) * 1.03; // £2,083.33 + 3% pension
+    const currentCash = bankBalance + (metrics.ytdRevenue || 0) - ellaSalary;
+    const runway = currentCash > 0 ? currentCash / monthlyBurn : 0;
+    
     const runwayColor = runway < 1 ? 'var(--danger)' : runway < 3 ? '#c9703f' : 'var(--success)';
     document.getElementById('runwayMetric').style.color = runwayColor;
     document.getElementById('runwayMetric').textContent = runway.toFixed(1);
-    document.getElementById('runwayDetail').textContent = `Based on current burn rate`;
+    document.getElementById('runwayDetail').textContent = `Bank: £${bankBalance.toLocaleString('en-GB')} + revenue - salary`;
     
     // Invoice Status
     document.getElementById('invoicePaidMetric').textContent = `£${(metrics.invoicePaid || 0).toLocaleString('en-GB', {minimumFractionDigits: 0})}`;
@@ -2614,6 +2650,26 @@ async function loadBusinessHealth(){
   }
 }
 
+function saveBankBalance(){
+  const input = document.getElementById('bankBalanceInput');
+  const value = input.value.trim();
+  
+  if(!value){
+    showToast('Bank balance cannot be empty');
+    return;
+  }
+  
+  const numValue = parseInt(value);
+  if(isNaN(numValue) || numValue < 0){
+    showToast('Please enter a valid amount');
+    return;
+  }
+  
+  localStorage.setItem('l2h-bank-balance', numValue.toString());
+  showToast('Bank balance saved');
+  loadBusinessHealth();
+}
+
 function getQuarter(date){
   const month = date.getMonth() + 1;
   if(month <= 3) return 'Q1';
@@ -2625,7 +2681,18 @@ function getQuarter(date){
 function openAddKPIModal(){
   const overlay = document.getElementById('addKPIOverlay');
   if(!overlay) return;
-  document.getElementById('kpiQuarterInput').value = '';
+  
+  // Auto-fill with current quarter
+  const now = new Date();
+  const month = now.getMonth() + 1;
+  const year = now.getFullYear();
+  let quarter = 'Q1';
+  if(month <= 3) quarter = 'Q1';
+  else if(month <= 6) quarter = 'Q2';
+  else if(month <= 9) quarter = 'Q3';
+  else quarter = 'Q4';
+  
+  document.getElementById('kpiQuarterInput').value = `${quarter} ${year}`;
   document.getElementById('kpiTargetRolesInput').value = '';
   document.getElementById('kpiTargetClientsInput').value = '';
   document.getElementById('kpiTargetFillSpeedInput').value = '';
