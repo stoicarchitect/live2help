@@ -752,6 +752,30 @@
             </div>
           </div>
 
+          <!-- Cost Tracking -->
+          <h4 style="font-size:14px;color:var(--dark);margin:20px 0 12px;font-weight:500;">Costs & Profit</h4>
+          <div style="display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:200px;background:var(--white);border:1px solid var(--border);border-radius:2px;padding:16px;">
+              <label style="display:block;font-size:12px;color:#999;margin-bottom:8px;letter-spacing:0.5px;">Ella's Salary (yearly)</label>
+              <div style="display:flex;gap:8px;">
+                <input type="text" id="ellaSalaryInput" placeholder="e.g. 25000" style="flex:1;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-size:13px;font-family:inherit;background:#fff;">
+                <button onclick="saveEllaSalary()" style="padding:9px 14px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap;">Save</button>
+              </div>
+            </div>
+            <div style="flex:1;min-width:200px;background:var(--white);border:1px solid var(--border);border-radius:2px;padding:16px;">
+              <label style="display:block;font-size:12px;color:#999;margin-bottom:8px;letter-spacing:0.5px;">Advertising Spend (YTD)</label>
+              <div style="display:flex;gap:8px;">
+                <input type="text" id="advertisingCostInput" placeholder="e.g. 1500" style="flex:1;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-size:13px;font-family:inherit;background:#fff;">
+                <button onclick="saveAdvertisingCost()" style="padding:9px 14px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap;">Save</button>
+              </div>
+            </div>
+            <div style="flex:1;min-width:200px;background:var(--white);border:1px solid var(--border);border-radius:2px;padding:16px;">
+              <div style="font-size:12px;color:#999;margin-bottom:8px;">YTD Profit</div>
+              <div style="font-size:28px;color:var(--gold);font-weight:600;" id="ytdProfitMetric">£-</div>
+              <div style="font-size:11px;color:#999;margin-top:4px;" id="ytdProfitDetail">Revenue - Salary - Ads</div>
+            </div>
+          </div>
+
           <!-- Invoice Status -->
           <h4 style="font-size:14px;color:var(--dark);margin:20px 0 12px;font-weight:500;">Invoice Status</h4>
           <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:14px;margin-bottom:24px;">
@@ -2587,34 +2611,50 @@ async function loadBusinessHealth(){
       document.getElementById('bankBalanceInput').value = savedBankBalance;
     }
     
+    // Load costs from localStorage (with defaults)
+    const savedEllaSalary = localStorage.getItem('l2h-ella-salary');
+    const ellaSalary = savedEllaSalary ? parseInt(savedEllaSalary) : 25000;
+    document.getElementById('ellaSalaryInput').value = ellaSalary;
+    
+    const savedAdvertisingCost = localStorage.getItem('l2h-advertising-cost');
+    const advertisingCost = savedAdvertisingCost ? parseInt(savedAdvertisingCost) : 0;
+    document.getElementById('advertisingCostInput').value = advertisingCost;
+    
     // Fetch metrics with year parameter
     const res = await fetch(`${API_BASE}/api/metrics/business-health?year=${year}`);
     if(!res.ok) throw new Error('Server returned ' + res.status);
     const metrics = await res.json();
     
-    // Get bank balance from input or saved
+    // Get bank balance from saved
     const bankBalance = savedBankBalance ? parseInt(savedBankBalance) : 10000;
     
     // YTD Revenue
-    document.getElementById('ytdRevenueMetric').textContent = `£${(metrics.ytdRevenue || 0).toLocaleString('en-GB', {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
+    const ytdRevenue = metrics.ytdRevenue || 0;
+    document.getElementById('ytdRevenueMetric').textContent = `£${ytdRevenue.toLocaleString('en-GB', {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
     document.getElementById('ytdRevenueDetail').textContent = `${metrics.invoiceCount || 0} invoices processed`;
     
-    // Ella ROI
-    const ellaROI = metrics.ellaROI || 0;
+    // Ella ROI (using entered salary)
+    const ellaROI = ytdRevenue > 0 ? (ytdRevenue - ellaSalary) / ellaSalary : 0;
     const roiPercent = (ellaROI * 100).toFixed(0);
     document.getElementById('ellaROIMetric').textContent = roiPercent + '%';
-    document.getElementById('ellaROIDetail').textContent = `Revenue: £${(metrics.ytdRevenue || 0).toLocaleString('en-GB', {minimumFractionDigits: 0})} / Cost: £25,000`;
+    document.getElementById('ellaROIDetail').textContent = `Revenue: £${ytdRevenue.toLocaleString('en-GB', {minimumFractionDigits: 0})} / Cost: £${ellaSalary.toLocaleString('en-GB')}`;
     
-    // Calculate runway with bank balance + 3% pension burn
-    const ellaSalary = 25000;
-    const monthlyBurn = (ellaSalary / 12) * 1.03; // £2,083.33 + 3% pension
-    const currentCash = bankBalance + (metrics.ytdRevenue || 0) - ellaSalary;
+    // Runway calculation (FIXED: no salary subtraction, just bank + revenue / monthly burn)
+    const monthlyBurn = (ellaSalary / 12) * 1.03; // £2,083.33 + 3% pension at £25k
+    const currentCash = bankBalance + ytdRevenue;
     const runway = currentCash > 0 ? currentCash / monthlyBurn : 0;
     
     const runwayColor = runway < 1 ? 'var(--danger)' : runway < 3 ? '#c9703f' : 'var(--success)';
     document.getElementById('runwayMetric').style.color = runwayColor;
     document.getElementById('runwayMetric').textContent = runway.toFixed(1);
-    document.getElementById('runwayDetail').textContent = `Bank: £${bankBalance.toLocaleString('en-GB')} + revenue - salary`;
+    document.getElementById('runwayDetail').textContent = `Bank: £${bankBalance.toLocaleString('en-GB')} + revenue`;
+    
+    // YTD Profit (Revenue - Ella's Salary - Advertising)
+    const ytdProfit = ytdRevenue - ellaSalary - advertisingCost;
+    const profitColor = ytdProfit < 0 ? 'var(--danger)' : ytdProfit < 10000 ? '#c9703f' : 'var(--success)';
+    document.getElementById('ytdProfitMetric').style.color = profitColor;
+    document.getElementById('ytdProfitMetric').textContent = `£${ytdProfit.toLocaleString('en-GB', {minimumFractionDigits: 0})}`;
+    document.getElementById('ytdProfitDetail').textContent = `£${ytdRevenue.toLocaleString('en-GB')} - £${ellaSalary.toLocaleString('en-GB')} - £${advertisingCost.toLocaleString('en-GB')}`;
     
     // Invoice Status
     document.getElementById('invoicePaidMetric').textContent = `£${(metrics.invoicePaid || 0).toLocaleString('en-GB', {minimumFractionDigits: 0})}`;
@@ -2667,6 +2707,46 @@ function saveBankBalance(){
   
   localStorage.setItem('l2h-bank-balance', numValue.toString());
   showToast('Bank balance saved');
+  loadBusinessHealth();
+}
+
+function saveEllaSalary(){
+  const input = document.getElementById('ellaSalaryInput');
+  const value = input.value.trim();
+  
+  if(!value){
+    showToast('Salary cannot be empty');
+    return;
+  }
+  
+  const numValue = parseInt(value);
+  if(isNaN(numValue) || numValue < 0){
+    showToast('Please enter a valid salary amount');
+    return;
+  }
+  
+  localStorage.setItem('l2h-ella-salary', numValue.toString());
+  showToast('Ella salary saved');
+  loadBusinessHealth();
+}
+
+function saveAdvertisingCost(){
+  const input = document.getElementById('advertisingCostInput');
+  const value = input.value.trim();
+  
+  if(!value){
+    showToast('Please enter an amount');
+    return;
+  }
+  
+  const numValue = parseInt(value);
+  if(isNaN(numValue) || numValue < 0){
+    showToast('Please enter a valid amount');
+    return;
+  }
+  
+  localStorage.setItem('l2h-advertising-cost', numValue.toString());
+  showToast('Advertising cost saved');
   loadBusinessHealth();
 }
 
