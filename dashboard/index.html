@@ -752,27 +752,41 @@
             </div>
           </div>
 
-          <!-- Cost Tracking -->
-          <h4 style="font-size:14px;color:var(--dark);margin:20px 0 12px;font-weight:500;">Costs & Profit</h4>
-          <div style="display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap;">
-            <div style="flex:1;min-width:200px;background:var(--white);border:1px solid var(--border);border-radius:2px;padding:16px;">
-              <label style="display:block;font-size:12px;color:#999;margin-bottom:8px;letter-spacing:0.5px;">Ella's Salary (yearly)</label>
-              <div style="display:flex;gap:8px;">
-                <input type="text" id="ellaSalaryInput" placeholder="e.g. 25000" style="flex:1;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-size:13px;font-family:inherit;background:#fff;">
-                <button onclick="saveEllaSalary()" style="padding:9px 14px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap;">Save</button>
+          <!-- Team Payroll -->
+          <h4 style="font-size:14px;color:var(--dark);margin:20px 0 12px;font-weight:500;">Team Payroll</h4>
+          <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;margin-bottom:24px;overflow:hidden;">
+            <!-- Employee List -->
+            <div id="employeeListContainer" style="max-height:280px;overflow-y:auto;">
+              <div id="employeeList"></div>
+            </div>
+            <div id="employeeEmpty" style="padding:20px;text-align:center;color:#999;font-size:13px;display:none;">No team members added yet</div>
+            
+            <!-- Add Employee Form -->
+            <div style="border-top:1px solid var(--border);padding:16px;background:var(--lightbg);">
+              <div style="font-size:12px;color:#999;margin-bottom:12px;font-weight:500;">Add Team Member</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <input type="text" id="employeeName" placeholder="Name" style="flex:0 1 150px;padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:12px;font-family:inherit;background:#fff;">
+                <input type="text" id="employeeSalary" placeholder="Salary (£)" style="flex:0 1 120px;padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:12px;font-family:inherit;background:#fff;">
+                <input type="date" id="employeeStartDate" style="flex:0 1 140px;padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:12px;font-family:inherit;background:#fff;">
+                <button onclick="addEmployee()" style="padding:8px 16px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap;">Add</button>
               </div>
             </div>
-            <div style="flex:1;min-width:200px;background:var(--white);border:1px solid var(--border);border-radius:2px;padding:16px;">
+          </div>
+
+          <!-- Costs & Profit -->
+          <h4 style="font-size:14px;color:var(--dark);margin:20px 0 12px;font-weight:500;">Costs & Profit</h4>
+          <div style="display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:220px;background:var(--white);border:1px solid var(--border);border-radius:2px;padding:16px;">
               <label style="display:block;font-size:12px;color:#999;margin-bottom:8px;letter-spacing:0.5px;">Advertising Spend (YTD)</label>
               <div style="display:flex;gap:8px;">
                 <input type="text" id="advertisingCostInput" placeholder="e.g. 1500" style="flex:1;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-size:13px;font-family:inherit;background:#fff;">
                 <button onclick="saveAdvertisingCost()" style="padding:9px 14px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap;">Save</button>
               </div>
             </div>
-            <div style="flex:1;min-width:200px;background:var(--white);border:1px solid var(--border);border-radius:2px;padding:16px;">
+            <div style="flex:1;min-width:220px;background:var(--white);border:1px solid var(--border);border-radius:2px;padding:16px;">
               <div style="font-size:12px;color:#999;margin-bottom:8px;">YTD Profit</div>
               <div style="font-size:28px;color:var(--gold);font-weight:600;" id="ytdProfitMetric">£-</div>
-              <div style="font-size:11px;color:#999;margin-top:4px;" id="ytdProfitDetail">Revenue - Salary - Ads</div>
+              <div style="font-size:11px;color:#999;margin-top:4px;" id="ytdProfitDetail">Revenue - Salaries - Ads</div>
             </div>
           </div>
 
@@ -2602,45 +2616,46 @@ async function loadProgressMetrics(targets){
 
 async function loadBusinessHealth(){
   try{
-    // Get selected year
     const year = document.getElementById('healthYearSelector')?.value || '2026';
     
-    // Load bank balance from localStorage
     const savedBankBalance = localStorage.getItem('l2h-bank-balance');
     if(savedBankBalance){
       document.getElementById('bankBalanceInput').value = savedBankBalance;
     }
     
-    // Load costs from localStorage (with defaults)
-    const savedEllaSalary = localStorage.getItem('l2h-ella-salary');
-    const ellaSalary = savedEllaSalary ? parseInt(savedEllaSalary) : 25000;
-    document.getElementById('ellaSalaryInput').value = ellaSalary;
-    
     const savedAdvertisingCost = localStorage.getItem('l2h-advertising-cost');
     const advertisingCost = savedAdvertisingCost ? parseInt(savedAdvertisingCost) : 0;
     document.getElementById('advertisingCostInput').value = advertisingCost;
     
-    // Fetch metrics with year parameter
+    // Load and display employees
+    await loadEmployeeList();
+    
     const res = await fetch(`${API_BASE}/api/metrics/business-health?year=${year}`);
     if(!res.ok) throw new Error('Server returned ' + res.status);
     const metrics = await res.json();
     
-    // Get bank balance from saved
     const bankBalance = savedBankBalance ? parseInt(savedBankBalance) : 10000;
+    const ytdRevenue = metrics.ytdRevenue || 0;
     
     // YTD Revenue
-    const ytdRevenue = metrics.ytdRevenue || 0;
     document.getElementById('ytdRevenueMetric').textContent = `£${ytdRevenue.toLocaleString('en-GB', {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
     document.getElementById('ytdRevenueDetail').textContent = `${metrics.invoiceCount || 0} invoices processed`;
     
-    // Ella ROI (using entered salary)
-    const ellaROI = ytdRevenue > 0 ? (ytdRevenue - ellaSalary) / ellaSalary : 0;
+    // Calculate total YTD salary from all employees
+    const employees = JSON.parse(localStorage.getItem('l2h-employees') || '[]');
+    let totalYTDSalary = 0;
+    employees.forEach(emp => {
+      totalYTDSalary += calculateEmployeeYTDSalary(emp);
+    });
+    
+    // Ella ROI (using total team salary)
+    const ellaROI = ytdRevenue > 0 ? (ytdRevenue - totalYTDSalary) / (totalYTDSalary || 25000) : 0;
     const roiPercent = (ellaROI * 100).toFixed(0);
     document.getElementById('ellaROIMetric').textContent = roiPercent + '%';
-    document.getElementById('ellaROIDetail').textContent = `Revenue: £${ytdRevenue.toLocaleString('en-GB', {minimumFractionDigits: 0})} / Cost: £${ellaSalary.toLocaleString('en-GB')}`;
+    document.getElementById('ellaROIDetail').textContent = `Revenue: £${ytdRevenue.toLocaleString('en-GB', {minimumFractionDigits: 0})} / Cost: £${totalYTDSalary.toLocaleString('en-GB')}`;
     
-    // Runway calculation (FIXED: no salary subtraction, just bank + revenue / monthly burn)
-    const monthlyBurn = (ellaSalary / 12) * 1.03; // £2,083.33 + 3% pension at £25k
+    // Runway calculation
+    const monthlyBurn = (totalYTDSalary || 25000) / 12 * 1.03;
     const currentCash = bankBalance + ytdRevenue;
     const runway = currentCash > 0 ? currentCash / monthlyBurn : 0;
     
@@ -2649,12 +2664,12 @@ async function loadBusinessHealth(){
     document.getElementById('runwayMetric').textContent = runway.toFixed(1);
     document.getElementById('runwayDetail').textContent = `Bank: £${bankBalance.toLocaleString('en-GB')} + revenue`;
     
-    // YTD Profit (Revenue - Ella's Salary - Advertising)
-    const ytdProfit = ytdRevenue - ellaSalary - advertisingCost;
+    // YTD Profit
+    const ytdProfit = ytdRevenue - totalYTDSalary - advertisingCost;
     const profitColor = ytdProfit < 0 ? 'var(--danger)' : ytdProfit < 10000 ? '#c9703f' : 'var(--success)';
     document.getElementById('ytdProfitMetric').style.color = profitColor;
     document.getElementById('ytdProfitMetric').textContent = `£${ytdProfit.toLocaleString('en-GB', {minimumFractionDigits: 0})}`;
-    document.getElementById('ytdProfitDetail').textContent = `£${ytdRevenue.toLocaleString('en-GB')} - £${ellaSalary.toLocaleString('en-GB')} - £${advertisingCost.toLocaleString('en-GB')}`;
+    document.getElementById('ytdProfitDetail').textContent = `£${ytdRevenue.toLocaleString('en-GB')} - £${totalYTDSalary.toLocaleString('en-GB')} - £${advertisingCost.toLocaleString('en-GB')}`;
     
     // Invoice Status
     document.getElementById('invoicePaidMetric').textContent = `£${(metrics.invoicePaid || 0).toLocaleString('en-GB', {minimumFractionDigits: 0})}`;
@@ -2690,6 +2705,117 @@ async function loadBusinessHealth(){
   }
 }
 
+function calculateEmployeeYTDSalary(employee){
+  const startDate = new Date(employee.startDate);
+  const now = new Date();
+  const yearStart = new Date(now.getFullYear(), 0, 1);
+  
+  // If start date is in the future, salary = 0
+  if(startDate > now) return 0;
+  
+  // If started before year start, use full year salary
+  if(startDate < yearStart){
+    return employee.salary;
+  }
+  
+  // Calculate prorated salary
+  const daysWorked = (now - startDate) / (1000 * 60 * 60 * 24);
+  const daysInYear = 365;
+  return Math.floor((employee.salary / daysInYear) * daysWorked);
+}
+
+async function loadEmployeeList(){
+  const employees = JSON.parse(localStorage.getItem('l2h-employees') || '[]');
+  const list = document.getElementById('employeeList');
+  
+  if(employees.length === 0){
+    document.getElementById('employeeEmpty').style.display = 'block';
+    list.innerHTML = '';
+    return;
+  }
+  
+  document.getElementById('employeeEmpty').style.display = 'none';
+  list.innerHTML = '';
+  
+  const now = new Date();
+  const yearStart = new Date(now.getFullYear(), 0, 1);
+  
+  employees.forEach((emp, idx) => {
+    const ytdSalary = calculateEmployeeYTDSalary(emp);
+    const startDate = new Date(emp.startDate);
+    const isFuture = startDate > now;
+    const isPartYear = startDate >= yearStart;
+    
+    const row = document.createElement('div');
+    row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:0;border-bottom:1px solid var(--border);align-items:center;';
+    
+    row.innerHTML = `
+      <div style="padding:12px 16px;font-size:13px;color:var(--dark);font-weight:500;">${emp.name}</div>
+      <div style="padding:12px 16px;font-size:12px;color:#999;">£${emp.salary.toLocaleString('en-GB')}</div>
+      <div style="padding:12px 16px;font-size:12px;color:var(--gold);font-weight:600;">£${ytdSalary.toLocaleString('en-GB')} YTD${isPartYear ? ' *' : ''}</div>
+      <div style="padding:12px 16px;font-size:12px;color:#999;display:flex;gap:6px;">
+        <button onclick="editEmployee(${idx})" style="padding:4px 8px;background:none;border:1px solid var(--border);border-radius:2px;cursor:pointer;font-size:11px;">Edit</button>
+        <button onclick="deleteEmployee(${idx})" style="padding:4px 8px;background:var(--danger);color:white;border:none;border-radius:2px;cursor:pointer;font-size:11px;">Delete</button>
+      </div>
+    `;
+    list.appendChild(row);
+  });
+}
+
+function addEmployee(){
+  const name = document.getElementById('employeeName').value.trim();
+  const salary = parseInt(document.getElementById('employeeSalary').value) || 0;
+  const startDate = document.getElementById('employeeStartDate').value;
+  
+  if(!name || !salary || !startDate){
+    showToast('All fields required');
+    return;
+  }
+  
+  const employees = JSON.parse(localStorage.getItem('l2h-employees') || '[]');
+  employees.push({ name, salary, startDate });
+  localStorage.setItem('l2h-employees', JSON.stringify(employees));
+  
+  document.getElementById('employeeName').value = '';
+  document.getElementById('employeeSalary').value = '';
+  document.getElementById('employeeStartDate').value = '';
+  
+  showToast('Team member added');
+  loadBusinessHealth();
+}
+
+function editEmployee(idx){
+  const employees = JSON.parse(localStorage.getItem('l2h-employees') || '[]');
+  const emp = employees[idx];
+  
+  const newName = prompt('Name:', emp.name);
+  if(newName === null) return;
+  
+  const newSalary = prompt('Salary (£):', emp.salary);
+  if(newSalary === null) return;
+  
+  const newStartDate = prompt('Start date (YYYY-MM-DD):', emp.startDate);
+  if(newStartDate === null) return;
+  
+  employees[idx] = { name: newName, salary: parseInt(newSalary) || emp.salary, startDate: newStartDate };
+  localStorage.setItem('l2h-employees', JSON.stringify(employees));
+  
+  showToast('Team member updated');
+  loadBusinessHealth();
+}
+
+function deleteEmployee(idx){
+  if(!confirm('Remove this team member?')) return;
+  
+  const employees = JSON.parse(localStorage.getItem('l2h-employees') || '[]');
+  employees.splice(idx, 1);
+  localStorage.setItem('l2h-employees', JSON.stringify(employees));
+  
+  showToast('Team member removed');
+  loadBusinessHealth();
+}
+
+
 function saveBankBalance(){
   const input = document.getElementById('bankBalanceInput');
   const value = input.value.trim();
@@ -2707,26 +2833,6 @@ function saveBankBalance(){
   
   localStorage.setItem('l2h-bank-balance', numValue.toString());
   showToast('Bank balance saved');
-  loadBusinessHealth();
-}
-
-function saveEllaSalary(){
-  const input = document.getElementById('ellaSalaryInput');
-  const value = input.value.trim();
-  
-  if(!value){
-    showToast('Salary cannot be empty');
-    return;
-  }
-  
-  const numValue = parseInt(value);
-  if(isNaN(numValue) || numValue < 0){
-    showToast('Please enter a valid salary amount');
-    return;
-  }
-  
-  localStorage.setItem('l2h-ella-salary', numValue.toString());
-  showToast('Ella salary saved');
   loadBusinessHealth();
 }
 
