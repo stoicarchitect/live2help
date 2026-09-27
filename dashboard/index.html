@@ -1139,7 +1139,9 @@
 
       <div class="field-row">
         <label>Contact Name(s)</label>
-        <input type="text" id="coldCallContactNames" placeholder="e.g. John Smith, Sarah Jones" style="padding:9px 12px;border:1px solid var(--border);border-radius:2px;font-family:inherit;width:100%;font-size:13px;">
+        <select id="coldCallContactNames" style="padding:9px 12px;border:1px solid var(--border);border-radius:2px;font-family:inherit;width:100%;font-size:13px;">
+          <option value="">- Select contact -</option>
+        </select>
       </div>
 
       <div class="field-row">
@@ -3217,25 +3219,59 @@ function renderColdCalls(){
         <button onclick="editColdCall('${call.id}')">Edit</button>
         <button onclick="archiveColdCall('${call.id}')">Archive</button>
         <button onclick="viewColdCallNotes('${call.id}')">View</button>
+        <button onclick="deleteColdCall('${call.id}')" style="color:#d32f2f;">Delete</button>
       </div>
     `;
     container.appendChild(entry);
   });
 }
 
-function openAddColdCallModal(){
+async function openAddColdCallModal(){
   const overlay = document.getElementById('addColdCallOverlay');
   
-  // Load companies dropdown
+  // Load companies dropdown from Lead Clients
   const companyDropdown = document.getElementById('coldCallCompany');
-  const companies = [...new Set(coldCallData.map(c => c.company))].sort();
-  companyDropdown.innerHTML = '<option value="">- Select or add company -</option>';
-  companies.forEach(company => {
-    const option = document.createElement('option');
-    option.value = company;
-    option.textContent = company;
-    companyDropdown.appendChild(option);
-  });
+  const contactDropdown = document.getElementById('coldCallContactNames');
+  
+  try {
+    const res = await fetch(`${API_BASE}/api/lead-clients`);
+    if(!res.ok) throw new Error('Failed to load lead clients');
+    const leadClients = await res.json();
+    
+    // Get unique companies
+    const companies = [...new Set(leadClients.map(lc => lc.company))].sort();
+    companyDropdown.innerHTML = '<option value="">- Select or add company -</option>';
+    companies.forEach(company => {
+      const option = document.createElement('option');
+      option.value = company;
+      option.textContent = company;
+      companyDropdown.appendChild(option);
+    });
+    
+    // Store lead clients data for contact filtering
+    window.leadClientsData = leadClients;
+    
+    // Add change listener to company dropdown
+    companyDropdown.onchange = function() {
+      const selectedCompany = this.value;
+      const contacts = leadClients
+        .filter(lc => lc.company === selectedCompany)
+        .map(lc => lc.contactName)
+        .filter(name => name);
+      
+      contactDropdown.innerHTML = '<option value="">- Select contact -</option>';
+      contacts.forEach(contact => {
+        const option = document.createElement('option');
+        option.value = contact;
+        option.textContent = contact;
+        contactDropdown.appendChild(option);
+      });
+    };
+    
+  } catch(e) {
+    console.error('Error loading companies:', e);
+    showToast('Could not load company list: ' + e.message);
+  }
   
   // Set today's date
   const today = new Date().toISOString().split('T')[0];
@@ -3337,26 +3373,66 @@ async function archiveColdCall(id){
   }
 }
 
-function editColdCall(id){
+async function deleteColdCall(id){
+  if(!confirm('Are you sure you want to delete this cold call? This action cannot be undone.')) {
+    return;
+  }
+  
+  try{
+    const res = await fetch(`${API_BASE}/api/cold-calls/${id}`, {
+      method: 'DELETE',
+      headers: {'Content-Type': 'application/json'}
+    });
+    
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    showToast('Cold call deleted');
+    loadColdCalls();
+  }catch(e){
+    showToast('Could not delete cold call: ' + e.message);
+  }
+}
+
+async function editColdCall(id){
   const call = coldCallData.find(c => c.id === id);
   if(!call){
     showToast('Call not found');
     return;
   }
   
+  await openAddColdCallModal();
+  
+  const companyDropdown = document.getElementById('coldCallCompany');
+  const contactDropdown = document.getElementById('coldCallContactNames');
+  
   document.getElementById('coldCallCompany').value = call.company;
   document.getElementById('coldCallCompanyNew').value = '';
-  document.getElementById('coldCallContactNames').value = call.contactNames;
   document.getElementById('coldCallType').value = call.contactType;
   document.getElementById('coldCallDate').value = call.dateCalled;
   document.getElementById('coldCallNotes').value = call.notes;
   document.getElementById('coldCallFollowupDate').value = call.followupDate;
   document.getElementById('coldCallOutcome').value = call.outcome || 'attempt';
   
+  // Update contact dropdown to show contacts for this company
+  if(window.leadClientsData) {
+    const contacts = window.leadClientsData
+      .filter(lc => lc.company === call.company)
+      .map(lc => lc.contactName)
+      .filter(name => name);
+    
+    contactDropdown.innerHTML = '<option value="">- Select contact -</option>';
+    contacts.forEach(contact => {
+      const option = document.createElement('option');
+      option.value = contact;
+      option.textContent = contact;
+      contactDropdown.appendChild(option);
+    });
+  }
+  
+  // Set the contact name
+  contactDropdown.value = call.contactNames;
+  
   document.querySelector('button[onclick="submitAddColdCall()"]').textContent = 'Update Cold Call';
   document.querySelector('button[onclick="submitAddColdCall()"]').onclick = () => updateColdCall(id);
-  
-  openAddColdCallModal();
 }
 
 async function updateColdCall(id){
