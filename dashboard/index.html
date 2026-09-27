@@ -3229,31 +3229,26 @@ function renderColdCalls(){
 async function openAddColdCallModal(){
   const overlay = document.getElementById('addColdCallOverlay');
   
-  // Load companies dropdown from Lead Clients
+  // Load companies dropdown from Clients (active) + Lead Clients
   const companyDropdown = document.getElementById('coldCallCompany');
   const contactDropdown = document.getElementById('coldCallContactNames');
   
   try {
-    const res = await fetch(`${API_BASE}/api/lead-clients`);
-    if(!res.ok) throw new Error('Server returned ' + res.status);
-    const data = await res.json();
+    const [clientsRes, leadClientsRes] = await Promise.all([
+      fetch(`${API_BASE}/api/clients`),
+      fetch(`${API_BASE}/api/lead-clients`)
+    ]);
     
-    console.log('API Response:', data);
+    if(!clientsRes.ok) throw new Error('Failed to load clients: ' + clientsRes.status);
+    if(!leadClientsRes.ok) throw new Error('Failed to load lead clients: ' + leadClientsRes.status);
     
-    // Check if response is an error
-    if(data.error) {
-      throw new Error('API Error: ' + data.error);
-    }
+    const clientsJson = await clientsRes.json();
+    const leadClientsJson = await leadClientsRes.json();
     
-    // Check if data is an array
-    if(!Array.isArray(data)) {
-      throw new Error('API returned non-array: ' + typeof data);
-    }
-    
-    const leadClients = data;
+    const allContacts = [...(clientsJson.data || []), ...(leadClientsJson.data || [])];
     
     // Get unique companies
-    const companies = [...new Set(leadClients.map(lc => lc.company))].sort();
+    const companies = [...new Set(allContacts.map(c => c.company))].filter(Boolean).sort();
     companyDropdown.innerHTML = '<option value="">- Select or add company -</option>';
     companies.forEach(company => {
       const option = document.createElement('option');
@@ -3262,15 +3257,15 @@ async function openAddColdCallModal(){
       companyDropdown.appendChild(option);
     });
     
-    // Store lead clients data for contact filtering
-    window.leadClientsData = leadClients;
+    // Store combined data for contact filtering
+    window.coldCallCompanyContacts = allContacts;
     
     // Add change listener to company dropdown
     companyDropdown.onchange = function() {
       const selectedCompany = this.value;
-      const contacts = leadClients
-        .filter(lc => lc.company === selectedCompany)
-        .map(lc => lc.contactName)
+      const contacts = allContacts
+        .filter(c => c.company === selectedCompany)
+        .map(c => c.contactName)
         .filter(name => name);
       
       contactDropdown.innerHTML = '<option value="">- Select contact -</option>';
@@ -3427,8 +3422,8 @@ async function editColdCall(id){
   document.getElementById('coldCallOutcome').value = call.outcome || 'attempt';
   
   // Update contact dropdown to show contacts for this company
-  if(window.leadClientsData) {
-    const contacts = window.leadClientsData
+  if(window.coldCallCompanyContacts) {
+    const contacts = window.coldCallCompanyContacts
       .filter(lc => lc.company === call.company)
       .map(lc => lc.contactName)
       .filter(name => name);
