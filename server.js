@@ -2273,6 +2273,88 @@ app.patch('/api/cold-calls/:id', async (req, res) => {
   }
 });
 
+/* Lead Clients data for ColdCall dropdowns */
+
+const LEAD_CLIENTS_TAB = 'Lead Clients';
+const LEAD_CLIENTS_RANGE = `${LEAD_CLIENTS_TAB}!A2:J`;
+
+async function getLeadClientsSheet() {
+  if (!CLIENTS_SHEET_ID) throw new Error('CLIENTS_SHEET_ID is not set');
+  const sheets = getSheetsClient();
+  try {
+    const result = await sheets.spreadsheets.values.get({
+      spreadsheetId: CLIENTS_SHEET_ID,
+      range: LEAD_CLIENTS_RANGE
+    });
+    
+    const rows = result.data.values || [];
+    return rows.map(row => ({
+      timestamp: row[0] || '',
+      company: row[1] || '',
+      address: row[2] || '',
+      postcode: row[3] || '',
+      contactName: row[4] || '',
+      jobTitle: row[5] || '',
+      email: row[6] || '',
+      phone: row[7] || '',
+      folderCreated: row[8] || '',
+      notes: row[9] || ''
+    }));
+  } catch (e) {
+    console.error('Error reading Lead Clients:', e.message);
+    return [];
+  }
+}
+
+app.get('/api/lead-clients', async (req, res) => {
+  try {
+    const leadClients = await getLeadClientsSheet();
+    res.json(leadClients);
+  } catch (e) {
+    console.error('GET /api/lead-clients error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/cold-calls/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const idx = parseInt(id.split('-')[1], 10);
+    
+    if (isNaN(idx)) {
+      return res.status(400).json({ error: 'Invalid ID' });
+    }
+    
+    const sheets = getSheetsClient();
+    const coldCalls = await getColdCallsSheet();
+    
+    if (idx >= coldCalls.length) {
+      return res.status(404).json({ error: 'Cold call not found' });
+    }
+    
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: CLIENTS_SHEET_ID,
+      requestBody: {
+        requests: [{
+          deleteRange: {
+            range: {
+              sheetId: 0,
+              startRowIndex: idx + 1,
+              endRowIndex: idx + 2
+            },
+            shiftDimension: 'ROWS'
+          }
+        }]
+      }
+    });
+    
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('DELETE /api/cold-calls/:id error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/', (req, res) => {
   res.json({ status: 'API Server running' });
 });
