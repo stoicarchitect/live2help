@@ -3235,8 +3235,22 @@ async function openAddColdCallModal(){
   
   try {
     const res = await fetch(`${API_BASE}/api/lead-clients`);
-    if(!res.ok) throw new Error('Failed to load lead clients');
-    const leadClients = await res.json();
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    const data = await res.json();
+    
+    console.log('API Response:', data);
+    
+    // Check if response is an error
+    if(data.error) {
+      throw new Error('API Error: ' + data.error);
+    }
+    
+    // Check if data is an array
+    if(!Array.isArray(data)) {
+      throw new Error('API returned non-array: ' + typeof data);
+    }
+    
+    const leadClients = data;
     
     // Get unique companies
     const companies = [...new Set(leadClients.map(lc => lc.company))].sort();
