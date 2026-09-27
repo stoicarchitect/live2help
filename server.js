@@ -164,7 +164,7 @@ async function readApplicationsRows() {
 
       const result = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: `'${tabName}'!A2:T`,
+        range: `'${tabName}'!A2:U`,
       });
 
       const rows = result.data.values || [];
@@ -178,7 +178,7 @@ async function readApplicationsRows() {
           name: row[2] || '', // Candidate name is column C
           stage: row[19] || 'applied', // Status is column T
           date: row[1] || '', // Date Applied is column B
-          notes: '',
+          notes: row[20] || '', // Notes is column U
           salary: row[15] || '', // Salary Expectation is column P
           email: row[3] || '', // Email is column D
           phone: row[4] || '', // Phone is column E
@@ -275,11 +275,12 @@ app.post('/api/candidates', async (req, res) => {
         c.company !== undefined ? c.company : (existing[17] || ''),
         c.contact !== undefined ? c.contact : (existing[18] || ''),
         c.stage || existing[19] || 'applied',
+        c.notes !== undefined ? c.notes : (existing[20] || ''),
       ];
 
       await sheets.spreadsheets.values.update({
         spreadsheetId: SHEET_ID,
-        range: `'${tabName}'!A${sheetRowNumber}:T${sheetRowNumber}`,
+        range: `'${tabName}'!A${sheetRowNumber}:U${sheetRowNumber}`,
         valueInputOption: 'RAW',
         requestBody: { values: [appRow] },
       });
@@ -327,7 +328,7 @@ async function tryMarkApplicationSubmitted(companyName, role, candidateName) {
   try {
     const allRows = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
-      range: `'${tabName}'!A2:T`,
+      range: `'${tabName}'!A2:U`,
     });
     const rows = allRows.data.values || [];
     
@@ -355,11 +356,11 @@ async function tryMarkApplicationSubmitted(companyName, role, candidateName) {
     const existing = rows[rowIndex];
     existing[17] = companyName;       // Company (column R)
     existing[19] = 'submitted';       // Status (column T)
-    while (existing.length < 20) existing.push('');
+    while (existing.length < 21) existing.push('');
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: `'${tabName}'!A${sheetRowNumber}:T${sheetRowNumber}`,
+      range: `'${tabName}'!A${sheetRowNumber}:U${sheetRowNumber}`,
       valueInputOption: 'RAW',
       requestBody: { values: [existing] },
     });
