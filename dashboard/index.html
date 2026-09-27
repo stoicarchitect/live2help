@@ -243,6 +243,33 @@
   #invoicesView.visible{display:flex;}
   #kpiReportingView{display:none;flex:1;flex-direction:column;}
   #kpiReportingView.visible{display:flex;}
+  #coldCallTrackerView{display:none;flex:1;flex-direction:column;}
+  #coldCallTrackerView.visible{display:flex;}
+  #coldCallHeader{
+    padding:16px 24px 14px;display:flex;justify-content:space-between;align-items:center;
+    border-bottom:1px solid var(--border);
+  }
+  #coldCallHeader h2{font-size:18px;color:var(--dark);font-weight:normal;}
+  #addColdCallBtn{
+    padding:9px 18px;background:var(--gold);color:var(--white);border:none;
+    border-radius:2px;font-size:13.5px;cursor:pointer;font-family:inherit;font-weight:600;
+  }
+  #addColdCallBtn:hover{background:#b8963f;}
+  .cold-call-section{margin-bottom:24px;}
+  .cold-call-section h3{font-size:14px;color:var(--dark);font-weight:600;margin-bottom:12px;}
+  .cold-call-list{background:var(--white);border:1px solid var(--border);border-radius:2px;overflow:hidden;}
+  .cold-call-entry{display:grid;grid-template-columns:2fr 1.5fr 1.2fr 1.5fr 1.2fr auto;gap:0;border-bottom:1px solid var(--border);align-items:center;padding:0;}
+  .cold-call-entry.header{background:var(--lightbg);font-weight:500;font-size:12px;color:var(--dark);}
+  .cold-call-cell{padding:12px 14px;font-size:13px;color:var(--grey);}
+  .cold-call-entry.header .cold-call-cell{font-size:12px;color:var(--dark);}
+  .cold-call-company{color:var(--dark);font-weight:500;}
+  .cold-call-contacts{color:var(--dark);font-size:12px;}
+  .cold-call-date{color:#666;font-size:12px;}
+  .cold-call-type{display:inline-block;padding:3px 8px;background:var(--lightbg);border-radius:2px;font-size:11px;color:var(--dark);}
+  .cold-call-status{text-align:center;}
+  .cold-call-actions{display:flex;gap:6px;padding:12px 14px;justify-content:flex-end;}
+  .cold-call-actions button{padding:5px 10px;font-size:11px;border:1px solid var(--border);background:var(--white);color:var(--grey);cursor:pointer;border-radius:2px;}
+  .cold-call-actions button:hover{background:var(--lightbg);}
   #kpiHeader{
     padding:16px 24px 14px;display:flex;justify-content:space-between;align-items:center;
     border-bottom:1px solid var(--border);
@@ -605,6 +632,7 @@
       <button class="tab-btn" data-tab="invoices" onclick="switchTab('invoices')">Invoices</button>
       <button class="tab-btn" data-tab="tasks" onclick="switchTab('tasks')">Tasks</button>
       <button class="tab-btn" data-tab="kpi" onclick="switchTab('kpi')">KPI Reporting</button>
+      <button class="tab-btn" data-tab="coldCalls" onclick="switchTab('coldCalls')">Cold Call Tracker</button>
     </div>
     
     <div id="candidatesView" class="visible">
@@ -821,6 +849,98 @@
           <div id="clientPerformanceEmpty" style="text-align:center;padding:20px;color:#999;font-size:13px;display:none;">No client data yet</div>
         </div>
 
+        <!-- Weekly Cold Call Report (Dan Only) -->
+        <div id="weeklyCallReportSection" style="display:none;margin-top:32px;">
+          <h3 style="font-size:16px;color:var(--dark);margin-bottom:14px;font-weight:500;">Cold Call - Weekly Report</h3>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:12px;margin-bottom:20px;">
+            <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;padding:14px;">
+              <div style="font-size:11px;color:#999;margin-bottom:6px;">Total Calls This Week</div>
+              <div style="font-size:24px;color:var(--gold);font-weight:600;" id="weeklyTotalCalls">0</div>
+            </div>
+            <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;padding:14px;">
+              <div style="font-size:11px;color:#999;margin-bottom:6px;">Success Rate</div>
+              <div style="font-size:24px;color:var(--gold);font-weight:600;" id="weeklySuccessRate">0%</div>
+            </div>
+            <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;padding:14px;">
+              <div style="font-size:11px;color:#999;margin-bottom:6px;">Avg Calls per Client</div>
+              <div style="font-size:24px;color:var(--gold);font-weight:600;" id="weeklyAvgCallsPerClient">0</div>
+            </div>
+            <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;padding:14px;">
+              <div style="font-size:11px;color:#999;margin-bottom:6px;">New Leads Generated</div>
+              <div style="font-size:24px;color:var(--gold);font-weight:600;" id="weeklyNewLeads">0</div>
+            </div>
+          </div>
+          <h4 style="font-size:13px;color:var(--dark);margin-bottom:10px;font-weight:500;">Client Contact Frequency (Last 30 Days)</h4>
+          <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;overflow:hidden;">
+            <div style="display:grid;grid-template-columns:2fr 1fr 1.2fr auto;gap:0;background:var(--lightbg);border-bottom:1px solid var(--border);">
+              <div style="padding:10px 14px;font-size:11px;font-weight:500;color:var(--dark);">Client</div>
+              <div style="padding:10px 14px;font-size:11px;font-weight:500;color:var(--dark);">Contacts</div>
+              <div style="padding:10px 14px;font-size:11px;font-weight:500;color:var(--dark);">Last Contact</div>
+              <div style="padding:10px 14px;font-size:11px;font-weight:500;color:var(--dark);">Status</div>
+            </div>
+            <div id="clientContactFrequencyBody"></div>
+          </div>
+        </div>
+
+        <!-- Lead Clients Cold Call Tracking (Ella's KPI) -->
+        <div id="ellaLeadClientsSection" style="margin-top:32px;">
+          <h3 style="font-size:16px;color:var(--dark);margin-bottom:14px;font-weight:500;">Lead Clients - Cold Call Tracking</h3>
+          <p style="font-size:13px;color:#999;margin-bottom:12px;">Track contact attempts and schedule follow-ups for potential clients</p>
+          <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;overflow:hidden;">
+            <div style="display:grid;grid-template-columns:1.5fr 1fr 1.2fr 1.2fr auto;gap:0;background:var(--lightbg);border-bottom:1px solid var(--border);">
+              <div style="padding:10px 14px;font-size:11px;font-weight:500;color:var(--dark);">Lead Company</div>
+              <div style="padding:10px 14px;font-size:11px;font-weight:500;color:var(--dark);">Attempts</div>
+              <div style="padding:10px 14px;font-size:11px;font-weight:500;color:var(--dark);">Last Attempted</div>
+              <div style="padding:10px 14px;font-size:11px;font-weight:500;color:var(--dark);">Next Scheduled</div>
+              <div style="padding:10px 14px;font-size:11px;font-weight:500;color:var(--dark);text-align:center;">Actions</div>
+            </div>
+            <div id="leadClientContactBody"></div>
+          </div>
+          <div id="leadClientContactEmpty" style="text-align:center;padding:20px;color:#999;font-size:13px;display:none;">No lead client contact data yet</div>
+        </div>
+
+      </div>
+    </div>
+
+    <div id="coldCallTrackerView">
+      <div id="coldCallHeader">
+        <h2>Cold Call Tracker</h2>
+        <button id="addColdCallBtn" onclick="openAddColdCallModal()">+ Add Cold Call</button>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:18px 24px;">
+        
+        <!-- Today's Contacts Section -->
+        <div class="cold-call-section" id="todaysContactsSection" style="display:none;">
+          <h3>Today's Contacts to Complete</h3>
+          <div class="cold-call-list" id="todaysList"></div>
+        </div>
+
+        <!-- All Cold Calls Section -->
+        <div class="cold-call-section">
+          <h3>Cold Calling List</h3>
+          <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;">
+            <input type="text" id="clientFilterInput" placeholder="Filter by client..." style="padding:8px 12px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12px;flex:1;min-width:200px;">
+            <select id="contactTypeFilter" style="padding:8px 12px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12px;">
+              <option value="">All Types</option>
+              <option value="call">Call</option>
+              <option value="email">Email</option>
+              <option value="both">Both</option>
+            </select>
+          </div>
+          <div class="cold-call-list">
+            <div class="cold-call-entry header">
+              <div class="cold-call-cell">Company</div>
+              <div class="cold-call-cell">Contact Name(s)</div>
+              <div class="cold-call-cell">Date Called</div>
+              <div class="cold-call-cell">Type</div>
+              <div class="cold-call-cell">Status</div>
+              <div class="cold-call-cell">Actions</div>
+            </div>
+            <div id="coldCallsList"></div>
+          </div>
+          <div id="coldCallsEmpty" style="text-align:center;padding:40px 20px;color:#999;display:none;"><p style="font-size:14px;">No cold calls logged. Add one to get started.</p></div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -999,6 +1119,71 @@
     <div class="action-buttons">
       <button onclick="downloadScreeningAnswersPDF()">Download PDF</button>
       <button class="primary" onclick="closeModal('screeningAnswersModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="addColdCallOverlay">
+  <div class="modal">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="closeModal('addColdCallOverlay')">&times;</button>
+      <h2>Add Cold Call</h2>
+      
+      <div class="field-row">
+        <label>Company</label>
+        <select id="coldCallCompany" style="padding:9px 12px;border:1px solid var(--border);border-radius:2px;font-family:inherit;width:100%;font-size:13px;">
+          <option value="">- Select or add company -</option>
+        </select>
+        <input type="text" id="coldCallCompanyNew" placeholder="Or type new company name..." style="margin-top:8px;padding:9px 12px;border:1px solid var(--border);border-radius:2px;font-family:inherit;width:100%;font-size:13px;">
+      </div>
+
+      <div class="field-row">
+        <label>Contact Name(s)</label>
+        <input type="text" id="coldCallContactNames" placeholder="e.g. John Smith, Sarah Jones" style="padding:9px 12px;border:1px solid var(--border);border-radius:2px;font-family:inherit;width:100%;font-size:13px;">
+      </div>
+
+      <div class="field-row">
+        <label>Contact Type</label>
+        <select id="coldCallType" style="padding:9px 12px;border:1px solid var(--border);border-radius:2px;font-family:inherit;width:100%;font-size:13px;">
+          <option value="call">Call</option>
+          <option value="email">Email</option>
+          <option value="both">Both</option>
+        </select>
+      </div>
+
+      <div class="field-row">
+        <label>Date Called</label>
+        <input type="date" id="coldCallDate" style="padding:9px 12px;border:1px solid var(--border);border-radius:2px;font-family:inherit;width:100%;font-size:13px;">
+      </div>
+
+      <div class="field-row">
+        <label>Notes</label>
+        <textarea id="coldCallNotes" placeholder="Call outcome, who answered, next steps..." style="padding:9px 12px;border:1px solid var(--border);border-radius:2px;font-family:inherit;width:100%;font-size:13px;min-height:80px;"></textarea>
+      </div>
+
+      <div class="field-row">
+        <label>Schedule Follow-up</label>
+        <input type="date" id="coldCallFollowupDate" style="padding:9px 12px;border:1px solid var(--border);border-radius:2px;font-family:inherit;width:100%;font-size:13px;">
+      </div>
+
+      <div class="field-row">
+        <label>Outcome</label>
+        <select id="coldCallOutcome" style="padding:9px 12px;border:1px solid var(--border);border-radius:2px;font-family:inherit;width:100%;font-size:13px;">
+          <option value="attempt">Attempt / No Response</option>
+          <option value="interested">Interested - Pending</option>
+          <option value="successful">Successful - Converted to Client</option>
+        </select>
+      </div>
+
+      <div class="field-row" style="flex-direction:row;align-items:center;gap:8px;">
+        <input type="checkbox" id="coldCallAddToTasks" style="width:16px;height:16px;cursor:pointer;">
+        <label style="margin:0;">Add to Tasks</label>
+      </div>
+
+      <div class="field-row">
+        <button class="cancel" onclick="closeModal('addColdCallOverlay')">Cancel</button>
+        <button class="save" onclick="submitAddColdCall()">Save Cold Call</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1821,11 +2006,13 @@ function switchTab(tab){
   document.getElementById('invoicesView').classList.toggle('visible', tab === 'invoices');
   document.getElementById('tasksView').style.display = tab === 'tasks' ? 'flex' : 'none';
   document.getElementById('kpiReportingView').classList.toggle('visible', tab === 'kpi');
+  document.getElementById('coldCallTrackerView').classList.toggle('visible', tab === 'coldCalls');
   if(tab === 'leadClients') loadLeadClients();
   if(tab === 'clients') loadClients();
   if(tab === 'invoices') loadInvoices();
   if(tab === 'tasks') loadTasks('active');
   if(tab === 'kpi') loadKPITargets();
+  if(tab === 'coldCalls') loadColdCalls();
 }
 
 function switchTaskView(view){
@@ -2572,9 +2759,17 @@ async function loadKPITargets(){
     if(currentUserRole === 'dan'){
       document.getElementById('businessHealthSection').style.display = 'block';
       await loadBusinessHealth();
+      
+      // Load weekly cold call report
+      document.getElementById('weeklyCallReportSection').style.display = 'block';
+      await loadWeeklyCallReport();
     } else {
       document.getElementById('businessHealthSection').style.display = 'none';
+      document.getElementById('weeklyCallReportSection').style.display = 'none';
     }
+    
+    // Load lead client cold call tracking (Ella can see her own data)
+    await loadLeadClientContactTracking();
   }catch(e){
     console.error('Error loading KPI targets:', e);
     body.innerHTML = '<div style="padding:20px;color:var(--danger);">Error loading targets</div>';
@@ -2932,6 +3127,464 @@ async function deleteKPITarget(quarter){
     showToast('Could not delete KPI target: ' + e.message);
   }
 }
+
+/* Cold Call Tracker Functions */
+
+let coldCallData = [];
+
+async function loadColdCalls(){
+  try{
+    const res = await fetch(`${API_BASE}/api/cold-calls`);
+    if(!res.ok) throw new Error('Failed to load cold calls');
+    coldCallData = await res.json();
+    renderColdCalls();
+  }catch(e){
+    console.error('Error loading cold calls:', e);
+    showToast('Could not load cold calls: ' + e.message);
+  }
+}
+
+function renderColdCalls(){
+  const container = document.getElementById('coldCallsList');
+  const emptyMsg = document.getElementById('coldCallsEmpty');
+  const todaysSection = document.getElementById('todaysContactsSection');
+  const todaysList = document.getElementById('todaysList');
+  
+  if(!coldCallData || coldCallData.length === 0){
+    container.innerHTML = '';
+    emptyMsg.style.display = 'block';
+    todaysSection.style.display = 'none';
+    return;
+  }
+  
+  emptyMsg.style.display = 'none';
+  
+  const today = new Date().toISOString().split('T')[0];
+  const todaysContacts = coldCallData.filter(c => c.followupDate === today && c.status !== 'archived' && c.status !== 'completed');
+  
+  if(todaysContacts.length > 0){
+    todaysSection.style.display = 'block';
+    todaysList.innerHTML = '';
+    
+    todaysContacts.sort((a, b) => {
+      const priorityOrder = {'high': 0, 'medium': 1, 'low': 2};
+      return (priorityOrder[a.priority] || 2) - (priorityOrder[b.priority] || 2);
+    });
+    
+    todaysContacts.forEach(call => {
+      const entry = document.createElement('div');
+      entry.className = 'cold-call-entry';
+      entry.innerHTML = `
+        <div class="cold-call-cell cold-call-company">${call.company || '-'}</div>
+        <div class="cold-call-cell cold-call-contacts">${call.contactNames || '-'}</div>
+        <div class="cold-call-cell">${new Date(call.dateCalled).toLocaleDateString()}</div>
+        <div class="cold-call-cell"><span class="cold-call-type">${call.contactType}</span></div>
+        <div class="cold-call-cell">Due Today</div>
+        <div class="cold-call-actions">
+          <button onclick="markColdCallComplete('${call.id}')">Complete</button>
+          <button onclick="editColdCall('${call.id}')">Edit</button>
+        </div>
+      `;
+      todaysList.appendChild(entry);
+    });
+  }else{
+    todaysSection.style.display = 'none';
+  }
+  
+  // Apply filters
+  const clientFilter = document.getElementById('clientFilterInput')?.value?.toLowerCase() || '';
+  const typeFilter = document.getElementById('contactTypeFilter')?.value || '';
+  
+  let filtered = coldCallData.filter(c => {
+    if(c.status === 'archived' || c.status === 'completed') return false;
+    if(clientFilter && !c.company.toLowerCase().includes(clientFilter)) return false;
+    if(typeFilter && c.contactType !== typeFilter) return false;
+    return true;
+  });
+  
+  container.innerHTML = '';
+  filtered.forEach(call => {
+    const entry = document.createElement('div');
+    entry.className = 'cold-call-entry';
+    const callDate = new Date(call.dateCalled).toLocaleDateString();
+    entry.innerHTML = `
+      <div class="cold-call-cell cold-call-company">${call.company || '-'}</div>
+      <div class="cold-call-cell cold-call-contacts">${call.contactNames || '-'}</div>
+      <div class="cold-call-cell cold-call-date">${callDate}</div>
+      <div class="cold-call-cell"><span class="cold-call-type">${call.contactType}</span></div>
+      <div class="cold-call-cell cold-call-status">${call.status === 'completed' ? 'Completed' : 'Active'}</div>
+      <div class="cold-call-actions">
+        <button onclick="editColdCall('${call.id}')">Edit</button>
+        <button onclick="archiveColdCall('${call.id}')">Archive</button>
+        <button onclick="viewColdCallNotes('${call.id}')">View</button>
+      </div>
+    `;
+    container.appendChild(entry);
+  });
+}
+
+function openAddColdCallModal(){
+  const overlay = document.getElementById('addColdCallOverlay');
+  
+  // Load companies dropdown
+  const companyDropdown = document.getElementById('coldCallCompany');
+  const companies = [...new Set(coldCallData.map(c => c.company))].sort();
+  companyDropdown.innerHTML = '<option value="">- Select or add company -</option>';
+  companies.forEach(company => {
+    const option = document.createElement('option');
+    option.value = company;
+    option.textContent = company;
+    companyDropdown.appendChild(option);
+  });
+  
+  // Set today's date
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('coldCallDate').value = today;
+  
+  overlay.classList.add('visible');
+}
+
+async function submitAddColdCall(){
+  const company = document.getElementById('coldCallCompany').value || document.getElementById('coldCallCompanyNew').value;
+  const contactNames = document.getElementById('coldCallContactNames').value;
+  const contactType = document.getElementById('coldCallType').value;
+  const dateCalled = document.getElementById('coldCallDate').value;
+  const notes = document.getElementById('coldCallNotes').value;
+  const followupDate = document.getElementById('coldCallFollowupDate').value;
+  const outcome = document.getElementById('coldCallOutcome').value;
+  const addToTasks = document.getElementById('coldCallAddToTasks').checked;
+  
+  if(!company || !contactNames || !dateCalled){
+    showToast('Please fill in Company, Contact Names, and Date Called');
+    return;
+  }
+  
+  try{
+    const payload = {
+      company,
+      contactNames,
+      contactType,
+      dateCalled,
+      notes,
+      followupDate,
+      outcome,
+      status: outcome === 'successful' ? 'successful' : 'active'
+    };
+    
+    const res = await fetch(`${API_BASE}/api/cold-calls`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    
+    // If outcome is successful, notify Dan
+    if(outcome === 'successful'){
+      showToast(`Success! ${company} has been converted to an active client`);
+    }
+    
+    // If add to tasks is checked, create a task
+    if(addToTasks){
+      await fetch(`${API_BASE}/api/tasks`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          title: `Follow up with ${company}`,
+          context: `Contact: ${contactNames} - ${notes}`,
+          priority: 'medium',
+          dueDate: followupDate || new Date().toISOString().split('T')[0]
+        })
+      });
+    }
+    
+    showToast('Cold call logged successfully');
+    closeModal('addColdCallOverlay');
+    loadColdCalls();
+    if(currentUserRole === 'dan') loadKPITargets();
+  }catch(e){
+    showToast('Could not add cold call: ' + e.message);
+  }
+}
+
+async function markColdCallComplete(id){
+  try{
+    const res = await fetch(`${API_BASE}/api/cold-calls/${id}`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({status: 'completed'})
+    });
+    
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    loadColdCalls();
+  }catch(e){
+    showToast('Could not update cold call: ' + e.message);
+  }
+}
+
+async function archiveColdCall(id){
+  try{
+    const res = await fetch(`${API_BASE}/api/cold-calls/${id}`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({status: 'archived'})
+    });
+    
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    loadColdCalls();
+  }catch(e){
+    showToast('Could not archive cold call: ' + e.message);
+  }
+}
+
+function editColdCall(id){
+  const call = coldCallData.find(c => c.id === id);
+  if(!call){
+    showToast('Call not found');
+    return;
+  }
+  
+  document.getElementById('coldCallCompany').value = call.company;
+  document.getElementById('coldCallCompanyNew').value = '';
+  document.getElementById('coldCallContactNames').value = call.contactNames;
+  document.getElementById('coldCallType').value = call.contactType;
+  document.getElementById('coldCallDate').value = call.dateCalled;
+  document.getElementById('coldCallNotes').value = call.notes;
+  document.getElementById('coldCallFollowupDate').value = call.followupDate;
+  document.getElementById('coldCallOutcome').value = call.outcome || 'attempt';
+  
+  document.querySelector('button[onclick="submitAddColdCall()"]').textContent = 'Update Cold Call';
+  document.querySelector('button[onclick="submitAddColdCall()"]').onclick = () => updateColdCall(id);
+  
+  openAddColdCallModal();
+}
+
+async function updateColdCall(id){
+  const company = document.getElementById('coldCallCompany').value || document.getElementById('coldCallCompanyNew').value;
+  const contactNames = document.getElementById('coldCallContactNames').value;
+  const contactType = document.getElementById('coldCallType').value;
+  const dateCalled = document.getElementById('coldCallDate').value;
+  const notes = document.getElementById('coldCallNotes').value;
+  const followupDate = document.getElementById('coldCallFollowupDate').value;
+  const outcome = document.getElementById('coldCallOutcome').value;
+  
+  try{
+    const res = await fetch(`${API_BASE}/api/cold-calls/${id}`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        company,
+        contactNames,
+        contactType,
+        dateCalled,
+        notes,
+        followupDate,
+        outcome,
+        status: outcome === 'successful' ? 'successful' : 'active'
+      })
+    });
+    
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    showToast('Cold call updated');
+    closeModal('addColdCallOverlay');
+    document.querySelector('button[onclick="submitAddColdCall()"]').textContent = 'Save Cold Call';
+    document.querySelector('button[onclick="submitAddColdCall()"]').onclick = submitAddColdCall;
+    loadColdCalls();
+    if(currentUserRole === 'dan') loadKPITargets();
+  }catch(e){
+    showToast('Could not update cold call: ' + e.message);
+  }
+}
+
+function viewColdCallNotes(id){
+  const call = coldCallData.find(c => c.id === id);
+  if(!call){
+    showToast('Call not found');
+    return;
+  }
+  alert(`Company: ${call.company}\nContact: ${call.contactNames}\nDate: ${call.dateCalled}\nType: ${call.contactType}\n\nNotes:\n${call.notes}`);
+}
+
+// Cold Call KPI Functions
+
+async function loadWeeklyCallReport(){
+  try{
+    const lastWeek = new Date();
+    lastWeek.setDate(lastWeek.getDate() - 7);
+    const lastWeekDate = lastWeek.toISOString().split('T')[0];
+    
+    const allClients = clientsData || [];
+    let weeklyCallCount = 0;
+    let successfulCalls = 0;
+    const clientCallFreq = {};
+    
+    coldCallData.forEach(call => {
+      if(call.dateCalled >= lastWeekDate && call.status !== 'archived'){
+        weeklyCallCount++;
+        
+        const isActualClient = allClients.some(c => c.company === call.company);
+        if(isActualClient && call.status === 'successful'){
+          successfulCalls++;
+        }
+        
+        if(!clientCallFreq[call.company]){
+          clientCallFreq[call.company] = {calls: 0, lastDate: call.dateCalled, status: isActualClient ? 'client' : 'lead'};
+        }
+        clientCallFreq[call.company].calls++;
+        if(call.dateCalled > clientCallFreq[call.company].lastDate){
+          clientCallFreq[call.company].lastDate = call.dateCalled;
+        }
+      }
+    });
+    
+    // Update metrics
+    document.getElementById('weeklyTotalCalls').textContent = weeklyCallCount;
+    const successRate = weeklyCallCount > 0 ? ((successfulCalls / weeklyCallCount) * 100).toFixed(0) : 0;
+    document.getElementById('weeklySuccessRate').textContent = successRate + '%';
+    const avgCalls = Object.keys(clientCallFreq).length > 0 ? (weeklyCallCount / Object.keys(clientCallFreq).length).toFixed(1) : 0;
+    document.getElementById('weeklyAvgCallsPerClient').textContent = avgCalls;
+    document.getElementById('weeklyNewLeads').textContent = Object.values(clientCallFreq).filter(f => f.status === 'lead').length;
+    
+    // Load client contact frequency
+    const body = document.getElementById('clientContactFrequencyBody');
+    body.innerHTML = '';
+    
+    const sortedClients = Object.entries(clientCallFreq).sort((a, b) => b[1].calls - a[1].calls);
+    
+    sortedClients.forEach(([company, data]) => {
+      const lastContactDate = new Date(data.lastDate);
+      const daysAgo = Math.floor((new Date() - lastContactDate) / (1000 * 60 * 60 * 24));
+      const statusColor = daysAgo > 30 ? '#B23A3A' : '#3E7A4C';
+      const statusText = data.status === 'client' ? 'Active Client' : 'Lead';
+      
+      const row = document.createElement('div');
+      row.style.display = 'grid';
+      row.style.gridTemplateColumns = '2fr 1fr 1.2fr auto';
+      row.style.gap = '0';
+      row.style.borderBottom = '1px solid var(--border)';
+      row.style.alignItems = 'center';
+      
+      row.innerHTML = `
+        <div style="padding:10px 14px;font-size:12px;color:var(--dark);font-weight:500;">${company}</div>
+        <div style="padding:10px 14px;font-size:12px;color:#666;">${data.calls}</div>
+        <div style="padding:10px 14px;font-size:12px;color:#666;">${lastContactDate.toLocaleDateString()}</div>
+        <div style="padding:10px 14px;font-size:11px;color:${statusColor};font-weight:500;">${statusText}</div>
+      `;
+      body.appendChild(row);
+    });
+  }catch(e){
+    console.error('Error loading weekly call report:', e);
+  }
+}
+
+async function loadLeadClientContactTracking(){
+  try{
+    const leadClientsFromUI = await fetch(`${API_BASE}/api/lead-clients`).then(r => r.json()).catch(() => []);
+    const body = document.getElementById('leadClientContactBody');
+    const empty = document.getElementById('leadClientContactEmpty');
+    
+    body.innerHTML = '';
+    
+    const leadContactMap = {};
+    
+    // Group cold calls by company
+    coldCallData.forEach(call => {
+      const isLead = !clientsData.some(c => c.company === call.company);
+      if(isLead){
+        if(!leadContactMap[call.company]){
+          leadContactMap[call.company] = {
+            attempts: 0,
+            lastAttempted: call.dateCalled,
+            nextScheduled: call.followupDate || null
+          };
+        }
+        leadContactMap[call.company].attempts++;
+        if(call.dateCalled > leadContactMap[call.company].lastAttempted){
+          leadContactMap[call.company].lastAttempted = call.dateCalled;
+        }
+        if(call.followupDate){
+          leadContactMap[call.company].nextScheduled = call.followupDate;
+        }
+      }
+    });
+    
+    if(Object.keys(leadContactMap).length === 0){
+      body.innerHTML = '';
+      empty.style.display = 'block';
+      return;
+    }
+    
+    empty.style.display = 'none';
+    
+    Object.entries(leadContactMap).forEach(([company, data]) => {
+      const lastDate = new Date(data.lastAttempted);
+      const daysAgo = Math.floor((new Date() - lastDate) / (1000 * 60 * 60 * 24));
+      const daysAgoText = daysAgo === 0 ? 'Today' : daysAgo === 1 ? 'Yesterday' : daysAgo + ' days ago';
+      
+      const nextDate = data.nextScheduled ? new Date(data.nextScheduled).toLocaleDateString() : '-';
+      const overdue = data.nextScheduled && new Date(data.nextScheduled) < new Date();
+      const overdueColor = overdue ? 'color:#B23A3A;' : '';
+      
+      const row = document.createElement('div');
+      row.style.display = 'grid';
+      row.style.gridTemplateColumns = '1.5fr 1fr 1.2fr 1.2fr auto';
+      row.style.gap = '0';
+      row.style.borderBottom = '1px solid var(--border)';
+      row.style.alignItems = 'center';
+      
+      row.innerHTML = `
+        <div style="padding:10px 14px;font-size:12px;color:var(--dark);font-weight:500;">${company}</div>
+        <div style="padding:10px 14px;font-size:12px;color:#666;">${data.attempts}</div>
+        <div style="padding:10px 14px;font-size:12px;color:#666;">${daysAgoText}</div>
+        <div style="padding:10px 14px;font-size:12px;${overdueColor}color:#666;">${nextDate}</div>
+        <div style="padding:10px 14px;text-align:center;">
+          <button onclick="delayLeadClientFollowup('${company}')" style="padding:4px 10px;font-size:11px;border:1px solid var(--border);background:var(--white);color:var(--grey);cursor:pointer;border-radius:2px;">Delay 1mo</button>
+        </div>
+      `;
+      body.appendChild(row);
+    });
+  }catch(e){
+    console.error('Error loading lead client contact tracking:', e);
+  }
+}
+
+async function delayLeadClientFollowup(company){
+  try{
+    const futureDate = new Date();
+    futureDate.setMonth(futureDate.getMonth() + 1);
+    const futureDateStr = futureDate.toISOString().split('T')[0];
+    
+    // Find the most recent cold call for this lead and update its followup date
+    const relevantCalls = coldCallData.filter(c => c.company === company);
+    if(relevantCalls.length > 0){
+      const mostRecent = relevantCalls.sort((a, b) => new Date(b.dateCalled) - new Date(a.dateCalled))[0];
+      
+      await fetch(`${API_BASE}/api/cold-calls/${mostRecent.id}`, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({followupDate: futureDateStr})
+      });
+      
+      showToast(`Follow-up delayed to ${new Date(futureDateStr).toLocaleDateString()}`);
+      loadKPITargets();
+    }
+  }catch(e){
+    showToast('Could not delay follow-up: ' + e.message);
+  }
+}
+
+// Filter listeners
+document.addEventListener('DOMContentLoaded', function(){
+  const clientFilterInput = document.getElementById('clientFilterInput');
+  const contactTypeFilter = document.getElementById('contactTypeFilter');
+  
+  if(clientFilterInput){
+    clientFilterInput.addEventListener('input', renderColdCalls);
+  }
+  if(contactTypeFilter){
+    contactTypeFilter.addEventListener('change', renderColdCalls);
+  }
+});
 
 setSplashLogo();
 initializeClientModals();
