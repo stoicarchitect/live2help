@@ -55,7 +55,6 @@ app.post('/api/claude', async (req, res) => {
 ---------------------------------------------------------------------- */
 
 const SHEET_ID = process.env.SHEET_ID;
-const CLIENTS_SHEET_ID = process.env.CLIENTS_SHEET_ID || '1gFoG7F9OU_ax-cJ7AJYPzXBPYPHGxronprXCXA2u5so';
 const SUBMISSIONS_FOLDER_ID = '1MplgUUbCNy64ZxDz4EQtc8GtnZ7S9Ipo';
 const TAB = 'Dashboard';
 const RANGE = `${TAB}!A2:L`;
@@ -2149,11 +2148,11 @@ const COLD_CALLS_TAB = 'ColdCalls';
 const COLD_CALLS_RANGE = `${COLD_CALLS_TAB}!A2:I`;
 
 async function getColdCallsSheet() {
-  if (!CLIENTS_SHEET_ID) throw new Error('CLIENTS_SHEET_ID is not set');
+  if (!CLIENT_SHEET_ID) throw new Error('CLIENT_SHEET_ID is not set');
   const sheets = getSheetsClient();
   try {
     const result = await sheets.spreadsheets.values.get({
-      spreadsheetId: CLIENTS_SHEET_ID,
+      spreadsheetId: CLIENT_SHEET_ID,
       range: COLD_CALLS_RANGE
     });
     
@@ -2210,7 +2209,7 @@ app.post('/api/cold-calls', async (req, res) => {
     ];
     
     await sheets.spreadsheets.values.append({
-      spreadsheetId: CLIENTS_SHEET_ID,
+      spreadsheetId: CLIENT_SHEET_ID,
       range: COLD_CALLS_RANGE,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
@@ -2258,7 +2257,7 @@ app.patch('/api/cold-calls/:id', async (req, res) => {
     ];
     
     await sheets.spreadsheets.values.update({
-      spreadsheetId: CLIENTS_SHEET_ID,
+      spreadsheetId: CLIENT_SHEET_ID,
       range: `${COLD_CALLS_TAB}!A${idx + 2}:I${idx + 2}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
@@ -2269,100 +2268,6 @@ app.patch('/api/cold-calls/:id', async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error('PATCH /api/cold-calls/:id error:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-/* Lead Clients data for ColdCall dropdowns */
-
-const LEAD_CLIENTS_TAB = 'Lead Clients';
-const LEAD_CLIENTS_RANGE = `${LEAD_CLIENTS_TAB}!A2:J`;
-
-async function getLeadClientsSheet() {
-  if (!CLIENTS_SHEET_ID) throw new Error('CLIENTS_SHEET_ID is not set');
-  const sheets = getSheetsClient();
-  try {
-    console.log(`[Companies] Fetching from Clients/Contacts sheet ${CLIENTS_SHEET_ID}`);
-    
-    let allClients = [];
-    
-    // Fetch from Lead Clients tab
-    try {
-      console.log(`[Companies] Reading Lead Clients tab`);
-      const result = await sheets.spreadsheets.values.get({
-        spreadsheetId: CLIENTS_SHEET_ID,
-        range: 'Lead Clients!A2:J'
-      });
-      
-      const rows = result.data.values || [];
-      console.log(`[Companies] Found ${rows.length} rows in Lead Clients`);
-      
-      rows.forEach(row => {
-        if(row[1]) {
-          allClients.push({
-            timestamp: row[0] || '',
-            company: row[1] || '',
-            address: row[2] || '',
-            postcode: row[3] || '',
-            contactName: row[4] || '',
-            jobTitle: row[5] || '',
-            email: row[6] || '',
-            phone: row[7] || '',
-            folderCreated: row[8] || '',
-            notes: row[9] || ''
-          });
-        }
-      });
-    } catch (e) {
-      console.log('[Companies] Lead Clients tab error:', e.message);
-    }
-    
-    // Fetch from Dashboard tab (active clients) - same Clients/Contacts sheet
-    try {
-      console.log(`[Companies] Reading Dashboard tab (active clients)`);
-      const dashboardResult = await sheets.spreadsheets.values.get({
-        spreadsheetId: CLIENTS_SHEET_ID,
-        range: 'Dashboard!A2:J'
-      });
-      
-      const dashboardRows = dashboardResult.data.values || [];
-      console.log(`[Companies] Found ${dashboardRows.length} rows in Dashboard`);
-      
-      dashboardRows.forEach(row => {
-        if(row[1]) {
-          allClients.push({
-            timestamp: row[0] || '',
-            company: row[1] || '',
-            address: row[2] || '',
-            postcode: row[3] || '',
-            contactName: row[4] || '',
-            jobTitle: row[5] || '',
-            email: row[6] || '',
-            phone: row[7] || '',
-            folderCreated: row[8] || '',
-            notes: row[9] || ''
-          });
-        }
-      });
-    } catch (e) {
-      console.log('[Companies] Dashboard tab error:', e.message);
-    }
-    
-    console.log(`[Companies] Total records: ${allClients.length}`);
-    return allClients;
-    
-  } catch (e) {
-    console.error('[Companies] Error:', e.message);
-    throw e;
-  }
-}
-
-app.get('/api/lead-clients', async (req, res) => {
-  try {
-    const leadClients = await getLeadClientsSheet();
-    res.json(leadClients);
-  } catch (e) {
-    console.error('GET /api/lead-clients error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -2384,7 +2289,7 @@ app.delete('/api/cold-calls/:id', async (req, res) => {
     }
     
     await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: CLIENTS_SHEET_ID,
+      spreadsheetId: CLIENT_SHEET_ID,
       requestBody: {
         requests: [{
           deleteRange: {
