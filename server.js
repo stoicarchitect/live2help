@@ -2282,27 +2282,75 @@ async function getLeadClientsSheet() {
   if (!CLIENTS_SHEET_ID) throw new Error('CLIENTS_SHEET_ID is not set');
   const sheets = getSheetsClient();
   try {
-    const result = await sheets.spreadsheets.values.get({
-      spreadsheetId: CLIENTS_SHEET_ID,
-      range: LEAD_CLIENTS_RANGE
-    });
+    console.log(`[Lead Clients] Fetching from sheet ${CLIENTS_SHEET_ID}`);
     
-    const rows = result.data.values || [];
-    return rows.map(row => ({
-      timestamp: row[0] || '',
-      company: row[1] || '',
-      address: row[2] || '',
-      postcode: row[3] || '',
-      contactName: row[4] || '',
-      jobTitle: row[5] || '',
-      email: row[6] || '',
-      phone: row[7] || '',
-      folderCreated: row[8] || '',
-      notes: row[9] || ''
-    }));
+    let allClients = [];
+    
+    // Try to fetch from Lead Clients tab
+    try {
+      console.log(`[Lead Clients] Attempting to read Lead Clients tab`);
+      const result = await sheets.spreadsheets.values.get({
+        spreadsheetId: CLIENTS_SHEET_ID,
+        range: LEAD_CLIENTS_RANGE
+      });
+      
+      const rows = result.data.values || [];
+      console.log(`[Lead Clients] Found ${rows.length} rows in Lead Clients tab`);
+      
+      rows.forEach(row => {
+        allClients.push({
+          timestamp: row[0] || '',
+          company: row[1] || '',
+          address: row[2] || '',
+          postcode: row[3] || '',
+          contactName: row[4] || '',
+          jobTitle: row[5] || '',
+          email: row[6] || '',
+          phone: row[7] || '',
+          folderCreated: row[8] || '',
+          notes: row[9] || ''
+        });
+      });
+    } catch (e) {
+      console.log('[Lead Clients] Lead Clients tab not found or error:', e.message);
+    }
+    
+    // Try to fetch from Clients tab
+    try {
+      console.log(`[Lead Clients] Attempting to read Clients tab`);
+      const clientsResult = await sheets.spreadsheets.values.get({
+        spreadsheetId: CLIENTS_SHEET_ID,
+        range: 'Clients!A2:J'
+      });
+      
+      const clientRows = clientsResult.data.values || [];
+      console.log(`[Lead Clients] Found ${clientRows.length} rows in Clients tab`);
+      
+      clientRows.forEach(row => {
+        allClients.push({
+          timestamp: row[0] || '',
+          company: row[1] || '',
+          address: row[2] || '',
+          postcode: row[3] || '',
+          contactName: row[4] || '',
+          jobTitle: row[5] || '',
+          email: row[6] || '',
+          phone: row[7] || '',
+          folderCreated: row[8] || '',
+          notes: row[9] || ''
+        });
+      });
+    } catch (e) {
+      console.log('[Lead Clients] Clients tab not found or error:', e.message);
+    }
+    
+    console.log(`[Lead Clients] Total records from both tabs: ${allClients.length}`);
+    return allClients;
+    
   } catch (e) {
-    console.error('Error reading Lead Clients:', e.message);
-    return [];
+    console.error('[Lead Clients] Error reading sheets:', e.message);
+    console.error('[Lead Clients] Full error:', e);
+    throw e;
   }
 }
 
