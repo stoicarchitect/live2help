@@ -55,6 +55,7 @@ app.post('/api/claude', async (req, res) => {
 ---------------------------------------------------------------------- */
 
 const SHEET_ID = process.env.SHEET_ID;
+const CLIENTS_SHEET_ID = process.env.CLIENTS_SHEET_ID || '1gFoG7F9OU_ax-cJ7AJYPzXBPYPHGxronprXCXA2u5so';
 const SUBMISSIONS_FOLDER_ID = '1MplgUUbCNy64ZxDz4EQtc8GtnZ7S9Ipo';
 const TAB = 'Dashboard';
 const RANGE = `${TAB}!A2:L`;
@@ -2141,6 +2142,136 @@ function calculateNextDate(dateStr, recurring) {
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
+
+/* Cold Call Tracker API */
+
+const COLD_CALLS_TAB = 'ColdCalls';
+const COLD_CALLS_RANGE = `${COLD_CALLS_TAB}!A2:I`;
+
+async function getColdCallsSheet() {
+  if (!CLIENTS_SHEET_ID) throw new Error('CLIENTS_SHEET_ID is not set');
+  const sheets = getSheetsClient();
+  try {
+    const result = await sheets.spreadsheets.values.get({
+      spreadsheetId: CLIENTS_SHEET_ID,
+      range: COLD_CALLS_RANGE
+    });
+    
+    const rows = result.data.values || [];
+    return rows.map((row, idx) => ({
+      id: `cc-${idx}`,
+      company: row[0] || '',
+      contactNames: row[1] || '',
+      contactType: row[2] || 'call',
+      dateCalled: row[3] || '',
+      notes: row[4] || '',
+      followupDate: row[5] || '',
+      status: row[6] || 'active',
+      outcome: row[7] || 'attempt',
+      createdAt: row[8] || new Date().toISOString()
+    }));
+  } catch (e) {
+    if (e.message.includes('not found')) {
+      return [];
+    }
+    throw e;
+  }
+}
+
+app.get('/api/cold-calls', async (req, res) => {
+  try {
+    const coldCalls = await getColdCallsSheet();
+    res.json(coldCalls);
+  } catch (e) {
+    console.error('GET /api/cold-calls error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/cold-calls', async (req, res) => {
+  try {
+    const { company, contactNames, contactType, dateCalled, notes, followupDate, status, outcome } = req.body;
+    
+    if (!company || !contactNames || !dateCalled) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    const sheets = getSheetsClient();
+    const newRow = [
+      company,
+      contactNames,
+      contactType || 'call',
+      dateCalled,
+      notes || '',
+      followupDate || '',
+      status || 'active',
+      outcome || 'attempt',
+      new Date().toISOString()
+    ];
+    
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: CLIENTS_SHEET_ID,
+      range: COLD_CALLS_RANGE,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [newRow]
+      }
+    });
+    
+    res.json({ ok: true, company, contactNames });
+  } catch (e) {
+    console.error('POST /api/cold-calls error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.patch('/api/cold-calls/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+    const idx = parseInt(id.split('-')[1], 10);
+    
+    if (isNaN(idx)) {
+      return res.status(400).json({ error: 'Invalid ID' });
+    }
+    
+    const sheets = getSheetsClient();
+    const coldCalls = await getColdCallsSheet();
+    
+    if (idx >= coldCalls.length) {
+      return res.status(404).json({ error: 'Cold call not found' });
+    }
+    
+    const call = coldCalls[idx];
+    const updated = { ...call, ...updates };
+    
+    const updateRow = [
+      updated.company,
+      updated.contactNames,
+      updated.contactType,
+      updated.dateCalled,
+      updated.notes,
+      updated.followupDate,
+      updated.status,
+      updated.outcome,
+      updated.createdAt
+    ];
+    
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: CLIENTS_SHEET_ID,
+      range: `${COLD_CALLS_TAB}!A${idx + 2}:I${idx + 2}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [updateRow]
+      }
+    });
+    
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('PATCH /api/cold-calls/:id error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 app.get('/', (req, res) => {
   res.json({ status: 'API Server running' });
