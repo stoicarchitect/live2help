@@ -354,6 +354,16 @@ async function tryMarkApplicationSubmitted(companyName, role, candidateName) {
 
     const sheetRowNumber = rowIndex + 2;
     const existing = rows[rowIndex];
+
+    // Stage guard: only promote to Submitted from Applied (or blank).
+    // Anyone already moved on (interview requested, rejected, offer, etc.)
+    // is left exactly as they are, even if their pack is still in Drive.
+    const currentStage = (existing[19] || 'applied').trim().toLowerCase();
+    if (currentStage !== 'applied') {
+      console.log(`Skipped stage change for ${candidateName} (${role}): already at "${currentStage}"`);
+      return true; // matched, so no duplicate Dashboard row is created
+    }
+
     existing[17] = companyName;       // Company (column R)
     existing[19] = 'submitted';       // Status (column T)
     while (existing.length < 21) existing.push('');
