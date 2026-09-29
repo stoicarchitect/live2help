@@ -7077,6 +7077,7 @@ function renderTplPane(){
       <div class="tpl-actions">
         <button class="gold-btn" onclick="tplOutlook('web')">Open in Outlook</button>
         <button class="ghost-btn" onclick="tplOutlook('desktop')">Outlook desktop app</button>
+        <button class="ghost-btn" onclick="tplOutlook('eml')">Outlook draft file (.eml)</button>
         <button class="ghost-btn" onclick="tplCopy('all')">Copy all</button>
         <button class="ghost-btn" onclick="tplCopy('subject')">Copy subject</button>
         <button class="ghost-btn" onclick="tplCopy('body')">Copy body</button>
@@ -8551,12 +8552,13 @@ renderTplPane = function(){
       <div class="tpl-actions">
         <button class="gold-btn" onclick="tplOutlook('web')">Open in Outlook</button>
         <button class="ghost-btn" onclick="tplOutlook('desktop')">Outlook desktop app</button>
+        <button class="ghost-btn" onclick="tplOutlook('eml')">Outlook draft file (.eml)</button>
         <button class="ghost-btn" onclick="tplCopy('all')">Copy all</button>
         <button class="ghost-btn" onclick="tplCopy('subject')">Copy subject</button>
         <button class="ghost-btn" onclick="tplCopy('body')">Copy body</button>
         <button class="ghost-btn" onclick="tplSaveDetails(true)">Save details to records</button>
       </div>
-      <div class="note-line">Open in Outlook opens a new email in Outlook on the web. Outlook desktop app tries the installed app instead. Long messages are copied to your clipboard to paste in.</div>
+      <div class="note-line">Open in Outlook opens a new email in Outlook on the web. Outlook desktop app tries the installed app. Outlook draft file downloads a message that opens in Outlook already addressed and filled in. Long messages are copied to your clipboard to paste in.</div>
     </div>`;
   tplRenderFields(true);
   tplPreview();
@@ -8770,6 +8772,71 @@ async function saveSiteDetails(){
     if(document.getElementById('tplFields')) tplRenderFields(true), tplPreview();
   }catch(e){ showToast('Could not save: ' + e.message); }
 }
+
+</script>
+<script>
+/* ============================================================
+   Round 4: Outlook desktop draft, sidebar opens the pipeline
+   ============================================================ */
+
+/* Outlook desktop: use the documented "emails/new" address for the new Outlook app.
+   The "compose" address only exists on Outlook mobile, which is why it said unknown host. */
+outlookDesktopMailUrl = function(to, subject, body){
+  return `ms-outlook://emails/new?to=${encO(to)}&subject=${encO(subject)}&body=${encO(body)}`;
+};
+
+function b64utf8(s){ return btoa(unescape(encodeURIComponent(s))); }
+
+function emlSubject(subject){
+  const s = String(subject || '');
+  if(/^[\x20-\x7e]*$/.test(s)) return s;
+  const chars = Array.from(s);
+  const words = [];
+  for(let i = 0; i < chars.length; i += 24) words.push('=?UTF-8?B?' + b64utf8(chars.slice(i, i + 24).join('')) + '?=');
+  return words.join('\r\n ');
+}
+
+/* A draft message file. Outlook opens it as a new email ready to send (X-Unsent) */
+function emlBuild(to, subject, body){
+  const text = String(body || '').replace(/\r?\n/g, '\r\n');
+  const b64 = (b64utf8(text).match(/.{1,76}/g) || []).join('\r\n');
+  return [
+    'X-Unsent: 1',
+    'To: ' + (to || ''),
+    'Subject: ' + emlSubject(subject),
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    b64,
+  ].join('\r\n');
+}
+
+function downloadEml(to, subject, body){
+  const name = 'Draft ' + String(subject || 'email').replace(/[^A-Za-z0-9 \-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) + '.eml';
+  downloadText(name, emlBuild(to, subject, body), 'message/rfc822');
+}
+
+(function(){
+  const _open = openMailInOutlook;
+  openMailInOutlook = async function(mode, to, subject, body){
+    if(mode === 'eml'){
+      downloadEml(to, subject, body);
+      showToast('Draft downloaded. Open the file and it opens in Outlook ready to send.');
+      return;
+    }
+    return _open(mode, to, subject, body);
+  };
+})();
+
+/* Choosing a role in the left-hand list always takes you to the pipeline */
+(function(){
+  const _sr = selectRole;
+  selectRole = function(company, role){
+    _sr(company, role);
+    switchTab('candidates');
+  };
+})();
 
 </script>
 
