@@ -166,6 +166,72 @@
   .card .cdays{font-size:11px;color:#999;margin-top:4px;}
   .card .csal{font-size:11px;color:var(--gold);margin-top:3px;}
 
+
+  /* ---- Candidate Pool ---- */
+  #candidatePoolView{display:none;flex:1;flex-direction:column;}
+  #candidatePoolView.visible{display:flex;}
+  #poolHeader{
+    padding:16px 24px 14px;display:flex;justify-content:space-between;align-items:center;
+    border-bottom:1px solid var(--border);gap:16px;
+  }
+  #poolHeader h2{font-size:18px;color:var(--dark);font-weight:normal;}
+  #poolHeader .pool-sub{font-size:12px;color:#999;margin-top:3px;}
+  #poolSyncBtn{
+    padding:9px 18px;background:var(--gold);color:var(--white);border:none;
+    border-radius:2px;font-size:13.5px;cursor:pointer;font-family:inherit;font-weight:600;white-space:nowrap;
+  }
+  #poolSyncBtn:hover{background:#b8963f;}
+  #poolSyncBtn:disabled{opacity:.6;cursor:default;}
+  .pool-filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+  .pool-filters input,.pool-filters select{
+    padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:13px;
+    font-family:inherit;background:#fff;color:var(--grey);
+  }
+  .pool-filters input{flex:1;min-width:220px;}
+  .pool-table-wrap{background:var(--white);border:1px solid var(--border);border-radius:2px;overflow-x:auto;}
+  table.pool-table{width:100%;border-collapse:collapse;font-size:13px;min-width:900px;}
+  table.pool-table th{
+    text-align:left;padding:11px 14px;background:var(--lightbg);font-weight:500;font-size:12px;
+    color:var(--dark);border-bottom:1px solid var(--border);white-space:nowrap;
+  }
+  table.pool-table td{padding:11px 14px;border-bottom:1px solid var(--border);color:var(--grey);vertical-align:middle;}
+  table.pool-table tbody tr{cursor:pointer;}
+  table.pool-table tbody tr:hover{background:var(--lightbg);}
+  table.pool-table td.pool-name{color:var(--dark);font-weight:500;}
+  .pool-empty{text-align:center;color:#999;padding:32px 14px !important;cursor:default;}
+  .pool-muted{color:#999;font-size:11.5px;}
+  .pool-tag{display:inline-block;padding:3px 8px;border-radius:2px;font-size:11px;background:var(--lightbg);color:var(--dark);white-space:nowrap;}
+  .pool-tag.ok{background:#E6F2E9;color:#2D6A3E;}
+  .pool-tag.warn{background:#FBF1D9;color:#8a6a12;}
+  .pool-tag.rej{background:#F7E3E1;color:#9B2C22;}
+  .pool-actions{display:flex;gap:6px;justify-content:flex-end;white-space:nowrap;}
+  .pool-actions button,.pool-cv-buttons button{
+    padding:5px 10px;font-size:11.5px;border:1px solid var(--border);background:var(--white);
+    color:var(--grey);cursor:pointer;border-radius:2px;font-family:inherit;
+  }
+  .pool-actions button:hover:not(:disabled),.pool-cv-buttons button:hover:not(:disabled){background:var(--lightbg);}
+  .pool-actions button:disabled,.pool-cv-buttons button:disabled{opacity:.4;cursor:default;}
+  .pool-actions button.gold,.pool-cv-buttons button.gold{background:var(--gold);border-color:var(--gold);color:var(--white);font-weight:600;}
+  .tab-badge{
+    display:inline-block;min-width:16px;padding:1px 6px;margin-left:6px;border-radius:9px;
+    background:var(--gold);color:var(--dark);font-size:10.5px;font-weight:600;line-height:1.5;
+  }
+  .tab-badge:empty{display:none;}
+  .modal.wide{max-width:640px;}
+  .pool-cv-box{background:var(--lightbg);border-left:3px solid var(--gold);padding:12px 14px;margin:6px 0 16px;}
+  .pool-cv-box .pool-cv-status{font-size:13px;color:var(--grey);margin-bottom:10px;}
+  .pool-cv-buttons{display:flex;gap:8px;flex-wrap:wrap;}
+  .pool-section-label{font-size:11px;color:#999;letter-spacing:0.5px;margin:18px 0 8px;font-weight:600;text-transform:uppercase;}
+  .pool-answers{border:1px solid var(--border);border-radius:2px;}
+  .pool-answer{padding:9px 12px;border-bottom:1px solid var(--border);font-size:13px;}
+  .pool-answer:last-child{border-bottom:none;}
+  .pool-answer .q{font-size:11px;color:#999;margin-bottom:2px;}
+  .pool-answer .a{color:var(--grey);white-space:pre-wrap;}
+  .pool-reminder-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);}
+  .pool-reminder-row:last-of-type{border-bottom:none;}
+  .pool-reminder-row .who{font-size:13.5px;color:var(--dark);}
+  .pool-reminder-row .what{font-size:12px;color:#999;}
+
   /* ---- Modal ---- */
   .modal-overlay{
     position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;
@@ -627,6 +693,7 @@
   <div id="main">
     <div id="tabs">
       <button class="tab-btn active" data-tab="candidates" onclick="switchTab('candidates')">Candidates</button>
+      <button class="tab-btn" data-tab="candidatePool" onclick="switchTab('candidatePool')">Candidate Pool<span class="tab-badge" id="poolMissingBadge"></span></button>
       <button class="tab-btn" data-tab="leadClients" onclick="switchTab('leadClients')">Lead Clients</button>
       <button class="tab-btn" data-tab="clients" onclick="switchTab('clients')">Clients</button>
       <button class="tab-btn" data-tab="invoices" onclick="switchTab('invoices')">Invoices</button>
@@ -902,6 +969,40 @@
       </div>
     </div>
 
+    <div id="candidatePoolView">
+      <div id="poolHeader">
+        <div>
+          <h2>Candidate Pool</h2>
+          <div class="pool-sub" id="poolSummary">Every candidate who has applied or been submitted.</div>
+        </div>
+        <button id="poolSyncBtn" onclick="runPoolBackfill(true)">Sync pool and CVs</button>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:18px 24px;">
+        <div class="pool-filters">
+          <input id="poolSearch" placeholder="Search name, role or company" oninput="renderPool()">
+          <select id="poolCompanyFilter" onchange="renderPool()"><option value="">All companies</option></select>
+          <select id="poolRoleFilter" onchange="renderPool()"><option value="">All roles</option></select>
+          <select id="poolStageFilter" onchange="renderPool()"><option value="">Any stage reached</option></select>
+          <select id="poolCvFilter" onchange="renderPool()">
+            <option value="">CV: all</option>
+            <option value="missing">CV missing</option>
+            <option value="onfile">CV on file</option>
+          </select>
+        </div>
+        <div class="pool-table-wrap">
+          <table class="pool-table">
+            <thead>
+              <tr>
+                <th>Candidate</th><th>Role</th><th>Company</th><th>Furthest stage</th>
+                <th>Current status</th><th>Added</th><th>CV</th><th style="text-align:right;">CV actions</th>
+              </tr>
+            </thead>
+            <tbody id="poolBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <div id="coldCallTrackerView">
       <div id="coldCallHeader">
         <h2>Cold Call Tracker</h2>
@@ -965,6 +1066,24 @@
           <button class="save" onclick="submitGenerateInvoice()">Generate &amp; Download</button>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="poolDialogOverlay">
+  <div class="modal wide">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="closePoolDialog()">&times;</button>
+      <div id="poolDialogBody"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="cvReminderOverlay">
+  <div class="modal">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="closeModal('cvReminderOverlay')">&times;</button>
+      <div id="cvReminderBody"></div>
     </div>
   </div>
 </div>
@@ -1590,11 +1709,6 @@ async function saveNotesOnly(){
   renderBoard();
   closeModal('candModalOverlay');
   await saveCandidate(c);
-
-  if(newStage === 'offer'){
-    openCandidateModal(c.id);
-    showToast('Enter the agreed salary - needed for the invoice reminder');
-  }
 }
 
 async function advanceStage(newStage){
@@ -1619,6 +1733,10 @@ async function advanceStage(newStage){
   renderBoard();
   closeModal('candModalOverlay');
   await saveCandidate(c);
+
+  if(newStage === 'submitted'){
+    remindCvIfMissing([c]);
+  }
 
   if(newStage === 'offer'){
     openCandidateModal(c.id);
@@ -1681,6 +1799,7 @@ async function saveNewCandidate(){
   renderBoard();
   showToast('Candidate added');
   await saveCandidate(c);
+  remindCvIfMissing([c]);
 }
 
 function closeModal(id){
@@ -1747,6 +1866,9 @@ async function syncSubmissions(){
       await new Promise(r => setTimeout(r, 500));
       await loadCandidates();
       updateSyncTime();
+      if(data.newlySubmitted && data.newlySubmitted.length && currentUserRole){
+        remindCvIfMissing(data.newlySubmitted.map(n => ({name:n.name, role:n.role, company:n.company, stage:'submitted'})));
+      }
     } else {
       console.error('Sync failed - status', res.status);
     }
@@ -1930,6 +2052,7 @@ async function uploadCV(){
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({
             company: currentCompany,
+            role: currentRole,
             name: c.name,
             fileData: base64,
             fileName: file.name
@@ -2009,6 +2132,8 @@ function switchTab(tab){
   document.getElementById('tasksView').style.display = tab === 'tasks' ? 'flex' : 'none';
   document.getElementById('kpiReportingView').classList.toggle('visible', tab === 'kpi');
   document.getElementById('coldCallTrackerView').classList.toggle('visible', tab === 'coldCalls');
+  document.getElementById('candidatePoolView').classList.toggle('visible', tab === 'candidatePool');
+  if(tab === 'candidatePool') loadCandidatePool();
   if(tab === 'leadClients') loadLeadClients();
   if(tab === 'clients') loadClients();
   if(tab === 'invoices') loadInvoices();
@@ -3675,6 +3800,436 @@ setSplashLogo();
 initializeClientModals();
 loadClients();
 startAutoSync();
+</script>
+<script>
+/* ============================================================
+   Candidate Pool tab - permanent database of every applicant
+   and submitted candidate, with CV upload / view / download,
+   furthest stage reached, notes and a full detail dialog.
+   ============================================================ */
+
+let POOL = [];
+let poolLoaded = false;
+let poolBackfillRan = false;
+let openPoolId = null;
+let cvReminderIds = [];
+
+function esc(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function poolStageLabel(key){
+  const s = STAGES.find(x => x.key === key);
+  if(s) return s.label;
+  return String(key || '').replace(/_/g,' ').replace(/\b\w/g, m => m.toUpperCase());
+}
+
+function poolStageRank(key){
+  const order = STAGES.map(s => s.key).filter(k => k !== 'rejected');
+  return order.indexOf(key);
+}
+
+function poolFmtDate(d){
+  if(!d) return '';
+  const dt = new Date(d);
+  return isNaN(dt.getTime()) ? d : dt.toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'});
+}
+
+function poolNeedsCv(p){
+  return !p.hasCv && poolStageRank(p.furthestStage) >= 1;
+}
+
+function updatePoolBadge(){
+  const el = document.getElementById('poolMissingBadge');
+  if(!el || !poolLoaded) return;
+  const n = POOL.filter(poolNeedsCv).length;
+  el.textContent = n > 0 ? String(n) : '';
+  el.title = n > 0 ? n + ' submitted candidate' + (n === 1 ? '' : 's') + ' without a CV' : '';
+}
+
+async function loadCandidatePool(quiet){
+  const body = document.getElementById('poolBody');
+  if(!quiet && !poolLoaded){
+    body.innerHTML = '<tr><td colspan="8" class="pool-empty">Loading candidate pool...</td></tr>';
+  }
+  try{
+    const res = await fetch(`${API_BASE}/api/candidate-pool`);
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    const json = await res.json();
+    POOL = json.data || [];
+    poolLoaded = true;
+    renderPool();
+    updatePoolBadge();
+  }catch(e){
+    if(!quiet){
+      body.innerHTML = `<tr><td colspan="8" class="pool-empty">Could not load the candidate pool (${esc(e.message)}).</td></tr>`;
+      showToast('Could not load the candidate pool');
+    }
+    return;
+  }
+  if(!quiet && !poolBackfillRan){
+    poolBackfillRan = true;
+    runPoolBackfill(false);
+  }
+}
+
+async function runPoolBackfill(manual){
+  const btn = document.getElementById('poolSyncBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Syncing...'; }
+  try{
+    const res = await fetch(`${API_BASE}/api/candidate-pool/backfill`, {method:'POST'});
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    const json = await res.json();
+    await loadCandidatePool(true);
+    if(manual){
+      const missing = (json.missingCv || []).length;
+      showToast(`Pool synced: ${json.added} added, ${json.cvLinked} CV${json.cvLinked === 1 ? '' : 's'} linked, ${missing} submitted without a CV`);
+    }
+  }catch(e){
+    if(manual) showToast('Could not sync the pool: ' + e.message);
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = 'Sync pool and CVs'; }
+  }
+}
+
+function poolFilteredList(){
+  const q = (document.getElementById('poolSearch').value || '').trim().toLowerCase();
+  const co = document.getElementById('poolCompanyFilter').value;
+  const ro = document.getElementById('poolRoleFilter').value;
+  const st = document.getElementById('poolStageFilter').value;
+  const cv = document.getElementById('poolCvFilter').value;
+  return POOL.filter(p => {
+    if(q && !(`${p.name} ${p.role} ${p.company}`.toLowerCase().includes(q))) return false;
+    if(co && p.company !== co) return false;
+    if(ro && p.role !== ro) return false;
+    if(st && p.furthestStage !== st) return false;
+    if(cv === 'missing' && p.hasCv) return false;
+    if(cv === 'onfile' && !p.hasCv) return false;
+    return true;
+  }).sort((a, b) => String(b.dateAdded).localeCompare(String(a.dateAdded)) || a.name.localeCompare(b.name));
+}
+
+function rebuildPoolFilterOptions(){
+  const fill = (id, values, allLabel) => {
+    const sel = document.getElementById(id);
+    const current = sel.value;
+    sel.innerHTML = `<option value="">${allLabel}</option>` +
+      values.map(v => `<option value="${esc(v.value)}">${esc(v.label)}</option>`).join('');
+    if(values.some(v => v.value === current)) sel.value = current;
+  };
+  const companies = [...new Set(POOL.map(p => p.company).filter(Boolean))].sort();
+  const roles = [...new Set(POOL.map(p => p.role).filter(Boolean))].sort();
+  fill('poolCompanyFilter', companies.map(c => ({value:c, label:c})), 'All companies');
+  fill('poolRoleFilter', roles.map(r => ({value:r, label:r})), 'All roles');
+  fill('poolStageFilter', STAGES.filter(s => s.key !== 'rejected').map(s => ({value:s.key, label:'Reached: ' + s.label})), 'Any stage reached');
+}
+
+function renderPool(){
+  rebuildPoolFilterOptions();
+  const list = poolFilteredList();
+  const body = document.getElementById('poolBody');
+  const summary = document.getElementById('poolSummary');
+  const missing = POOL.filter(poolNeedsCv).length;
+  summary.textContent = `${POOL.length} candidate${POOL.length === 1 ? '' : 's'} in the pool` +
+    (missing ? ` - ${missing} submitted without a CV` : '');
+
+  if(!list.length){
+    body.innerHTML = `<tr><td colspan="8" class="pool-empty">${POOL.length ? 'No candidates match these filters.' : 'No candidates in the pool yet.'}</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = list.map(p => {
+    const needs = poolNeedsCv(p);
+    const cvTag = p.hasCv
+      ? '<span class="pool-tag ok">On file</span>'
+      : (needs ? '<span class="pool-tag warn">Missing</span>' : '<span class="pool-tag">None yet</span>');
+    const cur = p.currentStage === 'rejected' || String(p.currentStage).startsWith('rejected')
+      ? `<span class="pool-tag rej">${esc(poolStageLabel(p.currentStage))}</span>`
+      : `<span class="pool-tag">${esc(poolStageLabel(p.currentStage))}</span>`;
+    return `
+      <tr onclick="openPoolDialog('${esc(p.id)}')">
+        <td class="pool-name">${esc(p.name)}${p.inPipeline ? '' : '<div class="pool-muted">Removed from pipeline</div>'}</td>
+        <td>${esc(p.role)}</td>
+        <td>${p.company ? esc(p.company) : '<span class="pool-muted">Not yet assigned</span>'}</td>
+        <td>${esc(poolStageLabel(p.furthestStage))}</td>
+        <td>${cur}</td>
+        <td>${esc(poolFmtDate(p.dateAdded))}</td>
+        <td>${cvTag}</td>
+        <td>
+          <div class="pool-actions">
+            <button class="${p.hasCv ? '' : 'gold'}" onclick="event.stopPropagation();poolUploadCv('${esc(p.id)}')">${p.hasCv ? 'Replace' : 'Upload'}</button>
+            <button ${p.hasCv ? '' : 'disabled'} onclick="event.stopPropagation();poolViewCv('${esc(p.id)}')">View</button>
+            <button ${p.hasCv ? '' : 'disabled'} onclick="event.stopPropagation();poolDownloadCv('${esc(p.id)}')">Download</button>
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+/* ---------- CV actions ---------- */
+
+function applyPoolEntry(entry){
+  if(!entry || !entry.id) return;
+  const i = POOL.findIndex(p => p.id === entry.id);
+  if(i >= 0) POOL[i] = entry; else POOL.push(entry);
+  renderPool();
+  updatePoolBadge();
+  if(openPoolId === entry.id) renderPoolDialog();
+  if(document.getElementById('cvReminderOverlay').classList.contains('visible')) renderCvReminder();
+}
+
+function poolUploadCv(id){
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.pdf,.doc,.docx';
+  input.onchange = e => {
+    const file = e.target.files[0];
+    if(!file) return;
+    if(file.size > 10 * 1024 * 1024){
+      showToast('That file is over 10 MB - please use a smaller CV');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async ev => {
+      try{
+        showToast('Uploading CV...');
+        const base64 = ev.target.result.split(',')[1];
+        const res = await fetch(`${API_BASE}/api/candidate-pool/${encodeURIComponent(id)}/cv`, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({fileName: file.name, fileData: base64})
+        });
+        if(!res.ok){
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || ('Server returned ' + res.status));
+        }
+        const json = await res.json();
+        applyPoolEntry(json.data);
+        showToast('CV uploaded');
+      }catch(err){
+        showToast('Could not upload CV: ' + err.message);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+}
+
+function poolViewCv(id){
+  window.open(`${API_BASE}/api/candidate-pool/${encodeURIComponent(id)}/cv/file?mode=view`, '_blank');
+}
+
+function poolDownloadCv(id){
+  window.open(`${API_BASE}/api/candidate-pool/${encodeURIComponent(id)}/cv/file?mode=download`, '_blank');
+}
+
+/* ---------- Detail dialog ---------- */
+
+function openPoolDialog(id){
+  openPoolId = id;
+  renderPoolDialog();
+  document.getElementById('poolDialogOverlay').classList.add('visible');
+  loadPoolScreening(id);
+}
+
+function closePoolDialog(){
+  openPoolId = null;
+  closeModal('poolDialogOverlay');
+}
+
+function renderPoolDialog(){
+  const p = POOL.find(x => x.id === openPoolId);
+  if(!p) return;
+  const needs = poolNeedsCv(p);
+  const html = `
+    <div class="modal-head">
+      <div class="avatar">${esc(initials(p.name))}</div>
+      <div>
+        <h2>${esc(p.name)}</h2>
+        <div class="role-sub">${esc(p.role)}${p.company ? ' &middot; ' + esc(p.company) : ''}</div>
+      </div>
+    </div>
+    <div class="contact-row">
+      ${p.email ? `<a href="mailto:${esc(p.email)}"><i>&#9993;</i> ${esc(p.email)}</a>` : '<span class="none">No email on file</span>'}
+      ${p.phone ? `<a href="tel:${esc(p.phone)}"><i>&#9742;</i> ${esc(p.phone)}</a>` : '<span class="none">No number on file</span>'}
+    </div>
+    <div class="two-col">
+      <div class="field-row"><label>Furthest stage reached</label><div class="val">${esc(poolStageLabel(p.furthestStage))}</div></div>
+      <div class="field-row"><label>Current status</label><div class="val">${esc(poolStageLabel(p.currentStage))}</div></div>
+      <div class="field-row"><label>Date added</label><div class="val">${esc(poolFmtDate(p.dateAdded))}</div></div>
+      <div class="field-row"><label>In live pipeline</label><div class="val">${p.inPipeline ? 'Yes' : 'No - removed from pipeline'}</div></div>
+    </div>
+
+    <div class="pool-section-label">CV</div>
+    <div class="pool-cv-box">
+      <div class="pool-cv-status">${p.hasCv ? '<strong>On file:</strong> ' + esc(p.cvFileName) : (needs ? 'No CV uploaded - this candidate has been submitted, please upload one.' : 'No CV uploaded yet.')}</div>
+      <div class="pool-cv-buttons">
+        <button class="${p.hasCv ? '' : 'gold'}" onclick="poolUploadCv('${esc(p.id)}')">${p.hasCv ? 'Replace CV' : 'Upload CV'}</button>
+        <button ${p.hasCv ? '' : 'disabled'} onclick="poolViewCv('${esc(p.id)}')">View CV</button>
+        <button ${p.hasCv ? '' : 'disabled'} onclick="poolDownloadCv('${esc(p.id)}')">Download CV</button>
+      </div>
+    </div>
+
+    <div class="pool-section-label">Notes</div>
+    <div class="field-row">
+      <textarea id="poolNotesInput" placeholder="Add notes, for example why this candidate was not moved forward">${esc(p.notes)}</textarea>
+    </div>
+    <div class="stage-buttons" style="margin-top:0;">
+      <button class="primary" onclick="savePoolNotes()">Save notes</button>
+    </div>
+
+    <div class="pool-section-label">Screening form answers</div>
+    <div id="poolScreening" class="pool-muted">Loading...</div>
+  `;
+  document.getElementById('poolDialogBody').innerHTML = html;
+  if(window._poolScreeningHtml && window._poolScreeningFor === p.id){
+    document.getElementById('poolScreening').innerHTML = window._poolScreeningHtml;
+  }
+}
+
+async function loadPoolScreening(id){
+  const p = POOL.find(x => x.id === id);
+  if(!p) return;
+  window._poolScreeningFor = id;
+  window._poolScreeningHtml = '';
+  try{
+    const res = await fetch(`${API_BASE}/api/candidates/${encodeURIComponent(id)}/screening-answers?name=${encodeURIComponent(p.name)}&role=${encodeURIComponent(p.role)}`);
+    let html;
+    if(!res.ok){
+      html = '<span class="pool-muted">No screening form answers on file for this candidate.</span>';
+    }else{
+      const json = await res.json();
+      const rows = Object.values(json.data || {}).filter(a => a.value && String(a.value).trim());
+      html = rows.length
+        ? `<div class="pool-answers">${rows.map(a => `<div class="pool-answer"><div class="q">${esc(a.label)}</div><div class="a">${esc(a.value)}</div></div>`).join('')}</div>`
+        : '<span class="pool-muted">No screening form answers on file for this candidate.</span>';
+    }
+    window._poolScreeningHtml = html;
+    if(openPoolId === id){
+      const el = document.getElementById('poolScreening');
+      if(el) el.innerHTML = html;
+    }
+  }catch(e){
+    const el = document.getElementById('poolScreening');
+    if(el && openPoolId === id) el.innerHTML = '<span class="pool-muted">Could not load screening answers.</span>';
+  }
+}
+
+function findLivePipelineCandidate(p){
+  const n = p.name.trim().toLowerCase();
+  const r = p.role.trim().toLowerCase();
+  for(const co of Object.keys(DATA)){
+    for(const role of Object.keys(DATA[co])){
+      for(const c of DATA[co][role]){
+        if((c.name || '').trim().toLowerCase() === n && (c.role || role).trim().toLowerCase() === r) return c;
+      }
+    }
+  }
+  return null;
+}
+
+async function savePoolNotes(){
+  const p = POOL.find(x => x.id === openPoolId);
+  if(!p) return;
+  const notes = document.getElementById('poolNotesInput').value;
+  try{
+    // Keep the live pipeline record in step so the two never disagree
+    const live = findLivePipelineCandidate(p);
+    if(live){
+      live.notes = notes;
+      await saveCandidate(live);
+      renderBoard();
+    }
+    const res = await fetch(`${API_BASE}/api/candidate-pool/${encodeURIComponent(p.id)}/notes`, {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({notes})
+    });
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    const json = await res.json();
+    p.notes = notes;
+    if(json.data) applyPoolEntry(Object.assign({}, json.data));
+    showToast('Notes saved');
+  }catch(e){
+    showToast('Could not save notes: ' + e.message);
+  }
+}
+
+/* ---------- CV reminders ---------- */
+
+async function remindCvIfMissing(cands){
+  if(!currentUserRole) return;
+  const missing = [];
+  for(const c of cands){
+    try{
+      const res = await fetch(`${API_BASE}/api/candidate-pool/ensure`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          name: c.name, role: c.role, company: c.company || '',
+          email: c.email || '', phone: c.phone || '',
+          stage: c.stage || 'submitted', notes: c.notes || ''
+        })
+      });
+      if(!res.ok) continue;
+      const json = await res.json();
+      const entry = json.data;
+      if(!entry) continue;
+      const i = POOL.findIndex(p => p.id === entry.id);
+      if(i >= 0) POOL[i] = entry; else POOL.push(entry);
+      if(!entry.hasCv) missing.push(entry.id);
+    }catch(e){ /* reminder is best effort */ }
+  }
+  if(poolLoaded){ renderPool(); updatePoolBadge(); }
+  if(missing.length){
+    cvReminderIds = missing;
+    renderCvReminder();
+    document.getElementById('cvReminderOverlay').classList.add('visible');
+  }
+}
+
+function renderCvReminder(){
+  const stillMissing = cvReminderIds
+    .map(id => POOL.find(p => p.id === id))
+    .filter(p => p && !p.hasCv);
+  const body = document.getElementById('cvReminderBody');
+  if(!stillMissing.length){
+    closeModal('cvReminderOverlay');
+    return;
+  }
+  body.innerHTML = `
+    <h2>Upload CV reminder</h2>
+    <div class="prompt-box" style="margin-top:12px;">
+      ${stillMissing.length === 1 ? 'This candidate has been' : 'These candidates have been'} moved to Submitted without a CV on file. Upload ${stillMissing.length === 1 ? 'it' : 'them'} now so the pool is complete.
+    </div>
+    ${stillMissing.map(p => `
+      <div class="pool-reminder-row">
+        <div>
+          <div class="who">${esc(p.name)}</div>
+          <div class="what">${esc(p.role)}${p.company ? ' &middot; ' + esc(p.company) : ''}</div>
+        </div>
+        <button class="pool-actions-btn" style="padding:7px 14px;background:var(--gold);border:none;color:var(--white);border-radius:2px;cursor:pointer;font-size:12.5px;font-weight:600;font-family:inherit;" onclick="poolUploadCv('${esc(p.id)}')">Upload CV</button>
+      </div>`).join('')}
+    <div class="stage-buttons">
+      <button class="primary" onclick="closeModal('cvReminderOverlay');switchTab('candidatePool')">Open Candidate Pool</button>
+      <button onclick="closeModal('cvReminderOverlay')">Remind me later</button>
+    </div>`;
+}
+
+/* Load the pool quietly after the first pipeline load so the tab badge is accurate */
+(function(){
+  const originalLoad = loadCandidates;
+  loadCandidates = async function(){
+    await originalLoad();
+    if(!window._poolQuietDone && currentUserRole){
+      window._poolQuietDone = true;
+      loadCandidatePool(true);
+    }
+  };
+})();
+
 </script>
 
 </body>
