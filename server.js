@@ -728,7 +728,7 @@ const LEAD_CLIENT_RANGE = `${LEAD_CLIENT_TAB}!A2:J`;
 const INVOICES_TAB = 'Invoices';
 const INVOICES_RANGE = `${INVOICES_TAB}!A2:K`;
 const KPI_TARGETS_TAB = 'KPI Targets';
-const KPI_TARGETS_RANGE = `${KPI_TARGETS_TAB}!A2:D`;
+const KPI_TARGETS_RANGE = `${KPI_TARGETS_TAB}!A2:E`;
 
 function rowToClient(row) {
   return {
@@ -1359,6 +1359,7 @@ function rowToKPITarget(row) {
     targetRoles: parseInt(row[1]) || 0,
     targetNewClients: parseInt(row[2]) || 0,
     targetAvgFillSpeedDays: parseInt(row[3]) || 0,
+    owner: String(row[4] || '').toLowerCase(),
   };
 }
 
@@ -1368,6 +1369,7 @@ function kpiTargetToRow(kpi) {
     kpi.targetRoles || 0,
     kpi.targetNewClients || 0,
     kpi.targetAvgFillSpeedDays || 0,
+    kpi.owner || '',
   ];
 }
 
@@ -1380,45 +1382,60 @@ async function readKPITargetRows() {
   return result.data.values || [];
 }
 
-// GET all KPI targets
+function normOwner(o) {
+  const v = String(o || '').trim().toLowerCase();
+  return v === 'team' || v === 'all' ? '' : v;
+}
+
+// GET all KPI targets (owner is blank for team-wide targets)
 app.get('/api/kpi-targets', async (req, res) => {
   try {
     const rows = await readKPITargetRows();
-    const targets = rows.map(r => rowToKPITarget(r));
-    res.json({ data: targets });
+    res.json({ data: rows.filter(r => r && r[0]).map(r => rowToKPITarget(r)) });
   } catch (e) {
     console.error('GET /api/kpi-targets error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
 
-// POST add/update KPI target
-app.post('/api/kpi-targets', async (req, res) => {
+// POST add or update a KPI target for a quarter and a person (or the whole team)
+app.post('/api/kpi-targets', requireAdmin, async (req, res) => {
   try {
     const { quarter, targetRoles, targetNewClients, targetAvgFillSpeedDays } = req.body;
-    
-    if (!quarter) {
-      return res.status(400).json({ error: 'quarter is required' });
-    }
-
+    if (!quarter) return res.status(400).json({ error: 'quarter is required' });
+    const owner = normOwner(req.body.owner);
     const sheets = getSheetsClient();
     const rows = await readKPITargetRows();
-    
+
     const newKPI = {
       quarter,
       targetRoles: parseInt(targetRoles) || 0,
       targetNewClients: parseInt(targetNewClients) || 0,
       targetAvgFillSpeedDays: parseInt(targetAvgFillSpeedDays) || 0,
+      owner,
     };
 
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: CLIENT_SHEET_ID,
-      range: KPI_TARGETS_RANGE,
-      valueInputOption: 'RAW',
-      insertDataOption: 'INSERT_ROWS',
-      requestBody: { values: [kpiTargetToRow(newKPI)] },
-    });
+    const head = await sheets.spreadsheets.values.get({ spreadsheetId: CLIENT_SHEET_ID, range: `${KPI_TARGETS_TAB}!E1` });
+    if (!(head.data.values && head.data.values[0] && head.data.values[0][0])) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: CLIENT_SHEET_ID, range: `${KPI_TARGETS_TAB}!E1`, valueInputOption: 'RAW', requestBody: { values: [['Owner']] },
+      });
+    }
 
+    const idx = rows.findIndex(r => r && r[0] === quarter && normOwner(r[4]) === owner);
+    if (idx >= 0) {
+      const n = idx + 2;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: CLIENT_SHEET_ID, range: `${KPI_TARGETS_TAB}!A${n}:E${n}`, valueInputOption: 'RAW',
+        requestBody: { values: [kpiTargetToRow(newKPI)] },
+      });
+    } else {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: CLIENT_SHEET_ID, range: KPI_TARGETS_RANGE, valueInputOption: 'RAW',
+        insertDataOption: 'INSERT_ROWS', requestBody: { values: [kpiTargetToRow(newKPI)] },
+      });
+    }
+    auditLog(actorOf(req), idx >= 0 ? 'updated' : 'created', 'kpi_target', `${quarter} - ${owner || 'team'}`, `roles ${newKPI.targetRoles}, clients ${newKPI.targetNewClients}, fill ${newKPI.targetAvgFillSpeedDays}`);
     res.json({ ok: true, kpiTarget: newKPI });
   } catch (e) {
     console.error('POST /api/kpi-targets error:', e.message);
@@ -1426,48 +1443,26 @@ app.post('/api/kpi-targets', async (req, res) => {
   }
 });
 
-// DELETE KPI target by quarter
-app.delete('/api/kpi-targets/:quarter', async (req, res) => {
+// DELETE a KPI target by quarter and owner (?owner= blank for team)
+app.delete('/api/kpi-targets/:quarter', requireAdmin, async (req, res) => {
   try {
-    const { quarter } = req.params;
-    
-    if (!quarter) {
-      return res.status(400).json({ error: 'quarter is required' });
-    }
-
+    const quarter = decodeURIComponent(req.params.quarter || '');
+    if (!quarter) return res.status(400).json({ error: 'quarter is required' });
+    const owner = normOwner(req.query.owner);
     const sheets = getSheetsClient();
     const rows = await readKPITargetRows();
-    
-    // Find the row index for this quarter
-    let rowIndexToDelete = -1;
-    for (let i = 0; i < rows.length; i++) {
-      if (rows[i][0] === decodeURIComponent(quarter)) {
-        rowIndexToDelete = i;
-        break;
-      }
-    }
+    const idx = rows.findIndex(r => r && r[0] === quarter && normOwner(r[4]) === owner);
+    if (idx === -1) return res.status(404).json({ error: 'KPI target not found' });
 
-    if (rowIndexToDelete === -1) {
-      return res.status(404).json({ error: 'KPI target not found' });
-    }
-
-    // Delete the row (Google Sheets uses 1-based indexing, and we start from row 2)
+    const ss = await sheets.spreadsheets.get({ spreadsheetId: CLIENT_SHEET_ID, fields: 'sheets.properties(sheetId,title)' });
+    const tab = (ss.data.sheets || []).find(t => t.properties.title === KPI_TARGETS_TAB);
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId: CLIENT_SHEET_ID,
-      requestBody: {
-        requests: [{
-          deleteDimension: {
-            range: {
-              sheetId: 0, // Assuming KPI Targets sheet is the first sheet
-              dimension: 'ROWS',
-              startIndex: rowIndexToDelete + 1, // +1 because data starts at row 2
-              endIndex: rowIndexToDelete + 2
-            }
-          }
-        }]
-      }
+      requestBody: { requests: [{ deleteDimension: { range: {
+        sheetId: tab ? tab.properties.sheetId : 0, dimension: 'ROWS', startIndex: idx + 1, endIndex: idx + 2,
+      } } }] },
     });
-
+    auditLog(actorOf(req), 'deleted', 'kpi_target', `${quarter} - ${owner || 'team'}`, '');
     res.json({ ok: true, message: 'KPI target deleted' });
   } catch (e) {
     console.error('DELETE /api/kpi-targets/:quarter error:', e.message);
@@ -2509,6 +2504,7 @@ app.delete('/api/cold-calls/:id', async (req, res) => {
    - CVs live in Drive; the row stores the file id, name and link.
    ====================================================================== */
 
+const RETENTION_MONTHS = parseInt(process.env.RETENTION_MONTHS, 10) || 12;
 const POOL_TAB = 'Candidate Pool';
 const POOL_HEADER = [
   'id', 'name', 'email', 'phone', 'company', 'role', 'furthest_stage', 'current_stage',
@@ -2548,6 +2544,15 @@ function poolIdFor(name, role) {
   return clean.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
+function reviewDueFor(r) {
+  const added = String(r[8] || '').slice(0, 10);
+  const touched = String(r[9] || '').slice(0, 10);
+  const lastActive = touched > added ? touched : added;
+  const auto = lastActive ? addMonthsISO(lastActive, RETENTION_MONTHS) : '';
+  const manual = String(r[19] || '');
+  return manual > auto ? manual : auto;
+}
+
 function padPoolRow(r) {
   const a = (r || []).slice(0, POOL_WIDTH).map(v => (v == null ? '' : String(v)));
   while (a.length < POOL_WIDTH) a.push('');
@@ -2585,7 +2590,7 @@ function rowToPoolEntry(row) {
     consentDate: r[17],
     consentBasis: r[18],
     reviewDate: r[19],
-    reviewDue: r[19] || addMonthsISO(r[8], RETENTION_MONTHS),
+    reviewDue: reviewDueFor(r),
     erased: r[20],
   };
 }
@@ -2672,6 +2677,7 @@ function mergeLiveIntoPoolRow(existingRow, live, inPipeline, opts = {}) {
     row[8] = /^\d{4}-\d{2}-\d{2}/.test(live.dateAdded || '') ? live.dateAdded.slice(0, 10) : today;
     row[10] = live.notes || '';
     row[14] = inPipeline ? 'Yes' : 'No';
+    if (opts.autoConsent && live.source === 'application') { row[17] = row[8]; row[18] = 'Application form'; }
   } else if (!opts.createOnly) {
     if (liveRank > stageRank(row[6])) row[6] = stage;
     row[7] = stage;
@@ -2726,6 +2732,7 @@ async function doReconcile() {
   const poolRows = await readPoolRows();
   const live = await collectLiveCandidates();
   const now = new Date().toISOString();
+  const autoConsent = await formConsentOn();
 
   const byId = new Map();
   poolRows.forEach((r, i) => { if (r && r[0]) byId.set(r[0], { row: r, index: i }); });
@@ -2740,7 +2747,7 @@ async function doReconcile() {
     const id = poolIdFor(l.name, l.role);
     seen.add(id);
     const ex = byId.get(id);
-    const merged = mergeLiveIntoPoolRow(ex ? ex.row : null, l, true);
+    const merged = mergeLiveIntoPoolRow(ex ? ex.row : null, l, true, { autoConsent });
     if (!ex) {
       merged[9] = now;
       appends.push(merged);
@@ -2759,7 +2766,6 @@ async function doReconcile() {
     if ((ex.row[14] || '') === 'No' || (ex.row[20] || '')) continue;
     const r = padPoolRow(ex.row);
     r[14] = 'No';
-    r[9] = now;
     const rowNum = ex.index + 2;
     updates.push({ range: `'${POOL_TAB}'!A${rowNum}:${POOL_LAST_COL}${rowNum}`, values: [r] });
     updated++;
@@ -3369,7 +3375,7 @@ const DEFAULT_TEMPLATES = [
     "name": "Offer letter cover email",
     "category": "Candidate",
     "subject": "Your offer from {{company}} - {{role}}",
-    "body": "Dear {{first_name}},\n\nWe are delighted to offer you the position of {{role}} at {{company}}.\n\nYour formal offer letter is attached. Please review the key details confirmed below:\n\nStart Date: {{start_date}}\nAnnual Salary: {{salary}}\nReporting To: {{contact_name}}\n\nNEXT STEPS\nPlease sign and return the attached offer letter by [DATE]. Once we receive your signed acceptance, we will arrange the following:\n- Pre-start onboarding pack and site information\n- Confirmation of any compliance documentation needed (ID, references, proof of right to work)\n- First day briefing and induction overview\n\nIf you have any questions or need further information before your start date, please do not hesitate to reach out. I am here to help make this transition as smooth as possible for you.\n\nCongratulations again - we look forward to welcoming you to the team.\n\nKind regards,\n\n{{signature}}",
+    "body": "Dear {{first_name}},\n\nWe are delighted to offer you the position of {{role}} at {{company}}.\n\nYour formal offer letter is attached. Please review the key details confirmed below:\n\nStart Date: {{start_date}}\nAnnual Salary: {{salary}}\nReporting To: {{contact_name}}\n\nNEXT STEPS\nPlease sign and return the attached offer letter by {{offer_return_date}}. Once we receive your signed acceptance, we will arrange the following:\n- Pre-start onboarding pack and site information\n- Confirmation of any compliance documentation needed (ID, references, proof of right to work)\n- First day briefing and induction overview\n\nIf you have any questions or need further information before your start date, please do not hesitate to reach out. I am here to help make this transition as smooth as possible for you.\n\nCongratulations again - we look forward to welcoming you to the team.\n\nKind regards,\n\n{{signature}}",
     "updated_by": "system"
   },
   {
@@ -3393,7 +3399,7 @@ const DEFAULT_TEMPLATES = [
     "name": "Candidate start date reminder",
     "category": "Candidate",
     "subject": "Your first day at {{company}} - {{start_date}}",
-    "body": "Dear {{first_name}},\n\nJust a few days to go! We wanted to confirm that your start date is {{start_date}} and you will be reporting to {{contact_name}} at {{company}}. Here is everything you need to know before Day One.\n\nARRIVAL DETAILS\nArrival Time: [TIME - e.g. 08:30 / 09:00]\nWhere to Go: {{company_address}} [BUILDING NAME / ENTRANCE DETAILS]\nWho to Ask For: {{contact_name}}\n\nPARKING AND TRANSPORT\n[PARKING DETAILS - free/paid, location, number of spaces, permit requirements if applicable]\n[PUBLIC TRANSPORT - nearest station or stop, walk time, directions from station to site]\n[SITE QUIRKS - any one-way systems, temporary access changes, which entrance to use, floor or building number]\n\nWHAT TO BRING\n- Photo ID (driving licence or passport)\n- Proof of right to work if not already submitted\n- Any signed documentation previously sent to you\n\nDress Code: [SMART BUSINESS / BUSINESS CASUAL / SMART CASUAL]\n\nYOUR FIRST DAY\nYour induction will typically include a welcome from {{contact_name}}, a tour of the site, introductions to your immediate team, and an overview of key systems and processes. Allow a full day for onboarding - it will be busy but positive.\n\nA detailed Site Onboarding Pack is attached to this email. Please review it before you arrive - it covers everything specific to this location that you will want to know in advance.\n\nIF YOU ARE RUNNING LATE\nContact {{contact_name}} directly on [DIRECT PHONE NUMBER]. Do not leave it until you are already late - a quick call goes a long way.\n\nWe are genuinely excited for you to start this next chapter. If you have any questions at all before then, you know where to find me.\n\nKind regards,\n\n{{signature}}",
+    "body": "Dear {{first_name}},\n\nJust a few days to go! We wanted to confirm that your start date is {{start_date}} and you will be reporting to {{contact_name}} at {{company}}. Here is everything you need to know before Day One.\n\nARRIVAL DETAILS\nArrival Time: {{start_time}}\nWhere to Go: {{arrival_instructions}}\nWho to Ask For: {{contact_name}}\n\nPARKING AND TRANSPORT\n{{parking}}\n{{public_transport}}\n{{site_quirks}}\n\nWHAT TO BRING\n- Photo ID (driving licence or passport)\n- Proof of right to work if not already submitted\n- Any signed documentation previously sent to you\n\nDress Code: {{dress_code}}\n\nYOUR FIRST DAY\nYour induction will typically include a welcome from {{contact_name}}, a tour of the site, introductions to your immediate team, and an overview of key systems and processes. Allow a full day for onboarding - it will be busy but positive.\n\nA detailed Site Onboarding Pack is attached to this email. Please review it before you arrive - it covers everything specific to this location that you will want to know in advance.\n\nIF YOU ARE RUNNING LATE\nContact {{contact_name}} directly on {{late_contact_phone}}. Do not leave it until you are already late - a quick call goes a long way.\n\nWe are genuinely excited for you to start this next chapter. If you have any questions at all before then, you know where to find me.\n\nKind regards,\n\n{{signature}}",
     "updated_by": "system"
   },
   {
@@ -3409,7 +3415,7 @@ const DEFAULT_TEMPLATES = [
     "name": "Client placement confirmation",
     "category": "Client",
     "subject": "Placement confirmed - {{candidate_name}} joining {{company}}",
-    "body": "Dear {{contact_name}},\n\nWe are delighted to confirm that {{candidate_name}} will be joining {{company}} as {{role}}, commencing {{start_date}}.\n\nCANDIDATE PROFILE SNAPSHOT\n{{first_name}} brings [KEY STRENGTH 1] and [KEY STRENGTH 2] to this role. During the process, [he/she/they] demonstrated particular capability in [SPECIFIC EVIDENCE], which aligns directly with your team's requirements. [His/Her/Their] background in [RELEVANT AREA] positions [him/her/them] well for immediate impact on [SPECIFIC PROJECT OR RESPONSIBILITY].\n\nA full Candidate Handover Pack is attached, containing the candidate's full record, employment details, right to work confirmation and reference contacts for your records.\n\nINVOICE AND PAYMENT\nInvoice Reference: {{invoice_ref}}\nAmount Due: {{fee_amount}}\nPayment Terms: [14 / 30] days from invoice date\n\nYour invoice will follow separately. Please direct any billing queries to office@live2helprecruitment.co.uk.\n\nPOST-PLACEMENT SUPPORT\nWe will be in touch for our standard post-placement check-ins at Week 1 and Month 1 to ensure everything is progressing well on both sides. If anything requires attention before then, please contact me directly and I will respond the same day.\n\nA MESSAGE FROM OUR TEAM\nIf you have had a positive experience working with Live 2 Help Recruitment, we would be really grateful if you could take two minutes to leave us a review. It makes a genuine difference to a growing business and helps other organisations understand what we do.\n\nLeave a review here: https://g.page/r/CU5L4ObMovbGEBM/review\n\nThank you for partnering with us on this placement. We hope {{first_name}} makes a real difference to your team and we look forward to supporting you on future hires.\n\nKind regards,\n\n{{signature}}",
+    "body": "Dear {{contact_name}},\n\nWe are delighted to confirm that {{candidate_name}} will be joining {{company}} as {{role}}, commencing {{start_date}}.\n\nCANDIDATE PROFILE SNAPSHOT\n{{first_name}} brings [KEY STRENGTH 1] and [KEY STRENGTH 2] to this role. During the process, [he/she/they] demonstrated particular capability in [SPECIFIC EVIDENCE], which aligns directly with your team's requirements. [His/Her/Their] background in [RELEVANT AREA] positions [him/her/them] well for immediate impact on [SPECIFIC PROJECT OR RESPONSIBILITY].\n\nA full Candidate Handover Pack is attached, containing the candidate's full record, employment details, right to work confirmation and reference contacts for your records.\n\nINVOICE AND PAYMENT\nInvoice Reference: {{invoice_ref}}\nAmount Due: {{fee_amount}}\nPayment Terms: {{payment_terms}} from invoice date\n\nYour invoice will follow separately. Please direct any billing queries to office@live2helprecruitment.co.uk.\n\nPOST-PLACEMENT SUPPORT\nWe will be in touch for our standard post-placement check-ins at Week 1 and Month 1 to ensure everything is progressing well on both sides. If anything requires attention before then, please contact me directly and I will respond the same day.\n\nA MESSAGE FROM OUR TEAM\nIf you have had a positive experience working with Live 2 Help Recruitment, we would be really grateful if you could take two minutes to leave us a review. It makes a genuine difference to a growing business and helps other organisations understand what we do.\n\nLeave a review here: https://g.page/r/CU5L4ObMovbGEBM/review\n\nThank you for partnering with us on this placement. We hope {{first_name}} makes a real difference to your team and we look forward to supporting you on future hires.\n\nKind regards,\n\n{{signature}}",
     "updated_by": "system"
   },
   {
@@ -3458,7 +3464,7 @@ let tplMigrated = false;
 async function migrateTemplates() {
   if (tplMigrated) return;
   const all = await templatesTable.listAll();
-  if (all.some(t => t.id === '__templates_v2')) { tplMigrated = true; return; }
+  if (all.some(t => t.id === '__templates_v3')) { tplMigrated = true; return; }
   for (const d of DEFAULT_TEMPLATES) {
     const ex = all.find(t => t.id === d.id);
     if (!ex || ex.updated_by === 'system') await templatesTable.upsert(d);
@@ -3467,7 +3473,7 @@ async function migrateTemplates() {
     const ex = all.find(t => t.id === oldId);
     if (ex && ex.updated_by === 'system') await templatesTable.remove(oldId);
   }
-  await templatesTable.upsert({ id: '__templates_v2', name: 'migration marker', category: '', subject: '', body: '', updated_by: 'system' });
+  await templatesTable.upsert({ id: '__templates_v3', name: 'migration marker', category: '', subject: '', body: '', updated_by: 'system' });
   tplMigrated = true;
 }
 
@@ -3628,11 +3634,69 @@ app.get('/api/audit', requireAdmin, async (req, res) => {
   }
 });
 
+
+makeSimpleTable({
+  tab: 'Site Details',
+  header: ['id', 'company', 'arrival_instructions', 'parking', 'public_transport', 'site_quirks', 'dress_code', 'late_contact_phone', 'security_reception', 'updated_by'],
+  path: '/api/site-details',
+  label: 'Site details',
+  auditType: 'site_details',
+  auditName: o => o.company,
+});
+
+const candidateDetailsTable = makeSimpleTable({
+  tab: 'Candidate Details',
+  header: ['id', 'candidate_name', 'role', 'company', 'start_time', 'reporting_to', 'updated_by'],
+  path: '/api/candidate-details',
+  label: 'Candidate details',
+});
+
+const settingsTable = makeSimpleTable({
+  tab: 'Settings',
+  header: ['id', 'value', 'updated_by'],
+  path: '/api/settings',
+  label: 'Setting',
+  guard: requireAdmin,
+  auditType: 'setting',
+  auditName: o => `${o.id} = ${o.value}`,
+});
+
+let formConsentCache = { v: false, t: 0 };
+async function formConsentOn() {
+  if (Date.now() - formConsentCache.t < 60000) return formConsentCache.v;
+  try {
+    const all = await settingsTable.list();
+    formConsentCache = { v: (all.find(x => x.id === 'form_consent') || {}).value === 'yes', t: Date.now() };
+  } catch (e) { formConsentCache.t = Date.now(); }
+  return formConsentCache.v;
+}
+
+// Per-person activity counts. Admin sees everyone, everyone else sees only themselves.
+app.get('/api/activity/summary', async (req, res) => {
+  try {
+    const since = String(req.query.since || '');
+    let rows = await activityTable.list();
+    if (since) rows = rows.filter(r => String(r.timestamp) >= since);
+    const me = actorOf(req);
+    const users = {};
+    rows.forEach(r => {
+      const u = String(r.user || '').toLowerCase();
+      if (!isAdmin(req) && u !== me) return;
+      users[u] = users[u] || {};
+      users[u][r.action] = (users[u][r.action] || 0) + 1;
+    });
+    res.json({ users });
+  } catch (e) {
+    console.error('GET /api/activity/summary error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 /* ---------- Sourcing spend and referrals ---------- */
 
 makeSimpleTable({
   tab: 'Ad Spend',
-  header: ['id', 'date', 'channel', 'role', 'company', 'amount', 'notes', 'logged_by'],
+  header: ['id', 'date', 'channel', 'role', 'company', 'amount', 'notes', 'logged_by', 'frequency', 'end_date', 'applies_to'],
   path: '/api/ad-spend',
   label: 'Spend entry',
   guard: requireAdmin,
@@ -3650,8 +3714,6 @@ makeSimpleTable({
 });
 
 /* ---------- GDPR: consent, retention review, export and erase ---------- */
-
-const RETENTION_MONTHS = parseInt(process.env.RETENTION_MONTHS, 10) || 12;
 
 function addMonthsISO(iso, months) {
   const d = new Date(String(iso || '').slice(0, 10) + 'T00:00:00Z');
@@ -3750,6 +3812,7 @@ app.get('/api/gdpr/export/:id', requireAdmin, async (req, res) => {
       interviews: ivs.filter(i => match(i.candidate_name)),
       contactLog: cms.filter(c => match(c.entity_name)),
       clientFeedback: fbs.filter(f => match(f.candidate_name)),
+      candidateDetails: (await candidateDetailsTable.list()).filter(d => match(d.candidate_name)),
       activity: acts.filter(a => match(a.candidate)),
     };
     auditLog(actorOf(req), 'data_exported', 'pool', `${entry.name} - ${entry.role}`, '');
@@ -3823,6 +3886,7 @@ app.post('/api/gdpr/erase/:id', requireAdmin, async (req, res) => {
     const ERASED = 'Erased candidate';
     cleared.interviews = await interviewsTable.updateWhere(o => match(o.candidate_name), o => ({ ...o, candidate_name: ERASED, candidate_email: '', notes: '' }));
     cleared.contactLog = await commsTable.updateWhere(o => match(o.entity_name), o => ({ ...o, entity_name: ERASED, summary: '[erased]' }));
+    await candidateDetailsTable.updateWhere(o => match(o.candidate_name), o => ({ ...o, candidate_name: ERASED, start_time: '', reporting_to: '' }));
     cleared.feedback = await feedbackTable.updateWhere(o => match(o.candidate_name), o => ({ ...o, candidate_name: ERASED, detail: '' }));
     cleared.activity = await activityTable.updateWhere(o => match(o.candidate), o => ({ ...o, candidate: ERASED, detail: '' }));
     cleared.audit = await auditTable.updateWhere(
