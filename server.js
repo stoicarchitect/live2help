@@ -5,6 +5,7 @@ import { google } from 'googleapis';
 import PDFDocument from 'pdfkit';
 import nodemailer from 'nodemailer';
 import path from 'path';
+import { Readable } from 'stream';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -12,7 +13,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '15mb' }));
 
 const API_KEY = process.env.ANTHROPIC_API_KEY;
 
@@ -151,7 +152,7 @@ async function listFolderContents(folderId) {
 const UNASSIGNED_LABEL = 'Unassigned - New Applications';
 
 // Helper: read from Applications tabs and convert to candidates with 'applied' stage
-async function readApplicationsRows() {
+async function readApplicationsRows(strict = false) {
   const sheets = getSheetsClient();
   const allApplications = [];
   try {
@@ -188,6 +189,7 @@ async function readApplicationsRows() {
     }
   } catch (e) {
     console.error('Error reading Applications tabs:', e.message);
+    if (strict) throw e;
   }
   return allApplications;
 }
@@ -229,6 +231,7 @@ app.get('/api/candidates', async (req, res) => {
 // their "Applications - <Role>" tab, matched by candidate name - this is how
 // Ella's company/contact assignment gets saved. Everything else goes to Dashboard.
 app.post('/api/candidates', async (req, res) => {
+  res.on('finish', () => { if (res.statusCode < 400) scheduleReconcile(); });
   try {
     const c = req.body;
     if (!c.id || !c.role || !c.name) {
@@ -361,7 +364,7 @@ async function tryMarkApplicationSubmitted(companyName, role, candidateName) {
     const currentStage = (existing[19] || 'applied').trim().toLowerCase();
     if (currentStage !== 'applied') {
       console.log(`Skipped stage change for ${candidateName} (${role}): already at "${currentStage}"`);
-      return true; // matched, so no duplicate Dashboard row is created
+      return { matched: true, changed: false, fullName: existing[2] || candidateName }; // matched, so no duplicate Dashboard row is created
     }
 
     existing[17] = companyName;       // Company (column R)
@@ -374,7 +377,7 @@ async function tryMarkApplicationSubmitted(companyName, role, candidateName) {
       valueInputOption: 'RAW',
       requestBody: { values: [existing] },
     });
-    return true;
+    return { matched: true, changed: true, fullName: existing[2] || candidateName };
   } catch (e) {
     // Tab probably doesn't exist for this role - candidate wasn't sourced from a form
     console.error(`Error marking application submitted for ${candidateName} in ${tabName}:`, e.message);
@@ -393,9 +396,11 @@ app.post('/api/sync-submissions', async (req, res) => {
 
     let created = 0;
     let updated = 0;
+    const newlySubmitted = [];
 
     for (const companyFolder of companyFolders) {
       if (companyFolder.mimeType !== 'application/vnd.google-apps.folder') continue;
+      if (companyFolder.name === POOL_CV_FOLDER_NAME) continue;
 
       const submissionFiles = await listFolderContents(companyFolder.id);
       const docFiles = submissionFiles.filter(f => !f.mimeType.includes('folder'));
@@ -407,6 +412,9 @@ app.post('/api/sync-submissions', async (req, res) => {
         const matchedApplication = await tryMarkApplicationSubmitted(companyFolder.name, parsed.role, parsed.name);
         if (matchedApplication) {
           updated++;
+          if (matchedApplication.changed) {
+            newlySubmitted.push({ name: matchedApplication.fullName, role: parsed.role, company: companyFolder.name });
+          }
           console.log(`Marked as submitted: ${parsed.name} for ${parsed.role} at ${companyFolder.name}`);
           continue;
         }
@@ -434,12 +442,14 @@ app.post('/api/sync-submissions', async (req, res) => {
           });
 
           created++;
+          newlySubmitted.push({ name: parsed.name, role: parsed.role, company: companyFolder.name });
           console.log(`Auto-created candidate: ${parsed.name} for ${parsed.role} at ${companyFolder.name}`);
         }
       }
     }
 
-    res.json({ synced: true, created, updated });
+    if (created > 0 || newlySubmitted.length > 0) scheduleReconcile();
+    res.json({ synced: true, created, updated, newlySubmitted });
   } catch (e) {
     console.error('GET /api/sync-submissions error:', e.message);
     res.status(500).json({ error: e.message });
@@ -449,6 +459,7 @@ app.post('/api/sync-submissions', async (req, res) => {
 
 // Applications intake - form submissions from screening forms
 app.post('/api/applications/:role', async (req, res) => {
+  res.on('finish', () => { if (res.statusCode < 400) scheduleReconcile(); });
   try {
     const { role } = req.params;
     const {
@@ -533,6 +544,15 @@ app.delete('/api/candidates/:id', async (req, res) => {
 
     if (rowIndex === -1) {
       return res.status(404).json({ error: 'candidate not found' });
+    }
+
+    try {
+      const gone = rowToCandidate(rows[rowIndex]);
+      if (gone.name && gone.role) {
+        await upsertPoolEntry({ ...gone, dateAdded: gone.date, source: 'dashboard' }, false);
+      }
+    } catch (snapErr) {
+      console.error('Could not snapshot candidate to pool before delete:', snapErr.message);
     }
 
     const sheetRowNumber = rowIndex + 2;
@@ -1750,7 +1770,7 @@ app.get('/api/candidates/:id/screening-answers', async (req, res) => {
 app.post('/api/candidates/:id/cv', async (req, res) => {
   try {
     const { id } = req.params;
-    const { company, name, fileData, fileName } = req.body;
+    const { company, name, fileData, fileName, role } = req.body;
     if (!company || !name || !fileData || !fileName) {
       return res.status(400).json({ error: 'company, name, fileData, fileName required' });
     }
@@ -1771,11 +1791,19 @@ app.post('/api/candidates/:id/cv', async (req, res) => {
         parents: [candidateFolderId],
       },
       media: {
-        mimeType: 'application/pdf',
-        body: require('stream').Readable.from([buffer]),
+        mimeType: mimeFromName(fileName),
+        body: Readable.from([buffer]),
       },
       fields: 'id, webViewLink',
     });
+    if (role) {
+      try {
+        await upsertPoolEntry({ name, role, company, stage: 'applied', source: 'application' }, true, { createOnly: true });
+        await attachCvToPool(poolIdFor(name, role), { fileId: file.data.id, fileName, link: file.data.webViewLink || '' });
+      } catch (poolErr) {
+        console.error('Could not link uploaded CV to pool:', poolErr.message);
+      }
+    }
     res.json({ 
       ok: true, 
       fileId: file.data.id,
@@ -2320,6 +2348,571 @@ app.delete('/api/cold-calls/:id', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
+/* ======================================================================
+   Candidate Pool - permanent database of every candidate who has applied
+   or been submitted, kept in a "Candidate Pool" tab of the tracker sheet.
+
+   Columns (A:O):
+   id | name | email | phone | company | role | furthest_stage | current_stage |
+   date_added | last_updated | notes | cv_file_id | cv_file_name | cv_link | in_pipeline
+
+   - One row per candidate per role. id is a slug of name + role.
+   - Rows are never deleted. If a candidate is removed from the pipeline the
+     row stays and in_pipeline flips to "No".
+   - furthest_stage only ever moves forward through the pipeline.
+   - CVs live in Drive; the row stores the file id, name and link.
+   ====================================================================== */
+
+const POOL_TAB = 'Candidate Pool';
+const POOL_HEADER = [
+  'id', 'name', 'email', 'phone', 'company', 'role', 'furthest_stage', 'current_stage',
+  'date_added', 'last_updated', 'notes', 'cv_file_id', 'cv_file_name', 'cv_link', 'in_pipeline',
+];
+const POOL_WIDTH = POOL_HEADER.length;
+const POOL_LAST_COL = 'O';
+const POOL_CV_FOLDER_NAME = 'Candidate Pool CVs';
+
+// Forward progression only. "rejected" is deliberately not ranked - a rejection
+// never changes how far someone got.
+const STAGE_RANK = {
+  applied: 0,
+  submitted: 1,
+  interview_requested: 2,
+  interview_scheduled: 3,
+  interviewed: 4,
+  offer: 5,
+  start_date: 6,
+  day1: 7,
+  week1: 8,
+  month1: 9,
+};
+
+function normStage(s) {
+  return String(s || '').trim().toLowerCase().replace(/\s+/g, '_') || 'applied';
+}
+
+function stageRank(s) {
+  const r = STAGE_RANK[normStage(s)];
+  return r === undefined ? -1 : r;
+}
+
+function poolIdFor(name, role) {
+  const clean = `${String(name || '').trim().replace(/\s+/g, ' ')}|${String(role || '').trim().replace(/\s+/g, ' ')}`;
+  return clean.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function padPoolRow(r) {
+  const a = (r || []).slice(0, POOL_WIDTH).map(v => (v == null ? '' : String(v)));
+  while (a.length < POOL_WIDTH) a.push('');
+  return a;
+}
+
+function poolRowChanged(a, b) {
+  // last_updated (index 9) is ignored when deciding whether anything changed
+  for (let i = 0; i < POOL_WIDTH; i++) {
+    if (i === 9) continue;
+    if ((a[i] || '') !== (b[i] || '')) return true;
+  }
+  return false;
+}
+
+function rowToPoolEntry(row) {
+  const r = padPoolRow(row);
+  return {
+    id: r[0],
+    name: r[1],
+    email: r[2],
+    phone: r[3],
+    company: r[4],
+    role: r[5],
+    furthestStage: r[6] || 'applied',
+    currentStage: r[7] || 'applied',
+    dateAdded: r[8],
+    lastUpdated: r[9],
+    notes: r[10],
+    cvFileName: r[12],
+    hasCv: !!r[11],
+    inPipeline: r[14] !== 'No',
+  };
+}
+
+function mimeFromName(name) {
+  const n = String(name || '').toLowerCase();
+  if (n.endsWith('.pdf')) return 'application/pdf';
+  if (n.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  if (n.endsWith('.doc')) return 'application/msword';
+  return 'application/octet-stream';
+}
+
+function escDriveQuery(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+// ---- Tab bootstrap -----------------------------------------------------
+
+let poolTabReady = false;
+
+async function ensurePoolTab() {
+  if (poolTabReady) return;
+  const sheets = getSheetsClient();
+  const ss = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties.title' });
+  const exists = (ss.data.sheets || []).some(s => s.properties.title === POOL_TAB);
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: { requests: [{ addSheet: { properties: { title: POOL_TAB } } }] },
+    });
+  }
+  const head = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: `'${POOL_TAB}'!A1:${POOL_LAST_COL}1`,
+  });
+  const first = head.data.values && head.data.values[0];
+  if (!first || first[0] !== 'id') {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: `'${POOL_TAB}'!A1:${POOL_LAST_COL}1`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [POOL_HEADER] },
+    });
+  }
+  poolTabReady = true;
+}
+
+async function readPoolRows() {
+  await ensurePoolTab();
+  const sheets = getSheetsClient();
+  const result = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: `'${POOL_TAB}'!A2:${POOL_LAST_COL}`,
+  });
+  return result.data.values || [];
+}
+
+// ---- Serialised access so concurrent saves never create duplicate rows --
+
+let poolChain = Promise.resolve();
+function withPoolLock(fn) {
+  const run = poolChain.then(fn);
+  poolChain = run.catch(() => {});
+  return run;
+}
+
+// ---- Merge logic -------------------------------------------------------
+
+// live: { name, role, company, stage, notes, email, phone, dateAdded, source }
+// opts.createOnly: if the row already exists, only fill blank contact/company fields
+function mergeLiveIntoPoolRow(existingRow, live, inPipeline, opts = {}) {
+  const today = new Date().toISOString().slice(0, 10);
+  const row = padPoolRow(existingRow);
+  const isNew = !existingRow;
+  const stage = normStage(live.stage);
+  const liveRank = stageRank(stage);
+
+  if (isNew) {
+    row[0] = poolIdFor(live.name, live.role);
+    row[1] = String(live.name).trim().replace(/\s+/g, ' ');
+    row[5] = String(live.role).trim();
+    row[6] = liveRank >= 0 ? stage : (live.source === 'application' ? 'applied' : 'submitted');
+    row[7] = stage;
+    row[8] = /^\d{4}-\d{2}-\d{2}/.test(live.dateAdded || '') ? live.dateAdded.slice(0, 10) : today;
+    row[10] = live.notes || '';
+    row[14] = inPipeline ? 'Yes' : 'No';
+  } else if (!opts.createOnly) {
+    if (liveRank > stageRank(row[6])) row[6] = stage;
+    row[7] = stage;
+    if (inPipeline && live.notes !== undefined) row[10] = live.notes || '';
+    row[14] = inPipeline ? 'Yes' : 'No';
+  }
+
+  if (!row[2] && live.email) row[2] = live.email;
+  if (!row[3] && live.phone) row[3] = live.phone;
+  if (!opts.createOnly || !row[4]) {
+    if (live.company) row[4] = live.company;
+  }
+  if (!opts.createOnly && live.email) row[2] = live.email;
+  if (!opts.createOnly && live.phone) row[3] = live.phone;
+  return row;
+}
+
+// ---- Live pipeline snapshot -------------------------------------------
+
+async function collectLiveCandidates() {
+  const dashRows = await readAllRows();
+  const apps = await readApplicationsRows(true);
+  const map = new Map();
+
+  for (const a of apps) {
+    if (!a.name || !a.role) continue;
+    map.set(poolIdFor(a.name, a.role), {
+      name: a.name, role: a.role, company: a.company, stage: a.stage, notes: a.notes,
+      email: a.email, phone: a.phone, dateAdded: a.date, source: 'application',
+    });
+  }
+
+  for (const r of dashRows) {
+    if (!r || !r[0]) continue;
+    const c = rowToCandidate(r);
+    if (!c.name || !c.role) continue;
+    const id = poolIdFor(c.name, c.role);
+    const prev = map.get(id);
+    map.set(id, {
+      name: c.name, role: c.role, company: c.company, stage: c.stage, notes: c.notes,
+      email: c.email || (prev && prev.email) || '',
+      phone: c.phone || (prev && prev.phone) || '',
+      dateAdded: (prev && prev.dateAdded) || c.date,
+      source: 'dashboard',
+    });
+  }
+  return map;
+}
+
+async function doReconcile() {
+  const sheets = getSheetsClient();
+  const poolRows = await readPoolRows();
+  const live = await collectLiveCandidates();
+  const now = new Date().toISOString();
+
+  const byId = new Map();
+  poolRows.forEach((r, i) => { if (r && r[0]) byId.set(r[0], { row: r, index: i }); });
+
+  const updates = [];
+  const appends = [];
+  const seen = new Set();
+  let added = 0;
+  let updated = 0;
+
+  for (const l of live.values()) {
+    const id = poolIdFor(l.name, l.role);
+    seen.add(id);
+    const ex = byId.get(id);
+    const merged = mergeLiveIntoPoolRow(ex ? ex.row : null, l, true);
+    if (!ex) {
+      merged[9] = now;
+      appends.push(merged);
+      added++;
+    } else if (poolRowChanged(padPoolRow(ex.row), merged)) {
+      merged[9] = now;
+      const rowNum = ex.index + 2;
+      updates.push({ range: `'${POOL_TAB}'!A${rowNum}:${POOL_LAST_COL}${rowNum}`, values: [merged] });
+      updated++;
+    }
+  }
+
+  // Candidates no longer in the pipeline stay in the pool, flagged accordingly
+  for (const [id, ex] of byId) {
+    if (seen.has(id)) continue;
+    if ((ex.row[14] || '') === 'No') continue;
+    const r = padPoolRow(ex.row);
+    r[14] = 'No';
+    r[9] = now;
+    const rowNum = ex.index + 2;
+    updates.push({ range: `'${POOL_TAB}'!A${rowNum}:${POOL_LAST_COL}${rowNum}`, values: [r] });
+    updated++;
+  }
+
+  if (updates.length) {
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: { valueInputOption: 'RAW', data: updates },
+    });
+  }
+  if (appends.length) {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: `'${POOL_TAB}'!A:${POOL_LAST_COL}`,
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: appends },
+    });
+  }
+  return { added, updated, total: byId.size + added };
+}
+
+function reconcilePool() {
+  return withPoolLock(doReconcile);
+}
+
+let reconcileQueued = false;
+function scheduleReconcile() {
+  if (reconcileQueued) return;
+  reconcileQueued = true;
+  withPoolLock(async () => {
+    reconcileQueued = false;
+    return doReconcile();
+  }).catch(e => console.error('Pool reconcile failed:', e.message));
+}
+
+// Insert or update a single candidate. Used by the "ensure" endpoint, the
+// delete snapshot and the CV attach helper.
+function upsertPoolEntry(live, inPipeline = true, opts = {}) {
+  return withPoolLock(async () => {
+    const sheets = getSheetsClient();
+    const rows = await readPoolRows();
+    const id = poolIdFor(live.name, live.role);
+    const idx = rows.findIndex(r => r && r[0] === id);
+    const ex = idx >= 0 ? rows[idx] : null;
+    const merged = mergeLiveIntoPoolRow(ex, live, inPipeline, opts);
+    if (!ex) {
+      merged[9] = new Date().toISOString();
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SHEET_ID,
+        range: `'${POOL_TAB}'!A:${POOL_LAST_COL}`,
+        valueInputOption: 'RAW',
+        insertDataOption: 'INSERT_ROWS',
+        requestBody: { values: [merged] },
+      });
+    } else if (poolRowChanged(padPoolRow(ex), merged)) {
+      merged[9] = new Date().toISOString();
+      const rowNum = idx + 2;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID,
+        range: `'${POOL_TAB}'!A${rowNum}:${POOL_LAST_COL}${rowNum}`,
+        valueInputOption: 'RAW',
+        requestBody: { values: [merged] },
+      });
+    }
+    return merged;
+  });
+}
+
+// Edit selected columns of one pool row by id
+function patchPoolRow(id, patch) {
+  return withPoolLock(async () => {
+    const sheets = getSheetsClient();
+    const rows = await readPoolRows();
+    const idx = rows.findIndex(r => r && r[0] === id);
+    if (idx === -1) return null;
+    const row = padPoolRow(rows[idx]);
+    Object.keys(patch).forEach(k => { row[Number(k)] = patch[k]; });
+    row[9] = new Date().toISOString();
+    const rowNum = idx + 2;
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: `'${POOL_TAB}'!A${rowNum}:${POOL_LAST_COL}${rowNum}`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [row] },
+    });
+    return row;
+  });
+}
+
+// ---- Drive helpers -----------------------------------------------------
+
+async function findLegacyCv(company, name, companyFoldersCache) {
+  if (!company || !name) return null;
+  const drive = getDriveClient();
+  const companyFolders = companyFoldersCache || await listFolderContents(SUBMISSIONS_FOLDER_ID);
+  const cf = companyFolders.find(f => f.name === company && f.mimeType === 'application/vnd.google-apps.folder');
+  if (!cf) return null;
+
+  const parts = String(name).trim().split(/\s+/);
+  const variants = [String(name).trim()];
+  if (parts.length >= 2) variants.push(`${parts[0]} ${parts[parts.length - 1][0]}`);
+
+  for (const v of variants) {
+    const list = await drive.files.list({
+      q: `'${cf.id}' in parents and name='${escDriveQuery(v)}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+      spaces: 'drive',
+      pageSize: 1,
+      fields: 'files(id)',
+    });
+    if (!list.data.files || list.data.files.length === 0) continue;
+    const inside = await drive.files.list({
+      q: `'${list.data.files[0].id}' in parents and mimeType!='application/vnd.google-apps.folder' and trashed=false`,
+      spaces: 'drive',
+      pageSize: 20,
+      fields: 'files(id, name, webViewLink, mimeType)',
+    });
+    const files = inside.data.files || [];
+    if (!files.length) continue;
+    const pick = files.find(f => /cv/i.test(f.name)) || files.find(f => f.mimeType === 'application/pdf') || files[0];
+    return { fileId: pick.id, fileName: pick.name, link: pick.webViewLink || '' };
+  }
+  return null;
+}
+
+async function findPoolRowById(id) {
+  const rows = await readPoolRows();
+  const idx = rows.findIndex(r => r && r[0] === id);
+  return idx === -1 ? null : { row: padPoolRow(rows[idx]), index: idx };
+}
+
+async function attachCvToPool(id, info) {
+  return patchPoolRow(id, { 11: info.fileId, 12: info.fileName, 13: info.link || '' });
+}
+
+// ---- Endpoints ---------------------------------------------------------
+
+// List the whole pool (reconciles with the live pipeline first)
+app.get('/api/candidate-pool', async (req, res) => {
+  try {
+    await reconcilePool();
+    const rows = await readPoolRows();
+    res.json({ data: rows.filter(r => r && r[0]).map(rowToPoolEntry) });
+  } catch (e) {
+    console.error('GET /api/candidate-pool error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Reconcile, then look for CVs already uploaded through the older pipeline
+// modal (company/candidate Drive folders) and link them to the pool.
+app.post('/api/candidate-pool/backfill', async (req, res) => {
+  try {
+    const result = await reconcilePool();
+    const rows = await readPoolRows();
+    const companyFolders = await listFolderContents(SUBMISSIONS_FOLDER_ID);
+    let cvLinked = 0;
+
+    for (const raw of rows) {
+      const row = padPoolRow(raw);
+      if (!row[0] || row[11]) continue;
+      try {
+        const found = await findLegacyCv(row[4], row[1], companyFolders);
+        if (found) {
+          await attachCvToPool(row[0], found);
+          cvLinked++;
+        }
+      } catch (e) {
+        console.error(`Backfill CV lookup failed for ${row[1]}:`, e.message);
+      }
+    }
+
+    const finalRows = (await readPoolRows()).map(rowToPoolEntry).filter(e => e.id);
+    const missingCv = finalRows
+      .filter(e => !e.hasCv && stageRank(e.furthestStage) >= 1)
+      .map(e => ({ name: e.name, role: e.role, company: e.company }));
+
+    res.json({ ok: true, added: result.added, updated: result.updated, cvLinked, missingCv });
+  } catch (e) {
+    console.error('POST /api/candidate-pool/backfill error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Make sure one candidate exists in the pool and report whether they have a CV.
+// Called by the dashboard right after a candidate is moved to Submitted, so the
+// CV reminder can be shown. Never changes stage or notes of an existing row.
+app.post('/api/candidate-pool/ensure', async (req, res) => {
+  try {
+    const { name, role, company, email, phone, stage, notes } = req.body || {};
+    if (!name || !role) return res.status(400).json({ error: 'name and role are required' });
+    const merged = await upsertPoolEntry(
+      { name, role, company: company || '', email: email || '', phone: phone || '', stage: stage || 'submitted', notes: notes || '', source: 'dashboard' },
+      true,
+      { createOnly: true }
+    );
+    let row = merged;
+    if (!row[11] && row[4]) {
+      try {
+        const found = await findLegacyCv(row[4], row[1]);
+        if (found) row = (await attachCvToPool(row[0], found)) || row;
+      } catch (e) {
+        console.error('ensure: legacy CV lookup failed:', e.message);
+      }
+    }
+    res.json({ data: rowToPoolEntry(row) });
+  } catch (e) {
+    console.error('POST /api/candidate-pool/ensure error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Update notes on a pool record
+app.put('/api/candidate-pool/:id/notes', async (req, res) => {
+  try {
+    const row = await patchPoolRow(req.params.id, { 10: String((req.body || {}).notes || '') });
+    if (!row) return res.status(404).json({ error: 'Pool record not found' });
+    res.json({ ok: true, data: rowToPoolEntry(row) });
+  } catch (e) {
+    console.error('PUT /api/candidate-pool/:id/notes error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Upload (or replace) the CV for a pool record
+app.post('/api/candidate-pool/:id/cv', async (req, res) => {
+  try {
+    const { fileData, fileName } = req.body || {};
+    if (!fileData || !fileName) return res.status(400).json({ error: 'fileData and fileName required' });
+    const found = await findPoolRowById(req.params.id);
+    if (!found) return res.status(404).json({ error: 'Pool record not found' });
+
+    const folderId = await getOrCreateCandidateFolder(SUBMISSIONS_FOLDER_ID, POOL_CV_FOLDER_NAME);
+    if (!folderId) return res.status(500).json({ error: 'Could not create the Candidate Pool CVs folder in Drive' });
+
+    const ext = (String(fileName).match(/\.[A-Za-z0-9]+$/) || ['.pdf'])[0].toLowerCase();
+    const driveName = `${found.row[1]} - ${found.row[5]} - CV${ext}`;
+    const drive = getDriveClient();
+    const file = await drive.files.create({
+      resource: { name: driveName, parents: [folderId] },
+      media: { mimeType: mimeFromName(fileName), body: Readable.from([Buffer.from(fileData, 'base64')]) },
+      fields: 'id, name, webViewLink',
+    });
+
+    const row = await attachCvToPool(req.params.id, {
+      fileId: file.data.id,
+      fileName: driveName,
+      link: file.data.webViewLink || '',
+    });
+    res.json({ ok: true, data: rowToPoolEntry(row) });
+  } catch (e) {
+    console.error('POST /api/candidate-pool/:id/cv error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// View or download the CV. Streams through the API so it works whether or not
+// the person opening it has Drive access to the file.
+app.get('/api/candidate-pool/:id/cv/file', async (req, res) => {
+  try {
+    const found = await findPoolRowById(req.params.id);
+    if (!found) return res.status(404).json({ error: 'Pool record not found' });
+    let fileId = found.row[11];
+
+    if (!fileId && found.row[4]) {
+      const legacy = await findLegacyCv(found.row[4], found.row[1]);
+      if (legacy) {
+        await attachCvToPool(req.params.id, legacy);
+        fileId = legacy.fileId;
+      }
+    }
+    if (!fileId) return res.status(404).json({ error: 'No CV on file for this candidate' });
+
+    const drive = getDriveClient();
+    const meta = await drive.files.get({ fileId, fields: 'name, mimeType, webViewLink' });
+    const mime = meta.data.mimeType || 'application/octet-stream';
+
+    if (mime.startsWith('application/vnd.google-apps.')) {
+      return res.redirect(meta.data.webViewLink);
+    }
+
+    const wantsView = req.query.mode !== 'download';
+    const inlineOk = mime === 'application/pdf' || mime.startsWith('image/');
+    if (wantsView && !inlineOk && meta.data.webViewLink) {
+      return res.redirect(meta.data.webViewLink);
+    }
+
+    const stream = await drive.files.get({ fileId, alt: 'media' }, { responseType: 'stream' });
+    res.setHeader('Content-Type', mime);
+    res.setHeader(
+      'Content-Disposition',
+      `${wantsView && inlineOk ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(meta.data.name || 'CV')}`
+    );
+    stream.data.on('error', err => {
+      console.error('CV stream error:', err.message);
+      if (!res.headersSent) res.status(500).end();
+      else res.end();
+    });
+    stream.data.pipe(res);
+  } catch (e) {
+    console.error('GET /api/candidate-pool/:id/cv/file error:', e.message);
+    if (!res.headersSent) res.status(500).json({ error: e.message });
+  }
+});
+
 
 app.get('/', (req, res) => {
   res.json({ status: 'API Server running' });
