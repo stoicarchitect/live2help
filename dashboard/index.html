@@ -420,6 +420,44 @@
   .extras-row{padding:8px 0;border-bottom:1px solid var(--border);font-size:12.5px;color:var(--grey);}
   .extras-row:last-child{border-bottom:none;}
   .extras-row .m{color:#999;font-size:11.5px;margin-top:2px;}
+  .inv-card{background:var(--white);border:1px solid var(--border);border-left:3px solid var(--gold);padding:12px 14px;margin-bottom:12px;border-radius:2px;}
+  .inv-title{font-size:13.5px;font-weight:600;color:var(--dark);margin-bottom:4px;}
+  .inv-card label{display:block;font-size:11px;color:#999;margin:8px 0 3px;letter-spacing:.4px;}
+  .inv-card input,.inv-card textarea{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13px;}
+  .inv-card textarea{min-height:140px;resize:vertical;line-height:1.5;}
+  .inv-warn{font-size:11.5px;color:#8a6a12;margin-top:3px;}
+
+
+  /* ---- Batch 3: grouped navigation, board arrows, new views ---- */
+  #groupBar{display:flex;align-items:center;justify-content:space-between;background:var(--dark);padding:0 24px;gap:16px;flex-wrap:wrap;}
+  #groupBtns{display:flex;gap:4px;flex-wrap:wrap;}
+  .grp-btn{
+    padding:13px 16px;color:#cfcfcf;border:none;background:none;cursor:pointer;font-family:inherit;
+    font-size:13px;letter-spacing:.4px;border-bottom:2px solid transparent;transition:color .2s;
+  }
+  .grp-btn:hover{color:var(--white);}
+  .grp-btn.active{color:var(--gold);border-bottom-color:var(--gold);}
+  #groupBar #userChip{margin-left:0;padding-left:0;}
+  #groupBar #userChip .who{color:#e6e6e6;font-weight:400;}
+  #groupBar #userChip button{background:transparent;border-color:#555;color:#cfcfcf;}
+  #groupBar #userChip button:hover{border-color:var(--gold);color:var(--gold);}
+  .tab-btn.gh{display:none;}
+  #candidatesView{position:relative;}
+  .board-scroll-btn{
+    position:absolute;top:50%;z-index:20;width:38px;height:38px;border-radius:50%;border:1px solid var(--gold);
+    background:var(--dark);color:var(--gold);font-size:20px;cursor:pointer;display:none;align-items:center;justify-content:center;
+    box-shadow:0 4px 14px rgba(0,0,0,.25);line-height:1;padding:0 0 3px;
+  }
+  .board-scroll-btn:hover{background:var(--gold);color:var(--dark);}
+  .board-scroll-btn.left{left:10px;}
+  .board-scroll-btn.right{right:10px;}
+  #board{scrollbar-width:auto;scrollbar-color:var(--gold) #eee;}
+  #board::-webkit-scrollbar{height:12px;}
+  #board::-webkit-scrollbar-track{background:#eee;}
+  #board::-webkit-scrollbar-thumb{background:var(--gold);border-radius:6px;}
+  #clientHealthView,#referralsView,#sourcingView,#gdprView,#auditView{display:none;flex:1;flex-direction:column;}
+  #clientHealthView.visible,#referralsView.visible,#sourcingView.visible,#gdprView.visible,#auditView.visible{display:flex;}
+  @media (max-width:780px){.board-scroll-btn{display:none !important;}}
 
   /* ---- Modal ---- */
   .modal-overlay{
@@ -882,6 +920,7 @@
   </div>
 
   <div id="main">
+    <div id="groupBar"><div id="groupBtns"></div><div id="userChip"><span class="who">Signed in as <span id="userChipName"></span></span><button onclick="signOut()">Log out</button></div></div>
     <div id="tabs">
       <button class="tab-btn" data-tab="home" onclick="switchTab('home')">Home</button>
       <button class="tab-btn" data-tab="notifications" onclick="switchTab('notifications')">Notifications<span class="tab-badge" id="notifBadge"></span></button>
@@ -895,13 +934,17 @@
       <button class="tab-btn" data-tab="templates" onclick="switchTab('templates')">Templates</button>
       <button class="tab-btn" data-tab="forecast" onclick="switchTab('forecast')">Forecast</button>
       <button class="tab-btn" data-tab="team" onclick="switchTab('team')">Team</button>
+      <button class="tab-btn" data-tab="sourcing" onclick="switchTab('sourcing')">Sourcing</button>
+      <button class="tab-btn" data-tab="gdpr" onclick="switchTab('gdpr')">Data and GDPR</button>
+      <button class="tab-btn" data-tab="audit" onclick="switchTab('audit')">Audit Trail</button>
       <button class="tab-btn" data-tab="leadClients" onclick="switchTab('leadClients')">Lead Clients</button>
       <button class="tab-btn" data-tab="clients" onclick="switchTab('clients')">Clients</button>
       <button class="tab-btn" data-tab="invoices" onclick="switchTab('invoices')">Invoices</button>
       <button class="tab-btn" data-tab="tasks" onclick="switchTab('tasks')">Tasks</button>
       <button class="tab-btn" data-tab="kpi" onclick="switchTab('kpi')">KPI Reporting</button>
+      <button class="tab-btn" data-tab="clientHealth" onclick="switchTab('clientHealth')">Client Health</button>
       <button class="tab-btn" data-tab="coldCalls" onclick="switchTab('coldCalls')">Cold Call Tracker</button>
-      <div id="userChip"><span class="who">Signed in as <span id="userChipName"></span></span><button onclick="signOut()">Log out</button></div>
+      <button class="tab-btn" data-tab="referrals" onclick="switchTab('referrals')">Referrals</button>
     </div>
     
     <div id="candidatesView" class="visible">
@@ -924,6 +967,8 @@
       <button id="addCandBtn" onclick="openAddCandidate()" style="display:none;padding:10px 16px;background:var(--dark);color:var(--white);border:none;border-radius:2px;font-family:inherit;font-size:12.5px;cursor:pointer;">+ Add candidate</button>
     </div>
     <div id="board"></div>
+    <button class="board-scroll-btn left" id="boardLeft" onclick="scrollBoard(-1)" title="Scroll left" aria-label="Scroll left">&lsaquo;</button>
+    <button class="board-scroll-btn right" id="boardRight" onclick="scrollBoard(1)" title="Scroll right" aria-label="Scroll right">&rsaquo;</button>
     </div>
 
     <div id="leadClientsView">
@@ -1244,7 +1289,7 @@
           <table class="ops-table">
             <thead><tr>
               <th>Role</th><th>Company</th><th>Hiring manager</th><th>Salary band</th><th>Fee</th>
-              <th>Status</th><th>Opened</th><th>Days open</th><th>Candidates</th><th style="text-align:right;">Actions</th>
+              <th>Status</th><th>Opened</th><th>Days open</th><th>Positions</th><th>Candidates</th><th style="text-align:right;">Actions</th>
             </tr></thead>
             <tbody id="rolesBody"></tbody>
           </table>
@@ -1373,6 +1418,85 @@
       <div class="view-body" id="teamBody"></div>
     </div>
 
+    <div id="clientHealthView">
+      <div class="view-head">
+        <div><h2>Client Health</h2><div class="sub" id="chSummary"></div></div>
+        <select id="chFilter" onchange="renderClientHealth()" style="padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13px;background:#fff;">
+          <option value="">All clients</option><option value="risk">At risk</option><option value="watch">Watch</option><option value="healthy">Healthy</option></select>
+      </div>
+      <div class="view-body">
+        <div class="tile-grid" id="chTiles"></div>
+        <div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>Client</th><th>Score</th><th>Last contact</th><th>Open roles</th><th>Awaiting feedback</th><th>Why</th><th style="text-align:right;">Actions</th></tr></thead><tbody id="chBody"></tbody></table></div>
+        <div class="note-line">Score out of 100: recent contact 40, has open roles 20, quick feedback on submissions 20, placements made 10, no overdue invoices 10. Contact counts calls, emails and meetings logged, cold calls, interviews and feedback. Healthy is 70 or more, Watch is 40 to 69, At risk is under 40.</div>
+      </div>
+    </div>
+
+    <div id="referralsView">
+      <div class="view-head">
+        <div><h2>Referrals</h2><div class="sub" id="rfSummary"></div></div>
+        <div class="head-actions">
+          <select id="rfFilter" onchange="renderReferrals()" style="padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13px;background:#fff;">
+            <option value="">All referrals</option><option value="new">New</option><option value="contacted">Contacted</option><option value="converted">Converted</option><option value="placed">Placed</option><option value="lost">Lost</option><option value="reward">Rewards due</option></select>
+          <button class="gold-btn" onclick="openReferralModal()">+ Log Referral</button>
+        </div>
+      </div>
+      <div class="view-body">
+        <div class="tile-grid" id="rfTiles"></div>
+        <div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>Date</th><th>Referred</th><th>Referred by</th><th>Role</th><th>Status</th><th>Reward</th><th style="text-align:right;">Actions</th></tr></thead><tbody id="rfBody"></tbody></table></div>
+      </div>
+    </div>
+
+    <div id="sourcingView">
+      <div class="view-head">
+        <div><h2>Sourcing and Advertising</h2><div class="sub">Where candidates come from and what each channel costs.</div></div>
+        <div class="head-actions">
+          <select id="spPeriod" onchange="renderSourcing()" style="padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13px;background:#fff;">
+            <option value="month">This month</option><option value="quarter">This quarter</option><option value="year">This year</option><option value="all">All time</option></select>
+          <button class="gold-btn" onclick="openSpendModal()">+ Log Spend</button>
+        </div>
+      </div>
+      <div class="view-body">
+        <div class="tile-grid" id="spTiles"></div>
+        <div class="section-title">By channel</div>
+        <div class="ops-table-wrap"><table class="ops-table" style="min-width:720px;"><thead><tr><th>Channel</th><th>Spend</th><th>Applicants</th><th>Submitted</th><th>Placed</th><th>Cost per applicant</th><th>Cost per hire</th></tr></thead><tbody id="spChannels"></tbody></table></div>
+        <div class="note-line">Applicants are counted from the Candidate Pool by the date they were added. Set each candidate's source in their Candidate Pool dialog under Source and data protection.</div>
+        <div class="section-title">Spend log</div>
+        <div class="ops-table-wrap"><table class="ops-table" style="min-width:720px;"><thead><tr><th>Date</th><th>Channel</th><th>Role</th><th>Company</th><th>Amount</th><th>Notes</th><th style="text-align:right;">Actions</th></tr></thead><tbody id="spEntries"></tbody></table></div>
+      </div>
+    </div>
+
+    <div id="gdprView">
+      <div class="view-head">
+        <div><h2>Data and GDPR</h2><div class="sub" id="gdprSummary"></div></div>
+        <button class="ghost-btn" onclick="gdprBulkConsent()">Record consent for all form applicants</button>
+      </div>
+      <div class="view-body">
+        <div class="tile-grid" id="gdprTiles"></div>
+        <div class="filter-bar">
+          <input id="gdprSearch" placeholder="Search name, role or company" oninput="renderGdpr()">
+          <select id="gdprFilter" onchange="renderGdpr()"><option value="">All candidates</option><option value="due">Review due or overdue</option><option value="noconsent">No consent record</option></select>
+        </div>
+        <div class="ops-table-wrap"><table class="ops-table" style="min-width:860px;"><thead><tr><th>Candidate</th><th>Role</th><th>Company</th><th>Added</th><th>Consent</th><th>Review due</th><th style="text-align:right;">Actions</th></tr></thead><tbody id="gdprBody"></tbody></table></div>
+        <div class="note-line">The 12 month review period is a sensible default and is not legal advice, so check it against your privacy notice. Erasing removes the person's data everywhere in this dashboard, but files saved in Drive under their name, emails and anything held outside the dashboard need removing by hand.</div>
+      </div>
+    </div>
+
+    <div id="auditView">
+      <div class="view-head">
+        <div><h2>Audit Trail</h2><div class="sub" id="auditSummary"></div></div>
+        <button class="gold-btn" onclick="loadAudit()">Refresh</button>
+      </div>
+      <div class="view-body">
+        <div class="filter-bar">
+          <input id="auditSearch" placeholder="Search item or detail" oninput="renderAudit()">
+          <select id="auditUser" onchange="renderAudit()"><option value="">All people</option></select>
+          <select id="auditType" onchange="renderAudit()"><option value="">All record types</option></select>
+          <select id="auditSpan" onchange="renderAudit()"><option value="1">Last 24 hours</option><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="all">All time</option></select>
+        </div>
+        <div class="ops-table-wrap"><table class="ops-table" style="min-width:820px;"><thead><tr><th>When</th><th>Who</th><th>What</th><th>Type</th><th>Item</th><th>Detail</th></tr></thead><tbody id="auditBody"></tbody></table></div>
+      </div>
+    </div>
+
     <div id="candidatePoolView">
       <div id="poolHeader">
         <div>
@@ -1494,15 +1618,22 @@
         <label>Candidate name</label><input id="ivName">
         <div class="two-col">
           <div><label>Role</label><input id="ivRole"></div>
-          <div><label>Company</label><input id="ivCompany"></div>
+          <div><label>Company</label><input id="ivCompany" oninput="ivFillContactEmail()"></div>
         </div>
         <div class="two-col">
-          <div><label>Date</label><input type="date" id="ivDate"></div>
-          <div><label>Time</label><input type="time" id="ivTime"></div>
+          <div><label>Date</label><input type="date" id="ivDate" onclick="try{this.showPicker()}catch(e){}"></div>
+          <div><label>Time</label><select id="ivTime" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></select></div>
+        </div>
+        <div class="two-col">
+          <div><label>Duration</label>
+            <select id="ivDuration" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;">
+              <option value="30">30 minutes</option><option value="45">45 minutes</option><option value="60">1 hour</option>
+              <option value="90">1 hour 30</option><option value="120">2 hours</option></select></div>
+          <div><label>Candidate email</label><input id="ivCandidateEmail" placeholder="For the candidate invite"></div>
         </div>
         <div class="two-col">
           <div><label>Type</label>
-            <select id="ivType" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;">
+            <select id="ivType" onchange="ivTypeChanged()" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;">
               <option value="site">Site visit</option><option value="phone">Phone</option><option value="video">Video call</option>
               <option value="assessment">Assessment</option><option value="other">Other</option>
             </select></div>
@@ -1513,7 +1644,10 @@
             </select></div>
         </div>
         <label>Location or link</label><input id="ivLocation" placeholder="Address, phone number or meeting link">
-        <label>Client contact / interviewer</label><input id="ivInterviewer">
+        <label>Client contact / interviewer</label>
+        <input id="ivInterviewer" list="ivContactList" oninput="ivFillContactEmail()" placeholder="Filled in from the candidate">
+        <datalist id="ivContactList"></datalist>
+        <label>Client contact email</label><input id="ivInterviewerEmail" placeholder="For the client invite">
         <label>Notes</label>
         <textarea id="ivNotes" style="width:100%;min-height:64px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></textarea>
         <div class="actions">
@@ -1537,14 +1671,14 @@
       <div class="simple-form">
         <div class="two-col">
           <div><label>About</label>
-            <select id="cmType" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;">
+            <select id="cmType" onchange="cmRefreshNames()" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;">
               <option value="candidate">Candidate</option><option value="client">Client</option></select></div>
           <div><label>Channel</label>
             <select id="cmChannel" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;">
               <option value="call">Call</option><option value="email">Email</option><option value="text">Text</option>
               <option value="whatsapp">WhatsApp</option><option value="meeting">Meeting</option><option value="note">Note</option></select></div>
         </div>
-        <label>Name</label><input id="cmName" list="cmNameList" placeholder="Candidate or client contact">
+        <label id="cmNameLabel">Candidate</label><input id="cmName" list="cmNameList" oninput="cmAutofill()" onchange="cmAutofill()" placeholder="Start typing a name">
         <datalist id="cmNameList"></datalist>
         <div class="two-col">
           <div><label>Company</label><input id="cmCompany"></div>
@@ -1586,7 +1720,7 @@
         </div>
         <label>Main reason</label>
         <select id="fbReason" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;">
-          <option value="skills">Skills</option><option value="experience">Experience level</option><option value="salary">Salary expectations</option>
+          <option value="">Not recorded yet</option><option value="skills">Skills</option><option value="experience">Experience level</option><option value="salary">Salary expectations</option>
           <option value="culture">Culture or personality fit</option><option value="location">Location or commute</option>
           <option value="availability">Availability or notice period</option><option value="communication">Communication</option>
           <option value="timing">Timing or role changed</option><option value="other">Other</option></select>
@@ -1597,6 +1731,81 @@
           <button class="save" onclick="saveFeedback()">Save feedback</button>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="ivInviteModal">
+  <div class="modal wide">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="closeModal('ivInviteModal')">&times;</button>
+      <div id="ivInviteBody"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="spendModal">
+  <div class="modal">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="closeModal('spendModal')">&times;</button>
+      <h2>Advertising spend</h2>
+      <div class="simple-form">
+        <div class="two-col">
+          <div><label>Date</label><input type="date" id="spDate" onclick="try{this.showPicker()}catch(e){}"></div>
+          <div><label>Amount (&pound;)</label><input type="number" min="0" step="0.01" id="spAmount"></div>
+        </div>
+        <label>Channel</label><input id="spChannel" list="spChannelList" placeholder="e.g. Indeed"><datalist id="spChannelList"></datalist>
+        <div class="two-col">
+          <div><label>Role (optional)</label><input id="spRole" list="spRoleList"><datalist id="spRoleList"></datalist></div>
+          <div><label>Company (optional)</label><input id="spCompany"></div>
+        </div>
+        <label>Notes</label><input id="spNotes">
+        <div class="actions"><button class="cancel" onclick="closeModal('spendModal')">Cancel</button><button class="save" onclick="saveSpend()">Save</button></div>
+        <div class="actions" id="spDeleteRow" style="margin-top:8px;"><button class="cancel" style="color:var(--danger);border-color:var(--danger);" onclick="deleteSpend()">Delete entry</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="referralModal">
+  <div class="modal">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="closeModal('referralModal')">&times;</button>
+      <h2>Referral</h2>
+      <div class="simple-form">
+        <div class="two-col">
+          <div><label>Date</label><input type="date" id="rfDate" onclick="try{this.showPicker()}catch(e){}"></div>
+          <div><label>Referred is a</label><select id="rfType" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"><option value="candidate">Candidate</option><option value="client">Client</option></select></div>
+        </div>
+        <div class="two-col">
+          <div><label>Who was referred</label><input id="rfReferred"></div>
+          <div><label>Their company (if a client)</label><input id="rfReferredCompany"></div>
+        </div>
+        <div class="two-col">
+          <div><label>Referred by</label><input id="rfReferrer"></div>
+          <div><label>They are a</label><select id="rfReferrerType" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"><option value="candidate">Candidate</option><option value="client">Client</option><option value="team">Team member</option><option value="other">Other</option></select></div>
+        </div>
+        <div class="two-col">
+          <div><label>Role (optional)</label><input id="rfRole"></div>
+          <div><label>Status</label><select id="rfStatus" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"><option value="new">New</option><option value="contacted">Contacted</option><option value="converted">Converted</option><option value="placed">Placed</option><option value="lost">Lost</option></select></div>
+        </div>
+        <div class="two-col">
+          <div><label>Reward amount (&pound;, optional)</label><input type="number" min="0" step="0.01" id="rfReward"></div>
+          <div><label>Reward status</label><select id="rfRewardStatus" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"><option value="none">Pending</option><option value="due">Due</option><option value="paid">Paid</option></select></div>
+        </div>
+        <label>Date reward paid</label><input type="date" id="rfPaidDate" onclick="try{this.showPicker()}catch(e){}">
+        <label>Notes</label><input id="rfNotes">
+        <div class="actions"><button class="cancel" onclick="closeModal('referralModal')">Cancel</button><button class="save" onclick="saveReferral()">Save referral</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="gdprEraseModal">
+  <div class="modal">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="closeModal('gdprEraseModal')">&times;</button>
+      <div id="gdprEraseBody"></div>
     </div>
   </div>
 </div>
@@ -1628,6 +1837,8 @@
           </div>
           <div><label>Date opened</label><input type="date" id="rmOpened"></div>
         </div>
+        <label>Positions available (how many people this role will place)</label>
+        <input type="number" min="1" id="rmPositions" value="1">
         <label>Notes</label>
         <textarea id="rmNotes" style="width:100%;min-height:70px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></textarea>
         <div class="actions">
@@ -3113,7 +3324,7 @@ async function updateInvoiceStatus(number, status){
 }
 
 function downloadInvoicePDF(number){
-  window.open(`${API_BASE}/api/invoices/${number}/pdf`, '_blank');
+  window.open(authUrl(`${API_BASE}/api/invoices/${number}/pdf`), '_blank');
 }
 
 async function deleteInvoiceCard(number){
@@ -4700,11 +4911,11 @@ function poolUploadCv(id){
 }
 
 function poolViewCv(id){
-  window.open(`${API_BASE}/api/candidate-pool/${encodeURIComponent(id)}/cv/file?mode=view`, '_blank');
+  window.open(authUrl(`${API_BASE}/api/candidate-pool/${encodeURIComponent(id)}/cv/file?mode=view`), '_blank');
 }
 
 function poolDownloadCv(id){
-  window.open(`${API_BASE}/api/candidate-pool/${encodeURIComponent(id)}/cv/file?mode=download`, '_blank');
+  window.open(authUrl(`${API_BASE}/api/candidate-pool/${encodeURIComponent(id)}/cv/file?mode=download`), '_blank');
 }
 
 /* ---------- Detail dialog ---------- */
@@ -4927,8 +5138,8 @@ function renderCvReminder(){
    ============================================================ */
 
 const USERS = [
-  {key:'dan',  name:'Dan',  password:'l2h2026dan', admin:true},
-  {key:'ella', name:'Ella', password:'l2h2026',    admin:false},
+  {key:'dan',  name:'Dan',  password:'l2h2026dan', admin:true, fullName:'Dan Brown', title:'Director', email:'dan.brown@live2helprecruitment.co.uk', phone:'07424 087576'},
+  {key:'ella', name:'Ella', password:'l2h2026',    admin:false, fullName:'Ella Pietrzak', title:'Talent Acquisition and Business Development Consultant', email:'ella@live2helprecruitment.co.uk', phone:'07434 351996'},
 ];
 
 let signedInUser = null;
@@ -5048,7 +5259,7 @@ function mergedRoles(){
       const dates = DATA[co][role].map(c => opsDateOnly(c.date)).filter(Boolean).sort();
       list.push({
         id: opsRoleKey(co, role), company: co, role, contact: '', salary_band: '', fee_percent: '',
-        status: 'open', date_opened: dates[0] || '', date_closed: '', notes: '', stored: false,
+        status: 'open', date_opened: dates[0] || '', date_closed: '', notes: '', positions: '1', stored: false,
       });
     });
   });
@@ -5283,7 +5494,7 @@ function renderRoles(){
     all.filter(r => r.status === 'open').length + ' open, ' + all.length + ' total';
   const body = document.getElementById('rolesBody');
   if(!list.length){
-    body.innerHTML = '<tr><td colspan="10" class="empty-row">' + (all.length ? 'No roles match these filters.' : 'No roles yet. Add one to get started.') + '</td></tr>';
+    body.innerHTML = '<tr><td colspan="11" class="empty-row">' + (all.length ? 'No roles match these filters.' : 'No roles yet. Add one to get started.') + '</td></tr>';
     return;
   }
   body.innerHTML = list.map(r => {
@@ -5300,6 +5511,7 @@ function renderRoles(){
       <td><span class="status-pill ${esc(r.status)}">${esc(roleStatusLabel(r.status))}</span></td>
       <td>${esc(opsFmt(opened))}</td>
       <td>${days === '' ? '' : esc(days)}</td>
+      <td>${rolePositions(r)}</td>
       <td>${r.active} active / ${r.total} total</td>
       <td><div class="row-actions">
         <button ${hasBoard ? '' : 'disabled'} onclick="rolesOpenBoard('${esc(r.id)}')">Pipeline</button>
@@ -5350,6 +5562,7 @@ function openRoleModal(id){
   document.getElementById('rmStatus').value = r ? r.status : 'open';
   document.getElementById('rmOpened').value = r ? opsDateOnly(r.date_opened) : opsToday();
   document.getElementById('rmNotes').value = r ? r.notes : '';
+  document.getElementById('rmPositions').value = r && r.positions ? r.positions : 1;
   document.getElementById('rmDeleteRow').style.display = r && r.stored ? 'flex' : 'none';
   rmRefreshContacts();
   document.getElementById('roleModal').classList.add('visible');
@@ -5373,6 +5586,7 @@ async function saveRole(){
     date_opened: document.getElementById('rmOpened').value || opsToday(),
     date_closed: closed,
     notes: document.getElementById('rmNotes').value,
+    positions: String(Math.max(1, parseInt(document.getElementById('rmPositions').value, 10) || 1)),
   };
   try{
     const res = await fetch(API_BASE + '/api/roles', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
@@ -5631,6 +5845,10 @@ async function loadB2Core(force){
       if(diff > 0) out.push({sev:'high', title:'Overdue follow-up: ' + c.entity_name, detail: diff + ' day' + (diff === 1 ? '' : 's') + ' overdue - ' + opsTrunc(c.summary, 80), act});
       else if(diff === 0) out.push({sev:'med', title:'Follow-up due today: ' + c.entity_name, detail: opsTrunc(c.summary, 80), act});
     });
+    B2.feedback.forEach(f => {
+      if(f.reason || f.outcome === 'positive') return;
+      out.push({sev:'low', title:'Add the reason for a client rejection: ' + f.candidate_name, detail:(f.role || '') + (f.company ? ' at ' + f.company : ''), act:{type:'tab', tab:'feedback'}});
+    });
     const rank = {high:0, med:1, low:2};
     out.sort((a, b) => rank[a.sev] - rank[b.sev]);
     return out;
@@ -5723,7 +5941,7 @@ function renderInterviews(){
       ${rows.map(i => `<tr><td>${esc(opsFmt(i.date))}</td><td>${esc(i.time)}</td><td class="strong">${esc(i.candidate_name)}</td><td>${esc(i.role)}</td><td>${esc(i.company)}</td>
         <td>${esc(IV_TYPES[i.type] || i.type)}</td><td>${esc(opsTrunc(i.location, 40))}</td>
         <td><span class="status-pill ${i.status === 'completed' ? 'completed' : (i.status === 'no_show' || i.status === 'cancelled' ? 'lost' : 'active')}">${esc(IV_STATUS[i.status] || 'Scheduled')}</span></td>
-        <td><div class="row-actions"><button onclick="openInterviewModal('${esc(i.id)}')">Edit</button><button onclick="ivDownloadIcs('${esc(i.id)}')">.ics</button></div></td></tr>`).join('')}
+        <td><div class="row-actions"><button onclick="openInterviewModal('${esc(i.id)}')">Edit</button><button onclick="openInviteDialog('${esc(i.id)}')">Invites</button></div></td></tr>`).join('')}
       </tbody></table></div>` : `<div class="panel"><div class="panel-empty">${empty}</div></div>`;
   document.getElementById('ivAgenda').innerHTML =
     (needs.length ? `<div class="section-title">Needs an outcome</div>${table(needs, '')}` : '') +
@@ -5731,79 +5949,9 @@ function renderInterviews(){
     (past.length ? `<div class="section-title">Recent history</div>${table(past, '')}` : '');
 }
 
-function ivPopulateCandidates(selectedVal){
-  const sel = document.getElementById('ivCandidate');
-  const opts = ['<option value="">Not in the pipeline / type manually</option>'];
-  flatCandidates().filter(x => x.c.stage !== 'rejected' && x.company !== UNASSIGNED_LABEL).forEach(x => {
-    const val = x.company + '||' + x.role + '||' + x.c.id;
-    opts.push(`<option value="${esc(val)}" ${val === selectedVal ? 'selected' : ''}>${esc(x.c.name)} - ${esc(x.role)} (${esc(x.company)})</option>`);
-  });
-  sel.innerHTML = opts.join('');
-}
 
-function ivPickCandidate(){
-  const v = b2Val('ivCandidate');
-  if(!v) return;
-  const [company, role, id] = v.split('||');
-  const hit = flatCandidates().find(x => x.c.id === id && x.company === company && x.role === role);
-  if(!hit) return;
-  b2Set('ivName', hit.c.name); b2Set('ivRole', role); b2Set('ivCompany', company);
-  if(!b2Val('ivInterviewer')){
-    const contact = (APPLICANT_CLIENT_LIST || []).find(cl => b2Same(cl.company, company));
-    if(contact) b2Set('ivInterviewer', contact.contactName);
-  }
-}
 
-function openInterviewModal(id, presetDate, preset){
-  ivEditingId = id || null;
-  const iv = id ? B2.interviews.find(x => x.id === id) : null;
-  document.getElementById('ivModalTitle').textContent = iv ? 'Edit interview' : 'Schedule interview';
-  let selected = '';
-  if(preset && preset.id) selected = preset.company + '||' + preset.role + '||' + preset.id;
-  else if(iv && iv.candidate_id) selected = flatCandidates().filter(x => x.c.id === iv.candidate_id).map(x => x.company + '||' + x.role + '||' + x.c.id)[0] || '';
-  ivPopulateCandidates(selected);
-  b2Set('ivName', iv ? iv.candidate_name : (preset ? preset.name : ''));
-  b2Set('ivRole', iv ? iv.role : (preset ? preset.role : ''));
-  b2Set('ivCompany', iv ? iv.company : (preset ? preset.company : ''));
-  b2Set('ivDate', iv ? opsDateOnly(iv.date) : (presetDate || ''));
-  b2Set('ivTime', iv ? iv.time : '');
-  b2Set('ivType', iv ? (iv.type || 'site') : 'site');
-  b2Set('ivStatus', iv ? (iv.status || 'scheduled') : 'scheduled');
-  b2Set('ivLocation', iv ? iv.location : '');
-  b2Set('ivInterviewer', iv ? iv.interviewer : '');
-  b2Set('ivNotes', iv ? iv.notes : '');
-  document.getElementById('ivExtraRow').style.display = iv ? 'flex' : 'none';
-  if(!iv && preset) ivPickCandidate();
-  document.getElementById('ivModal').classList.add('visible');
-}
 
-async function saveInterview(){
-  const name = b2Val('ivName').trim();
-  const date = b2Val('ivDate');
-  if(!name || !date){ showToast('Enter the candidate name and the interview date'); return; }
-  const picked = b2Val('ivCandidate');
-  const existing = ivEditingId ? B2.interviews.find(x => x.id === ivEditingId) : null;
-  const body = {
-    id: ivEditingId || b2Id('iv'),
-    candidate_id: picked ? picked.split('||')[2] : (existing ? existing.candidate_id : ''),
-    candidate_name: name, role: b2Val('ivRole').trim(), company: b2Val('ivCompany').trim(),
-    date, time: b2Val('ivTime'), type: b2Val('ivType'), location: b2Val('ivLocation').trim(),
-    interviewer: b2Val('ivInterviewer').trim(), status: b2Val('ivStatus'), notes: b2Val('ivNotes'),
-    created_by: existing ? existing.created_by : signedInUser.name,
-  };
-  try{
-    const json = await b2Post('/api/interviews', body);
-    const i = B2.interviews.findIndex(x => x.id === body.id);
-    if(i >= 0) B2.interviews[i] = json.data; else B2.interviews.push(json.data);
-    closeModal('ivModal');
-    showToast('Interview saved');
-    if(!existing) logActivity('interview_booked', {candidate:name, role:body.role, company:body.company, detail: date});
-    renderInterviews();
-    recomputeOps();
-  }catch(e){
-    showToast('Could not save interview: ' + e.message);
-  }
-}
 
 async function deleteInterview(){
   if(!ivEditingId) return;
@@ -5822,37 +5970,6 @@ async function deleteInterview(){
 
 function icsEscape(s){ return String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n'); }
 
-function ivDownloadIcs(id){
-  const iv = B2.interviews.find(x => x.id === id);
-  if(!iv) return;
-  const d = opsDateOnly(iv.date).replace(/-/g, '');
-  if(!d){ showToast('This interview has no date'); return; }
-  const pad = n => String(n).padStart(2, '0');
-  let start, end;
-  if(iv.time && /^\d{2}:\d{2}/.test(iv.time)){
-    const [h, mi] = iv.time.split(':').map(Number);
-    start = `DTSTART:${d}T${pad(h)}${pad(mi)}00`;
-    const eh = h + 1;
-    end = `DTEND:${d}T${pad(eh % 24)}${pad(mi)}00`;
-  }else{
-    start = `DTSTART;VALUE=DATE:${d}`;
-    end = `DTEND;VALUE=DATE:${opsAddDays(opsDateOnly(iv.date), 1).replace(/-/g, '')}`;
-  }
-  const lines = [
-    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Live 2 Help Recruitment//Pipeline//EN', 'BEGIN:VEVENT',
-    'UID:' + iv.id + '@live2helprecruitment.co.uk', 'DTSTAMP:' + new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z',
-    start, end,
-    'SUMMARY:' + icsEscape('Interview: ' + iv.candidate_name + ' - ' + iv.role + (iv.company ? ' (' + iv.company + ')' : '')),
-    iv.location ? 'LOCATION:' + icsEscape(iv.location) : '',
-    'DESCRIPTION:' + icsEscape((iv.interviewer ? 'Client contact: ' + iv.interviewer + '\n' : '') + (iv.notes || '')),
-    'END:VEVENT', 'END:VCALENDAR',
-  ].filter(Boolean);
-  const blob = new Blob([lines.join('\r\n')], {type:'text/calendar'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'Interview ' + iv.candidate_name + ' ' + opsDateOnly(iv.date) + '.ics';
-  document.body.appendChild(a); a.click(); a.remove();
-}
 
 function scheduleFromCandidate(){
   const c = findCandidate(openCandidateId);
@@ -5923,40 +6040,7 @@ function renderComms(){
   }).join('');
 }
 
-function openCommModal(preset){
-  preset = preset || {};
-  const names = new Set();
-  flatCandidates().forEach(x => names.add(x.c.name));
-  (APPLICANT_CLIENT_LIST || []).forEach(cl => { if(cl.contactName) names.add(cl.contactName); });
-  document.getElementById('cmNameList').innerHTML = [...names].sort().map(n => `<option value="${esc(n)}">`).join('');
-  b2Set('cmType', preset.type || 'candidate'); b2Set('cmChannel', 'call'); b2Set('cmDirection', 'outbound');
-  b2Set('cmName', preset.name || ''); b2Set('cmCompany', preset.company || ''); b2Set('cmRole', preset.role || '');
-  b2Set('cmSummaryInput', ''); b2Set('cmFollow', '');
-  document.getElementById('cmModal').classList.add('visible');
-}
 
-async function saveComm(){
-  const name = b2Val('cmName').trim(), summary = b2Val('cmSummaryInput').trim();
-  if(!name || !summary){ showToast('Enter who you spoke to and a short summary'); return; }
-  const body = {
-    id: b2Id('cm'), timestamp: new Date().toISOString(), user: signedInUser.key,
-    entity_type: b2Val('cmType'), entity_name: name, company: b2Val('cmCompany').trim(), role: b2Val('cmRole').trim(),
-    channel: b2Val('cmChannel'), direction: b2Val('cmDirection'), summary,
-    follow_up_date: b2Val('cmFollow'), follow_up_done: '',
-  };
-  try{
-    const json = await b2Post('/api/comms', body);
-    B2.comms.push(json.data);
-    closeModal('cmModal');
-    showToast('Contact logged');
-    logActivity('contact_logged', {candidate:name, role:body.role, company:body.company, detail: body.channel});
-    renderComms();
-    recomputeOps();
-    if(openPoolId) renderPoolDialog();
-  }catch(e){
-    showToast('Could not save: ' + e.message);
-  }
-}
 
 async function commDone(id){
   try{
@@ -5985,7 +6069,7 @@ const FB_OUTCOMES = {
   offer_declined:'Offer declined by candidate', on_hold:'On hold', positive:'Positive feedback',
 };
 const FB_REASONS = {
-  skills:'Skills', experience:'Experience level', salary:'Salary expectations', culture:'Culture or personality fit',
+  '':'Not recorded', skills:'Skills', experience:'Experience level', salary:'Salary expectations', culture:'Culture or personality fit',
   location:'Location or commute', availability:'Availability or notice period', communication:'Communication',
   timing:'Timing or role changed', other:'Other',
 };
@@ -6012,7 +6096,7 @@ function renderFeedback(){
     reasonCounts[r] = (reasonCounts[r] || 0) + 1;
     if(f.company) clientCounts[f.company] = (clientCounts[f.company] || 0) + 1;
   });
-  const topReason = Object.keys(reasonCounts).sort((a, b) => reasonCounts[b] - reasonCounts[a])[0] || 'None yet';
+  const topReason = Object.keys(reasonCounts).filter(k => k !== 'Not recorded').sort((a, b) => reasonCounts[b] - reasonCounts[a])[0] || 'None yet';
   document.getElementById('fbSummary').textContent = list.length + ' entr' + (list.length === 1 ? 'y' : 'ies') + ' logged';
   document.getElementById('fbTiles').innerHTML = [
     {n: list.length, l:'Feedback entries'},
@@ -6031,27 +6115,6 @@ function renderFeedback(){
     : '<tr><td colspan="8" class="empty-row">No feedback logged yet. It is prompted automatically when you reject a candidate after submission.</td></tr>';
 }
 
-function openFeedbackModal(id, preset){
-  fbEditingId = id || null;
-  const f = id ? B2.feedback.find(x => x.id === id) : null;
-  preset = preset || {};
-  document.getElementById('fbModalTitle').textContent = f ? 'Edit client feedback' : 'Log client feedback';
-  const prompt = document.getElementById('fbPrompt');
-  if(preset.candidate_name && !f){
-    prompt.style.display = 'block';
-    prompt.innerHTML = '<strong>Capture the reason while it is fresh.</strong> This builds the picture of why candidates do not progress, so submissions get sharper.';
-  }else{
-    prompt.style.display = 'none';
-  }
-  b2Set('fbDate', f ? opsDateOnly(f.date) : opsToday());
-  b2Set('fbOutcome', f ? f.outcome : (preset.outcome || 'rejected_by_client'));
-  b2Set('fbCandidate', f ? f.candidate_name : (preset.candidate_name || ''));
-  b2Set('fbCompany', f ? f.company : (preset.company || ''));
-  b2Set('fbRole', f ? f.role : (preset.role || ''));
-  b2Set('fbReason', f ? f.reason : 'skills');
-  b2Set('fbDetail', f ? f.detail : '');
-  document.getElementById('fbModal').classList.add('visible');
-}
 
 async function saveFeedback(){
   const name = b2Val('fbCandidate').trim();
@@ -6106,133 +6169,13 @@ function tplNew(){
   b2Post('/api/templates', t).catch(() => {});
 }
 
-const TPL_FIELDS = ['first_name','candidate_name','role','company','contact_name','salary','start_date','interview_date','interview_time','interview_location','my_name'];
 
-function renderTplPane(){
-  const t = B2.templates.find(x => x.id === tplSelectedId);
-  const pane = document.getElementById('tplPane');
-  if(!t){ pane.innerHTML = ''; return; }
-  const cands = flatCandidates().filter(x => x.company !== UNASSIGNED_LABEL);
-  pane.innerHTML = `
-    <div class="tpl-editor">
-      <div class="two-col">
-        <div><label>Template name</label><input id="tplName" value="${esc(t.name)}" oninput="tplPreview()"></div>
-        <div><label>Category</label><input id="tplCat" value="${esc(t.category)}" list="tplCatList"><datalist id="tplCatList"><option value="Candidate"><option value="Client"><option value="General"></datalist></div>
-      </div>
-      <label>Subject</label><input id="tplSubject" value="${esc(t.subject)}" oninput="tplPreview()">
-      <label>Body</label><textarea id="tplBody" oninput="tplPreview()">${esc(t.body)}</textarea>
-      <div class="tpl-fields">Merge fields: ${TPL_FIELDS.map(f => '<code>{{' + f + '}}</code>').join(' ')}</div>
-      <div class="tpl-actions">
-        <button class="gold-btn" onclick="tplSave()">Save template</button>
-        <button class="ghost-btn" onclick="tplDuplicate()">Duplicate</button>
-        <button class="ghost-btn" style="color:var(--danger);border-color:var(--danger);" onclick="tplDelete()">Delete</button>
-      </div>
-      <div class="section-title" style="margin-top:26px;">Fill in and copy</div>
-      <div class="two-col">
-        <div><label>Candidate</label>
-          <select id="tplCand" onchange="tplPickCandidate()"><option value="">Choose a candidate...</option>
-          ${cands.map(x => `<option value="${esc(x.company + '||' + x.role + '||' + x.c.id)}">${esc(x.c.name)} - ${esc(x.role)} (${esc(x.company)})</option>`).join('')}</select></div>
-        <div><label>Client contact name</label><input id="tplContact" oninput="tplPreview()" placeholder="e.g. Guy"></div>
-      </div>
-      <div class="two-col">
-        <div><label>Interview date</label><input id="tplIvDate" oninput="tplPreview()" placeholder="e.g. Thursday 2 October"></div>
-        <div><label>Interview time</label><input id="tplIvTime" oninput="tplPreview()" placeholder="e.g. 10:30am"></div>
-      </div>
-      <label>Interview location</label><input id="tplIvLoc" oninput="tplPreview()">
-      <div class="tpl-preview" id="tplPreview"></div>
-      <div class="tpl-actions">
-        <button class="ghost-btn" onclick="tplCopy('subject')">Copy subject</button>
-        <button class="ghost-btn" onclick="tplCopy('body')">Copy body</button>
-        <button class="gold-btn" onclick="tplCopy('all')">Copy all</button>
-        <button class="ghost-btn" onclick="tplMailto()">Open in email app</button>
-      </div>
-    </div>`;
-  tplPreview();
-}
 
-function tplVars(){
-  const v = {my_name: signedInUser ? signedInUser.name : ''};
-  const sel = b2Val('tplCand');
-  if(sel){
-    const [company, role, id] = sel.split('||');
-    const hit = flatCandidates().find(x => x.c.id === id && x.company === company && x.role === role);
-    if(hit){
-      const c = hit.c;
-      v.candidate_name = c.name; v.first_name = String(c.name).split(' ')[0]; v.role = role; v.company = company;
-      if(c.salary) v.salary = opsMoney(String(c.salary).replace(/[^0-9.]/g, ''));
-      if(c.startDate) v.start_date = opsFmt(c.startDate);
-      window._tplEmail = c.email || '';
-      const iv = B2.interviews.filter(i => b2Same(i.candidate_name, c.name) && (!i.status || i.status === 'scheduled')).sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
-      if(iv){
-        if(iv.date) v.interview_date = new Date(opsDateOnly(iv.date) + 'T00:00:00Z').toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long', timeZone:'UTC'});
-        if(iv.time) v.interview_time = iv.time;
-        if(iv.location) v.interview_location = iv.location;
-      }
-    }
-  }
-  const manual = {contact_name:'tplContact', interview_date:'tplIvDate', interview_time:'tplIvTime', interview_location:'tplIvLoc'};
-  Object.keys(manual).forEach(k => { const val = b2Val(manual[k]).trim(); if(val) v[k] = val; });
-  return v;
-}
 
-function tplPickCandidate(){
-  const sel = b2Val('tplCand');
-  if(sel){
-    const company = sel.split('||')[0];
-    const contact = (APPLICANT_CLIENT_LIST || []).find(cl => b2Same(cl.company, company));
-    if(contact && !b2Val('tplContact')) b2Set('tplContact', String(contact.contactName || '').split(' ')[0]);
-    const c = flatCandidates().find(x => x.c.id === sel.split('||')[2]);
-    const iv = c && B2.interviews.find(i => b2Same(i.candidate_name, c.c.name));
-    if(iv){ b2Set('tplIvDate', ''); b2Set('tplIvTime', ''); b2Set('tplIvLoc', ''); }
-  }
-  tplPreview();
-}
 
-function tplMerge(text, vars, mark){
-  let missing = 0;
-  const out = String(text || '').replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (m, k) => {
-    const val = vars[k.toLowerCase()];
-    if(val) return mark ? '\u0001' + esc(val) + '\u0002' : val;
-    missing++;
-    return mark ? '\u0003' + esc(m) + '\u0004' : m;
-  });
-  return {text: out, missing};
-}
 
-function tplPreview(){
-  const box = document.getElementById('tplPreview');
-  if(!box) return;
-  const vars = tplVars();
-  const subj = tplMerge(b2Val('tplSubject'), vars, false);
-  const body = tplMerge(b2Val('tplBody'), vars, false);
-  const missing = subj.missing + body.missing;
-  const hl = s => esc(s).replace(/\{\{\s*[a-z_]+\s*\}\}/gi, m => '<mark>' + m + '</mark>');
-  box.innerHTML = `<span class="subj">${hl(subj.text) || '<span style="color:#bbb;">No subject</span>'}</span>${hl(body.text)}` +
-    (missing ? `<div class="note-line" style="color:#8a6a12;">${missing} field${missing === 1 ? '' : 's'} still need filling before sending.</div>` : '');
-  box.dataset.subject = subj.text;
-  box.dataset.body = body.text;
-}
 
-async function tplCopy(what){
-  const box = document.getElementById('tplPreview');
-  const text = what === 'subject' ? box.dataset.subject : (what === 'body' ? box.dataset.body : box.dataset.subject + '\n\n' + box.dataset.body);
-  try{
-    await navigator.clipboard.writeText(text);
-    showToast('Copied to clipboard');
-  }catch(e){
-    const ta = document.createElement('textarea');
-    ta.value = text; document.body.appendChild(ta); ta.select();
-    try{ document.execCommand('copy'); showToast('Copied to clipboard'); }catch(err){ showToast('Could not copy - select the text and copy manually'); }
-    ta.remove();
-  }
-}
 
-function tplMailto(){
-  const box = document.getElementById('tplPreview');
-  tplVars();
-  const to = window._tplEmail || '';
-  window.location.href = 'mailto:' + encodeURIComponent(to) + '?subject=' + encodeURIComponent(box.dataset.subject) + '&body=' + encodeURIComponent(box.dataset.body);
-}
 
 async function tplSave(){
   const t = B2.templates.find(x => x.id === tplSelectedId);
@@ -6323,63 +6266,6 @@ function resetForecastWeights(){
   renderForecast();
 }
 
-function renderForecast(){
-  const body = document.getElementById('forecastBody');
-  if(!signedInUser || !signedInUser.admin){ body.innerHTML = ''; return; }
-  const weights = forecastWeights();
-  const roles = mergedRoles();
-  const rows = [];
-  let noSalary = 0;
-  Object.keys(DATA).forEach(co => {
-    if(co === UNASSIGNED_LABEL) return;
-    Object.keys(DATA[co]).forEach(role => DATA[co][role].forEach(c => {
-      if(!FORECAST_STAGES.includes(c.stage)) return;
-      const r = roles.find(x => b2Same(x.company, co) && b2Same(x.role, role));
-      let salary = parseSalaryNumber(c.salary);
-      let source = 'candidate';
-      if(!salary && r){ salary = bandMidpoint(r.salary_band); source = 'band'; }
-      if(!salary){ noSalary++; return; }
-      const rate = r && parseFloat(r.fee_percent) > 0 ? parseFloat(r.fee_percent) : feeRateFor(salary);
-      const fee = salary * rate / 100;
-      rows.push({company:co, role, name:c.name, stage:c.stage, salary, rate, fee, weighted: fee * (weights[c.stage] || 0) / 100, source});
-    }));
-  });
-  const totalWeighted = rows.reduce((s, r) => s + r.weighted, 0);
-  const best = rows.reduce((s, r) => s + r.fee, 0);
-  const awaiting = OPS.placements.filter(p => !p.invoiceNumber && parseSalaryNumber(p.salary) > 0).reduce((s, p) => {
-    const sal = parseSalaryNumber(p.salary);
-    return s + sal * feeRateFor(sal) / 100;
-  }, 0);
-  const outstanding = OPS.invoices.filter(i => i.status !== 'paid').reduce((s, i) => s + (i.amount || 0), 0);
-
-  const byStage = FORECAST_STAGES.map(k => {
-    const rs = rows.filter(r => r.stage === k);
-    return {k, n: rs.length, fee: rs.reduce((s, r) => s + r.fee, 0), w: rs.reduce((s, r) => s + r.weighted, 0)};
-  });
-  const byCo = {};
-  rows.forEach(r => { byCo[r.company] = byCo[r.company] || {n:0, fee:0, w:0}; byCo[r.company].n++; byCo[r.company].fee += r.fee; byCo[r.company].w += r.weighted; });
-
-  body.innerHTML = `
-    <div class="tile-grid">
-      <div class="tile static"><div class="n">${opsMoney(totalWeighted)}</div><div class="l">Weighted forecast</div></div>
-      <div class="tile static"><div class="n">${opsMoney(best)}</div><div class="l">Best case (all placed)</div></div>
-      <div class="tile static"><div class="n">${opsMoney(awaiting)}</div><div class="l">Placed, invoice not raised</div></div>
-      <div class="tile static"><div class="n">${opsMoney(outstanding)}</div><div class="l">Invoices outstanding</div></div>
-      <div class="tile static ${noSalary ? 'warn' : ''}"><div class="n">${noSalary}</div><div class="l">Candidates with no salary data</div></div>
-    </div>
-    <div class="section-title">By stage</div>
-    <div class="ops-table-wrap"><table class="ops-table" style="min-width:640px;"><thead><tr><th>Stage</th><th>Candidates</th><th>Chance of placing (%)</th><th>Potential fees</th><th>Weighted</th></tr></thead><tbody>
-      ${byStage.map(s => `<tr><td class="strong">${esc(poolStageLabel(s.k))}</td><td>${s.n}</td>
-        <td><input class="weight-input" id="fw_${s.k}" type="number" min="0" max="100" value="${weights[s.k]}" style="border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13px;"></td>
-        <td>${opsMoney(s.fee)}</td><td>${opsMoney(s.w)}</td></tr>`).join('')}
-    </tbody></table></div>
-    <div class="kv-tile-row"><button class="gold-btn" onclick="saveForecastWeights()">Save weights</button><button class="ghost-btn" onclick="resetForecastWeights()">Reset to defaults</button></div>
-    <div class="section-title">By client</div>
-    ${Object.keys(byCo).length ? `<div class="ops-table-wrap"><table class="ops-table" style="min-width:560px;"><thead><tr><th>Company</th><th>Candidates</th><th>Potential fees</th><th>Weighted</th></tr></thead><tbody>
-      ${Object.keys(byCo).sort((a, b) => byCo[b].w - byCo[a].w).map(k => `<tr><td class="strong">${esc(k)}</td><td>${byCo[k].n}</td><td>${opsMoney(byCo[k].fee)}</td><td>${opsMoney(byCo[k].w)}</td></tr>`).join('')}
-    </tbody></table></div>` : '<div class="panel"><div class="panel-empty">No candidates with salary data in the pipeline yet.</div></div>'}
-    <div class="note-line">Chance-of-placing percentages are starting estimates, so adjust them to match your real conversion rates. Fees use each role's own fee percent when set, otherwise the standard scale. Salary comes from the candidate record, falling back to the midpoint of the role's salary band. Weights are saved in this browser.</div>`;
-}
 
 /* ============================================================
    Team performance (Dan only)
@@ -6462,10 +6348,7 @@ function renderTeam(rows, firstTs, period){
     if(!after || after.stage !== newStage || snap.from === newStage) return;
     logActivity(newStage === 'start_date' ? 'placed' : newStage, {candidate:snap.name, role:snap.role, company:snap.company, detail:'from ' + snap.from});
     if(newStage === 'rejected' && snap.from !== 'applied' && snap.company !== UNASSIGNED_LABEL){
-      openFeedbackModal(null, {
-        candidate_name: snap.name, role: snap.role, company: snap.company,
-        outcome: (snap.from === 'interview_scheduled' || snap.from === 'interviewed') ? 'rejected_after_interview' : 'rejected_by_client',
-      });
+      autoLogRejection(snap);
     }
   };
 
@@ -6606,6 +6489,1429 @@ function poolExtras(){
     loadB2Core(true).then(() => { if(openPoolId === id) renderPoolDialog(); });
   }
 }
+
+/* ============================================================
+   Round 2 fixes: shared helpers, interviews + invites, comms,
+   feedback auto-log, templates (Outlook), forecast by role
+   ============================================================ */
+
+function toMin(t){ const m = /^(\d{1,2}):(\d{2})/.exec(String(t || '')); return m ? (+m[1]) * 60 + (+m[2]) : 0; }
+function minToHHMM(n){ n = Math.max(0, Math.min(n, 23 * 60 + 59)); return String(Math.floor(n / 60)).padStart(2, '0') + ':' + String(n % 60).padStart(2, '0'); }
+
+function fmtTime12(t){
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(t || ''));
+  if(!m) return t || '';
+  let h = +m[1];
+  const suf = h >= 12 ? 'pm' : 'am';
+  h = h % 12 || 12;
+  return h + ':' + m[2] + suf;
+}
+function fmtDateUK(iso){
+  const d = opsDateOnly(iso);
+  return d ? d.slice(8, 10) + '/' + d.slice(5, 7) + '/' + d.slice(0, 4) : '';
+}
+function fmtDateLong(iso){
+  const d = opsDateOnly(iso);
+  return d ? new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long', year:'numeric', timeZone:'UTC'}) : '';
+}
+
+function timeOptionsHtml(selected){
+  let h = '<option value="">Select time</option>';
+  for(let m = 6 * 60; m <= 20 * 60; m += 15){
+    const v = minToHHMM(m);
+    h += `<option value="${v}" ${v === selected ? 'selected' : ''}>${fmtTime12(v)}</option>`;
+  }
+  if(selected && !/^(0[6-9]|1[0-9]|20):(00|15|30|45)$/.test(selected)){
+    h += `<option value="${esc(selected)}" selected>${esc(fmtTime12(selected))}</option>`;
+  }
+  return h;
+}
+
+function clientContactsFor(company){
+  return (APPLICANT_CLIENT_LIST || []).filter(cl => b2Same(cl.company, company) && cl.contactName);
+}
+function companyAddress(company){
+  const cl = (APPLICANT_CLIENT_LIST || []).find(x => b2Same(x.company, company) && (x.address || x.postcode));
+  return cl ? [cl.address, cl.postcode].filter(Boolean).join(', ') : '';
+}
+function findPipelineCandidate(name, role, company){
+  const hits = flatCandidates().filter(x => b2Same(x.c.name, name));
+  return (hits.find(x => b2Same(x.role, role) && (!company || b2Same(x.company, company))) || hits[0] || {}).c || null;
+}
+function candidateEmailFor(name, role, company){
+  const c = findPipelineCandidate(name, role, company);
+  if(c && c.email) return c.email;
+  const p = (typeof POOL !== 'undefined' ? POOL : []).find(x => b2Same(x.name, name) && (!role || b2Same(x.role, role)));
+  return p && p.email ? p.email : '';
+}
+
+/* The contact chosen when the candidate was assigned to a client (Applied stage), then fallbacks */
+function resolveClientContact(company, role, cand){
+  const list = clientContactsFor(company);
+  let name = cand && cand.contact ? cand.contact : '';
+  if(!name && cand){
+    const prior = B2.interviews.find(i => b2Same(i.candidate_name, cand.name) && b2Same(i.role, role) && i.interviewer);
+    if(prior) name = prior.interviewer;
+  }
+  if(!name){
+    const r = mergedRoles().find(x => b2Same(x.company, company) && b2Same(x.role, role));
+    if(r && r.contact) name = r.contact;
+  }
+  if(!name && list.length) name = list[0].contactName;
+  if(!name) return null;
+  const rec = list.find(c => b2Same(c.contactName, name));
+  return rec ? {name: rec.contactName, email: rec.email || '', phone: rec.phone || '', title: rec.jobTitle || ''} : {name, email:'', phone:'', title:''};
+}
+
+async function copyToClipboard(text){
+  try{ await navigator.clipboard.writeText(text); return true; }
+  catch(e){
+    try{
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return ok;
+    }catch(err){ return false; }
+  }
+}
+
+/* ---------- Outlook links ---------- */
+const OUTLOOK_WEB = 'https://outlook.office.com';
+function encO(s){ return encodeURIComponent(String(s == null ? '' : s)).replace(/%0A/g, '%0D%0A'); }
+function outlookMailUrl(to, subject, body){ return `${OUTLOOK_WEB}/mail/deeplink/compose?to=${encO(to)}&subject=${encO(subject)}&body=${encO(body)}`; }
+function outlookDesktopMailUrl(to, subject, body){ return `ms-outlook://compose?to=${encO(to)}&subject=${encO(subject)}&body=${encO(body)}`; }
+function outlookCalUrl(o){
+  return `${OUTLOOK_WEB}/calendar/0/deeplink/compose?path=%2Fcalendar%2Faction%2Fcompose&rru=addevent&subject=${encO(o.subject)}&body=${encO(o.body)}&startdt=${encO(o.start)}&enddt=${encO(o.end)}&location=${encO(o.location)}&to=${encO(o.to)}`;
+}
+async function openMailInOutlook(mode, to, subject, body){
+  const build = mode === 'desktop' ? outlookDesktopMailUrl : outlookMailUrl;
+  let url = build(to, subject, body);
+  if(url.length > 1900){
+    await copyToClipboard(body);
+    showToast('The message is long, so its text has been copied. Paste it into the email body.');
+    url = build(to, subject, '');
+  }
+  if(mode === 'desktop') window.location.href = url; else window.open(url, '_blank');
+}
+
+/* ============================================================
+   Interviews (round 2)
+   ============================================================ */
+
+function ivPopulateCandidates(selectedVal){
+  const sel = document.getElementById('ivCandidate');
+  const opts = ['<option value="">Not in the pipeline / type manually</option>'];
+  flatCandidates().filter(x => x.c.stage !== 'rejected' && x.company !== UNASSIGNED_LABEL).forEach(x => {
+    const val = x.company + '||' + x.role + '||' + x.c.id;
+    opts.push(`<option value="${esc(val)}" ${val === selectedVal ? 'selected' : ''}>${esc(x.c.name)} - ${esc(x.role)} (${esc(x.company)})</option>`);
+  });
+  sel.innerHTML = opts.join('');
+}
+
+function ivFillContactEmail(){
+  const company = b2Val('ivCompany').trim();
+  const name = b2Val('ivInterviewer').trim();
+  document.getElementById('ivContactList').innerHTML = clientContactsFor(company).map(c => `<option value="${esc(c.contactName)}">`).join('');
+  const rec = clientContactsFor(company).find(c => b2Same(c.contactName, name));
+  if(rec && rec.email) b2Set('ivInterviewerEmail', rec.email);
+}
+
+function ivPickCandidate(){
+  const v = b2Val('ivCandidate');
+  if(!v) return;
+  const [company, role, id] = v.split('||');
+  const hit = flatCandidates().find(x => x.c.id === id && x.company === company && x.role === role);
+  if(!hit) return;
+  b2Set('ivName', hit.c.name); b2Set('ivRole', role); b2Set('ivCompany', company);
+  b2Set('ivCandidateEmail', hit.c.email || candidateEmailFor(hit.c.name, role, company));
+  const contact = resolveClientContact(company, role, hit.c);
+  document.getElementById('ivContactList').innerHTML = clientContactsFor(company).map(c => `<option value="${esc(c.contactName)}">`).join('');
+  b2Set('ivInterviewer', contact ? contact.name : '');
+  b2Set('ivInterviewerEmail', contact ? contact.email : '');
+  if(b2Val('ivType') === 'site' && !b2Val('ivLocation')) b2Set('ivLocation', companyAddress(company));
+}
+
+function ivTypeChanged(){
+  if(b2Val('ivType') === 'site' && !b2Val('ivLocation')) b2Set('ivLocation', companyAddress(b2Val('ivCompany')));
+}
+
+function openInterviewModal(id, presetDate, preset){
+  ivEditingId = id || null;
+  const iv = id ? B2.interviews.find(x => x.id === id) : null;
+  document.getElementById('ivModalTitle').textContent = iv ? 'Edit interview' : 'Schedule interview';
+  let selected = '';
+  if(preset && preset.id) selected = preset.company + '||' + preset.role + '||' + preset.id;
+  else if(iv && iv.candidate_id) selected = flatCandidates().filter(x => x.c.id === iv.candidate_id).map(x => x.company + '||' + x.role + '||' + x.c.id)[0] || '';
+  ivPopulateCandidates(selected);
+  document.getElementById('ivTime').innerHTML = timeOptionsHtml(iv ? iv.time : '');
+  b2Set('ivName', iv ? iv.candidate_name : (preset ? preset.name : ''));
+  b2Set('ivRole', iv ? iv.role : (preset ? preset.role : ''));
+  b2Set('ivCompany', iv ? iv.company : (preset ? preset.company : ''));
+  b2Set('ivDate', iv ? opsDateOnly(iv.date) : (presetDate || ''));
+  b2Set('ivDuration', iv && iv.duration ? iv.duration : '60');
+  b2Set('ivType', iv ? (iv.type || 'site') : 'site');
+  b2Set('ivStatus', iv ? (iv.status || 'scheduled') : 'scheduled');
+  b2Set('ivLocation', iv ? iv.location : '');
+  b2Set('ivInterviewer', iv ? iv.interviewer : '');
+  b2Set('ivInterviewerEmail', iv ? iv.interviewer_email : '');
+  b2Set('ivCandidateEmail', iv ? iv.candidate_email : '');
+  b2Set('ivNotes', iv ? iv.notes : '');
+  document.getElementById('ivExtraRow').style.display = iv ? 'flex' : 'none';
+  if(!iv && preset) ivPickCandidate();
+  else ivFillContactEmail();
+  document.getElementById('ivModal').classList.add('visible');
+}
+
+async function saveInterview(){
+  const name = b2Val('ivName').trim();
+  const date = b2Val('ivDate');
+  if(!name || !date){ showToast('Enter the candidate name and the interview date'); return; }
+  const picked = b2Val('ivCandidate');
+  const existing = ivEditingId ? B2.interviews.find(x => x.id === ivEditingId) : null;
+  const body = {
+    id: ivEditingId || b2Id('iv'),
+    candidate_id: picked ? picked.split('||')[2] : (existing ? existing.candidate_id : ''),
+    candidate_name: name, role: b2Val('ivRole').trim(), company: b2Val('ivCompany').trim(),
+    date, time: b2Val('ivTime'), type: b2Val('ivType'), location: b2Val('ivLocation').trim(),
+    interviewer: b2Val('ivInterviewer').trim(), status: b2Val('ivStatus'), notes: b2Val('ivNotes'),
+    created_by: existing ? existing.created_by : signedInUser.name,
+    duration: b2Val('ivDuration') || '60',
+    candidate_email: b2Val('ivCandidateEmail').trim(),
+    interviewer_email: b2Val('ivInterviewerEmail').trim(),
+  };
+  try{
+    const json = await b2Post('/api/interviews', body);
+    const i = B2.interviews.findIndex(x => x.id === body.id);
+    if(i >= 0) B2.interviews[i] = json.data; else B2.interviews.push(json.data);
+    closeModal('ivModal');
+    showToast('Interview saved');
+    if(!existing) logActivity('interview_booked', {candidate:name, role:body.role, company:body.company, detail: date});
+    renderInterviews();
+    recomputeOps();
+    if(body.status === 'scheduled') openInviteDialog(body.id, true);
+  }catch(e){
+    showToast('Could not save interview: ' + e.message);
+  }
+}
+
+function ivWindow(iv){
+  const d = opsDateOnly(iv.date);
+  const t = /^\d{2}:\d{2}/.test(iv.time || '') ? String(iv.time).slice(0, 5) : '09:00';
+  const dur = parseInt(iv.duration, 10) || 60;
+  return {start: `${d}T${t}:00`, end: `${d}T${minToHHMM(toMin(t) + dur)}:00`};
+}
+
+function ivInviteContent(iv){
+  const time12 = iv.time ? fmtTime12(iv.time) : '';
+  const dateLong = fmtDateLong(iv.date);
+  const contact = iv.interviewer || '';
+  const cInfo = clientContactsFor(iv.company).find(c => b2Same(c.contactName, contact));
+  const typeLabel = IV_TYPES[iv.type] || iv.type || '';
+  const address = companyAddress(iv.company);
+  const place = (iv.type === 'site' || !iv.location) ? (address || iv.location || '') : iv.location;
+  const candSubject = `Interview scheduled with ${iv.company}${time12 ? ' at ' + time12 : ''}${contact ? ' with ' + contact : ''}`;
+  const candBody = [
+    candSubject + '.', '',
+    iv.role ? 'Role: ' + iv.role : false,
+    dateLong ? 'Date: ' + dateLong : false,
+    time12 ? 'Time: ' + time12 : false,
+    contact ? 'Meeting with: ' + contact + (cInfo && cInfo.title ? ' - ' + cInfo.title : '') : false,
+    typeLabel ? 'Format: ' + typeLabel : false,
+    place ? ((iv.type === 'site' || !iv.location ? 'Address: ' : 'Details: ') + place) : false,
+    '', 'Please arrive 5-10 minutes early and reply to confirm you can attend.',
+  ].filter(l => l !== false).join('\n');
+  const clientSubject = `Interview scheduled with ${iv.candidate_name}${time12 ? ' at ' + time12 : ''}${iv.role ? ' for ' + iv.role : ''}`;
+  const clientBody = [clientSubject + '.', '', dateLong ? 'Date: ' + dateLong : false, time12 ? 'Time: ' + time12 : false].filter(l => l !== false).join('\n');
+  return {
+    candidate: {to: iv.candidate_email || candidateEmailFor(iv.candidate_name, iv.role, iv.company), subject: candSubject, body: candBody, location: place},
+    client: {to: iv.interviewer_email || ((clientContactsFor(iv.company).find(c => b2Same(c.contactName, contact)) || {}).email || ''), subject: clientSubject, body: clientBody, location: place},
+  };
+}
+
+let ivInviteId = null;
+
+function openInviteDialog(id, justSaved){
+  const iv = B2.interviews.find(x => x.id === id);
+  if(!iv) return;
+  ivInviteId = id;
+  const c = ivInviteContent(iv);
+  const w = ivWindow(iv);
+  const missingAddr = !c.candidate.location;
+  const block = (who, label, data, hint) => `
+    <div class="inv-card">
+      <div class="inv-title">${label}</div>
+      <label>Invite to</label>
+      <input id="inv_${who}_to" value="${esc(data.to)}" placeholder="email address">
+      ${data.to ? '' : `<div class="inv-warn">${hint}</div>`}
+      <label>Title</label>
+      <input id="inv_${who}_subject" value="${esc(data.subject)}">
+      <label>Message</label>
+      <textarea id="inv_${who}_body">${esc(data.body)}</textarea>
+      <label>Location</label>
+      <input id="inv_${who}_loc" value="${esc(data.location)}">
+      <div class="tpl-actions">
+        <button class="gold-btn" onclick="ivSendInvite('${who}')">Create invite in Outlook</button>
+        <button class="ghost-btn" onclick="ivInviteIcs('${who}')">.ics file</button>
+      </div>
+    </div>`;
+  document.getElementById('ivInviteBody').innerHTML = `
+    <h2>${justSaved ? 'Interview saved - add to calendar' : 'Calendar invites'}</h2>
+    <div class="note-line" style="margin:6px 0 12px;">${esc(iv.candidate_name)} - ${esc(iv.role)} at ${esc(iv.company)}<br>${esc(fmtDateLong(iv.date))}${iv.time ? ' at ' + esc(fmtTime12(iv.time)) : ''}. Two separate invites: one for the candidate and one for the client.</div>
+    ${missingAddr ? '<div class="prompt-box" style="margin-top:0;">No address on file for this company, so the candidate invite has no address. Add it on the Clients tab or type it in the Location box below.</div>' : ''}
+    ${block('candidate', 'Candidate invite', c.candidate, 'No candidate email on file. Add one to include them as an attendee.')}
+    ${block('client', 'Client invite', c.client, 'No email on file for the client contact. Add one to include them as an attendee.')}
+    <div class="note-line">The Outlook button opens a new event with the details filled in and the person added as an attendee. Check it and press Send in Outlook. The .ics file only adds the event to your own calendar.</div>
+    <div class="stage-buttons"><button onclick="closeModal('ivInviteModal')">Done</button></div>`;
+  document.getElementById('ivInviteModal').classList.add('visible');
+}
+
+function ivInviteFields(who){
+  return {to: b2Val('inv_' + who + '_to').trim(), subject: b2Val('inv_' + who + '_subject'), body: b2Val('inv_' + who + '_body'), location: b2Val('inv_' + who + '_loc')};
+}
+
+async function ivSaveInviteEmails(){
+  const iv = B2.interviews.find(x => x.id === ivInviteId);
+  if(!iv) return;
+  const cand = b2Val('inv_candidate_to').trim(), cli = b2Val('inv_client_to').trim();
+  if(cand === (iv.candidate_email || '') && cli === (iv.interviewer_email || '')) return;
+  try{
+    const json = await b2Post('/api/interviews', {id: iv.id, candidate_email: cand, interviewer_email: cli});
+    const i = B2.interviews.findIndex(x => x.id === iv.id);
+    if(i >= 0) B2.interviews[i] = json.data;
+  }catch(e){ /* not critical */ }
+}
+
+function ivSendInvite(who){
+  const iv = B2.interviews.find(x => x.id === ivInviteId);
+  if(!iv) return;
+  const f = ivInviteFields(who);
+  const w = ivWindow(iv);
+  ivSaveInviteEmails();
+  let url = outlookCalUrl({subject: f.subject, body: f.body, start: w.start, end: w.end, location: f.location, to: f.to});
+  if(url.length > 1900){
+    copyToClipboard(f.body);
+    showToast('Message is long: its text is copied, paste it into the invite');
+    url = outlookCalUrl({subject: f.subject, body: '', start: w.start, end: w.end, location: f.location, to: f.to});
+  }
+  window.open(url, '_blank');
+}
+
+function icsBuild(o){
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+  const compact = s => String(s).replace(/[-:]/g, '');
+  return [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Live 2 Help Recruitment//Pipeline//EN', 'BEGIN:VEVENT',
+    'UID:' + o.uid + '@live2helprecruitment.co.uk', 'DTSTAMP:' + stamp,
+    'DTSTART:' + compact(o.start), 'DTEND:' + compact(o.end),
+    'SUMMARY:' + icsEscape(o.subject),
+    o.location ? 'LOCATION:' + icsEscape(o.location) : '',
+    'DESCRIPTION:' + icsEscape(o.body),
+    'END:VEVENT', 'END:VCALENDAR',
+  ].filter(Boolean).join('\r\n');
+}
+function downloadText(name, text, type){
+  const blob = new Blob([text], {type: type || 'text/plain'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+function ivInviteIcs(who){
+  const iv = B2.interviews.find(x => x.id === ivInviteId);
+  if(!iv) return;
+  const f = ivInviteFields(who);
+  const w = ivWindow(iv);
+  downloadText('Interview ' + (who === 'client' ? 'client ' : 'candidate ') + iv.candidate_name + ' ' + opsDateOnly(iv.date) + '.ics',
+    icsBuild({uid: iv.id + '-' + who, subject: f.subject, body: f.body, location: f.location, start: w.start, end: w.end}), 'text/calendar');
+}
+
+function ivDownloadIcs(id){
+  const iv = B2.interviews.find(x => x.id === id);
+  if(!iv) return;
+  if(!opsDateOnly(iv.date)){ showToast('This interview has no date'); return; }
+  const c = ivInviteContent(iv);
+  const w = ivWindow(iv);
+  downloadText('Interview ' + iv.candidate_name + ' ' + opsDateOnly(iv.date) + '.ics',
+    icsBuild({uid: iv.id, subject: c.client.subject, body: c.candidate.body, location: c.candidate.location, start: w.start, end: w.end}), 'text/calendar');
+}
+
+/* ============================================================
+   Communications log (round 2): lists follow the type, auto fill, notes
+   ============================================================ */
+
+function cmRefreshNames(){
+  const type = b2Val('cmType');
+  let names = [];
+  if(type === 'client'){
+    names = (APPLICANT_CLIENT_LIST || []).map(c => c.contactName).filter(Boolean);
+  }else{
+    flatCandidates().forEach(x => names.push(x.c.name));
+    (typeof POOL !== 'undefined' ? POOL : []).forEach(p => { if(p.name && !p.erased) names.push(p.name); });
+  }
+  document.getElementById('cmNameList').innerHTML = [...new Set(names)].sort().map(n => `<option value="${esc(n)}">`).join('');
+  document.getElementById('cmNameLabel').textContent = type === 'client' ? 'Client contact' : 'Candidate';
+}
+
+function cmAutofill(){
+  const name = b2Val('cmName').trim();
+  if(!name) return;
+  if(b2Val('cmType') === 'client'){
+    const rec = (APPLICANT_CLIENT_LIST || []).find(c => b2Same(c.contactName, name));
+    if(rec){ b2Set('cmCompany', rec.company); }
+  }else{
+    const hit = flatCandidates().find(x => b2Same(x.c.name, name));
+    if(hit){ b2Set('cmCompany', hit.company === UNASSIGNED_LABEL ? '' : hit.company); b2Set('cmRole', hit.role); }
+    else{
+      const p = (typeof POOL !== 'undefined' ? POOL : []).find(x => b2Same(x.name, name));
+      if(p){ b2Set('cmCompany', p.company || ''); b2Set('cmRole', p.role || ''); }
+    }
+  }
+}
+
+function openCommModal(preset){
+  preset = preset || {};
+  b2Set('cmType', preset.type || 'candidate'); b2Set('cmChannel', 'call'); b2Set('cmDirection', 'outbound');
+  cmRefreshNames();
+  b2Set('cmName', preset.name || ''); b2Set('cmCompany', preset.company || ''); b2Set('cmRole', preset.role || '');
+  b2Set('cmSummaryInput', ''); b2Set('cmFollow', '');
+  document.getElementById('cmModal').classList.add('visible');
+}
+
+/* Adds a dated line to the candidate's notes so it shows when their card is opened */
+async function appendCommToNotes(entry){
+  if(entry.entity_type !== 'candidate') return;
+  const dateTxt = new Date().toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'});
+  const line = `[${dateTxt}] ${CM_CHANNELS[entry.channel] || entry.channel}${entry.direction === 'inbound' ? ' (inbound)' : ''} - ${userLabel(entry.user)}: ${entry.summary}`;
+  const append = old => (old ? old.replace(/\s+$/, '') + '\n' : '') + line;
+  const hit = flatCandidates().find(x => b2Same(x.c.name, entry.entity_name) && (!entry.role || b2Same(x.role, entry.role)))
+    || flatCandidates().find(x => b2Same(x.c.name, entry.entity_name));
+  try{
+    if(hit){
+      hit.c.notes = append(hit.c.notes || '');
+      await saveCandidate(hit.c);
+      if(!opsIsVisible('candidatesView')) return;
+      renderBoard();
+      return;
+    }
+    const p = (typeof POOL !== 'undefined' ? POOL : []).find(x => b2Same(x.name, entry.entity_name));
+    if(p){
+      const notes = append(p.notes || '');
+      await b2Api('/api/candidate-pool/' + encodeURIComponent(p.id) + '/notes', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({notes})});
+      p.notes = notes;
+    }
+  }catch(e){ showToast('Contact logged, but the candidate notes could not be updated'); }
+}
+
+async function saveComm(){
+  const name = b2Val('cmName').trim(), summary = b2Val('cmSummaryInput').trim();
+  if(!name || !summary){ showToast('Enter who you spoke to and a short summary'); return; }
+  const body = {
+    id: b2Id('cm'), timestamp: new Date().toISOString(), user: signedInUser.key,
+    entity_type: b2Val('cmType'), entity_name: name, company: b2Val('cmCompany').trim(), role: b2Val('cmRole').trim(),
+    channel: b2Val('cmChannel'), direction: b2Val('cmDirection'), summary,
+    follow_up_date: b2Val('cmFollow'), follow_up_done: '',
+  };
+  try{
+    const json = await b2Post('/api/comms', body);
+    B2.comms.push(json.data);
+    closeModal('cmModal');
+    showToast('Contact logged');
+    logActivity('contact_logged', {candidate:name, role:body.role, company:body.company, detail: body.channel});
+    renderComms();
+    recomputeOps();
+    if(openPoolId) renderPoolDialog();
+    appendCommToNotes(body);
+  }catch(e){
+    showToast('Could not save: ' + e.message);
+  }
+}
+
+/* ============================================================
+   Client feedback (round 2): logged automatically on rejection
+   ============================================================ */
+
+async function autoLogRejection(snap){
+  const outcome = (snap.from === 'interview_scheduled' || snap.from === 'interviewed') ? 'rejected_after_interview' : 'rejected_by_client';
+  const body = {
+    id: b2Id('fb'), date: opsToday(), company: snap.company, role: snap.role, candidate_name: snap.name,
+    outcome, reason: '', detail: '', logged_by: signedInUser.name,
+  };
+  try{
+    const json = await b2Post('/api/client-feedback', body);
+    B2.feedback.push(json.data);
+    openFeedbackModal(body.id, {fromReject: true});
+  }catch(e){
+    openFeedbackModal(null, {candidate_name: snap.name, role: snap.role, company: snap.company, outcome, fromReject: true});
+  }
+  recomputeOps();
+}
+
+function openFeedbackModal(id, preset){
+  fbEditingId = id || null;
+  const f = id ? B2.feedback.find(x => x.id === id) : null;
+  preset = preset || {};
+  document.getElementById('fbModalTitle').textContent = f ? (preset.fromReject ? 'Rejection logged - add the reason' : 'Edit client feedback') : 'Log client feedback';
+  const prompt = document.getElementById('fbPrompt');
+  if(preset.fromReject){
+    prompt.style.display = 'block';
+    prompt.innerHTML = '<strong>This rejection has been added to the Client Feedback log.</strong> Add the reason now while it is fresh, or skip and come back to it from the Client Feedback tab.';
+  }else{
+    prompt.style.display = 'none';
+  }
+  b2Set('fbDate', f ? opsDateOnly(f.date) : opsToday());
+  b2Set('fbOutcome', f ? f.outcome : (preset.outcome || 'rejected_by_client'));
+  b2Set('fbCandidate', f ? f.candidate_name : (preset.candidate_name || ''));
+  b2Set('fbCompany', f ? f.company : (preset.company || ''));
+  b2Set('fbRole', f ? f.role : (preset.role || ''));
+  b2Set('fbReason', f ? f.reason : '');
+  b2Set('fbDetail', f ? f.detail : '');
+  document.getElementById('fbModal').classList.add('visible');
+}
+
+/* ============================================================
+   Email templates (round 2): merge fields, pickers, Outlook
+   ============================================================ */
+
+const TPL_FIELDS = ['first_name','candidate_name','role','company','company_address','contact_name','contact_first_name','interviewer','salary','start_date','interview_date','interview_time','interview_location','interview_format','invoice_ref','fee_amount','signature'];
+
+function senderProfile(){
+  const u = signedInUser || {};
+  const name = u.fullName || u.name || '';
+  const sig = [name, u.title, 'Live 2 Help Recruitment', u.email, u.phone, 'www.live2helprecruitment.co.uk'].filter(Boolean).join('\n');
+  return {name, title: u.title || '', email: u.email || '', phone: u.phone || '', signature: sig};
+}
+
+function renderTplPane(){
+  const t = B2.templates.find(x => x.id === tplSelectedId);
+  const pane = document.getElementById('tplPane');
+  if(!t){ pane.innerHTML = ''; return; }
+  const cands = flatCandidates().filter(x => x.company !== UNASSIGNED_LABEL);
+  pane.innerHTML = `
+    <div class="tpl-editor">
+      <div class="two-col">
+        <div><label>Template name</label><input id="tplName" value="${esc(t.name)}"></div>
+        <div><label>Category</label><input id="tplCat" value="${esc(t.category)}" list="tplCatList"><datalist id="tplCatList"><option value="Candidate"><option value="Client"><option value="General"></datalist></div>
+      </div>
+      <label>Subject</label><input id="tplSubject" value="${esc(t.subject)}" oninput="tplPreview()">
+      <label>Body</label><textarea id="tplBody" oninput="tplPreview()">${esc(t.body)}</textarea>
+      <div class="tpl-fields">Merge fields: ${TPL_FIELDS.map(f => '<code>{{' + f + '}}</code>').join(' ')}. Text in [SQUARE BRACKETS] is for you to fill in by hand.</div>
+      <div class="tpl-actions">
+        <button class="gold-btn" onclick="tplSave()">Save template</button>
+        <button class="ghost-btn" onclick="tplDuplicate()">Duplicate</button>
+        <button class="ghost-btn" style="color:var(--danger);border-color:var(--danger);" onclick="tplDelete()">Delete</button>
+      </div>
+      <div class="section-title" style="margin-top:26px;">Fill in and send</div>
+      <label>Candidate</label>
+      <select id="tplCand" onchange="tplPickCandidate()"><option value="">Choose a candidate...</option>
+        ${cands.map(x => `<option value="${esc(x.company + '||' + x.role + '||' + x.c.id)}">${esc(x.c.name)} - ${esc(x.role)} (${esc(x.company)})</option>`).join('')}</select>
+      <div class="two-col">
+        <div><label>Client contact</label><input id="tplContact" list="tplContactList" oninput="tplContactTyped()" placeholder="Filled in from the candidate"><datalist id="tplContactList"></datalist></div>
+        <div><label>Send to</label><input id="tplTo" placeholder="Email address"></div>
+      </div>
+      <div class="two-col">
+        <div><label>Interview date</label><input type="date" id="tplIvDate" onclick="try{this.showPicker()}catch(e){}" onchange="tplPreview()"></div>
+        <div><label>Interview time</label><select id="tplIvTime" onchange="tplPreview()">${timeOptionsHtml('')}</select></div>
+      </div>
+      <div class="two-col">
+        <div><label>Format</label>
+          <select id="tplIvFormat" onchange="tplPreview()"><option value="Face to face">Face to face</option><option value="Video call">Video call</option><option value="Phone">Phone</option><option value="Assessment">Assessment</option></select></div>
+        <div><label>Location</label><input id="tplIvLoc" oninput="tplPreview()" placeholder="Filled in from the company address"></div>
+      </div>
+      <div class="tpl-preview" id="tplPreview"></div>
+      <div class="tpl-actions">
+        <button class="gold-btn" onclick="tplOutlook('web')">Open in Outlook</button>
+        <button class="ghost-btn" onclick="tplOutlook('desktop')">Outlook desktop app</button>
+        <button class="ghost-btn" onclick="tplCopy('all')">Copy all</button>
+        <button class="ghost-btn" onclick="tplCopy('subject')">Copy subject</button>
+        <button class="ghost-btn" onclick="tplCopy('body')">Copy body</button>
+      </div>
+      <div class="note-line">Open in Outlook opens a new email in Outlook on the web. Outlook desktop app tries to open the installed app instead. Long messages are copied to your clipboard to paste in.</div>
+    </div>`;
+  tplPreview();
+}
+
+function tplSelectedCandidate(){
+  const sel = b2Val('tplCand');
+  if(!sel) return null;
+  const [company, role, id] = sel.split('||');
+  const hit = flatCandidates().find(x => x.c.id === id && x.company === company && x.role === role);
+  return hit ? {c: hit.c, company, role} : null;
+}
+
+function tplPickCandidate(){
+  const sel = tplSelectedCandidate();
+  if(sel){
+    const contact = resolveClientContact(sel.company, sel.role, sel.c);
+    document.getElementById('tplContactList').innerHTML = clientContactsFor(sel.company).map(c => `<option value="${esc(c.contactName)}">`).join('');
+    b2Set('tplContact', contact ? contact.name : '');
+    window._tplContactEmail = contact ? contact.email : '';
+    window._tplContactTitle = contact ? contact.title : '';
+    const iv = B2.interviews.filter(i => b2Same(i.candidate_name, sel.c.name) && (!i.status || i.status === 'scheduled'))
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+    b2Set('tplIvDate', iv ? opsDateOnly(iv.date) : '');
+    document.getElementById('tplIvTime').innerHTML = timeOptionsHtml(iv ? iv.time : '');
+    b2Set('tplIvFormat', iv ? ({site:'Face to face', video:'Video call', phone:'Phone', assessment:'Assessment'}[iv.type] || 'Face to face') : 'Face to face');
+    b2Set('tplIvLoc', iv && iv.location ? iv.location : companyAddress(sel.company));
+    if(iv && iv.interviewer){ b2Set('tplContact', iv.interviewer); const rec = clientContactsFor(sel.company).find(c => b2Same(c.contactName, iv.interviewer)); window._tplContactEmail = rec ? rec.email : (iv.interviewer_email || ''); window._tplContactTitle = rec ? rec.title : ''; }
+  }
+  tplSetRecipient();
+  tplPreview();
+}
+
+function tplContactTyped(){
+  const sel = tplSelectedCandidate();
+  const rec = sel ? clientContactsFor(sel.company).find(c => b2Same(c.contactName, b2Val('tplContact'))) : null;
+  if(rec){ window._tplContactEmail = rec.email || ''; window._tplContactTitle = rec.title || ''; }
+  tplSetRecipient();
+  tplPreview();
+}
+
+function tplSetRecipient(){
+  const t = B2.templates.find(x => x.id === tplSelectedId);
+  const sel = tplSelectedCandidate();
+  const forClient = t && String(t.category).toLowerCase() === 'client';
+  const email = forClient ? (window._tplContactEmail || '') : (sel ? (sel.c.email || candidateEmailFor(sel.c.name, sel.role, sel.company)) : '');
+  b2Set('tplTo', email);
+}
+
+function tplVars(){
+  const v = {};
+  const me = senderProfile();
+  v.sender_name = me.name; v.sender_email = me.email; v.sender_phone = me.phone; v.signature = me.signature; v.my_name = me.name;
+  const sel = tplSelectedCandidate();
+  if(sel){
+    const c = sel.c;
+    v.candidate_name = c.name; v.first_name = String(c.name).split(' ')[0]; v.role = sel.role; v.company = sel.company;
+    v.company_address = companyAddress(sel.company);
+    if(c.salary) v.salary = opsMoney(String(c.salary).replace(/[^0-9.]/g, ''));
+    if(c.startDate) v.start_date = fmtDateLong(c.startDate);
+    const inv = OPS.invoices.find(i => b2Same(i.candidateName, c.name) && b2Same(i.company, sel.company));
+    if(inv){ v.invoice_ref = inv.number; v.fee_amount = opsMoney(inv.amount); }
+    else{
+      const sal = parseSalaryNumber(c.salary);
+      if(sal && signedInUser && signedInUser.admin) v.fee_amount = opsMoney(sal * feeRateFor(sal) / 100);
+    }
+  }
+  const contact = b2Val('tplContact').trim();
+  if(contact){
+    v.contact_name = contact; v.contact_first_name = contact.split(' ')[0];
+    v.interviewer = contact + (window._tplContactTitle ? ' - ' + window._tplContactTitle : '');
+  }
+  const d = b2Val('tplIvDate'), tm = b2Val('tplIvTime'), loc = b2Val('tplIvLoc').trim(), fmt = b2Val('tplIvFormat');
+  if(d) v.interview_date = fmtDateUK(d);
+  if(tm) v.interview_time = fmtTime12(tm);
+  if(loc) v.interview_location = loc;
+  if(fmt) v.interview_format = fmt;
+  return v;
+}
+
+function tplMerge(text, vars){
+  let missing = 0;
+  const out = String(text || '').replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (m, k) => {
+    const val = vars[k.toLowerCase()];
+    if(val) return val;
+    missing++;
+    return m;
+  });
+  missing += (out.match(/\[[^\]\n]{2,}\]/g) || []).length;
+  return {text: out, missing};
+}
+
+function tplPreview(){
+  const box = document.getElementById('tplPreview');
+  if(!box) return;
+  const vars = tplVars();
+  const subj = tplMerge(b2Val('tplSubject'), vars);
+  const body = tplMerge(b2Val('tplBody'), vars);
+  const missing = subj.missing + body.missing;
+  const hl = s => esc(s).replace(/\{\{\s*[a-z_]+\s*\}\}|\[[^\]\n]{2,}\]/gi, m => '<mark>' + m + '</mark>');
+  box.innerHTML = `<span class="subj">${hl(subj.text) || '<span style="color:#bbb;">No subject</span>'}</span>${hl(body.text)}` +
+    (missing ? `<div class="note-line" style="color:#8a6a12;">${missing} highlighted item${missing === 1 ? '' : 's'} still need filling in before sending.</div>` : '');
+  box.dataset.subject = subj.text;
+  box.dataset.body = body.text;
+}
+
+async function tplCopy(what){
+  const box = document.getElementById('tplPreview');
+  const text = what === 'subject' ? box.dataset.subject : (what === 'body' ? box.dataset.body : box.dataset.subject + '\n\n' + box.dataset.body);
+  showToast((await copyToClipboard(text)) ? 'Copied to clipboard' : 'Could not copy - select the text and copy it manually');
+}
+
+function tplOutlook(mode){
+  const box = document.getElementById('tplPreview');
+  tplPreview();
+  openMailInOutlook(mode, b2Val('tplTo').trim(), box.dataset.subject, box.dataset.body);
+}
+
+/* ============================================================
+   Forecast by role (round 2): positions cap the fees counted
+   ============================================================ */
+
+function rolePositions(r){ return Math.max(1, parseInt(r && r.positions, 10) || 1); }
+const PLACED_STAGES = ['start_date','day1','week1','month1'];
+
+function renderForecast(){
+  const body = document.getElementById('forecastBody');
+  if(!signedInUser || !signedInUser.admin){ body.innerHTML = ''; return; }
+  const weights = forecastWeights();
+  const roles = mergedRoles().filter(r => r.status === 'open' && r.company !== UNASSIGNED_LABEL);
+  const roleRows = [];
+  const candRows = [];
+  let noSalary = 0;
+  roles.forEach(r => {
+    let cands = [];
+    Object.keys(DATA).forEach(co => {
+      if(!b2Same(co, r.company)) return;
+      Object.keys(DATA[co]).forEach(role => { if(b2Same(role, r.role)) cands = cands.concat(DATA[co][role]); });
+    });
+    const positions = rolePositions(r);
+    const placed = cands.filter(c => PLACED_STAGES.includes(c.stage)).length;
+    const openPos = Math.max(0, positions - placed);
+    const inPlay = [];
+    cands.filter(c => FORECAST_STAGES.includes(c.stage)).forEach(c => {
+      let salary = parseSalaryNumber(c.salary), source = 'candidate';
+      if(!salary){ salary = bandMidpoint(r.salary_band); source = 'band'; }
+      if(!salary){ noSalary++; return; }
+      const rate = parseFloat(r.fee_percent) > 0 ? parseFloat(r.fee_percent) : feeRateFor(salary);
+      const fee = salary * rate / 100;
+      inPlay.push({name:c.name, stage:c.stage, salary, rate, fee, weight: weights[c.stage] || 0, source});
+    });
+    inPlay.sort((a, b) => (b.weight - a.weight) || (b.fee - a.fee));
+    inPlay.forEach((c, i) => {
+      c.counted = i < openPos;
+      c.weighted = c.counted ? c.fee * c.weight / 100 : 0;
+      candRows.push(Object.assign({role: r.role, company: r.company}, c));
+    });
+    const counted = inPlay.filter(c => c.counted);
+    roleRows.push({
+      role: r.role, company: r.company, positions, placed, openPos, inPlay: inPlay.length, counted: counted.length,
+      potential: counted.reduce((s, c) => s + c.fee, 0), weighted: counted.reduce((s, c) => s + c.weighted, 0),
+    });
+  });
+  const totalWeighted = roleRows.reduce((s, r) => s + r.weighted, 0);
+  const best = roleRows.reduce((s, r) => s + r.potential, 0);
+  const openPositions = roleRows.reduce((s, r) => s + r.openPos, 0);
+  const awaiting = OPS.placements.filter(p => !p.invoiceNumber && parseSalaryNumber(p.salary) > 0).reduce((s, p) => {
+    const sal = parseSalaryNumber(p.salary);
+    return s + sal * feeRateFor(sal) / 100;
+  }, 0);
+  const outstanding = OPS.invoices.filter(i => i.status !== 'paid').reduce((s, i) => s + (i.amount || 0), 0);
+  const byCo = {};
+  roleRows.forEach(r => { const o = byCo[r.company] = byCo[r.company] || {roles:0, pos:0, fee:0, w:0}; o.roles++; o.pos += r.openPos; o.fee += r.potential; o.w += r.weighted; });
+
+  body.innerHTML = `
+    <div class="tile-grid">
+      <div class="tile static"><div class="n">${opsMoney(totalWeighted)}</div><div class="l">Weighted forecast</div></div>
+      <div class="tile static"><div class="n">${opsMoney(best)}</div><div class="l">Best case (open positions filled)</div></div>
+      <div class="tile static"><div class="n">${openPositions}</div><div class="l">Open positions</div></div>
+      <div class="tile static"><div class="n">${opsMoney(awaiting)}</div><div class="l">Placed, invoice not raised</div></div>
+      <div class="tile static"><div class="n">${opsMoney(outstanding)}</div><div class="l">Invoices outstanding</div></div>
+      <div class="tile static ${noSalary ? 'warn' : ''}"><div class="n">${noSalary}</div><div class="l">Candidates with no salary data</div></div>
+    </div>
+    <div class="section-title">By role</div>
+    ${roleRows.length ? `<div class="ops-table-wrap"><table class="ops-table" style="min-width:820px;"><thead><tr><th>Role</th><th>Company</th><th>Positions open</th><th>Placed</th><th>Candidates in play</th><th>Counted</th><th>Potential fee</th><th>Weighted</th></tr></thead><tbody>
+      ${roleRows.sort((a, b) => b.weighted - a.weighted).map(r => `<tr><td class="strong">${esc(r.role)}</td><td>${esc(r.company)}</td><td>${r.openPos} of ${r.positions}</td><td>${r.placed}</td><td>${r.inPlay}</td><td>${r.counted}</td><td>${opsMoney(r.potential)}</td><td>${opsMoney(r.weighted)}</td></tr>`).join('')}
+    </tbody></table></div>` : '<div class="panel"><div class="panel-empty">No open roles yet. Add roles on the Roles tab and set how many positions each has.</div></div>'}
+    <div class="note-line">Only as many candidates as there are open positions are counted for each role, most advanced first. A role with 4 candidates and 1 position shows the fee for one person. Set positions on the Roles tab.</div>
+    <div class="section-title">By stage (chance of placing)</div>
+    <div class="ops-table-wrap"><table class="ops-table" style="min-width:520px;"><thead><tr><th>Stage</th><th>Chance of placing (%)</th></tr></thead><tbody>
+      ${FORECAST_STAGES.map(k => `<tr><td class="strong">${esc(poolStageLabel(k))}</td><td><input class="weight-input" id="fw_${k}" type="number" min="0" max="100" value="${weights[k]}" style="border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13px;"></td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="kv-tile-row"><button class="gold-btn" onclick="saveForecastWeights()">Save weights</button><button class="ghost-btn" onclick="resetForecastWeights()">Reset to defaults</button></div>
+    <div class="section-title">Candidates counted</div>
+    ${candRows.length ? `<div class="ops-table-wrap"><table class="ops-table" style="min-width:820px;"><thead><tr><th>Candidate</th><th>Role</th><th>Company</th><th>Stage</th><th>Fee</th><th>Weighted</th><th>Status</th></tr></thead><tbody>
+      ${candRows.map(c => `<tr><td class="strong">${esc(c.name)}</td><td>${esc(c.role)}</td><td>${esc(c.company)}</td><td>${esc(poolStageLabel(c.stage))}</td><td>${opsMoney(c.fee)}<div class="pool-muted">${c.rate}%${c.source === 'band' ? ', salary band midpoint' : ''}</div></td><td>${opsMoney(c.weighted)}</td>
+      <td><span class="status-pill ${c.counted ? 'active' : ''}">${c.counted ? 'Counted' : 'Not counted - positions covered'}</span></td></tr>`).join('')}
+    </tbody></table></div>` : '<div class="panel"><div class="panel-empty">No candidates with salary data in open roles yet.</div></div>'}
+    <div class="by-client-block"><div class="section-title">By client</div>
+    ${Object.keys(byCo).length ? `<div class="ops-table-wrap"><table class="ops-table" style="min-width:560px;"><thead><tr><th>Company</th><th>Open roles</th><th>Open positions</th><th>Potential fees</th><th>Weighted</th></tr></thead><tbody>
+      ${Object.keys(byCo).sort((a, b) => byCo[b].w - byCo[a].w).map(k => `<tr><td class="strong">${esc(k)}</td><td>${byCo[k].roles}</td><td>${byCo[k].pos}</td><td>${opsMoney(byCo[k].fee)}</td><td>${opsMoney(byCo[k].w)}</td></tr>`).join('')}
+    </tbody></table></div>` : ''}</div>
+    <div class="note-line">Chance-of-placing percentages are starting estimates, so adjust them to your real conversion rates. Fees use each role's own fee percent when set, otherwise the standard scale. Salary comes from the candidate record, falling back to the midpoint of the role's salary band. Only open roles are included. Weights are saved in this browser.</div>`;
+}
+
+</script>
+<script>
+/* ============================================================
+   Batch 3 part B: Audit trail and Data & GDPR
+   ============================================================ */
+
+const B3 = {audit:[], referrals:[], adspend:[], coldCalls:[], fetchedAt:0};
+
+function onB3Tab(tab){
+  if(tab === 'audit') loadAudit();
+  if(tab === 'gdpr') loadGdpr();
+  if(tab === 'sourcing') loadSourcing();
+  if(tab === 'clientHealth') loadClientHealth();
+  if(tab === 'referrals') loadReferrals();
+}
+
+/* ---------- Audit trail ---------- */
+
+const AUDIT_LABELS = {
+  login:'Signed in', stage_changed:'Stage changed', notes_edited:'Notes edited', salary_changed:'Salary changed',
+  company_assigned:'Company assigned', candidate_created:'Candidate created', candidate_deleted:'Candidate removed from pipeline',
+  invoice_created:'Invoice created', invoice_updated:'Invoice updated', invoice_deleted:'Invoice deleted',
+  placement_updated:'Placement updated', cv_uploaded:'CV uploaded', created:'Created', updated:'Updated', deleted:'Deleted',
+  consent_recorded:'Consent recorded', retention_extended:'Retention extended', data_exported:'Data exported',
+  candidate_erased:'Candidate erased', bulk_consent_recorded:'Consent recorded in bulk',
+};
+const AUDIT_TYPES = {session:'Sign-in', candidate:'Candidate', invoice:'Invoice', placement:'Placement', pool:'Candidate Pool', role:'Role', interview:'Interview', client_feedback:'Client feedback', template:'Template', ad_spend:'Ad spend', referral:'Referral'};
+
+async function loadAudit(){
+  const body = document.getElementById('auditBody');
+  body.innerHTML = '<tr><td colspan="6" class="empty-row">Loading...</td></tr>';
+  try{
+    B3.audit = b2List(await b2Api('/api/audit?limit=1500'));
+  }catch(e){
+    body.innerHTML = '<tr><td colspan="6" class="empty-row">Could not load the audit trail.</td></tr>';
+    return;
+  }
+  const users = [...new Set(B3.audit.map(a => a.user))].sort();
+  const sel = document.getElementById('auditUser');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">All people</option>' + users.map(u => `<option value="${esc(u)}">${esc(userLabel(u))}</option>`).join('');
+  sel.value = users.includes(cur) ? cur : '';
+  const tsel = document.getElementById('auditType');
+  const tcur = tsel.value;
+  const types = [...new Set(B3.audit.map(a => a.entity_type).filter(Boolean))].sort();
+  tsel.innerHTML = '<option value="">All record types</option>' + types.map(t => `<option value="${esc(t)}">${esc(AUDIT_TYPES[t] || t)}</option>`).join('');
+  tsel.value = types.includes(tcur) ? tcur : '';
+  renderAudit();
+}
+
+function renderAudit(){
+  const q = b2Val('auditSearch').trim().toLowerCase();
+  const u = b2Val('auditUser'), t = b2Val('auditType'), span = b2Val('auditSpan');
+  let since = '';
+  if(span !== 'all') since = new Date(Date.now() - parseInt(span, 10) * 86400000).toISOString();
+  const list = B3.audit.filter(a => {
+    if(u && a.user !== u) return false;
+    if(t && a.entity_type !== t) return false;
+    if(since && String(a.timestamp) < since) return false;
+    if(q && !(`${a.entity} ${a.detail} ${a.action}`.toLowerCase().includes(q))) return false;
+    return true;
+  });
+  document.getElementById('auditSummary').textContent = list.length + ' entr' + (list.length === 1 ? 'y' : 'ies') + ' shown of ' + B3.audit.length;
+  document.getElementById('auditBody').innerHTML = list.length ? list.map(a => `<tr>
+    <td>${esc(opsFmt(a.timestamp))}<div class="pool-muted">${esc(String(a.timestamp).slice(11, 16))}</div></td>
+    <td class="strong">${esc(userLabel(a.user))}</td>
+    <td>${esc(AUDIT_LABELS[a.action] || a.action)}</td>
+    <td>${esc(AUDIT_TYPES[a.entity_type] || a.entity_type)}</td>
+    <td>${esc(a.entity)}</td>
+    <td style="max-width:320px;">${esc(a.detail)}</td></tr>`).join('')
+    : '<tr><td colspan="6" class="empty-row">No entries match these filters. Changes are recorded from the moment this update is live.</td></tr>';
+}
+
+/* ---------- Data and GDPR ---------- */
+
+let gdprEraseId = null;
+
+async function loadGdpr(){
+  await loadCandidatePool(true);
+  renderGdpr();
+}
+
+function gdprList(){ return (typeof POOL !== 'undefined' ? POOL : []).filter(p => !p.erased); }
+
+function gdprStatus(p){
+  const today = opsToday();
+  const due = opsDateOnly(p.reviewDue);
+  const soon = opsAddDays(today, 30);
+  if(due && due < today) return {cls:'lost', label:'Review overdue'};
+  if(due && due <= soon) return {cls:'hold', label:'Review due soon'};
+  return {cls:'active', label:'In date'};
+}
+
+function renderGdpr(){
+  const all = gdprList();
+  const erased = (typeof POOL !== 'undefined' ? POOL : []).filter(p => p.erased).length;
+  const noConsent = all.filter(p => !p.consentDate).length;
+  const dueSoon = all.filter(p => gdprStatus(p).cls !== 'active').length;
+  document.getElementById('gdprSummary').textContent = all.length + ' candidates held. Records are due for review 12 months after they were added unless extended.';
+  document.getElementById('gdprTiles').innerHTML = [
+    {n: all.length, l:'Candidates held'},
+    {n: all.length - noConsent, l:'Consent recorded'},
+    {n: noConsent, l:'No consent record', warn: noConsent > 0},
+    {n: dueSoon, l:'Reviews due or overdue', warn: dueSoon > 0},
+    {n: erased, l:'Erased to date'},
+  ].map(t => `<div class="tile static ${t.warn ? 'warn' : ''}"><div class="n">${t.n}</div><div class="l">${t.l}</div></div>`).join('');
+
+  const f = b2Val('gdprFilter'), q = b2Val('gdprSearch').trim().toLowerCase();
+  const list = all.filter(p => {
+    if(f === 'due' && gdprStatus(p).cls === 'active') return false;
+    if(f === 'noconsent' && p.consentDate) return false;
+    if(q && !(`${p.name} ${p.role} ${p.company}`.toLowerCase().includes(q))) return false;
+    return true;
+  }).sort((a, b) => String(a.reviewDue).localeCompare(String(b.reviewDue)));
+  document.getElementById('gdprBody').innerHTML = list.length ? list.map(p => {
+    const st = gdprStatus(p);
+    return `<tr>
+      <td class="strong">${esc(p.name)}</td><td>${esc(p.role)}</td><td>${esc(p.company)}</td>
+      <td>${esc(opsFmt(p.dateAdded))}</td>
+      <td>${p.consentDate ? esc(opsFmt(p.consentDate)) + '<div class="pool-muted">' + esc(p.consentBasis) + '</div>' : '<span class="status-pill hold">Not recorded</span>'}</td>
+      <td>${esc(opsFmt(p.reviewDue))}<div><span class="status-pill ${st.cls}">${st.label}</span></div></td>
+      <td><div class="row-actions">
+        <button onclick="gdprExtend('${esc(p.id)}')">Keep 12 months</button>
+        <button onclick="gdprExport('${esc(p.id)}')">Export</button>
+        <button style="color:var(--danger);border-color:var(--danger);" onclick="openGdprErase('${esc(p.id)}')">Erase</button></div></td></tr>`;
+  }).join('') : '<tr><td colspan="7" class="empty-row">Nothing matches this filter.</td></tr>';
+}
+
+async function gdprExtend(id){
+  try{
+    const json = await b2Api('/api/candidate-pool/' + encodeURIComponent(id) + '/meta', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({extendReview:true})});
+    applyPoolEntry(json.data);
+    showToast('Kept for another 12 months');
+    renderGdpr();
+    recomputeOps();
+  }catch(e){ showToast('Could not update: ' + e.message); }
+}
+
+async function gdprExport(id){
+  try{
+    const r = await fetch(API_BASE + '/api/gdpr/export/' + encodeURIComponent(id));
+    if(!r.ok){ const e = await r.json().catch(() => ({})); throw new Error(e.error || ('Server returned ' + r.status)); }
+    const text = await r.text();
+    const p = POOL.find(x => x.id === id);
+    downloadText('Data export ' + (p ? p.name : 'candidate') + '.json', text, 'application/json');
+    showToast('Data export downloaded');
+  }catch(e){ showToast('Could not export: ' + e.message); }
+}
+
+function openGdprErase(id){
+  const p = POOL.find(x => x.id === id);
+  if(!p) return;
+  gdprEraseId = id;
+  const live = typeof findLivePipelineCandidate === 'function' ? findLivePipelineCandidate(p) : null;
+  const active = live && !['rejected'].includes(live.stage) && p.inPipeline;
+  document.getElementById('gdprEraseBody').innerHTML = `
+    <h2>Erase ${esc(p.name)}</h2>
+    <div class="prompt-box" style="margin-top:12px;">
+      This permanently removes ${esc(p.name)}'s personal data for ${esc(p.role)}: the application form row, the pipeline record, the CV file, notes, contact details, and their name from interviews, the contact log, client feedback, activity and the audit trail. Only an anonymous record is kept, so counts and statistics stay accurate. <strong>This cannot be undone.</strong>
+    </div>
+    ${active ? `<div class="prompt-box" style="border-left-color:#B3372B;">This candidate is still active in the pipeline at <strong>${esc(poolStageLabel(live.stage))}</strong>. Make sure that is what you intend.</div>` : ''}
+    <div class="note-line" style="margin-bottom:8px;">Consider downloading their data export first if they have asked for a copy.</div>
+    <label style="font-size:11px;color:#999;">Type ERASE to confirm</label>
+    <input id="gdprEraseConfirm" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-size:13.5px;margin-top:4px;" autocomplete="off">
+    <div class="stage-buttons">
+      <button onclick="closeModal('gdprEraseModal')">Cancel</button>
+      <button class="reject" onclick="runGdprErase()">Erase permanently</button>
+    </div>`;
+  document.getElementById('gdprEraseModal').classList.add('visible');
+}
+
+async function runGdprErase(){
+  if(b2Val('gdprEraseConfirm').trim() !== 'ERASE'){ showToast('Type ERASE in capitals to confirm'); return; }
+  try{
+    const json = await b2Post('/api/gdpr/erase/' + encodeURIComponent(gdprEraseId), {confirm:'ERASE'});
+    const c = json.cleared || {};
+    document.getElementById('gdprEraseBody').innerHTML = `
+      <h2>Erased</h2>
+      <div class="note-line" style="margin:8px 0;">Removed: ${c.application || 0} application row, ${c.pipeline || 0} pipeline record, ${c.cv || 0} CV file, ${c.interviews || 0} interview, ${c.contactLog || 0} contact log, ${c.feedback || 0} feedback, ${c.activity || 0} activity, ${c.audit || 0} audit entries.</div>
+      <div class="prompt-box"><strong>Still to do by hand:</strong><br>${(json.manual || []).map(m => esc(m)).join('<br>')}</div>
+      <div class="stage-buttons"><button class="primary" onclick="closeModal('gdprEraseModal')">Done</button></div>`;
+    B3.fetchedAt = 0;
+    await loadCandidatePool(true);
+    if(typeof loadCandidates === 'function') loadCandidates();
+    renderGdpr();
+    recomputeOps();
+  }catch(e){
+    showToast('Could not erase: ' + e.message);
+  }
+}
+
+async function gdprBulkConsent(){
+  if(!confirm('Only use this if your application form shows a privacy notice or consent statement. It records "Application form" as the consent basis, dated when each candidate was added, for everyone who has no consent record. Continue?')) return;
+  try{
+    const json = await b2Post('/api/gdpr/bulk-consent', {basis:'Application form'});
+    showToast(json.updated + ' candidate' + (json.updated === 1 ? '' : 's') + ' updated');
+    await loadCandidatePool(true);
+    renderGdpr();
+  }catch(e){ showToast('Could not update: ' + e.message); }
+}
+
+/* ============================================================
+   Batch 3 part A: server login, grouped navigation, pipeline
+   scroll arrows.
+   ============================================================ */
+
+let authToken = null;
+
+/* Every call to the API carries the login token (or the user key while server login is off) */
+(function(){
+  const rawFetch = window.fetch.bind(window);
+  window.fetch = function(url, opts){
+    if(typeof url === 'string' && url.indexOf(API_BASE) === 0){
+      opts = Object.assign({}, opts || {});
+      const h = Object.assign({}, opts.headers || {});
+      if(authToken) h['Authorization'] = 'Bearer ' + authToken;
+      else if(signedInUser) h['X-User-Role'] = signedInUser.key;
+      opts.headers = h;
+      return rawFetch(url, opts).then(r => {
+        if(r && r.status === 401 && authToken && url.indexOf('/api/login') === -1){
+          showToast('Your session has ended. Please sign in again.');
+          setTimeout(() => location.reload(), 2500);
+        }
+        return r;
+      });
+    }
+    return rawFetch(url, opts);
+  };
+})();
+
+function authUrl(u){
+  return authToken ? u + (u.indexOf('?') === -1 ? '?' : '&') + 'token=' + encodeURIComponent(authToken) : u;
+}
+
+/* Sign in: server login when configured, otherwise the local list in USERS */
+tryUnlock = async function(){
+  const pw = document.getElementById('gatePw').value;
+  const err = document.getElementById('gateErr');
+  if(!pw){ err.textContent = 'Enter your password'; return; }
+  err.textContent = 'Signing in...';
+  try{
+    const r = await fetch(API_BASE + '/api/login', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({password: pw})});
+    if(r.ok){
+      const j = await r.json();
+      authToken = j.token;
+      const local = USERS.find(u => u.key === j.user.key) || {};
+      err.textContent = '';
+      signIn(Object.assign({}, local, j.user, {password: undefined}));
+      return;
+    }
+    if(r.status === 401){ err.textContent = 'Incorrect password'; return; }
+    if(r.status === 429){ err.textContent = 'Too many attempts. Please wait a few minutes.'; return; }
+  }catch(e){ /* server unreachable: try the local list */ }
+  const user = USERS.find(u => u.password && u.password === pw);
+  if(!user){ err.textContent = 'Incorrect password'; return; }
+  err.textContent = '';
+  signIn(user);
+};
+
+/* ---------- Grouped navigation ---------- */
+
+const TAB_GROUPS = [
+  {key:'overview', label:'Overview', tabs:['home','notifications','tasks']},
+  {key:'recruitment', label:'Recruitment', tabs:['candidates','candidatePool','roles','interviews','placements','comms','feedback','templates']},
+  {key:'clients', label:'Clients', tabs:['leadClients','clients','clientHealth','coldCalls','referrals']},
+  {key:'money', label:'Money and reporting', tabs:['invoices','forecast','kpi','sourcing','team']},
+  {key:'admin', label:'Admin', tabs:['gdpr','audit'], adminOnly:true},
+];
+const ADMIN_TABS = ['invoices','forecast','team','sourcing','gdpr','audit'];
+const B3_VIEWS = ['clientHealth','referrals','sourcing','gdpr','audit'];
+
+function renderGroupBar(){
+  const host = document.getElementById('groupBtns');
+  if(!host) return;
+  host.innerHTML = TAB_GROUPS.filter(g => !g.adminOnly || (signedInUser && signedInUser.admin))
+    .map(g => `<button class="grp-btn" data-group="${g.key}" onclick="openGroup('${g.key}')">${g.label}</button>`).join('');
+}
+
+function applyTabGroup(key){
+  const g = TAB_GROUPS.find(x => x.key === key);
+  if(!g) return;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('gh', !g.tabs.includes(b.dataset.tab)));
+  document.querySelectorAll('.grp-btn').forEach(b => b.classList.toggle('active', b.dataset.group === key));
+}
+
+function openGroup(key){
+  const g = TAB_GROUPS.find(x => x.key === key);
+  if(!g) return;
+  const first = g.tabs.find(t => {
+    if(ADMIN_TABS.includes(t) && !(signedInUser && signedInUser.admin)) return false;
+    return true;
+  });
+  switchTab(first);
+}
+
+(function(){
+  const _st = switchTab;
+  switchTab = function(tab){
+    if(ADMIN_TABS.includes(tab) && !(signedInUser && signedInUser.admin)) return;
+    const g = TAB_GROUPS.find(x => x.tabs.includes(tab));
+    if(g) applyTabGroup(g.key);
+    _st(tab);
+    B3_VIEWS.forEach(t => {
+      const el = document.getElementById(t + 'View');
+      if(el) el.classList.toggle('visible', tab === t);
+    });
+    if(typeof onB3Tab === 'function') onB3Tab(tab);
+    if(tab === 'candidates') setTimeout(updateBoardArrows, 60);
+  };
+
+  const _si = signIn;
+  signIn = function(user){
+    _si(user);
+    renderGroupBar();
+    applyTabGroup('recruitment');
+    if(!user.admin){
+      ['sourcing','gdpr','audit'].forEach(t => {
+        const b = document.querySelector('.tab-btn[data-tab="' + t + '"]');
+        if(b) b.style.display = 'none';
+      });
+    }
+  };
+})();
+
+/* ---------- Pipeline scroll arrows ---------- */
+
+function updateBoardArrows(){
+  const board = document.getElementById('board');
+  const l = document.getElementById('boardLeft'), r = document.getElementById('boardRight');
+  if(!board || !l || !r) return;
+  const can = board.scrollWidth - board.clientWidth > 8 && getComputedStyle(board).flexDirection !== 'column';
+  l.style.display = can && board.scrollLeft > 8 ? 'flex' : 'none';
+  r.style.display = can && board.scrollLeft < board.scrollWidth - board.clientWidth - 8 ? 'flex' : 'none';
+}
+
+function scrollBoard(dir){
+  const board = document.getElementById('board');
+  if(!board) return;
+  board.scrollBy({left: dir * Math.max(300, Math.round(board.clientWidth * 0.7)), behavior: 'smooth'});
+}
+
+(function(){
+  const board = document.getElementById('board');
+  if(board) board.addEventListener('scroll', updateBoardArrows, {passive:true});
+  window.addEventListener('resize', updateBoardArrows);
+  const _rb = renderBoard;
+  renderBoard = function(){ _rb(); setTimeout(updateBoardArrows, 30); };
+})();
+
+/* ============================================================
+   Batch 3 part C: Sourcing, Client health, Referrals,
+   pool source/consent section, extra notifications
+   ============================================================ */
+
+const SOURCES = ['Indeed','LinkedIn','Reed','Totaljobs','CV-Library','Facebook','Careers website','Referral','Cold call','Existing database','Other'];
+const STAGE_ORDER = ['applied','submitted','interview_requested','interview_scheduled','interviewed','offer','start_date','day1','week1','month1'];
+function stageIdx(k){ return STAGE_ORDER.indexOf(k); }
+
+/* ---------- Sourcing ---------- */
+
+let spEditingId = null;
+
+async function loadSourcing(){
+  try{ B3.adspend = b2List(await b2Api('/api/ad-spend')); }catch(e){ showToast('Could not load ad spend'); }
+  await loadCandidatePool(true);
+  renderSourcing();
+}
+
+function sourcingPeriodStart(p){
+  const n = new Date();
+  if(p === 'all') return '';
+  if(p === 'year') return n.getUTCFullYear() + '-01-01';
+  if(p === 'quarter') return new Date(Date.UTC(n.getUTCFullYear(), Math.floor(n.getUTCMonth() / 3) * 3, 1)).toISOString().slice(0, 10);
+  return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), 1)).toISOString().slice(0, 10);
+}
+
+function renderSourcing(){
+  const from = sourcingPeriodStart(b2Val('spPeriod') || 'month');
+  const inRange = d => { const x = opsDateOnly(d); return x && (!from || x >= from); };
+  const spend = B3.adspend.filter(s => inRange(s.date));
+  const pool = (typeof POOL !== 'undefined' ? POOL : []).filter(p => !p.erased && inRange(p.dateAdded));
+  const total = spend.reduce((s, x) => s + (parseFloat(x.amount) || 0), 0);
+  const placed = pool.filter(p => stageIdx(p.furthestStage) >= stageIdx('start_date')).length;
+  const untagged = (typeof POOL !== 'undefined' ? POOL : []).filter(p => !p.erased && !p.source).length;
+  const cpa = pool.length ? total / pool.length : 0;
+  const cph = placed ? total / placed : 0;
+  document.getElementById('spTiles').innerHTML = [
+    {n: opsMoney(total), l:'Advertising spend'},
+    {n: pool.length, l:'Applicants'},
+    {n: placed, l:'Placed'},
+    {n: pool.length ? opsMoney(cpa) : '-', l:'Cost per applicant'},
+    {n: placed ? opsMoney(cph) : '-', l:'Cost per hire'},
+    {n: untagged, l:'Candidates with no source', warn: untagged > 0},
+  ].map(t => `<div class="tile static ${t.warn ? 'warn' : ''}"><div class="n">${esc(t.n)}</div><div class="l">${t.l}</div></div>`).join('');
+
+  const channels = [...new Set(SOURCES.concat(spend.map(s => s.channel).filter(Boolean)).concat(pool.map(p => p.source).filter(Boolean)))];
+  const rows = channels.map(ch => {
+    const sp = spend.filter(s => s.channel === ch).reduce((s, x) => s + (parseFloat(x.amount) || 0), 0);
+    const ps = pool.filter(p => p.source === ch);
+    const sub = ps.filter(p => stageIdx(p.furthestStage) >= 1).length;
+    const pl = ps.filter(p => stageIdx(p.furthestStage) >= stageIdx('start_date')).length;
+    return {ch, sp, n: ps.length, sub, pl};
+  }).filter(r => r.sp > 0 || r.n > 0).sort((a, b) => b.n - a.n);
+  document.getElementById('spChannels').innerHTML = rows.length ? rows.map(r => `<tr>
+    <td class="strong">${esc(r.ch)}</td><td>${opsMoney(r.sp)}</td><td>${r.n}</td><td>${r.sub}</td><td>${r.pl}</td>
+    <td>${r.n && r.sp ? opsMoney(r.sp / r.n) : '-'}</td><td>${r.pl && r.sp ? opsMoney(r.sp / r.pl) : '-'}</td></tr>`).join('')
+    : '<tr><td colspan="7" class="empty-row">No spend or tagged candidates in this period yet.</td></tr>';
+
+  document.getElementById('spEntries').innerHTML = spend.length ? spend.slice().sort((a, b) => String(b.date).localeCompare(String(a.date))).map(s => `<tr>
+    <td>${esc(opsFmt(s.date))}</td><td class="strong">${esc(s.channel)}</td><td>${esc(s.role)}</td><td>${esc(s.company)}</td>
+    <td>${opsMoney(parseFloat(s.amount) || 0)}</td><td>${esc(s.notes)}</td>
+    <td><div class="row-actions"><button onclick="openSpendModal('${esc(s.id)}')">Edit</button></div></td></tr>`).join('')
+    : '<tr><td colspan="7" class="empty-row">No spend logged in this period.</td></tr>';
+}
+
+function openSpendModal(id){
+  spEditingId = id || null;
+  const s = id ? B3.adspend.find(x => x.id === id) : null;
+  document.getElementById('spChannelList').innerHTML = SOURCES.map(c => `<option value="${esc(c)}">`).join('');
+  document.getElementById('spRoleList').innerHTML = mergedRoles().map(r => `<option value="${esc(r.role)}">`).join('');
+  b2Set('spDate', s ? opsDateOnly(s.date) : opsToday());
+  b2Set('spChannel', s ? s.channel : '');
+  b2Set('spRole', s ? s.role : '');
+  b2Set('spCompany', s ? s.company : '');
+  b2Set('spAmount', s ? s.amount : '');
+  b2Set('spNotes', s ? s.notes : '');
+  document.getElementById('spDeleteRow').style.display = s ? 'flex' : 'none';
+  document.getElementById('spendModal').classList.add('visible');
+}
+
+async function saveSpend(){
+  const amount = parseFloat(b2Val('spAmount'));
+  const channel = b2Val('spChannel').trim();
+  if(!channel || !(amount >= 0)){ showToast('Enter the channel and the amount'); return; }
+  const body = {id: spEditingId || b2Id('sp'), date: b2Val('spDate') || opsToday(), channel, role: b2Val('spRole').trim(), company: b2Val('spCompany').trim(), amount: String(amount), notes: b2Val('spNotes'), logged_by: signedInUser.name};
+  try{
+    const json = await b2Post('/api/ad-spend', body);
+    const i = B3.adspend.findIndex(x => x.id === body.id);
+    if(i >= 0) B3.adspend[i] = json.data; else B3.adspend.push(json.data);
+    closeModal('spendModal');
+    showToast('Spend saved');
+    renderSourcing();
+  }catch(e){ showToast('Could not save: ' + e.message); }
+}
+
+async function deleteSpend(){
+  if(!spEditingId || !confirm('Delete this spend entry?')) return;
+  try{
+    await b2Del('/api/ad-spend', spEditingId);
+    B3.adspend = B3.adspend.filter(x => x.id !== spEditingId);
+    closeModal('spendModal');
+    renderSourcing();
+  }catch(e){ showToast('Could not delete: ' + e.message); }
+}
+
+/* ---------- Client health ---------- */
+
+async function loadClientHealth(){
+  try{
+    const r = await fetch(API_BASE + '/api/cold-calls');
+    if(r.ok){ const j = await r.json(); B3.coldCalls = Array.isArray(j) ? j : b2List(j); }
+  }catch(e){}
+  await loadB2Core(true);
+  renderClientHealth();
+}
+
+function healthFor(company, roles, admin){
+  const today = opsToday();
+  const reasons = [];
+  const dates = [];
+  B2.comms.forEach(c => { if(b2Same(c.company, company)) dates.push(opsDateOnly(c.timestamp)); });
+  B3.coldCalls.forEach(c => { if(b2Same(c.company, company) && c.status !== 'archived') dates.push(opsDateOnly(c.dateCalled)); });
+  B2.interviews.forEach(i => { if(b2Same(i.company, company) && opsDateOnly(i.date) && opsDateOnly(i.date) <= today) dates.push(opsDateOnly(i.date)); });
+  B2.feedback.forEach(f => { if(b2Same(f.company, company)) dates.push(opsDateOnly(f.date)); });
+  const last = dates.filter(Boolean).sort().pop() || '';
+  const sinceContact = last ? opsDaysBetween(last, today) : null;
+  let score = 0;
+  if(sinceContact === null){ reasons.push('No contact recorded'); }
+  else if(sinceContact <= 14) score += 40;
+  else if(sinceContact <= 30){ score += 25; reasons.push('No contact for ' + sinceContact + ' days'); }
+  else if(sinceContact <= 60){ score += 10; reasons.push('No contact for ' + sinceContact + ' days'); }
+  else reasons.push('No contact for ' + sinceContact + ' days');
+
+  const cRoles = roles.filter(r => b2Same(r.company, company));
+  const open = cRoles.filter(r => r.status === 'open');
+  if(open.length) score += 20; else reasons.push('No open roles');
+
+  let cands = [];
+  Object.keys(DATA).forEach(co => { if(b2Same(co, company)) Object.keys(DATA[co]).forEach(r => { cands = cands.concat(DATA[co][r]); }); });
+  const waiting = cands.filter(c => c.stage === 'submitted').map(c => daysSince(c.date)).filter(d => !isNaN(d));
+  const oldest = waiting.length ? Math.max.apply(null, waiting) : 0;
+  if(oldest <= 3) score += 20; else if(oldest <= 7){ score += 10; reasons.push('Feedback outstanding for ' + oldest + ' days'); }
+  else reasons.push('Feedback outstanding for ' + oldest + ' days');
+
+  const placed = cands.filter(c => ['start_date','day1','week1','month1'].includes(c.stage)).length + cRoles.filter(r => r.status === 'filled').length;
+  score += placed > 0 ? 10 : 5;
+  if(!placed && cands.length) reasons.push('No placements yet');
+
+  let overdue = 0;
+  if(admin) overdue = OPS.invoices.filter(i => b2Same(i.company, company) && i.status !== 'paid' && opsDateOnly(i.dueDate) && opsDateOnly(i.dueDate) < today).length;
+  if(overdue){ reasons.push(overdue + ' overdue invoice' + (overdue === 1 ? '' : 's')); } else score += 10;
+
+  const band = score >= 70 ? 'healthy' : (score >= 40 ? 'watch' : 'risk');
+  return {company, score, band, reasons, last, sinceContact, openRoles: open.length, waiting: waiting.length};
+}
+
+function renderClientHealth(){
+  const admin = !!(signedInUser && signedInUser.admin);
+  const roles = mergedRoles();
+  const names = new Set();
+  (APPLICANT_CLIENT_LIST || []).forEach(c => { if(c.company) names.add(c.company); });
+  Object.keys(DATA).forEach(c => { if(c !== UNASSIGNED_LABEL) names.add(c); });
+  const f = b2Val('chFilter');
+  const rows = [...names].map(n => healthFor(n, roles, admin)).filter(r => !f || r.band === f).sort((a, b) => a.score - b.score);
+  const all = [...names].map(n => healthFor(n, roles, admin));
+  const count = b => all.filter(r => r.band === b).length;
+  document.getElementById('chSummary').textContent = all.length + ' clients scored';
+  document.getElementById('chTiles').innerHTML = [
+    {n: count('healthy'), l:'Healthy'}, {n: count('watch'), l:'Watch'}, {n: count('risk'), l:'At risk', warn: count('risk') > 0},
+  ].map(t => `<div class="tile static ${t.warn ? 'warn' : ''}"><div class="n">${t.n}</div><div class="l">${t.l}</div></div>`).join('');
+  const label = {healthy:'Healthy', watch:'Watch', risk:'At risk'};
+  const cls = {healthy:'active', watch:'hold', risk:'lost'};
+  document.getElementById('chBody').innerHTML = rows.length ? rows.map(r => {
+    const contact = (APPLICANT_CLIENT_LIST || []).find(c => b2Same(c.company, r.company));
+    return `<tr><td class="strong">${esc(r.company)}</td>
+      <td><span class="status-pill ${cls[r.band]}">${label[r.band]}</span> <strong style="margin-left:6px;">${r.score}</strong></td>
+      <td>${r.last ? esc(opsFmt(r.last)) + '<div class="pool-muted">' + r.sinceContact + ' days ago</div>' : '<span style="color:#bbb;">Never</span>'}</td>
+      <td>${r.openRoles}</td><td>${r.waiting}</td>
+      <td style="max-width:280px;">${r.reasons.length ? esc(r.reasons.join('. ')) : '<span style="color:#2D6A3E;">All good</span>'}</td>
+      <td><div class="row-actions"><button onclick="openCommModal({type:'client',name:'${esc(contact ? contact.contactName : '')}',company:'${esc(r.company).replace(/'/g, '')}'})">Log contact</button></div></td></tr>`;
+  }).join('') : '<tr><td colspan="7" class="empty-row">No clients in this band.</td></tr>';
+}
+
+/* ---------- Referrals ---------- */
+
+let rfEditingId = null;
+const RF_STATUS = {new:'New', contacted:'Contacted', converted:'Converted', placed:'Placed', lost:'Lost'};
+
+async function loadReferrals(){
+  try{ B3.referrals = b2List(await b2Api('/api/referrals')); }catch(e){ showToast('Could not load referrals'); }
+  renderReferrals();
+}
+
+function renderReferrals(){
+  const list = B3.referrals.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const f = b2Val('rfFilter');
+  const shown = list.filter(r => !f || r.status === f || (f === 'reward' && r.reward_status === 'due'));
+  const due = list.filter(r => r.reward_status === 'due').reduce((s, r) => s + (parseFloat(r.reward_amount) || 0), 0);
+  const paid = list.filter(r => r.reward_status === 'paid').reduce((s, r) => s + (parseFloat(r.reward_amount) || 0), 0);
+  document.getElementById('rfSummary').textContent = list.length + ' referral' + (list.length === 1 ? '' : 's') + ' logged';
+  document.getElementById('rfTiles').innerHTML = [
+    {n: list.length, l:'Referrals'}, {n: list.filter(r => r.status === 'converted' || r.status === 'placed').length, l:'Converted or placed'},
+    {n: opsMoney(due), l:'Rewards due', warn: due > 0}, {n: opsMoney(paid), l:'Rewards paid'},
+  ].map(t => `<div class="tile static ${t.warn ? 'warn' : ''}"><div class="n">${esc(t.n)}</div><div class="l">${t.l}</div></div>`).join('');
+  document.getElementById('rfBody').innerHTML = shown.length ? shown.map(r => `<tr>
+    <td>${esc(opsFmt(r.date))}</td><td class="strong">${esc(r.referred_name)}<div class="pool-muted">${r.type === 'client' ? 'Client' : 'Candidate'}${r.referred_company ? ' - ' + esc(r.referred_company) : ''}</div></td>
+    <td>${esc(r.referrer_name)}<div class="pool-muted">${esc(r.referrer_type)}</div></td><td>${esc(r.role)}</td>
+    <td><span class="status-pill ${r.status === 'lost' ? 'lost' : (r.status === 'placed' || r.status === 'converted' ? 'completed' : 'active')}">${esc(RF_STATUS[r.status] || r.status)}</span></td>
+    <td>${parseFloat(r.reward_amount) ? opsMoney(parseFloat(r.reward_amount)) + '<div><span class="status-pill ' + (r.reward_status === 'paid' ? 'completed' : (r.reward_status === 'due' ? 'hold' : '')) + '">' + esc(r.reward_status === 'paid' ? 'Paid' : (r.reward_status === 'due' ? 'Due' : 'Pending')) + '</span></div>' : '<span style="color:#bbb;">None</span>'}</td>
+    <td><div class="row-actions"><button onclick="openReferralModal('${esc(r.id)}')">Edit</button></div></td></tr>`).join('')
+    : '<tr><td colspan="7" class="empty-row">' + (list.length ? 'Nothing matches this filter.' : 'No referrals logged yet. Log one whenever a candidate or client refers someone.') + '</td></tr>';
+}
+
+function openReferralModal(id){
+  rfEditingId = id || null;
+  const r = id ? B3.referrals.find(x => x.id === id) : null;
+  b2Set('rfDate', r ? opsDateOnly(r.date) : opsToday());
+  b2Set('rfType', r ? r.type : 'candidate');
+  b2Set('rfReferred', r ? r.referred_name : '');
+  b2Set('rfReferredCompany', r ? r.referred_company : '');
+  b2Set('rfReferrer', r ? r.referrer_name : '');
+  b2Set('rfReferrerType', r ? r.referrer_type : 'candidate');
+  b2Set('rfRole', r ? r.role : '');
+  b2Set('rfStatus', r ? r.status : 'new');
+  b2Set('rfReward', r ? r.reward_amount : '');
+  b2Set('rfRewardStatus', r ? (r.reward_status || 'none') : 'none');
+  b2Set('rfPaidDate', r ? opsDateOnly(r.reward_paid_date) : '');
+  b2Set('rfNotes', r ? r.notes : '');
+  document.getElementById('referralModal').classList.add('visible');
+}
+
+async function saveReferral(){
+  const referred = b2Val('rfReferred').trim(), referrer = b2Val('rfReferrer').trim();
+  if(!referred || !referrer){ showToast('Enter who was referred and who referred them'); return; }
+  const amount = parseFloat(b2Val('rfReward')) || 0;
+  let status = b2Val('rfStatus'), rewardStatus = b2Val('rfRewardStatus');
+  if(amount > 0 && (status === 'converted' || status === 'placed') && rewardStatus === 'none') rewardStatus = 'due';
+  const paidDate = rewardStatus === 'paid' ? (b2Val('rfPaidDate') || opsToday()) : '';
+  const body = {
+    id: rfEditingId || b2Id('rf'), date: b2Val('rfDate') || opsToday(), type: b2Val('rfType'), referred_name: referred,
+    referred_company: b2Val('rfReferredCompany').trim(), referrer_name: referrer, referrer_type: b2Val('rfReferrerType'),
+    role: b2Val('rfRole').trim(), status, reward_amount: amount ? String(amount) : '', reward_status: rewardStatus,
+    reward_paid_date: paidDate, notes: b2Val('rfNotes'), created_by: rfEditingId ? undefined : signedInUser.name,
+  };
+  try{
+    const json = await b2Post('/api/referrals', body);
+    const i = B3.referrals.findIndex(x => x.id === body.id);
+    if(i >= 0) B3.referrals[i] = json.data; else B3.referrals.push(json.data);
+    closeModal('referralModal');
+    showToast('Referral saved');
+    renderReferrals();
+    recomputeOps();
+  }catch(e){ showToast('Could not save: ' + e.message); }
+}
+
+/* ---------- Candidate pool: source and consent ---------- */
+
+(function(){
+  const _rpd = renderPoolDialog;
+  renderPoolDialog = function(){
+    _rpd();
+    poolDataSection();
+  };
+})();
+
+function poolDataSection(){
+  const p = POOL.find(x => x.id === openPoolId);
+  const host = document.getElementById('poolDialogBody');
+  if(!p || !host) return;
+  const admin = signedInUser && signedInUser.admin;
+  const st = gdprStatus(p);
+  host.insertAdjacentHTML('beforeend', `
+    <div class="pool-section-label">Source and data protection</div>
+    <div class="two-col">
+      <div class="field-row"><label>Where they came from</label>
+        <select id="poolSourceInput"><option value="">Not recorded</option>${SOURCES.map(s => `<option ${s === p.source ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>
+      <div class="field-row"><label>Review due</label><div class="val">${esc(opsFmt(p.reviewDue))} <span class="status-pill ${st.cls}">${st.label}</span></div></div>
+      <div class="field-row"><label>Consent date</label><input type="date" id="poolConsentDate" value="${esc(opsDateOnly(p.consentDate))}"></div>
+      <div class="field-row"><label>Consent basis</label><input id="poolConsentBasis" list="consentBasisList" value="${esc(p.consentBasis)}" placeholder="e.g. Application form"><datalist id="consentBasisList"><option value="Application form"><option value="Verbal, on a call"><option value="Email"></datalist></div>
+    </div>
+    <div class="stage-buttons" style="margin-top:0;">
+      <button onclick="poolSaveMeta('${esc(p.id)}')">Save source and consent</button>
+      ${admin ? `<button onclick="gdprExtend('${esc(p.id)}')">Keep 12 more months</button>` : ''}
+      ${admin ? `<button onclick="gdprExport('${esc(p.id)}')">Export data</button>` : ''}
+      ${admin ? `<button class="reject" onclick="closePoolDialog();openGdprErase('${esc(p.id)}')">Erase</button>` : ''}
+    </div>`);
+}
+
+async function poolSaveMeta(id){
+  try{
+    const json = await b2Api('/api/candidate-pool/' + encodeURIComponent(id) + '/meta', {
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({source: b2Val('poolSourceInput'), consentDate: b2Val('poolConsentDate'), consentBasis: b2Val('poolConsentBasis')})
+    });
+    applyPoolEntry(json.data);
+    showToast('Saved');
+  }catch(e){ showToast('Could not save: ' + e.message); }
+}
+
+/* ---------- Extra notifications and data loading ---------- */
+
+(function(){
+  const _ro = refreshOps;
+  refreshOps = async function(force){
+    await _ro(force);
+    try{ B3.referrals = b2List(await b2Api('/api/referrals')); }catch(e){}
+    recomputeOps();
+  };
+
+  const _bn = buildNotifications;
+  buildNotifications = function(){
+    const out = _bn();
+    if(!signedInUser || !signedInUser.admin) return out;
+    const today = opsToday();
+    if(typeof poolLoaded !== 'undefined' && poolLoaded){
+      const live = POOL.filter(p => !p.erased);
+      const overdue = live.filter(p => opsDateOnly(p.reviewDue) && opsDateOnly(p.reviewDue) < today).length;
+      const soon = live.filter(p => { const d = opsDateOnly(p.reviewDue); return d && d >= today && d <= opsAddDays(today, 30); }).length;
+      if(overdue) out.push({sev:'med', title: overdue + ' candidate record' + (overdue === 1 ? ' is' : 's are') + ' past the data review date', detail:'Keep or erase them on the Data and GDPR tab', act:{type:'tab', tab:'gdpr'}});
+      else if(soon) out.push({sev:'low', title: soon + ' candidate record' + (soon === 1 ? '' : 's') + ' due a data review within 30 days', detail:'Data and GDPR tab', act:{type:'tab', tab:'gdpr'}});
+    }
+    B3.referrals.forEach(r => {
+      if(r.reward_status === 'due' && parseFloat(r.reward_amount) > 0){
+        out.push({sev:'med', title:'Referral reward due: ' + r.referrer_name + ' (' + opsMoney(parseFloat(r.reward_amount)) + ')', detail:'Referred ' + r.referred_name, act:{type:'tab', tab:'referrals'}});
+      }
+    });
+    const rank = {high:0, med:1, low:2};
+    out.sort((a, b) => rank[a.sev] - rank[b.sev]);
+    return out;
+  };
+})();
 
 </script>
 
