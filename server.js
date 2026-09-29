@@ -6,6 +6,7 @@ import PDFDocument from 'pdfkit';
 import nodemailer from 'nodemailer';
 import path from 'path';
 import { Readable } from 'stream';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -14,6 +15,148 @@ const __dirname = path.dirname(__filename);
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '15mb' }));
+
+/* ======================================================================
+   Server-side login (Batch 3)
+
+   Turn it on by setting the L2H_USERS environment variable on Render, e.g.
+   [{"key":"dan","name":"Dan","admin":true,"password":"..."},
+    {"key":"ella","name":"Ella","admin":false,"password":"..."}]
+   A "passwordHash" ("salt:scrypt-hex") can be used instead of "password".
+   Until L2H_USERS is set the server behaves exactly as before, so deploying
+   this is safe. Once set, every /api call except the public application
+   form needs a signed token from POST /api/login.
+   ====================================================================== */
+app.set('trust proxy', 1);
+
+const AUTH_USERS = (() => {
+  try {
+    const raw = process.env.L2H_USERS;
+    if (!raw) return null;
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr) || !arr.length) return null;
+    return arr.map(u => ({
+      key: String(u.key || '').toLowerCase(),
+      name: u.name || u.key,
+      admin: !!u.admin,
+      password: u.password,
+      passwordHash: u.passwordHash,
+    })).filter(u => u.key);
+  } catch (e) {
+    console.error('L2H_USERS is not valid JSON:', e.message);
+    return null;
+  }
+})();
+const AUTH_ENABLED = !!(AUTH_USERS && AUTH_USERS.length);
+const AUTH_SECRET = process.env.AUTH_SECRET ||
+  crypto.createHash('sha256').update('l2h-auth|' + (process.env.GOOGLE_SERVICE_ACCOUNT_JSON || 'dev')).digest('hex');
+const TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
+
+function signToken(payload) {
+  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const sig = crypto.createHmac('sha256', AUTH_SECRET).update(body).digest('base64url');
+  return body + '.' + sig;
+}
+
+function verifyToken(token) {
+  if (!token || typeof token !== 'string') return null;
+  const [body, sig] = token.split('.');
+  if (!body || !sig) return null;
+  const expected = crypto.createHmac('sha256', AUTH_SECRET).update(body).digest('base64url');
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  try {
+    const p = JSON.parse(Buffer.from(body, 'base64url').toString());
+    if (!p.exp || p.exp < Date.now()) return null;
+    return p;
+  } catch (e) {
+    return null;
+  }
+}
+
+function safeEqual(a, b) {
+  const x = crypto.createHash('sha256').update(String(a)).digest();
+  const y = crypto.createHash('sha256').update(String(b)).digest();
+  return crypto.timingSafeEqual(x, y);
+}
+
+function checkPassword(user, pw) {
+  if (user.passwordHash) {
+    const [salt, hash] = String(user.passwordHash).split(':');
+    if (!salt || !hash) return false;
+    return safeEqual(crypto.scryptSync(String(pw), salt, 64).toString('hex'), hash);
+  }
+  return user.password ? safeEqual(user.password, pw) : false;
+}
+
+function isAdmin(req) {
+  if (req.user) return !!req.user.admin;
+  return String(req.get('X-User-Role') || '').toLowerCase() === 'dan';
+}
+
+function requireAdmin(req, res, next) {
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Only Dan can do this' });
+  next();
+}
+
+function actorOf(req) {
+  if (req && req.user && req.user.key) return req.user.key;
+  return String((req && req.get && req.get('X-User-Role')) || 'unknown').toLowerCase();
+}
+
+const loginAttempts = new Map();
+app.post('/api/login', (req, res) => {
+  if (!AUTH_ENABLED) return res.status(501).json({ error: 'Server login is not configured' });
+  const ip = req.ip || 'unknown';
+  const now = Date.now();
+  let rec = loginAttempts.get(ip);
+  if (!rec || rec.reset < now) rec = { count: 0, reset: now + 15 * 60 * 1000 };
+  if (rec.count >= 10) return res.status(429).json({ error: 'Too many attempts. Please try again in a few minutes.' });
+  const pw = String((req.body || {}).password || '');
+  const user = pw ? AUTH_USERS.find(u => checkPassword(u, pw)) : null;
+  if (!user) {
+    rec.count++;
+    loginAttempts.set(ip, rec);
+    return res.status(401).json({ error: 'Incorrect password' });
+  }
+  loginAttempts.delete(ip);
+  const token = signToken({ key: user.key, name: user.name, admin: user.admin, exp: Date.now() + TOKEN_TTL_MS });
+  res.json({ token, user: { key: user.key, name: user.name, admin: user.admin } });
+  auditLog(user.key, 'login', 'session', user.name, '');
+});
+
+// Routes that stay public: the careers site application form, the Career Hub AI proxy,
+// and the daily reminder cron (which can be locked with CRON_SECRET).
+const PUBLIC_API = [
+  { method: 'POST', re: /^\/api\/login$/ },
+  { method: 'POST', re: /^\/api\/applications\/[^/]+$/ },
+  { method: 'POST', re: /^\/api\/claude$/ },
+];
+let cronWarned = false;
+
+app.use('/api', (req, res, next) => {
+  if (req.method === 'OPTIONS' || !AUTH_ENABLED) return next();
+  const p = req.originalUrl.split('?')[0].replace(/\/+$/, '');
+  if (PUBLIC_API.some(r => r.method === req.method && r.re.test(p))) return next();
+  if (p === '/api/check-invoice-reminders') {
+    const secret = process.env.CRON_SECRET;
+    if (!secret) {
+      if (!cronWarned) { console.warn('CRON_SECRET is not set: /api/check-invoice-reminders is open'); cronWarned = true; }
+      return next();
+    }
+    if (String(req.query.key || '') === secret) return next();
+  }
+  const header = String(req.get('Authorization') || '');
+  let token = header.startsWith('Bearer ') ? header.slice(7) : '';
+  if (!token && req.method === 'GET' && req.query.token) token = String(req.query.token);
+  const payload = verifyToken(token);
+  if (!payload) return res.status(401).json({ error: 'Please sign in again', code: 'AUTH' });
+  req.user = payload;
+  req.headers['x-user-role'] = payload.key;
+  next();
+});
+
 
 const API_KEY = process.env.ANTHROPIC_API_KEY;
 
@@ -234,6 +377,8 @@ app.post('/api/candidates', async (req, res) => {
   res.on('finish', () => { if (res.statusCode < 400) scheduleReconcile(); });
   try {
     const c = req.body;
+    const __before = await snapshotCandidate(c);
+    res.on('finish', () => { if (res.statusCode < 400) auditCandidateChange(req, c, __before); });
     if (!c.id || !c.role || !c.name) {
       return res.status(400).json({ error: 'id, role and name are required' });
     }
@@ -549,6 +694,7 @@ app.delete('/api/candidates/:id', async (req, res) => {
     try {
       const gone = rowToCandidate(rows[rowIndex]);
       if (gone.name && gone.role) {
+        auditLog(actorOf(req), 'candidate_deleted', 'candidate', `${gone.name} - ${gone.role}`, `stage ${gone.stage}`);
         await upsertPoolEntry({ ...gone, dateAdded: gone.date, source: 'dashboard' }, false);
       }
     } catch (snapErr) {
@@ -926,7 +1072,7 @@ const emailTransporter = nodemailer.createTransport({
 // its role in this header on invoice-mutating requests. Not a real auth
 // system - just stops Ella's UI (or a casual API call) from touching invoices.
 function requireDan(req, res, next) {
-  if (req.get('X-User-Role') !== 'dan') {
+  if (!isAdmin(req)) {
     return res.status(403).json({ error: 'Only Dan can generate or manage invoices' });
   }
   next();
@@ -948,6 +1094,7 @@ app.get('/api/invoices', async (req, res) => {
 // Body: { candidateId, company, role, candidateName, salary }
 // Fee is always calculated server-side from salary - never trust a client-sent amount.
 app.post('/api/invoices', requireDan, async (req, res) => {
+  auditOnFinish(req, res, () => ({ action: 'invoice_created', type: 'invoice', entity: `${(req.body || {}).candidateName || ''} - ${(req.body || {}).company || ''}`, detail: `salary ${(req.body || {}).salary || ''}` }));
   try {
     const { candidateId, company, role, candidateName, salary } = req.body;
     if (!company || !candidateName || !salary) {
@@ -1009,6 +1156,7 @@ app.post('/api/invoices', requireDan, async (req, res) => {
 
 // PUT update invoice status (pending / sent / paid) and payment date
 app.put('/api/invoices/:number', requireDan, async (req, res) => {
+  auditOnFinish(req, res, () => ({ action: 'invoice_updated', type: 'invoice', entity: req.params.number, detail: JSON.stringify(req.body || {}).slice(0, 200) }));
   try {
     const { number } = req.params;
     const { status, paymentDate } = req.body;
@@ -1041,6 +1189,7 @@ app.put('/api/invoices/:number', requireDan, async (req, res) => {
 
 // DELETE an invoice record
 app.delete('/api/invoices/:number', requireDan, async (req, res) => {
+  auditOnFinish(req, res, () => ({ action: 'invoice_deleted', type: 'invoice', entity: req.params.number }));
   try {
     const { number } = req.params;
     const sheets = getSheetsClient();
@@ -2364,9 +2513,10 @@ const POOL_TAB = 'Candidate Pool';
 const POOL_HEADER = [
   'id', 'name', 'email', 'phone', 'company', 'role', 'furthest_stage', 'current_stage',
   'date_added', 'last_updated', 'notes', 'cv_file_id', 'cv_file_name', 'cv_link', 'in_pipeline', 'tags',
+  'source', 'consent_date', 'consent_basis', 'review_date', 'erased',
 ];
 const POOL_WIDTH = POOL_HEADER.length;
-const POOL_LAST_COL = 'P';
+const POOL_LAST_COL = 'U';
 const POOL_CV_FOLDER_NAME = 'Candidate Pool CVs';
 
 // Forward progression only. "rejected" is deliberately not ranked - a rejection
@@ -2431,6 +2581,12 @@ function rowToPoolEntry(row) {
     hasCv: !!r[11],
     inPipeline: r[14] !== 'No',
     tags: r[15],
+    source: r[16],
+    consentDate: r[17],
+    consentBasis: r[18],
+    reviewDate: r[19],
+    reviewDue: r[19] || addMonthsISO(r[8], RETENTION_MONTHS),
+    erased: r[20],
   };
 }
 
@@ -2600,7 +2756,7 @@ async function doReconcile() {
   // Candidates no longer in the pipeline stay in the pool, flagged accordingly
   for (const [id, ex] of byId) {
     if (seen.has(id)) continue;
-    if ((ex.row[14] || '') === 'No') continue;
+    if ((ex.row[14] || '') === 'No' || (ex.row[20] || '')) continue;
     const r = padPoolRow(ex.row);
     r[14] = 'No';
     r[9] = now;
@@ -2854,6 +3010,7 @@ app.post('/api/candidate-pool/:id/cv', async (req, res) => {
       fileName: driveName,
       link: file.data.webViewLink || '',
     });
+    auditLog(actorOf(req), 'cv_uploaded', 'pool', `${found.row[1]} - ${found.row[5]}`, driveName);
     res.json({ ok: true, data: rowToPoolEntry(row) });
   } catch (e) {
     console.error('POST /api/candidate-pool/:id/cv error:', e.message);
@@ -2918,7 +3075,7 @@ app.get('/api/candidate-pool/:id/cv/file', async (req, res) => {
    (SHEET_ID) that is created on first use, with full list / upsert / delete.
    ====================================================================== */
 
-function makeSimpleTable({ tab, header, path, label, seed }) {
+function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, auditName, beforeList }) {
   const width = header.length;
   const lastCol = String.fromCharCode(64 + width);
   let ready = false;
@@ -2939,7 +3096,7 @@ function makeSimpleTable({ tab, header, path, label, seed }) {
     }
     const head = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tab}'!A1:${lastCol}1` });
     const first = head.data.values && head.data.values[0];
-    if (!first || first[0] !== header[0]) {
+    if (!first || first[0] !== header[0] || first.length < width) {
       await sheets.spreadsheets.values.update({
         spreadsheetId: SHEET_ID,
         range: `'${tab}'!A1:${lastCol}1`,
@@ -2971,7 +3128,8 @@ function makeSimpleTable({ tab, header, path, label, seed }) {
   const toObj = row => { const r = pad(row); const o = {}; header.forEach((h, i) => { o[h] = r[i]; }); return o; };
   const toRow = o => header.map(h => (o[h] == null ? '' : String(o[h])));
 
-  async function list() { return (await readRows()).filter(r => r && r[0]).map(toObj); }
+  async function listAll() { return (await readRows()).filter(r => r && r[0]).map(toObj); }
+  async function list() { return (await listAll()).filter(o => !String(o.id).startsWith('__')); }
 
   function upsert(obj) {
     return lock(async () => {
@@ -3019,40 +3177,68 @@ function makeSimpleTable({ tab, header, path, label, seed }) {
     });
   }
 
-  if (path) {
-    app.get(path, async (req, res) => {
-      try { res.json({ data: await list() }); }
-      catch (e) { console.error(`GET ${path} error:`, e.message); res.status(500).json({ error: e.message }); }
+  function updateWhere(pred, mutate) {
+    return lock(async () => {
+      const sheets = getSheetsClient();
+      const rows = await readRows();
+      const data = [];
+      rows.forEach((r, i) => {
+        if (!r || !r[0]) return;
+        const o = toObj(r);
+        if (pred(o)) {
+          const m = mutate({ ...o }) || o;
+          data.push({ range: `'${tab}'!A${i + 2}:${lastCol}${i + 2}`, values: [toRow(m)] });
+        }
+      });
+      if (data.length) {
+        await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { valueInputOption: 'RAW', data } });
+      }
+      return data.length;
     });
-    app.post(path, async (req, res) => {
+  }
+
+  if (path) {
+    const g = guard ? [guard] : [];
+    app.get(path, ...g, async (req, res) => {
+      try {
+        if (beforeList) await beforeList();
+        res.json({ data: await list() });
+      } catch (e) { console.error(`GET ${path} error:`, e.message); res.status(500).json({ error: e.message }); }
+    });
+    app.post(path, ...g, async (req, res) => {
       try {
         const b = req.body || {};
         if (!b.id) return res.status(400).json({ error: 'id is required' });
         const clean = {};
         header.forEach(h => { if (b[h] !== undefined) clean[h] = b[h]; });
-        // keep any existing values the caller did not send
         const existing = (await list()).find(o => o.id === b.id);
-        res.json({ ok: true, data: await upsert({ ...(existing || {}), ...clean }) });
+        const saved = await upsert({ ...(existing || {}), ...clean });
+        if (auditType) auditLog(actorOf(req), existing ? 'updated' : 'created', auditType, auditName ? auditName(saved) : saved.id, '');
+        res.json({ ok: true, data: saved });
       } catch (e) { console.error(`POST ${path} error:`, e.message); res.status(500).json({ error: e.message }); }
     });
-    app.delete(`${path}/:id`, async (req, res) => {
+    app.delete(`${path}/:id`, ...g, async (req, res) => {
       try {
+        const existing = (await listAll()).find(o => o.id === req.params.id);
         const ok = await remove(req.params.id);
         if (!ok) return res.status(404).json({ error: `${label || 'Record'} not found` });
+        if (auditType) auditLog(actorOf(req), 'deleted', auditType, existing && auditName ? auditName(existing) : req.params.id, '');
         res.json({ ok: true });
       } catch (e) { console.error(`DELETE ${path} error:`, e.message); res.status(500).json({ error: e.message }); }
     });
   }
-  return { list, upsert, append, remove, ensure };
+  return { list, listAll, upsert, append, remove, updateWhere, ensure };
 }
 
 /* ---------- Roles / Vacancies ---------- */
 
 const rolesTable = makeSimpleTable({
   tab: 'Roles',
-  header: ['id', 'company', 'role', 'contact', 'salary_band', 'fee_percent', 'status', 'date_opened', 'date_closed', 'notes'],
+  header: ['id', 'company', 'role', 'contact', 'salary_band', 'fee_percent', 'status', 'date_opened', 'date_closed', 'notes', 'positions'],
   path: '/api/roles',
   label: 'Role',
+  auditType: 'role',
+  auditName: o => `${o.role} - ${o.company}`,
 });
 
 /* ---------- Placements and guarantee tracker ----------
@@ -3130,6 +3316,7 @@ app.put('/api/placements/:id', async (req, res) => {
       left_reason: status === 'left' ? (b.leftReason || '') : '',
       notes: b.notes || '',
     });
+    auditLog(actorOf(req), 'placement_updated', 'placement', req.params.id, `${status}, ${saved.guarantee_weeks} weeks`);
     res.json({ ok: true, data: saved });
   } catch (e) {
     console.error('PUT /api/placements/:id error:', e.message);
@@ -3145,9 +3332,11 @@ app.put('/api/placements/:id', async (req, res) => {
 
 const interviewsTable = makeSimpleTable({
   tab: 'Interviews',
-  header: ['id', 'candidate_id', 'candidate_name', 'role', 'company', 'date', 'time', 'type', 'location', 'interviewer', 'status', 'notes', 'created_by'],
+  header: ['id', 'candidate_id', 'candidate_name', 'role', 'company', 'date', 'time', 'type', 'location', 'interviewer', 'status', 'notes', 'created_by', 'duration', 'candidate_email', 'interviewer_email'],
   path: '/api/interviews',
   label: 'Interview',
+  auditType: 'interview',
+  auditName: o => `${o.candidate_name} - ${o.date}`,
 });
 
 const commsTable = makeSimpleTable({
@@ -3162,59 +3351,134 @@ const feedbackTable = makeSimpleTable({
   header: ['id', 'date', 'company', 'role', 'candidate_name', 'outcome', 'reason', 'detail', 'logged_by'],
   path: '/api/client-feedback',
   label: 'Feedback',
+  auditType: 'client_feedback',
+  auditName: o => `${o.candidate_name} - ${o.company}`,
 });
 
 const DEFAULT_TEMPLATES = [
   {
-    id: 'tpl-client-follow-up', name: 'Client follow-up after submission', category: 'Client',
-    subject: 'Following up: {{candidate_name}} for {{role}}',
-    body: 'Hi {{contact_name}},\n\nI hope you are well. I wanted to follow up on the profile I sent over for {{candidate_name}} for your {{role}} vacancy.\n\nHave you had a chance to review it? {{first_name}} is keen and available to speak at your convenience, so if you would like to move forward I can arrange an interview at a time that suits you.\n\nKind regards,\n{{my_name}}\nLive 2 Help Recruitment',
-    updated_by: 'system',
+    "id": "tpl-interview-confirmation",
+    "name": "Interview confirmation",
+    "category": "Candidate",
+    "subject": "Your Interview Confirmed - {{company}}, {{role}} - {{interview_date}}",
+    "body": "Hi {{first_name}},\n\nGreat news - your interview with {{company}} has been confirmed. Please see the details below.\n\nInterview Details:\nDate: {{interview_date}}\nTime: {{interview_time}}\nLocation: {{interview_location}}\nFormat: {{interview_format}}\nYou will be meeting: {{interviewer}}\n\nImportant Information:\n- Please arrive 5-10 minutes early\n- I have attached your interview preparation pack - please read it in full before the day. It covers everything you need to know about the company, the interviewer, the likely questions, and how to structure your answers\n- If anything changes or you need to reschedule, please contact me immediately on {{sender_phone}} - do not leave it until the last minute\n- Bring a notepad and pen with you\n\nWe are confident you will make a strong impression. You have prepared well for this and you have earned this opportunity - go and show them what you are made of.\n\nIf you have any questions before your interview, please do not hesitate to get in touch.\n\nBest regards,\n\n{{signature}}",
+    "updated_by": "system"
   },
   {
-    id: 'tpl-interview-confirmation', name: 'Interview confirmation', category: 'Candidate',
-    subject: 'Your interview for {{role}} at {{company}}',
-    body: 'Hi {{first_name}},\n\nGreat news, {{company}} would like to interview you for the {{role}} position.\n\nInterview details:\nDate: {{interview_date}}\nTime: {{interview_time}}\nLocation: {{interview_location}}\n\nPlease reply to confirm you can attend. I will send over the site information and everything you need to prepare shortly.\n\nBest of luck,\n{{my_name}}\nLive 2 Help Recruitment',
-    updated_by: 'system',
+    "id": "tpl-offer-cover",
+    "name": "Offer letter cover email",
+    "category": "Candidate",
+    "subject": "Your offer from {{company}} - {{role}}",
+    "body": "Dear {{first_name}},\n\nWe are delighted to offer you the position of {{role}} at {{company}}.\n\nYour formal offer letter is attached. Please review the key details confirmed below:\n\nStart Date: {{start_date}}\nAnnual Salary: {{salary}}\nReporting To: {{contact_name}}\n\nNEXT STEPS\nPlease sign and return the attached offer letter by [DATE]. Once we receive your signed acceptance, we will arrange the following:\n- Pre-start onboarding pack and site information\n- Confirmation of any compliance documentation needed (ID, references, proof of right to work)\n- First day briefing and induction overview\n\nIf you have any questions or need further information before your start date, please do not hesitate to reach out. I am here to help make this transition as smooth as possible for you.\n\nCongratulations again - we look forward to welcoming you to the team.\n\nKind regards,\n\n{{signature}}",
+    "updated_by": "system"
   },
   {
-    id: 'tpl-offer', name: 'Offer congratulations', category: 'Candidate',
-    subject: 'Congratulations, offer from {{company}}',
-    body: 'Hi {{first_name}},\n\nCongratulations. I am delighted to let you know that {{company}} would like to offer you the {{role}} position.\n\nI will call you to talk through the terms and answer any questions. The formal offer letter will follow once we have spoken.\n\nWell done,\n{{my_name}}\nLive 2 Help Recruitment',
-    updated_by: 'system',
+    "id": "tpl-information-request",
+    "name": "Information request (after offer accepted)",
+    "category": "Candidate",
+    "subject": "Next Steps - A Few Things We Need From You",
+    "body": "Hi {{first_name}},\n\nCongratulations again on accepting your offer - we are delighted for you and cannot wait to see you get started at {{company}}.\n\nTo make sure everything runs smoothly before your first day, we just need a few bits of information from you. This will not take long and will help us and {{company}} get everything in place ahead of your start.\n\nPlease respond to this email with the information below within 24 hours.\n\n1. YOUR DETAILS\n- Full legal name (as it appears on your passport or driving licence)\n- Home address (including postcode)\n- Personal email address\n- Personal mobile number\n- Emergency contact name, relationship, and phone number\n- Confirmed start date (we have noted {{start_date}} - please confirm this works for you)\n\n2. RIGHT TO WORK\nWe are required to confirm your Right to Work in the UK before your start date. Please provide one of the following:\n- A copy of your valid passport (photo page), or\n- A copy of your UK birth certificate and proof of National Insurance number, or\n- Your share code if you hold a Biometric Residence Permit or EU Settlement Scheme status\n\nYou can email a clear photo or scan to {{sender_email}}. This information is handled securely and in line with our Data Protection Policy.\n\n3. REFERENCES\nWe require two professional references before your start date. Please provide the details below for each referee. These should ideally be line managers or supervisors from your two most recent employers.\n\nReference 1\nFull Name:\nJob Title:\nCompany:\nRelationship to You:\nEmail Address:\nPhone Number:\n\nReference 2\nFull Name:\nJob Title:\nCompany:\nRelationship to You:\nEmail Address:\nPhone Number:\n\n4. ANYTHING ELSE WE SHOULD KNOW?\nIf there is anything you need us to be aware of before your start - for example, any reasonable adjustments, specific requirements for your first day, or anything that may affect your start date - please let us know here and we will make sure it is taken care of.\n\nThat is everything from us for now. Once we have received the above, we will be in touch with your pre-start onboarding information and details on what to expect before day one.\n\nIf you have any questions at all in the meantime, please do not hesitate to call or email me directly.\n\nBest regards,\n\n{{signature}}",
+    "updated_by": "system"
   },
   {
-    id: 'tpl-rejection', name: 'Candidate rejection', category: 'Candidate',
-    subject: 'Your application for {{role}}',
-    body: 'Hi {{first_name}},\n\nThank you for your time and interest in the {{role}} position with {{company}}. After careful consideration the client has decided not to progress your application on this occasion.\n\nThis is not a reflection of your ability and I would like to keep your details on file for future roles that suit your experience. Please keep in touch.\n\nKind regards,\n{{my_name}}\nLive 2 Help Recruitment',
-    updated_by: 'system',
+    "id": "tpl-references-request",
+    "name": "References request",
+    "category": "Candidate",
+    "subject": "Two References Needed - {{first_name}} for {{company}}",
+    "body": "Hi {{first_name}},\n\nAs we move forward with your placement at {{company}}, we need to collect two professional references from you. This is a standard part of the recruitment process and will allow the company to gain additional insight into your professional background and work ethic.\n\nPlease provide the following information for two referees. These should ideally be line managers or supervisors from your two most recent employers.\n\nReference 1:\nFull Name:\nJob Title:\nCompany:\nRelationship to You:\nEmail Address:\nPhone Number:\n\nReference 2:\nFull Name:\nJob Title:\nCompany:\nRelationship to You:\nEmail Address:\nPhone Number:\n\nPlease reply to this email with the above details filled in. Once we receive them, we will contact your referees directly to seek their feedback before your start date.\n\nA Note on Confidentiality:\nWe handle all reference requests professionally and in confidence. Your referees will be contacted only with your permission and will be assured of discretion throughout the process.\n\nOne More Thing:\nAt Live 2 Help, we pride ourselves on working with talent acquisition at all levels across organisations. If you know of anyone else in your current or former teams who might be interested in exploring new opportunities - whether they are looking to move now or simply open to conversations - please do send their contact details our way. We work with businesses across the UK and are always keen to build relationships with individuals who are actively progressing their careers.\n\nPlease reply with your references at your earliest convenience.\n\nBest regards,\n\n{{signature}}",
+    "updated_by": "system"
   },
   {
-    id: 'tpl-day-one', name: 'Day 1 welcome message', category: 'Candidate',
-    subject: 'Good luck today at {{company}}',
-    body: 'Hi {{first_name}},\n\nJust a quick message to wish you the very best on your first day as {{role}} at {{company}}. You have earned it.\n\nIf anything comes up today, call me any time.\n\n{{my_name}}\nLive 2 Help Recruitment',
-    updated_by: 'system',
+    "id": "tpl-start-reminder",
+    "name": "Candidate start date reminder",
+    "category": "Candidate",
+    "subject": "Your first day at {{company}} - {{start_date}}",
+    "body": "Dear {{first_name}},\n\nJust a few days to go! We wanted to confirm that your start date is {{start_date}} and you will be reporting to {{contact_name}} at {{company}}. Here is everything you need to know before Day One.\n\nARRIVAL DETAILS\nArrival Time: [TIME - e.g. 08:30 / 09:00]\nWhere to Go: {{company_address}} [BUILDING NAME / ENTRANCE DETAILS]\nWho to Ask For: {{contact_name}}\n\nPARKING AND TRANSPORT\n[PARKING DETAILS - free/paid, location, number of spaces, permit requirements if applicable]\n[PUBLIC TRANSPORT - nearest station or stop, walk time, directions from station to site]\n[SITE QUIRKS - any one-way systems, temporary access changes, which entrance to use, floor or building number]\n\nWHAT TO BRING\n- Photo ID (driving licence or passport)\n- Proof of right to work if not already submitted\n- Any signed documentation previously sent to you\n\nDress Code: [SMART BUSINESS / BUSINESS CASUAL / SMART CASUAL]\n\nYOUR FIRST DAY\nYour induction will typically include a welcome from {{contact_name}}, a tour of the site, introductions to your immediate team, and an overview of key systems and processes. Allow a full day for onboarding - it will be busy but positive.\n\nA detailed Site Onboarding Pack is attached to this email. Please review it before you arrive - it covers everything specific to this location that you will want to know in advance.\n\nIF YOU ARE RUNNING LATE\nContact {{contact_name}} directly on [DIRECT PHONE NUMBER]. Do not leave it until you are already late - a quick call goes a long way.\n\nWe are genuinely excited for you to start this next chapter. If you have any questions at all before then, you know where to find me.\n\nKind regards,\n\n{{signature}}",
+    "updated_by": "system"
   },
   {
-    id: 'tpl-week-one', name: 'Week 1 check-in', category: 'Candidate',
-    subject: 'How was your first week?',
-    body: 'Hi {{first_name}},\n\nHow was your first week at {{company}}? I would love to hear how you are settling in, and whether there is anything I can help with.\n\nI will give you a quick call to catch up.\n\n{{my_name}}\nLive 2 Help Recruitment',
-    updated_by: 'system',
+    "id": "tpl-candidate-rejection",
+    "name": "Candidate rejection",
+    "category": "Candidate",
+    "subject": "Your application for {{role}} at {{company}}",
+    "body": "Dear {{first_name}},\n\nThank you for investing your time in the process and for the genuine effort you put into your preparation. It was a pleasure getting to know you and we appreciated the quality of your engagement throughout.\n\nWe wanted to let you know that we have decided to move forward with another candidate for this particular role. This was not a reflection of your capabilities - you demonstrated real strengths in [SPECIFIC STRENGTH], and we were genuinely impressed by [SPECIFIC EXAMPLE]. The decision came down to a very close match of specific experience within [DETAIL].\n\nWe would very much like to stay in touch. Your background in [SECTOR/SPECIALISM] puts you in a strong position for future opportunities, particularly in [RELEVANT AREA]. If your situation changes or you update your CV, please do let us know - we check profiles regularly and if something lands that fits, we will reach out directly.\n\nIf you would like to chat about next steps or explore other possibilities in your field, I am always happy to have that conversation. Please feel free to reach out at any time.\n\nKind regards,\n\n{{signature}}",
+    "updated_by": "system"
   },
   {
-    id: 'tpl-month-one', name: 'Month 1 check-in', category: 'Candidate',
-    subject: 'One month in',
-    body: 'Hi {{first_name}},\n\nYou have now been at {{company}} for a month. How are things going with the {{role}} role, and does it feel like the right fit?\n\nI will also check in with {{contact_name}} to make sure everything is going well from their side.\n\n{{my_name}}\nLive 2 Help Recruitment',
-    updated_by: 'system',
+    "id": "tpl-client-placement",
+    "name": "Client placement confirmation",
+    "category": "Client",
+    "subject": "Placement confirmed - {{candidate_name}} joining {{company}}",
+    "body": "Dear {{contact_name}},\n\nWe are delighted to confirm that {{candidate_name}} will be joining {{company}} as {{role}}, commencing {{start_date}}.\n\nCANDIDATE PROFILE SNAPSHOT\n{{first_name}} brings [KEY STRENGTH 1] and [KEY STRENGTH 2] to this role. During the process, [he/she/they] demonstrated particular capability in [SPECIFIC EVIDENCE], which aligns directly with your team's requirements. [His/Her/Their] background in [RELEVANT AREA] positions [him/her/them] well for immediate impact on [SPECIFIC PROJECT OR RESPONSIBILITY].\n\nA full Candidate Handover Pack is attached, containing the candidate's full record, employment details, right to work confirmation and reference contacts for your records.\n\nINVOICE AND PAYMENT\nInvoice Reference: {{invoice_ref}}\nAmount Due: {{fee_amount}}\nPayment Terms: [14 / 30] days from invoice date\n\nYour invoice will follow separately. Please direct any billing queries to office@live2helprecruitment.co.uk.\n\nPOST-PLACEMENT SUPPORT\nWe will be in touch for our standard post-placement check-ins at Week 1 and Month 1 to ensure everything is progressing well on both sides. If anything requires attention before then, please contact me directly and I will respond the same day.\n\nA MESSAGE FROM OUR TEAM\nIf you have had a positive experience working with Live 2 Help Recruitment, we would be really grateful if you could take two minutes to leave us a review. It makes a genuine difference to a growing business and helps other organisations understand what we do.\n\nLeave a review here: https://g.page/r/CU5L4ObMovbGEBM/review\n\nThank you for partnering with us on this placement. We hope {{first_name}} makes a real difference to your team and we look forward to supporting you on future hires.\n\nKind regards,\n\n{{signature}}",
+    "updated_by": "system"
   },
+  {
+    "id": "tpl-client-rejection",
+    "name": "Client rejection (soft close)",
+    "category": "Client",
+    "subject": "{{candidate_name}} for {{role}} - thank you and next steps",
+    "body": "Dear {{contact_name}},\n\nThank you for meeting with {{candidate_name}} for the {{role}} role and for the time you took to provide feedback throughout the process. We genuinely appreciate it.\n\nWe understand that you have decided to move forward with a different candidate on this occasion. We respect that decision entirely and appreciate you letting us know promptly.\n\n{{candidate_name}} was a strong submission and came very close. [He/She/They] demonstrated genuine capability in [AREA OF STRENGTH], and we were pleased with the quality of the conversation [he/she/they] had with your team. The decision ultimately reflected a very specific match of experience rather than any shortfall on the candidate's part.\n\nHOW WE MOVE FORWARD\nYour feedback is valuable and helps us sharpen the brief. If there are particular attributes, experience levels, or specific skills that would have made this a clear yes, even a brief conversation would allow us to recalibrate our search. Sometimes a small clarification changes everything in terms of who we target.\n\nWe are actively sourcing across [SECTOR/SPECIALISM] and have a strong read on the available talent market. Should the right profile become available, or should another opportunity open within your business that may suit {{first_name}}'s skillset, we will be in touch without delay.\n\nIn the meantime, please do not hesitate to reach out if you would like to discuss the brief further or if there is anything else we can do to support your recruitment plans.\n\nKind regards,\n\n{{signature}}",
+    "updated_by": "system"
+  },
+  {
+    "id": "tpl-client-follow-up",
+    "name": "Client follow-up after submission (starter)",
+    "category": "Client",
+    "subject": "Following up: {{candidate_name}} for {{role}}",
+    "body": "Hi {{contact_name}},\n\nI hope you are well. I wanted to follow up on the profile I sent over for {{candidate_name}} for your {{role}} vacancy.\n\nHave you had a chance to review it? {{first_name}} is keen and available to speak at your convenience, so if you would like to move forward I can arrange an interview at a time that suits you.\n\nKind regards,\n\n{{signature}}",
+    "updated_by": "system"
+  },
+  {
+    "id": "tpl-day-one",
+    "name": "Day 1 welcome message (starter)",
+    "category": "Candidate",
+    "subject": "Good luck today at {{company}}",
+    "body": "Hi {{first_name}},\n\nJust a quick message to wish you the very best on your first day as {{role}} at {{company}}. You have earned it.\n\nIf anything comes up today, call me any time.\n\n{{signature}}",
+    "updated_by": "system"
+  },
+  {
+    "id": "tpl-week-one",
+    "name": "Week 1 check-in (starter)",
+    "category": "Candidate",
+    "subject": "How was your first week?",
+    "body": "Hi {{first_name}},\n\nHow was your first week at {{company}}? I would love to hear how you are settling in, and whether there is anything I can help with.\n\nI will give you a quick call to catch up.\n\n{{signature}}",
+    "updated_by": "system"
+  },
+  {
+    "id": "tpl-month-one",
+    "name": "Month 1 check-in (starter)",
+    "category": "Candidate",
+    "subject": "One month in",
+    "body": "Hi {{first_name}},\n\nYou have now been at {{company}} for a month. How are things going with the {{role}} role, and does it feel like the right fit?\n\nI will also check in with {{contact_name}} to make sure everything is going well from their side.\n\n{{signature}}",
+    "updated_by": "system"
+  }
 ];
+
+let tplMigrated = false;
+async function migrateTemplates() {
+  if (tplMigrated) return;
+  const all = await templatesTable.listAll();
+  if (all.some(t => t.id === '__templates_v2')) { tplMigrated = true; return; }
+  for (const d of DEFAULT_TEMPLATES) {
+    const ex = all.find(t => t.id === d.id);
+    if (!ex || ex.updated_by === 'system') await templatesTable.upsert(d);
+  }
+  for (const oldId of ['tpl-offer']) {
+    const ex = all.find(t => t.id === oldId);
+    if (ex && ex.updated_by === 'system') await templatesTable.remove(oldId);
+  }
+  await templatesTable.upsert({ id: '__templates_v2', name: 'migration marker', category: '', subject: '', body: '', updated_by: 'system' });
+  tplMigrated = true;
+}
 
 const templatesTable = makeSimpleTable({
   tab: 'Templates',
   header: ['id', 'name', 'category', 'subject', 'body', 'updated_by'],
   path: '/api/templates',
   label: 'Template',
-  seed: DEFAULT_TEMPLATES,
+  beforeList: migrateTemplates,
+  auditType: 'template',
+  auditName: o => o.name,
 });
 
 const activityTable = makeSimpleTable({
@@ -3224,7 +3488,7 @@ const activityTable = makeSimpleTable({
   label: 'Activity',
 });
 
-app.get('/api/activity', async (req, res) => {
+app.get('/api/activity', requireAdmin, async (req, res) => {
   try {
     const since = String(req.query.since || '');
     let rows = await activityTable.list();
@@ -3269,6 +3533,333 @@ app.put('/api/candidate-pool/:id/tags', async (req, res) => {
     res.json({ ok: true, data: rowToPoolEntry(row) });
   } catch (e) {
     console.error('PUT /api/candidate-pool/:id/tags error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+/* ======================================================================
+   Batch 3 additions: Audit trail, GDPR (consent, retention, export, erase),
+   Sourcing spend, Referrals, pool source/consent fields.
+   ====================================================================== */
+
+const auditTable = makeSimpleTable({
+  tab: 'Audit Log',
+  header: ['id', 'timestamp', 'user', 'action', 'entity_type', 'entity', 'detail'],
+  path: null,
+  label: 'Audit',
+});
+
+function auditLog(actor, action, entityType, entity, detail) {
+  try {
+    const entry = {
+      id: `aud-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      timestamp: new Date().toISOString(),
+      user: String(actor || 'unknown').toLowerCase(),
+      action,
+      entity_type: entityType || '',
+      entity: String(entity || '').slice(0, 200),
+      detail: String(detail || '').slice(0, 300),
+    };
+    auditTable.append(entry).catch(e => console.error('Audit write failed:', e.message));
+  } catch (e) {
+    console.error('Audit error:', e.message);
+  }
+}
+
+function auditOnFinish(req, res, build) {
+  res.on('finish', () => {
+    if (res.statusCode >= 400) return;
+    try {
+      const a = build();
+      if (a) auditLog(actorOf(req), a.action, a.type, a.entity, a.detail || '');
+    } catch (e) { /* audit is best effort */ }
+  });
+}
+
+async function snapshotCandidate(c) {
+  try {
+    if (!c || !c.name || !c.role) return null;
+    if (c.sourceTab === 'application') {
+      const sheets = getSheetsClient();
+      const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'Applications - ${c.role}'!A2:U` });
+      const row = (r.data.values || []).find(x => String(x[2] || '').trim().toLowerCase() === String(c.name).trim().toLowerCase());
+      if (!row) return null;
+      return { stage: row[19] || 'applied', notes: row[20] || '', salary: row[15] || '', company: row[17] || '' };
+    }
+    const rows = await readAllRows();
+    const r = rows.find(x => x && x[0] === c.id);
+    if (!r) return null;
+    const o = rowToCandidate(r);
+    return { stage: o.stage, notes: o.notes, salary: o.salary, company: o.company };
+  } catch (e) {
+    return null;
+  }
+}
+
+function auditCandidateChange(req, c, before) {
+  const who = actorOf(req);
+  const label = `${c.name} - ${c.role}`;
+  if (!before) { auditLog(who, 'candidate_created', 'candidate', label, `stage ${c.stage || 'submitted'}`); return; }
+  if (c.stage && normStage(c.stage) !== normStage(before.stage)) {
+    auditLog(who, 'stage_changed', 'candidate', label, `${before.stage} to ${c.stage}`);
+  }
+  if (c.notes !== undefined && String(c.notes) !== String(before.notes)) {
+    auditLog(who, 'notes_edited', 'candidate', label, String(c.notes).slice(0, 120));
+  }
+  if (c.salary !== undefined && String(c.salary) !== String(before.salary)) {
+    auditLog(who, 'salary_changed', 'candidate', label, `${before.salary || 'blank'} to ${c.salary || 'blank'}`);
+  }
+  if (c.company !== undefined && String(c.company) !== String(before.company)) {
+    auditLog(who, 'company_assigned', 'candidate', label, `${before.company || 'none'} to ${c.company || 'none'}`);
+  }
+}
+
+app.get('/api/audit', requireAdmin, async (req, res) => {
+  try {
+    let rows = await auditTable.list();
+    const since = String(req.query.since || '');
+    if (since) rows = rows.filter(r => String(r.timestamp) >= since);
+    rows.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
+    res.json({ data: rows.slice(0, Math.min(parseInt(req.query.limit, 10) || 500, 2000)) });
+  } catch (e) {
+    console.error('GET /api/audit error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* ---------- Sourcing spend and referrals ---------- */
+
+makeSimpleTable({
+  tab: 'Ad Spend',
+  header: ['id', 'date', 'channel', 'role', 'company', 'amount', 'notes', 'logged_by'],
+  path: '/api/ad-spend',
+  label: 'Spend entry',
+  guard: requireAdmin,
+  auditType: 'ad_spend',
+  auditName: o => `${o.channel} - ${o.amount}`,
+});
+
+makeSimpleTable({
+  tab: 'Referrals',
+  header: ['id', 'date', 'type', 'referred_name', 'referred_company', 'referrer_name', 'referrer_type', 'role', 'status', 'reward_amount', 'reward_status', 'reward_paid_date', 'notes', 'created_by'],
+  path: '/api/referrals',
+  label: 'Referral',
+  auditType: 'referral',
+  auditName: o => `${o.referred_name} referred by ${o.referrer_name}`,
+});
+
+/* ---------- GDPR: consent, retention review, export and erase ---------- */
+
+const RETENTION_MONTHS = parseInt(process.env.RETENTION_MONTHS, 10) || 12;
+
+function addMonthsISO(iso, months) {
+  const d = new Date(String(iso || '').slice(0, 10) + 'T00:00:00Z');
+  if (isNaN(d.getTime())) return '';
+  d.setUTCMonth(d.getUTCMonth() + months);
+  return d.toISOString().slice(0, 10);
+}
+
+function nameVariantSet(name) {
+  const n = String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return new Set(n ? [n] : []);
+}
+
+const POOL_META_FIELDS = { source: 16, consentDate: 17, consentBasis: 18, reviewDate: 19 };
+
+app.put('/api/candidate-pool/:id/meta', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const patch = {};
+    if (b.source !== undefined) patch[POOL_META_FIELDS.source] = String(b.source).slice(0, 60);
+    if (b.consentDate !== undefined) patch[POOL_META_FIELDS.consentDate] = /^\d{4}-\d{2}-\d{2}$/.test(b.consentDate) ? b.consentDate : '';
+    if (b.consentBasis !== undefined) patch[POOL_META_FIELDS.consentBasis] = String(b.consentBasis).slice(0, 80);
+    if (b.reviewDate !== undefined) patch[POOL_META_FIELDS.reviewDate] = /^\d{4}-\d{2}-\d{2}$/.test(b.reviewDate) ? b.reviewDate : '';
+    if (b.extendReview) patch[POOL_META_FIELDS.reviewDate] = addMonthsISO(new Date().toISOString().slice(0, 10), RETENTION_MONTHS);
+    const row = await patchPoolRow(req.params.id, patch);
+    if (!row) return res.status(404).json({ error: 'Pool record not found' });
+    const entry = rowToPoolEntry(row);
+    if (b.extendReview) auditLog(actorOf(req), 'retention_extended', 'pool', `${entry.name} - ${entry.role}`, `review ${entry.reviewDate}`);
+    else if (b.consentDate !== undefined || b.consentBasis !== undefined) auditLog(actorOf(req), 'consent_recorded', 'pool', `${entry.name} - ${entry.role}`, entry.consentBasis);
+    res.json({ ok: true, data: entry });
+  } catch (e) {
+    console.error('PUT /api/candidate-pool/:id/meta error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/gdpr/bulk-consent', requireAdmin, async (req, res) => {
+  try {
+    const basis = String((req.body || {}).basis || 'Application form').slice(0, 80);
+    const rows = await readPoolRows();
+    const sheets = getSheetsClient();
+    const data = [];
+    rows.forEach((raw, i) => {
+      const r = padPoolRow(raw);
+      if (!r[0] || r[20] || r[17]) return;
+      r[17] = (r[8] || new Date().toISOString()).slice(0, 10);
+      r[18] = basis;
+      data.push({ range: `'${POOL_TAB}'!A${i + 2}:${POOL_LAST_COL}${i + 2}`, values: [r] });
+    });
+    if (data.length) await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { valueInputOption: 'RAW', data } });
+    auditLog(actorOf(req), 'bulk_consent_recorded', 'pool', `${data.length} candidates`, basis);
+    res.json({ ok: true, updated: data.length });
+  } catch (e) {
+    console.error('POST /api/gdpr/bulk-consent error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/gdpr/export/:id', requireAdmin, async (req, res) => {
+  try {
+    const found = await findPoolRowById(req.params.id);
+    if (!found) return res.status(404).json({ error: 'Pool record not found' });
+    const row = found.row;
+    if (row[20]) return res.status(400).json({ error: 'This record has already been erased' });
+    const name = row[1];
+    const variants = nameVariantSet(name);
+    const match = v => variants.has(String(v || '').trim().toLowerCase());
+    const entry = rowToPoolEntry(row);
+
+    let application = null;
+    try {
+      const sheets = getSheetsClient();
+      const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'Applications - ${row[5]}'!A2:U` });
+      const ar = (r.data.values || []).find(x => match(x[2]));
+      if (ar) {
+        application = {};
+        SCREENING_FORM_FIELDS.forEach(f => { application[f.label] = ar[f.col] || ''; });
+        application['Company'] = ar[17] || '';
+        application['Status'] = ar[19] || '';
+        application['Notes'] = ar[20] || '';
+      }
+    } catch (e) { /* no application tab for this role */ }
+
+    const dash = (await readAllRows()).filter(r => r && r[0]).map(rowToCandidate).filter(c => match(c.name) && c.role === row[5]);
+    const [ivs, cms, fbs, acts] = await Promise.all([
+      interviewsTable.list(), commsTable.list(), feedbackTable.list(), activityTable.list(),
+    ]);
+
+    const bundle = {
+      exportedAt: new Date().toISOString(),
+      exportedBy: actorOf(req),
+      candidate: entry.name,
+      poolRecord: { ...entry, cvLink: row[13] || '' },
+      application,
+      pipelineRecords: dash,
+      interviews: ivs.filter(i => match(i.candidate_name)),
+      contactLog: cms.filter(c => match(c.entity_name)),
+      clientFeedback: fbs.filter(f => match(f.candidate_name)),
+      activity: acts.filter(a => match(a.candidate)),
+    };
+    auditLog(actorOf(req), 'data_exported', 'pool', `${entry.name} - ${entry.role}`, '');
+    res.setHeader('Content-Type', 'application/json');
+    res.send(JSON.stringify(bundle, null, 2));
+  } catch (e) {
+    console.error('GET /api/gdpr/export error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+async function deleteApplicationRows(role, variants) {
+  const sheets = getSheetsClient();
+  const ss = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties(sheetId,title)' });
+  const tab = (ss.data.sheets || []).find(s => s.properties.title === `Applications - ${role}`);
+  if (!tab) return 0;
+  const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tab.properties.title}'!A2:U` });
+  const idx = [];
+  (r.data.values || []).forEach((row, i) => { if (variants.has(String(row[2] || '').trim().toLowerCase())) idx.push(i); });
+  if (!idx.length) return 0;
+  const requests = idx.sort((a, b) => b - a).map(i => ({
+    deleteDimension: { range: { sheetId: tab.properties.sheetId, dimension: 'ROWS', startIndex: i + 1, endIndex: i + 2 } },
+  }));
+  await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { requests } });
+  return idx.length;
+}
+
+app.post('/api/gdpr/erase/:id', requireAdmin, async (req, res) => {
+  try {
+    const found = await findPoolRowById(req.params.id);
+    if (!found) return res.status(404).json({ error: 'Pool record not found' });
+    const row = found.row;
+    if (row[20]) return res.status(400).json({ error: 'Already erased' });
+    if (String((req.body || {}).confirm || '') !== 'ERASE') return res.status(400).json({ error: 'Type ERASE to confirm' });
+
+    const name = row[1], role = row[5], company = row[4];
+    const variants = nameVariantSet(name);
+    const match = v => variants.has(String(v || '').trim().toLowerCase());
+    const cleared = { cv: 0, application: 0, pipeline: 0, interviews: 0, contactLog: 0, feedback: 0, activity: 0, audit: 0 };
+
+    // CV files in Drive
+    try {
+      const drive = getDriveClient();
+      const ids = new Set();
+      if (row[11]) ids.add(row[11]);
+      const legacy = await findLegacyCv(company, name).catch(() => null);
+      if (legacy && legacy.fileId) ids.add(legacy.fileId);
+      for (const fileId of ids) {
+        await drive.files.update({ fileId, requestBody: { trashed: true } });
+        cleared.cv++;
+      }
+    } catch (e) { console.error('Erase: CV removal failed:', e.message); }
+
+    // Application form row and pipeline row
+    try { cleared.application = await deleteApplicationRows(role, variants); } catch (e) { console.error('Erase: application rows:', e.message); }
+    try {
+      const sheets = getSheetsClient();
+      const dashRows = await readAllRows();
+      for (let i = 0; i < dashRows.length; i++) {
+        const r = dashRows[i];
+        if (!r || !r[0]) continue;
+        const c = rowToCandidate(r);
+        if (match(c.name) && c.role === role) {
+          await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: `${TAB}!A${i + 2}:L${i + 2}` });
+          cleared.pipeline++;
+        }
+      }
+    } catch (e) { console.error('Erase: pipeline rows:', e.message); }
+
+    // Scrub the other tables so the person cannot be identified
+    const ERASED = 'Erased candidate';
+    cleared.interviews = await interviewsTable.updateWhere(o => match(o.candidate_name), o => ({ ...o, candidate_name: ERASED, candidate_email: '', notes: '' }));
+    cleared.contactLog = await commsTable.updateWhere(o => match(o.entity_name), o => ({ ...o, entity_name: ERASED, summary: '[erased]' }));
+    cleared.feedback = await feedbackTable.updateWhere(o => match(o.candidate_name), o => ({ ...o, candidate_name: ERASED, detail: '' }));
+    cleared.activity = await activityTable.updateWhere(o => match(o.candidate), o => ({ ...o, candidate: ERASED, detail: '' }));
+    cleared.audit = await auditTable.updateWhere(
+      o => [...variants].some(v => String(o.entity || '').toLowerCase().includes(v)) || [...variants].some(v => String(o.detail || '').toLowerCase().includes(v)),
+      o => ({ ...o, entity: ERASED, detail: '' })
+    );
+
+    // Pool tombstone: keeps role, company, stage and source for statistics only
+    const tomb = padPoolRow(row);
+    const tombId = `erased-${crypto.randomBytes(5).toString('hex')}`;
+    tomb[0] = tombId; tomb[1] = ERASED; tomb[2] = ''; tomb[3] = ''; tomb[10] = '';
+    tomb[11] = ''; tomb[12] = ''; tomb[13] = ''; tomb[14] = 'No'; tomb[15] = '';
+    tomb[17] = ''; tomb[18] = ''; tomb[19] = '';
+    tomb[20] = new Date().toISOString().slice(0, 10);
+    tomb[9] = new Date().toISOString();
+    await withPoolLock(async () => {
+      const sheets = getSheetsClient();
+      const rows = await readPoolRows();
+      const idx = rows.findIndex(r => r && r[0] === req.params.id);
+      if (idx === -1) return;
+      const n = idx + 2;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID, range: `'${POOL_TAB}'!A${n}:${POOL_LAST_COL}${n}`,
+        valueInputOption: 'RAW', requestBody: { values: [tomb] },
+      });
+    });
+
+    auditLog(actorOf(req), 'candidate_erased', 'pool', `Erased candidate (ref ${tombId})`, `role ${role}`);
+    res.json({
+      ok: true, cleared,
+      manual: [
+        'Submission pack documents saved in Drive under the candidate name are not removed automatically - delete those files by hand.',
+        'Anything held outside this dashboard (email, Wispr transcripts, the Google Forms response sheet if separate) also needs removing by hand.',
+      ],
+    });
+  } catch (e) {
+    console.error('POST /api/gdpr/erase error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
