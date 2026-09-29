@@ -2363,10 +2363,10 @@ app.delete('/api/cold-calls/:id', async (req, res) => {
 const POOL_TAB = 'Candidate Pool';
 const POOL_HEADER = [
   'id', 'name', 'email', 'phone', 'company', 'role', 'furthest_stage', 'current_stage',
-  'date_added', 'last_updated', 'notes', 'cv_file_id', 'cv_file_name', 'cv_link', 'in_pipeline',
+  'date_added', 'last_updated', 'notes', 'cv_file_id', 'cv_file_name', 'cv_link', 'in_pipeline', 'tags',
 ];
 const POOL_WIDTH = POOL_HEADER.length;
-const POOL_LAST_COL = 'O';
+const POOL_LAST_COL = 'P';
 const POOL_CV_FOLDER_NAME = 'Candidate Pool CVs';
 
 // Forward progression only. "rejected" is deliberately not ranked - a rejection
@@ -2430,6 +2430,7 @@ function rowToPoolEntry(row) {
     cvFileName: r[12],
     hasCv: !!r[11],
     inPipeline: r[14] !== 'No',
+    tags: r[15],
   };
 }
 
@@ -2465,7 +2466,7 @@ async function ensurePoolTab() {
     range: `'${POOL_TAB}'!A1:${POOL_LAST_COL}1`,
   });
   const first = head.data.values && head.data.values[0];
-  if (!first || first[0] !== 'id') {
+  if (!first || first[0] !== 'id' || first.length < POOL_WIDTH) {
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
       range: `'${POOL_TAB}'!A1:${POOL_LAST_COL}1`,
@@ -2917,7 +2918,7 @@ app.get('/api/candidate-pool/:id/cv/file', async (req, res) => {
    (SHEET_ID) that is created on first use, with full list / upsert / delete.
    ====================================================================== */
 
-function makeSimpleTable({ tab, header, path, label }) {
+function makeSimpleTable({ tab, header, path, label, seed }) {
   const width = header.length;
   const lastCol = String.fromCharCode(64 + width);
   let ready = false;
@@ -2928,7 +2929,9 @@ function makeSimpleTable({ tab, header, path, label }) {
     if (ready) return;
     const sheets = getSheetsClient();
     const ss = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties.title' });
+    let created = false;
     if (!(ss.data.sheets || []).some(s => s.properties.title === tab)) {
+      created = true;
       await sheets.spreadsheets.batchUpdate({
         spreadsheetId: SHEET_ID,
         requestBody: { requests: [{ addSheet: { properties: { title: tab } } }] },
@@ -2942,6 +2945,12 @@ function makeSimpleTable({ tab, header, path, label }) {
         range: `'${tab}'!A1:${lastCol}1`,
         valueInputOption: 'RAW',
         requestBody: { values: [header] },
+      });
+    }
+    if (created && seed && seed.length) {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SHEET_ID, range: `'${tab}'!A:${lastCol}`, valueInputOption: 'RAW',
+        insertDataOption: 'INSERT_ROWS', requestBody: { values: seed.map(o => header.map(h => (o[h] == null ? '' : String(o[h])))) },
       });
     }
     ready = true;
@@ -2986,6 +2995,18 @@ function makeSimpleTable({ tab, header, path, label }) {
     });
   }
 
+  function append(obj) {
+    return lock(async () => {
+      await ensure();
+      const sheets = getSheetsClient();
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SHEET_ID, range: `'${tab}'!A:${lastCol}`, valueInputOption: 'RAW',
+        insertDataOption: 'INSERT_ROWS', requestBody: { values: [toRow(obj)] },
+      });
+      return toObj(toRow(obj));
+    });
+  }
+
   function remove(id) {
     return lock(async () => {
       const sheets = getSheetsClient();
@@ -3022,7 +3043,7 @@ function makeSimpleTable({ tab, header, path, label }) {
       } catch (e) { console.error(`DELETE ${path} error:`, e.message); res.status(500).json({ error: e.message }); }
     });
   }
-  return { list, upsert, remove, ensure };
+  return { list, upsert, append, remove, ensure };
 }
 
 /* ---------- Roles / Vacancies ---------- */
@@ -3112,6 +3133,142 @@ app.put('/api/placements/:id', async (req, res) => {
     res.json({ ok: true, data: saved });
   } catch (e) {
     console.error('PUT /api/placements/:id error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+/* ======================================================================
+   Batch 2 additions: Interviews, Comms log, Email templates, Client feedback,
+   Activity log (feeds Team performance) and talent pool tags.
+   ====================================================================== */
+
+const interviewsTable = makeSimpleTable({
+  tab: 'Interviews',
+  header: ['id', 'candidate_id', 'candidate_name', 'role', 'company', 'date', 'time', 'type', 'location', 'interviewer', 'status', 'notes', 'created_by'],
+  path: '/api/interviews',
+  label: 'Interview',
+});
+
+const commsTable = makeSimpleTable({
+  tab: 'Comms Log',
+  header: ['id', 'timestamp', 'user', 'entity_type', 'entity_name', 'company', 'role', 'channel', 'direction', 'summary', 'follow_up_date', 'follow_up_done'],
+  path: '/api/comms',
+  label: 'Contact',
+});
+
+const feedbackTable = makeSimpleTable({
+  tab: 'Client Feedback',
+  header: ['id', 'date', 'company', 'role', 'candidate_name', 'outcome', 'reason', 'detail', 'logged_by'],
+  path: '/api/client-feedback',
+  label: 'Feedback',
+});
+
+const DEFAULT_TEMPLATES = [
+  {
+    id: 'tpl-client-follow-up', name: 'Client follow-up after submission', category: 'Client',
+    subject: 'Following up: {{candidate_name}} for {{role}}',
+    body: 'Hi {{contact_name}},\n\nI hope you are well. I wanted to follow up on the profile I sent over for {{candidate_name}} for your {{role}} vacancy.\n\nHave you had a chance to review it? {{first_name}} is keen and available to speak at your convenience, so if you would like to move forward I can arrange an interview at a time that suits you.\n\nKind regards,\n{{my_name}}\nLive 2 Help Recruitment',
+    updated_by: 'system',
+  },
+  {
+    id: 'tpl-interview-confirmation', name: 'Interview confirmation', category: 'Candidate',
+    subject: 'Your interview for {{role}} at {{company}}',
+    body: 'Hi {{first_name}},\n\nGreat news, {{company}} would like to interview you for the {{role}} position.\n\nInterview details:\nDate: {{interview_date}}\nTime: {{interview_time}}\nLocation: {{interview_location}}\n\nPlease reply to confirm you can attend. I will send over the site information and everything you need to prepare shortly.\n\nBest of luck,\n{{my_name}}\nLive 2 Help Recruitment',
+    updated_by: 'system',
+  },
+  {
+    id: 'tpl-offer', name: 'Offer congratulations', category: 'Candidate',
+    subject: 'Congratulations, offer from {{company}}',
+    body: 'Hi {{first_name}},\n\nCongratulations. I am delighted to let you know that {{company}} would like to offer you the {{role}} position.\n\nI will call you to talk through the terms and answer any questions. The formal offer letter will follow once we have spoken.\n\nWell done,\n{{my_name}}\nLive 2 Help Recruitment',
+    updated_by: 'system',
+  },
+  {
+    id: 'tpl-rejection', name: 'Candidate rejection', category: 'Candidate',
+    subject: 'Your application for {{role}}',
+    body: 'Hi {{first_name}},\n\nThank you for your time and interest in the {{role}} position with {{company}}. After careful consideration the client has decided not to progress your application on this occasion.\n\nThis is not a reflection of your ability and I would like to keep your details on file for future roles that suit your experience. Please keep in touch.\n\nKind regards,\n{{my_name}}\nLive 2 Help Recruitment',
+    updated_by: 'system',
+  },
+  {
+    id: 'tpl-day-one', name: 'Day 1 welcome message', category: 'Candidate',
+    subject: 'Good luck today at {{company}}',
+    body: 'Hi {{first_name}},\n\nJust a quick message to wish you the very best on your first day as {{role}} at {{company}}. You have earned it.\n\nIf anything comes up today, call me any time.\n\n{{my_name}}\nLive 2 Help Recruitment',
+    updated_by: 'system',
+  },
+  {
+    id: 'tpl-week-one', name: 'Week 1 check-in', category: 'Candidate',
+    subject: 'How was your first week?',
+    body: 'Hi {{first_name}},\n\nHow was your first week at {{company}}? I would love to hear how you are settling in, and whether there is anything I can help with.\n\nI will give you a quick call to catch up.\n\n{{my_name}}\nLive 2 Help Recruitment',
+    updated_by: 'system',
+  },
+  {
+    id: 'tpl-month-one', name: 'Month 1 check-in', category: 'Candidate',
+    subject: 'One month in',
+    body: 'Hi {{first_name}},\n\nYou have now been at {{company}} for a month. How are things going with the {{role}} role, and does it feel like the right fit?\n\nI will also check in with {{contact_name}} to make sure everything is going well from their side.\n\n{{my_name}}\nLive 2 Help Recruitment',
+    updated_by: 'system',
+  },
+];
+
+const templatesTable = makeSimpleTable({
+  tab: 'Templates',
+  header: ['id', 'name', 'category', 'subject', 'body', 'updated_by'],
+  path: '/api/templates',
+  label: 'Template',
+  seed: DEFAULT_TEMPLATES,
+});
+
+const activityTable = makeSimpleTable({
+  tab: 'Activity',
+  header: ['id', 'timestamp', 'user', 'action', 'candidate', 'role', 'company', 'detail'],
+  path: null,
+  label: 'Activity',
+});
+
+app.get('/api/activity', async (req, res) => {
+  try {
+    const since = String(req.query.since || '');
+    let rows = await activityTable.list();
+    if (since) rows = rows.filter(r => String(r.timestamp) >= since);
+    res.json({ data: rows });
+  } catch (e) {
+    console.error('GET /api/activity error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/activity', async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!b.action || !b.user) return res.status(400).json({ error: 'user and action are required' });
+    const entry = {
+      id: b.id || `act-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      timestamp: b.timestamp || new Date().toISOString(),
+      user: String(b.user).toLowerCase(),
+      action: b.action,
+      candidate: b.candidate || '',
+      role: b.role || '',
+      company: b.company || '',
+      detail: String(b.detail || '').slice(0, 300),
+    };
+    await activityTable.append(entry);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('POST /api/activity error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Talent pool tags (comma separated, stored on the Candidate Pool row)
+app.put('/api/candidate-pool/:id/tags', async (req, res) => {
+  try {
+    const tags = String((req.body || {}).tags || '')
+      .split(',').map(t => t.trim().toLowerCase()).filter(Boolean)
+      .filter((t, i, a) => a.indexOf(t) === i).slice(0, 20).join(', ');
+    const row = await patchPoolRow(req.params.id, { 15: tags });
+    if (!row) return res.status(404).json({ error: 'Pool record not found' });
+    res.json({ ok: true, data: rowToPoolEntry(row) });
+  } catch (e) {
+    console.error('PUT /api/candidate-pool/:id/tags error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
