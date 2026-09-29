@@ -1952,9 +1952,7 @@ app.get('/api/tasks', async (req, res) => {
         
         // Filter by user
         if (userRole === 'dan') return true;
-        if (userRole === 'ella' && t.user === 'ella') return true;
-        
-        return false;
+        return String(t.user || '').toLowerCase() === String(userRole).toLowerCase();
       });
     
     res.json(tasks);
@@ -1977,9 +1975,7 @@ app.get('/api/tasks/archive', async (req, res) => {
         
         // Filter by user
         if (userRole === 'dan') return true;
-        if (userRole === 'ella' && t.user === 'ella') return true;
-        
-        return false;
+        return String(t.user || '').toLowerCase() === String(userRole).toLowerCase();
       });
     
     res.json(tasks);
@@ -2910,6 +2906,213 @@ app.get('/api/candidate-pool/:id/cv/file', async (req, res) => {
   } catch (e) {
     console.error('GET /api/candidate-pool/:id/cv/file error:', e.message);
     if (!res.headersSent) res.status(500).json({ error: e.message });
+  }
+});
+
+
+/* ======================================================================
+   Batch 1 additions: Roles, Placements (guarantee tracker), User-aware tasks.
+
+   Generic "simple table" helper: each table is one tab in the tracker sheet
+   (SHEET_ID) that is created on first use, with full list / upsert / delete.
+   ====================================================================== */
+
+function makeSimpleTable({ tab, header, path, label }) {
+  const width = header.length;
+  const lastCol = String.fromCharCode(64 + width);
+  let ready = false;
+  let chain = Promise.resolve();
+  const lock = fn => { const run = chain.then(fn); chain = run.catch(() => {}); return run; };
+
+  async function ensure() {
+    if (ready) return;
+    const sheets = getSheetsClient();
+    const ss = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties.title' });
+    if (!(ss.data.sheets || []).some(s => s.properties.title === tab)) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SHEET_ID,
+        requestBody: { requests: [{ addSheet: { properties: { title: tab } } }] },
+      });
+    }
+    const head = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tab}'!A1:${lastCol}1` });
+    const first = head.data.values && head.data.values[0];
+    if (!first || first[0] !== header[0]) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID,
+        range: `'${tab}'!A1:${lastCol}1`,
+        valueInputOption: 'RAW',
+        requestBody: { values: [header] },
+      });
+    }
+    ready = true;
+  }
+
+  async function readRows() {
+    await ensure();
+    const sheets = getSheetsClient();
+    const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tab}'!A2:${lastCol}` });
+    return r.data.values || [];
+  }
+
+  const pad = row => {
+    const a = (row || []).slice(0, width).map(v => (v == null ? '' : String(v)));
+    while (a.length < width) a.push('');
+    return a;
+  };
+  const toObj = row => { const r = pad(row); const o = {}; header.forEach((h, i) => { o[h] = r[i]; }); return o; };
+  const toRow = o => header.map(h => (o[h] == null ? '' : String(o[h])));
+
+  async function list() { return (await readRows()).filter(r => r && r[0]).map(toObj); }
+
+  function upsert(obj) {
+    return lock(async () => {
+      const sheets = getSheetsClient();
+      const rows = await readRows();
+      const idx = rows.findIndex(r => r && r[0] === obj.id);
+      const row = toRow(obj);
+      if (idx === -1) {
+        await sheets.spreadsheets.values.append({
+          spreadsheetId: SHEET_ID, range: `'${tab}'!A:${lastCol}`, valueInputOption: 'RAW',
+          insertDataOption: 'INSERT_ROWS', requestBody: { values: [row] },
+        });
+      } else {
+        const n = idx + 2;
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SHEET_ID, range: `'${tab}'!A${n}:${lastCol}${n}`, valueInputOption: 'RAW',
+          requestBody: { values: [row] },
+        });
+      }
+      return toObj(row);
+    });
+  }
+
+  function remove(id) {
+    return lock(async () => {
+      const sheets = getSheetsClient();
+      const rows = await readRows();
+      const idx = rows.findIndex(r => r && r[0] === id);
+      if (idx === -1) return false;
+      const n = idx + 2;
+      await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: `'${tab}'!A${n}:${lastCol}${n}` });
+      return true;
+    });
+  }
+
+  if (path) {
+    app.get(path, async (req, res) => {
+      try { res.json({ data: await list() }); }
+      catch (e) { console.error(`GET ${path} error:`, e.message); res.status(500).json({ error: e.message }); }
+    });
+    app.post(path, async (req, res) => {
+      try {
+        const b = req.body || {};
+        if (!b.id) return res.status(400).json({ error: 'id is required' });
+        const clean = {};
+        header.forEach(h => { if (b[h] !== undefined) clean[h] = b[h]; });
+        // keep any existing values the caller did not send
+        const existing = (await list()).find(o => o.id === b.id);
+        res.json({ ok: true, data: await upsert({ ...(existing || {}), ...clean }) });
+      } catch (e) { console.error(`POST ${path} error:`, e.message); res.status(500).json({ error: e.message }); }
+    });
+    app.delete(`${path}/:id`, async (req, res) => {
+      try {
+        const ok = await remove(req.params.id);
+        if (!ok) return res.status(404).json({ error: `${label || 'Record'} not found` });
+        res.json({ ok: true });
+      } catch (e) { console.error(`DELETE ${path} error:`, e.message); res.status(500).json({ error: e.message }); }
+    });
+  }
+  return { list, upsert, remove, ensure };
+}
+
+/* ---------- Roles / Vacancies ---------- */
+
+const rolesTable = makeSimpleTable({
+  tab: 'Roles',
+  header: ['id', 'company', 'role', 'contact', 'salary_band', 'fee_percent', 'status', 'date_opened', 'date_closed', 'notes'],
+  path: '/api/roles',
+  label: 'Role',
+});
+
+/* ---------- Placements and guarantee tracker ----------
+   A placement is any Dashboard candidate at Start Date or later. The Placements
+   tab only stores what the team edits (guarantee length, status, notes); the
+   rest is derived from the live Dashboard rows so nothing is entered twice. */
+
+const PLACEMENT_STAGES = ['start_date', 'day1', 'week1', 'month1'];
+const DEFAULT_GUARANTEE_WEEKS = 12;
+
+const placementsTable = makeSimpleTable({
+  tab: 'Placements',
+  header: ['id', 'guarantee_weeks', 'status', 'left_date', 'left_reason', 'notes'],
+  path: null,
+  label: 'Placement',
+});
+
+function placementKey(company, name, role) {
+  return `${company}|${name}|${role}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function addDaysISO(iso, days) {
+  const d = new Date(iso + 'T00:00:00Z');
+  if (isNaN(d.getTime())) return '';
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+app.get('/api/placements', async (req, res) => {
+  try {
+    const dashRows = await readAllRows();
+    const overrides = new Map((await placementsTable.list()).map(o => [o.id, o]));
+    const today = new Date().toISOString().slice(0, 10);
+
+    const data = dashRows
+      .filter(r => r && r[0])
+      .map(rowToCandidate)
+      .filter(c => PLACEMENT_STAGES.includes(normStage(c.stage)))
+      .map(c => {
+        const id = placementKey(c.company, c.name, c.role);
+        const o = overrides.get(id) || {};
+        const weeks = parseInt(o.guarantee_weeks, 10) || DEFAULT_GUARANTEE_WEEKS;
+        const startDate = /^\d{4}-\d{2}-\d{2}/.test(c.startDate || '') ? c.startDate.slice(0, 10) : '';
+        const guaranteeEnd = startDate ? addDaysISO(startDate, weeks * 7) : '';
+        const status = o.status || 'active';
+        let daysLeft = null;
+        if (guaranteeEnd) daysLeft = Math.round((new Date(guaranteeEnd + 'T00:00:00Z') - new Date(today + 'T00:00:00Z')) / 86400000);
+        return {
+          id, name: c.name, company: c.company, role: c.role, salary: c.salary,
+          stage: normStage(c.stage), startDate, invoiceNumber: c.invoiceNumber || '',
+          guaranteeWeeks: weeks, guaranteeEnd, daysLeft,
+          status, leftDate: o.left_date || '', leftReason: o.left_reason || '', notes: o.notes || '',
+        };
+      })
+      .sort((a, b) => String(b.startDate).localeCompare(String(a.startDate)));
+
+    res.json({ data, defaultWeeks: DEFAULT_GUARANTEE_WEEKS });
+  } catch (e) {
+    console.error('GET /api/placements error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.put('/api/placements/:id', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const allowed = ['active', 'completed', 'left'];
+    const status = b.status && allowed.includes(b.status) ? b.status : 'active';
+    const weeks = parseInt(b.guaranteeWeeks, 10);
+    const saved = await placementsTable.upsert({
+      id: req.params.id,
+      guarantee_weeks: Number.isFinite(weeks) && weeks > 0 ? weeks : DEFAULT_GUARANTEE_WEEKS,
+      status,
+      left_date: status === 'left' ? (b.leftDate || new Date().toISOString().slice(0, 10)) : '',
+      left_reason: status === 'left' ? (b.leftReason || '') : '',
+      notes: b.notes || '',
+    });
+    res.json({ ok: true, data: saved });
+  } catch (e) {
+    console.error('PUT /api/placements/:id error:', e.message);
+    res.status(500).json({ error: e.message });
   }
 });
 
