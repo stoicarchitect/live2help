@@ -165,6 +165,7 @@
   .card .cname{font-size:13.5px;color:var(--dark);}
   .card .cdays{font-size:11px;color:#999;margin-top:4px;}
   .card .csal{font-size:11px;color:var(--gold);margin-top:3px;}
+  .card .csub{font-size:11px;color:#8a8a8a;margin-top:2px;}
 
 
   /* ---- Candidate Pool ---- */
@@ -351,6 +352,74 @@
   }
   .filter-bar input{flex:1;min-width:220px;}
   .empty-row{text-align:center;color:#999;padding:32px 14px !important;}
+
+
+  /* ---- Batch 2: interviews, comms, feedback, templates, forecast, team ---- */
+  .tab-btn{margin:0 13px;}
+  #interviewsView,#commsView,#feedbackView,#templatesView,#forecastView,#teamView{display:none;flex:1;flex-direction:column;}
+  #interviewsView.visible,#commsView.visible,#feedbackView.visible,#templatesView.visible,#forecastView.visible,#teamView.visible{display:flex;}
+  .ghost-btn{
+    padding:8px 14px;background:var(--white);color:var(--grey);border:1px solid var(--border);border-radius:2px;
+    font-size:12.5px;cursor:pointer;font-family:inherit;white-space:nowrap;
+  }
+  .ghost-btn:hover{border-color:var(--dark);color:var(--dark);}
+  .head-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+  .section-title{font-size:13.5px;color:var(--dark);font-weight:600;margin:22px 0 10px;}
+  .section-title:first-child{margin-top:0;}
+  .note-line{font-size:12px;color:#999;margin:10px 0 0;line-height:1.5;}
+
+  .iv-cal{background:var(--white);border:1px solid var(--border);border-radius:2px;margin-bottom:6px;}
+  .iv-cal-head{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);}
+  .iv-cal-head .month{font-size:14px;color:var(--dark);font-weight:600;}
+  .iv-grid{display:grid;grid-template-columns:repeat(7,1fr);}
+  .iv-dow{padding:8px;font-size:11px;color:#999;text-align:center;border-bottom:1px solid var(--border);background:var(--lightbg);}
+  .iv-day{min-height:84px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:4px 6px;cursor:pointer;min-width:0;}
+  .iv-day:nth-child(7n){border-right:none;}
+  .iv-day.blank{background:#fafafa;cursor:default;}
+  .iv-day .num{font-size:11.5px;color:#999;}
+  .iv-day.today{background:#FBF6EA;}
+  .iv-day.today .num{color:var(--dark);font-weight:700;}
+  .iv-chip{
+    display:block;font-size:11px;padding:3px 5px;margin-top:3px;border-radius:2px;background:var(--dark);color:var(--gold);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;
+  }
+  .iv-chip.completed{background:#E4EBF5;color:#274b7a;}
+  .iv-chip.no_show{background:#F7E3E1;color:#9B2C22;}
+  .iv-chip.cancelled{background:#eee;color:#999;text-decoration:line-through;}
+  @media (max-width:780px){.iv-day{min-height:58px;padding:3px;}.iv-chip{font-size:10px;padding:2px 3px;}}
+
+  .tpl-wrap{display:grid;grid-template-columns:270px 1fr;gap:16px;}
+  @media (max-width:980px){.tpl-wrap{grid-template-columns:1fr;}}
+  .tpl-list{background:var(--white);border:1px solid var(--border);border-radius:2px;align-self:start;}
+  .tpl-cat{font-size:11px;color:#999;letter-spacing:.6px;text-transform:uppercase;font-weight:600;padding:12px 14px 6px;}
+  .tpl-item{padding:9px 14px;font-size:13px;color:var(--grey);cursor:pointer;border-left:3px solid transparent;}
+  .tpl-item:hover{background:var(--lightbg);}
+  .tpl-item.active{border-left-color:var(--gold);background:#FBF6EA;color:var(--dark);}
+  .tpl-editor{background:var(--white);border:1px solid var(--border);border-radius:2px;padding:18px;}
+  .tpl-editor label{display:block;font-size:11px;color:#999;letter-spacing:.5px;margin:12px 0 4px;}
+  .tpl-editor label:first-child{margin-top:0;}
+  .tpl-editor input,.tpl-editor textarea,.tpl-editor select{
+    width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-size:13.5px;font-family:inherit;background:#fff;
+  }
+  .tpl-editor textarea{min-height:190px;resize:vertical;line-height:1.5;}
+  .tpl-fields{font-size:11.5px;color:#999;margin-top:6px;line-height:1.6;}
+  .tpl-fields code{background:var(--lightbg);padding:1px 5px;border-radius:2px;color:var(--grey);}
+  .tpl-preview{background:var(--lightbg);border-left:3px solid var(--gold);padding:14px;margin-top:10px;font-size:13px;color:var(--grey);white-space:pre-wrap;line-height:1.55;}
+  .tpl-preview .subj{font-weight:600;color:var(--dark);margin-bottom:8px;display:block;}
+  .tpl-preview mark{background:#FBF1D9;color:#8a6a12;padding:0 2px;}
+  .tpl-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;}
+
+  .kv-tile-row{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin:12px 0;}
+  .weight-input{width:64px !important;padding:6px 8px !important;text-align:right;}
+  .pool-match{background:var(--white);border:1px solid var(--border);border-left:3px solid var(--gold);border-radius:2px;padding:12px 14px;margin-bottom:14px;}
+  .pool-match .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+  .pool-match select{padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:13px;font-family:inherit;background:#fff;min-width:260px;}
+  .pool-match .hint{font-size:12px;color:#999;}
+  .pool-tags{margin-top:4px;display:flex;gap:4px;flex-wrap:wrap;}
+  .pool-tags .pool-tag{font-size:10.5px;padding:2px 6px;}
+  .extras-row{padding:8px 0;border-bottom:1px solid var(--border);font-size:12.5px;color:var(--grey);}
+  .extras-row:last-child{border-bottom:none;}
+  .extras-row .m{color:#999;font-size:11.5px;margin-top:2px;}
 
   /* ---- Modal ---- */
   .modal-overlay{
@@ -770,7 +839,7 @@
     .stage-body{max-height:none;}
     .card{display:flex;justify-content:space-between;align-items:center;gap:10px;}
     .card .cname{font-size:13px;}
-    .card .cdays,.card .csal{display:none;}
+    .card .cdays,.card .csal,.card .csub{display:none;}
     .card .mob-action{font-size:11px;color:var(--gold);white-space:nowrap;}
     #topbar{padding:14px 16px;}
   }
@@ -820,6 +889,12 @@
       <button class="tab-btn" data-tab="candidatePool" onclick="switchTab('candidatePool')">Candidate Pool<span class="tab-badge" id="poolMissingBadge"></span></button>
       <button class="tab-btn" data-tab="roles" onclick="switchTab('roles')">Roles</button>
       <button class="tab-btn" data-tab="placements" onclick="switchTab('placements')">Placements</button>
+      <button class="tab-btn" data-tab="interviews" onclick="switchTab('interviews')">Interviews</button>
+      <button class="tab-btn" data-tab="comms" onclick="switchTab('comms')">Comms Log</button>
+      <button class="tab-btn" data-tab="feedback" onclick="switchTab('feedback')">Client Feedback</button>
+      <button class="tab-btn" data-tab="templates" onclick="switchTab('templates')">Templates</button>
+      <button class="tab-btn" data-tab="forecast" onclick="switchTab('forecast')">Forecast</button>
+      <button class="tab-btn" data-tab="team" onclick="switchTab('team')">Team</button>
       <button class="tab-btn" data-tab="leadClients" onclick="switchTab('leadClients')">Lead Clients</button>
       <button class="tab-btn" data-tab="clients" onclick="switchTab('clients')">Clients</button>
       <button class="tab-btn" data-tab="invoices" onclick="switchTab('invoices')">Invoices</button>
@@ -836,6 +911,15 @@
         <div class="role-name" id="tbRole">Select a role</div>
         <div class="meta" id="tbMeta"></div>
       </div>
+      <select id="scopeFilter" onchange="setScopeGroup(this.value)" style="display:none;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13px;background:#fff;color:var(--grey);">
+        <option value="all">All candidates</option>
+        <option value="applications">New applications</option>
+        <option value="submitted">Awaiting client feedback</option>
+        <option value="interviews">In interview stages</option>
+        <option value="offers">Offers out</option>
+        <option value="placed">Placed</option>
+        <option value="rejected">Rejected</option>
+      </select>
       <div class="sync-status" id="syncStatus"><span class="sync-dot"></span><span id="syncTime">Last synced: never</span></div>
       <button id="addCandBtn" onclick="openAddCandidate()" style="display:none;padding:10px 16px;background:var(--dark);color:var(--white);border:none;border-radius:2px;font-family:inherit;font-size:12.5px;cursor:pointer;">+ Add candidate</button>
     </div>
@@ -1189,6 +1273,106 @@
       </div>
     </div>
 
+    <div id="interviewsView">
+      <div class="view-head">
+        <div><h2>Interviews</h2><div class="sub" id="ivSummary"></div></div>
+        <button class="gold-btn" onclick="openInterviewModal()">+ Schedule Interview</button>
+      </div>
+      <div class="view-body">
+        <div class="tile-grid" id="ivTiles"></div>
+        <div class="iv-cal">
+          <div class="iv-cal-head">
+            <button class="ghost-btn" onclick="ivShiftMonth(-1)">&lsaquo; Prev</button>
+            <div class="month" id="ivMonthLabel"></div>
+            <div class="head-actions"><button class="ghost-btn" onclick="ivShiftMonth(0)">Today</button><button class="ghost-btn" onclick="ivShiftMonth(1)">Next &rsaquo;</button></div>
+          </div>
+          <div class="iv-grid" id="ivGrid"></div>
+        </div>
+        <div id="ivAgenda"></div>
+      </div>
+    </div>
+
+    <div id="commsView">
+      <div class="view-head">
+        <div><h2>Communications Log</h2><div class="sub" id="cmSummary"></div></div>
+        <button class="gold-btn" onclick="openCommModal()">+ Log Contact</button>
+      </div>
+      <div class="view-body">
+        <div class="filter-bar">
+          <input id="cmSearch" placeholder="Search name, company or summary" oninput="renderComms()">
+          <select id="cmChannelFilter" onchange="renderComms()">
+            <option value="">All channels</option><option value="call">Call</option><option value="email">Email</option>
+            <option value="text">Text</option><option value="whatsapp">WhatsApp</option><option value="meeting">Meeting</option><option value="note">Note</option>
+          </select>
+          <select id="cmTypeFilter" onchange="renderComms()">
+            <option value="">Candidates and clients</option><option value="candidate">Candidates</option><option value="client">Clients</option>
+          </select>
+          <select id="cmFollowFilter" onchange="renderComms()">
+            <option value="">All entries</option><option value="due">Follow-ups outstanding</option>
+          </select>
+        </div>
+        <div class="ops-table-wrap">
+          <table class="ops-table">
+            <thead><tr><th>When</th><th>Who</th><th>Company / role</th><th>Channel</th><th>Summary</th><th>Follow-up</th><th>By</th><th style="text-align:right;">Actions</th></tr></thead>
+            <tbody id="cmBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="feedbackView">
+      <div class="view-head">
+        <div><h2>Client Feedback</h2><div class="sub" id="fbSummary"></div></div>
+        <button class="gold-btn" onclick="openFeedbackModal()">+ Log Feedback</button>
+      </div>
+      <div class="view-body">
+        <div class="tile-grid" id="fbTiles"></div>
+        <div class="panel-grid" style="margin-bottom:18px;">
+          <div class="panel"><div class="panel-head">Why candidates are not progressing</div><div class="panel-body" id="fbReasons"></div></div>
+          <div class="panel"><div class="panel-head">By client</div><div class="panel-body" id="fbClients"></div></div>
+        </div>
+        <div class="ops-table-wrap">
+          <table class="ops-table">
+            <thead><tr><th>Date</th><th>Candidate</th><th>Role</th><th>Company</th><th>Outcome</th><th>Reason</th><th>Detail</th><th style="text-align:right;">Actions</th></tr></thead>
+            <tbody id="fbBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="templatesView">
+      <div class="view-head">
+        <div><h2>Email Templates</h2><div class="sub">Fill in with a candidate, copy, and send. Edit any template to match your voice.</div></div>
+        <button class="gold-btn" onclick="tplNew()">+ New Template</button>
+      </div>
+      <div class="view-body">
+        <div class="tpl-wrap">
+          <div class="tpl-list" id="tplList"></div>
+          <div id="tplPane"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="forecastView">
+      <div class="view-head">
+        <div><h2>Pipeline Forecast</h2><div class="sub">Expected placement fees, weighted by how far each candidate has got.</div></div>
+      </div>
+      <div class="view-body" id="forecastBody"></div>
+    </div>
+
+    <div id="teamView">
+      <div class="view-head">
+        <div><h2>Team Performance</h2><div class="sub" id="teamSummary"></div></div>
+        <div class="head-actions">
+          <select id="teamPeriod" onchange="loadTeam()" style="padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13px;background:#fff;">
+            <option value="week">This week</option><option value="month" selected>This month</option>
+            <option value="quarter">This quarter</option><option value="all">All time</option>
+          </select>
+        </div>
+      </div>
+      <div class="view-body" id="teamBody"></div>
+    </div>
+
     <div id="candidatePoolView">
       <div id="poolHeader">
         <div>
@@ -1208,6 +1392,15 @@
             <option value="missing">CV missing</option>
             <option value="onfile">CV on file</option>
           </select>
+          <select id="poolTagFilter" onchange="renderPool()"><option value="">All tags</option></select>
+        </div>
+        <div class="pool-match">
+          <div class="row">
+            <strong style="font-size:13px;color:var(--dark);">Find candidates for a role</strong>
+            <select id="poolMatchRole" onchange="renderPoolMatch()" onfocus="poolMatchOptions()"><option value="">Choose a role...</option></select>
+            <span class="hint">Matches on tags, what they applied for, and notes.</span>
+          </div>
+          <div id="poolMatchResults"></div>
         </div>
         <div class="pool-table-wrap">
           <table class="pool-table">
@@ -1284,6 +1477,124 @@
         <div class="actions">
           <button class="cancel" onclick="closeModal('generateInvoiceOverlay')">Cancel</button>
           <button class="save" onclick="submitGenerateInvoice()">Generate &amp; Download</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="ivModal">
+  <div class="modal">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="closeModal('ivModal')">&times;</button>
+      <h2 id="ivModalTitle">Schedule interview</h2>
+      <div class="simple-form">
+        <label>Candidate in pipeline</label>
+        <select id="ivCandidate" onchange="ivPickCandidate()" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></select>
+        <label>Candidate name</label><input id="ivName">
+        <div class="two-col">
+          <div><label>Role</label><input id="ivRole"></div>
+          <div><label>Company</label><input id="ivCompany"></div>
+        </div>
+        <div class="two-col">
+          <div><label>Date</label><input type="date" id="ivDate"></div>
+          <div><label>Time</label><input type="time" id="ivTime"></div>
+        </div>
+        <div class="two-col">
+          <div><label>Type</label>
+            <select id="ivType" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;">
+              <option value="site">Site visit</option><option value="phone">Phone</option><option value="video">Video call</option>
+              <option value="assessment">Assessment</option><option value="other">Other</option>
+            </select></div>
+          <div><label>Status</label>
+            <select id="ivStatus" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;">
+              <option value="scheduled">Scheduled</option><option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option><option value="no_show">No show</option>
+            </select></div>
+        </div>
+        <label>Location or link</label><input id="ivLocation" placeholder="Address, phone number or meeting link">
+        <label>Client contact / interviewer</label><input id="ivInterviewer">
+        <label>Notes</label>
+        <textarea id="ivNotes" style="width:100%;min-height:64px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></textarea>
+        <div class="actions">
+          <button class="cancel" onclick="closeModal('ivModal')">Cancel</button>
+          <button class="save" onclick="saveInterview()">Save interview</button>
+        </div>
+        <div class="actions" id="ivExtraRow" style="margin-top:8px;">
+          <button class="cancel" onclick="ivDownloadIcs(ivEditingId)">Calendar file (.ics)</button>
+          <button class="cancel" style="color:var(--danger);border-color:var(--danger);" onclick="deleteInterview()">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="cmModal">
+  <div class="modal">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="closeModal('cmModal')">&times;</button>
+      <h2>Log contact</h2>
+      <div class="simple-form">
+        <div class="two-col">
+          <div><label>About</label>
+            <select id="cmType" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;">
+              <option value="candidate">Candidate</option><option value="client">Client</option></select></div>
+          <div><label>Channel</label>
+            <select id="cmChannel" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;">
+              <option value="call">Call</option><option value="email">Email</option><option value="text">Text</option>
+              <option value="whatsapp">WhatsApp</option><option value="meeting">Meeting</option><option value="note">Note</option></select></div>
+        </div>
+        <label>Name</label><input id="cmName" list="cmNameList" placeholder="Candidate or client contact">
+        <datalist id="cmNameList"></datalist>
+        <div class="two-col">
+          <div><label>Company</label><input id="cmCompany"></div>
+          <div><label>Role</label><input id="cmRole"></div>
+        </div>
+        <label>Direction</label>
+        <select id="cmDirection" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;">
+          <option value="outbound">Outbound (we contacted them)</option><option value="inbound">Inbound (they contacted us)</option></select>
+        <label>Summary</label>
+        <textarea id="cmSummaryInput" placeholder="What was discussed or agreed" style="width:100%;min-height:80px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></textarea>
+        <label>Follow-up date (optional)</label><input type="date" id="cmFollow">
+        <div class="actions">
+          <button class="cancel" onclick="closeModal('cmModal')">Cancel</button>
+          <button class="save" onclick="saveComm()">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="fbModal">
+  <div class="modal">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="closeModal('fbModal')">&times;</button>
+      <h2 id="fbModalTitle">Log client feedback</h2>
+      <div class="simple-form">
+        <div class="prompt-box" id="fbPrompt" style="display:none;margin-top:10px;"></div>
+        <div class="two-col">
+          <div><label>Date</label><input type="date" id="fbDate"></div>
+          <div><label>Outcome</label>
+            <select id="fbOutcome" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;">
+              <option value="rejected_by_client">Rejected by client</option><option value="rejected_after_interview">Rejected after interview</option>
+              <option value="offer_declined">Offer declined by candidate</option><option value="on_hold">On hold</option><option value="positive">Positive feedback</option></select></div>
+        </div>
+        <label>Candidate</label><input id="fbCandidate">
+        <div class="two-col">
+          <div><label>Company</label><input id="fbCompany"></div>
+          <div><label>Role</label><input id="fbRole"></div>
+        </div>
+        <label>Main reason</label>
+        <select id="fbReason" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;">
+          <option value="skills">Skills</option><option value="experience">Experience level</option><option value="salary">Salary expectations</option>
+          <option value="culture">Culture or personality fit</option><option value="location">Location or commute</option>
+          <option value="availability">Availability or notice period</option><option value="communication">Communication</option>
+          <option value="timing">Timing or role changed</option><option value="other">Other</option></select>
+        <label>Detail (what the client actually said)</label>
+        <textarea id="fbDetail" style="width:100%;min-height:80px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></textarea>
+        <div class="actions">
+          <button class="cancel" onclick="closeModal('fbModal')">Skip for now</button>
+          <button class="save" onclick="saveFeedback()">Save feedback</button>
         </div>
       </div>
     </div>
@@ -1667,6 +1978,16 @@ async function saveCandidate(c){
 let currentCompany = null;
 let currentRole = null;
 let openCandidateId = null;
+const BOARD_GROUPS = {
+  all:{label:'All candidates', stages:null},
+  applications:{label:'New applications', stages:['applied']},
+  submitted:{label:'Awaiting client feedback', stages:['submitted']},
+  interviews:{label:'In interview stages', stages:['interview_requested','interview_scheduled','interviewed']},
+  offers:{label:'Offers out', stages:['offer']},
+  placed:{label:'Placed', stages:['start_date','day1','week1','month1']},
+  rejected:{label:'Rejected', stages:['rejected']},
+};
+let boardScope = {all:true, group:'all'};
 
 function daysSince(dateStr){
   const d = new Date(dateStr);
@@ -1701,6 +2022,13 @@ document.getElementById('gatePw').addEventListener('keydown', e => { if(e.key ==
 function renderSidebar(){
   const list = document.getElementById('companyList');
   list.innerHTML = '';
+  const allItem = document.createElement('div');
+  allItem.className = 'role-item' + (boardScope.all ? ' active' : '');
+  allItem.style.margin = '0 0 8px';
+  const allCount = Object.keys(DATA).reduce((n, co) => n + Object.keys(DATA[co]).reduce((m, r) => m + DATA[co][r].filter(c => c.stage !== 'rejected').length, 0), 0);
+  allItem.innerHTML = `<span>All candidates</span><span class="role-count">${allCount}</span>`;
+  allItem.onclick = () => openCandidatesView('all');
+  list.appendChild(allItem);
   const companies = Object.keys(DATA).sort((a,b) => {
     if(a === UNASSIGNED_LABEL) return -1;
     if(b === UNASSIGNED_LABEL) return 1;
@@ -1720,7 +2048,7 @@ function renderSidebar(){
     Object.keys(DATA[company]).forEach(role => {
       const count = DATA[company][role].filter(c => c.stage !== 'rejected').length;
       const item = document.createElement('div');
-      item.className = 'role-item' + (company === currentCompany && role === currentRole ? ' active' : '');
+      item.className = 'role-item' + (!boardScope.all && company === currentCompany && role === currentRole ? ' active' : '');
       item.innerHTML = `<span>${role}</span><span class="role-count">${count}</span>`;
       item.onclick = () => selectRole(company, role);
       roleList.appendChild(item);
@@ -1731,6 +2059,7 @@ function renderSidebar(){
 }
 
 function selectRole(company, role){
+  boardScope.all = false;
   currentCompany = company;
   currentRole = role;
   renderSidebar();
@@ -1744,14 +2073,14 @@ function renderBoard(){
   const tbMeta = document.getElementById('tbMeta');
   const addBtn = document.getElementById('addCandBtn');
 
-  if(!currentRole){
-    board.innerHTML = '<div class="stage-empty" style="padding-top:40px;">Select a company and role from the left to view its pipeline.</div>';
-    tbCompany.textContent = '-';
-    tbRole.textContent = 'Select a role';
-    tbMeta.textContent = '';
-    addBtn.style.display = 'none';
-    return;
+  const aggregate = boardScope.all || !currentRole;
+  if(aggregate) boardScope.all = true;
+  const scopeSel = document.getElementById('scopeFilter');
+  if(scopeSel){
+    scopeSel.style.display = aggregate ? 'inline-block' : 'none';
+    scopeSel.value = boardScope.group;
   }
+  if(aggregate){ renderAggregateBoard(); return; }
   addBtn.style.display = 'inline-block';
 
   const candidates = DATA[currentCompany][currentRole];
@@ -1794,6 +2123,82 @@ function renderBoard(){
     col.appendChild(body);
     board.appendChild(col);
   });
+}
+
+function renderAggregateBoard(){
+  const board = document.getElementById('board');
+  const g = BOARD_GROUPS[boardScope.group] || BOARD_GROUPS.all;
+  document.getElementById('tbCompany').textContent = 'ALL COMPANIES';
+  document.getElementById('tbRole').textContent = g.label;
+  document.getElementById('addCandBtn').style.display = 'none';
+  const everyone = [];
+  Object.keys(DATA).forEach(co => Object.keys(DATA[co]).forEach(role => {
+    DATA[co][role].forEach(c => everyone.push({company:co, role, c}));
+  }));
+  const stages = STAGES.filter(s => !g.stages || g.stages.includes(s.key));
+  const shown = everyone.filter(x => stages.some(s => s.key === x.c.stage));
+  document.getElementById('tbMeta').textContent =
+    shown.length + (shown.length === 1 ? ' candidate' : ' candidates') + ' across all roles';
+  board.innerHTML = '';
+  if(!everyone.length){
+    board.innerHTML = '<div class="stage-empty" style="padding-top:40px;">No candidates in the pipeline yet.</div>';
+    return;
+  }
+  const successStages = ['start_date','day1','week1','month1'];
+  stages.forEach(stage => {
+    const col = document.createElement('div');
+    col.className = 'stage-col';
+    const inStage = everyone.filter(x => x.c.stage === stage.key)
+      .sort((a, b) => String(a.c.date).localeCompare(String(b.c.date)));
+    col.innerHTML = `<div class="stage-head"><span class="t">${stage.label}</span><span class="c">${inStage.length}</span></div>`;
+    const body = document.createElement('div');
+    body.className = 'stage-body';
+    if(inStage.length === 0){
+      body.innerHTML = '<div class="stage-empty">No candidates</div>';
+    } else {
+      inStage.forEach(x => {
+        const c = x.c;
+        const card = document.createElement('div');
+        let typeClass = '';
+        if(c.stage === 'rejected') typeClass = 'stage-rejected';
+        else if(successStages.includes(c.stage)) typeClass = 'stage-success';
+        card.className = 'card ' + typeClass;
+        card.onclick = () => openCandidateFromAll(x.company, x.role, c.id);
+        const d = daysSince(c.date);
+        const where = x.role + (x.company && x.company !== UNASSIGNED_LABEL ? ' - ' + x.company : '');
+        card.innerHTML = `
+          <div class="avatar">${initials(c.name)}</div>
+          <div class="cbody">
+            <div class="cname">${formatCandidateName(c.name)}</div>
+            <div class="csub">${where.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>
+            <div class="cdays">${d} day${d===1?'':'s'} in stage</div>
+            ${c.salary ? `<div class="csal">\u00A3${c.salary}</div>` : ''}
+            <div class="mob-action">View &rsaquo;</div>
+          </div>`;
+        body.appendChild(card);
+      });
+    }
+    col.appendChild(body);
+    board.appendChild(col);
+  });
+}
+
+function openCandidateFromAll(company, role, id){
+  currentCompany = company;
+  currentRole = role;
+  openCandidateModal(id);
+}
+
+function openCandidatesView(group){
+  boardScope = {all:true, group: group || 'all'};
+  switchTab('candidates');
+  renderSidebar();
+  renderBoard();
+}
+
+function setScopeGroup(v){
+  boardScope.group = v;
+  renderBoard();
 }
 
 function findCandidate(id){
@@ -1937,6 +2342,10 @@ function buildStageButtons(c){
   if(c.stage !== 'rejected' && c.stage !== 'month1'){
     html += `<button class="reject" onclick="advanceStage('rejected')">Reject candidate</button>`;
   }
+  if(c.stage === 'interview_requested' || c.stage === 'interview_scheduled'){
+    html += `<button onclick="scheduleFromCandidate()">Schedule interview</button>`;
+  }
+  html += `<button onclick="logContactFromCandidate()">Log contact</button>`;
   html += `<button onclick="saveNotesOnly()">Save notes</button>`;
   html += `<button class="reject" onclick="openDeleteConfirm()" style="margin-top:8px;width:100%;">Delete from pipeline</button>`;
   html += '</div>';
@@ -2381,7 +2790,7 @@ document.getElementById('screeningAnswersModal').addEventListener('click', e => 
 // Candidates / Clients toggle. Keeps calling loadClients() so the
 // Clients tab behaves exactly as before.
 function switchTab(tab){
-  if(tab === 'invoices' && currentUserRole !== 'dan') return;
+  if((tab === 'invoices' || tab === 'forecast' || tab === 'team') && currentUserRole !== 'dan') return;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.getElementById('candidatesView').style.display = tab === 'candidates' ? 'flex' : 'none';
   document.getElementById('leadClientsView').classList.toggle('visible', tab === 'leadClients');
@@ -2395,11 +2804,16 @@ function switchTab(tab){
   document.getElementById('notificationsView').classList.toggle('visible', tab === 'notifications');
   document.getElementById('rolesView').classList.toggle('visible', tab === 'roles');
   document.getElementById('placementsView').classList.toggle('visible', tab === 'placements');
+  ['interviews','comms','feedback','templates','forecast','team'].forEach(t => {
+    document.getElementById(t + 'View').classList.toggle('visible', tab === t);
+  });
+  if(typeof onB2Tab === 'function') onB2Tab(tab);
   if(['home','notifications','roles','placements'].includes(tab)){
     recomputeOps();
     refreshOps(false);
   }
   if(tab === 'candidatePool') loadCandidatePool();
+  if(tab === 'candidates' && typeof dataLoaded !== 'undefined' && dataLoaded) renderBoard();
   if(tab === 'leadClients') loadLeadClients();
   if(tab === 'clients') loadClients();
   if(tab === 'invoices') loadInvoices();
@@ -4166,11 +4580,13 @@ function poolFilteredList(){
   const ro = document.getElementById('poolRoleFilter').value;
   const st = document.getElementById('poolStageFilter').value;
   const cv = document.getElementById('poolCvFilter').value;
+  const tg = (document.getElementById('poolTagFilter') || {}).value || '';
   return POOL.filter(p => {
-    if(q && !(`${p.name} ${p.role} ${p.company}`.toLowerCase().includes(q))) return false;
+    if(q && !(`${p.name} ${p.role} ${p.company} ${p.tags || ''}`.toLowerCase().includes(q))) return false;
     if(co && p.company !== co) return false;
     if(ro && p.role !== ro) return false;
     if(st && p.furthestStage !== st) return false;
+    if(tg && !String(p.tags || '').split(',').map(t => t.trim()).includes(tg)) return false;
     if(cv === 'missing' && p.hasCv) return false;
     if(cv === 'onfile' && !p.hasCv) return false;
     return true;
@@ -4216,7 +4632,7 @@ function renderPool(){
       : `<span class="pool-tag">${esc(poolStageLabel(p.currentStage))}</span>`;
     return `
       <tr onclick="openPoolDialog('${esc(p.id)}')">
-        <td class="pool-name">${esc(p.name)}${p.inPipeline ? '' : '<div class="pool-muted">Removed from pipeline</div>'}</td>
+        <td class="pool-name">${esc(p.name)}${p.inPipeline ? '' : '<div class="pool-muted">Removed from pipeline</div>'}${p.tags ? '<div class="pool-tags">' + String(p.tags).split(',').map(t => '<span class="pool-tag">' + esc(t.trim()) + '</span>').join('') + '</div>' : ''}</td>
         <td>${esc(p.role)}</td>
         <td>${p.company ? esc(p.company) : '<span class="pool-muted">Not yet assigned</span>'}</td>
         <td>${esc(poolStageLabel(p.furthestStage))}</td>
@@ -4528,8 +4944,10 @@ function signIn(user){
     new Date().toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
   document.getElementById('userChipName').textContent = user.name;
   if(!user.admin){
-    const inv = document.querySelector('.tab-btn[data-tab="invoices"]');
-    if(inv) inv.style.display = 'none';
+    ['invoices','forecast','team'].forEach(t => {
+      const b = document.querySelector('.tab-btn[data-tab="' + t + '"]');
+      if(b) b.style.display = 'none';
+    });
   }
   renderSidebar();
   loadCandidates();
@@ -4795,18 +5213,18 @@ function renderHome(){
   const high = OPS.notes.filter(n => n.sev === 'high').length;
 
   const tiles = [
-    {n: roles.filter(r => r.status === 'open').length, l:'Open roles', tab:'roles'},
-    {n: count(['applied']), l:'New applications', tab:'candidates'},
-    {n: count(['submitted']), l:'Awaiting client feedback', tab:'candidates'},
-    {n: count(['interview_requested','interview_scheduled','interviewed']), l:'In interview stages', tab:'candidates'},
-    {n: count(['offer']), l:'Offers out', tab:'candidates'},
+    {n: roles.filter(r => r.status === 'open').length, l:'Open roles', go:"rolesFilter('open')"},
+    {n: count(['applied']), l:'New applications', go:"openCandidatesView('applications')"},
+    {n: count(['submitted']), l:'Awaiting client feedback', go:"openCandidatesView('submitted')"},
+    {n: count(['interview_requested','interview_scheduled','interviewed']), l:'In interview stages', go:"openCandidatesView('interviews')"},
+    {n: count(['offer']), l:'Offers out', go:"openCandidatesView('offers')"},
     {n: inGuarantee, l:'Placements in guarantee', tab:'placements'},
     {n: dueNow, l:'Tasks due or overdue', tab:'tasks', warn: dueNow > 0},
     {n: high, l:'Urgent notifications', tab:'notifications', warn: high > 0},
   ];
   if(signedInUser.admin) tiles.push({n: opsMoney(outstanding), l:'Invoices outstanding', tab:'invoices'});
   document.getElementById('homeTiles').innerHTML = tiles.map(t =>
-    `<div class="tile ${t.warn ? 'warn' : ''}" onclick="switchTab('${t.tab}')"><div class="n">${esc(t.n)}</div><div class="l">${esc(t.l)}</div></div>`).join('');
+    `<div class="tile ${t.warn ? 'warn' : ''}" onclick="${t.go || ("switchTab('" + t.tab + "')")}"><div class="n">${esc(t.n)}</div><div class="l">${esc(t.l)}</div></div>`).join('');
 
   const top = OPS.notes.slice(0, 6);
   document.getElementById('homeAttention').innerHTML = top.length
@@ -4889,6 +5307,13 @@ function renderRoles(){
       </div></td>
     </tr>`;
   }).join('');
+}
+
+function rolesFilter(status){
+  switchTab('roles');
+  document.getElementById('rolesStatusFilter').value = status || '';
+  document.getElementById('rolesSearch').value = '';
+  renderRoles();
 }
 
 function rolesOpenBoard(id){
@@ -5112,6 +5537,1075 @@ async function savePlacement(){
   };
   setInterval(() => { if(signedInUser) refreshOps(true); }, 5 * 60 * 1000);
 })();
+
+</script>
+<script>
+/* ============================================================
+   Batch 2: Interviews calendar, Communications log, Client feedback,
+   Email templates, Pipeline forecast, Team performance, activity
+   tracking, and Candidate Pool tags plus role matching.
+   ============================================================ */
+
+const B2 = {interviews:[], comms:[], feedback:[], templates:[], activity:[], fetchedAt:0, loadingCore:null};
+
+function b2Id(prefix){ return prefix + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+async function b2Api(path, opts){
+  const r = await fetch(API_BASE + path, opts);
+  if(!r.ok){
+    const e = await r.json().catch(() => ({}));
+    throw new Error(e.error || ('Server returned ' + r.status));
+  }
+  return r.json();
+}
+function b2Post(path, body){ return b2Api(path, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); }
+function b2Del(path, id){ return b2Api(path + '/' + encodeURIComponent(id), {method:'DELETE'}); }
+function opsAddDays(iso, n){ const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+function b2List(json){ return json && Array.isArray(json.data) ? json.data : []; }
+function b2Val(id){ const el = document.getElementById(id); return el ? el.value : ''; }
+function b2Set(id, v){ const el = document.getElementById(id); if(el) el.value = v == null ? '' : v; }
+function userLabel(key){ const u = (typeof USERS !== 'undefined') && USERS.find(x => x.key === String(key || '').toLowerCase()); return u ? u.name : (key || ''); }
+function b2Same(a, b){ return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); }
+
+/* ---------- activity tracking (feeds Team performance) ---------- */
+
+function logActivity(action, ctx){
+  if(!signedInUser) return;
+  ctx = ctx || {};
+  const entry = {
+    id: b2Id('act'), timestamp: new Date().toISOString(), user: signedInUser.key, action,
+    candidate: ctx.candidate || '', role: ctx.role || '', company: ctx.company || '', detail: ctx.detail || '',
+  };
+  B2.activity.push(entry);
+  fetch(API_BASE + '/api/activity', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(entry)}).catch(() => {});
+}
+
+/* ---------- shared data used by notifications and Home ---------- */
+
+async function loadB2Core(force){
+  if(!signedInUser) return;
+  if(!force && Date.now() - B2.fetchedAt < 3 * 60 * 1000) return;
+  const [iv, cm, fb] = await Promise.all([
+    b2Api('/api/interviews').catch(() => null),
+    b2Api('/api/comms').catch(() => null),
+    b2Api('/api/client-feedback').catch(() => null),
+  ]);
+  if(iv) B2.interviews = b2List(iv);
+  if(cm) B2.comms = b2List(cm);
+  if(fb) B2.feedback = b2List(fb);
+  B2.fetchedAt = Date.now();
+}
+
+(function(){
+  const _ro = refreshOps;
+  refreshOps = async function(force){
+    await _ro(force);
+    await loadB2Core(force);
+    recomputeOps();
+  };
+
+  const _bn = buildNotifications;
+  buildNotifications = function(){
+    const out = _bn();
+    if(!signedInUser) return out;
+    const today = opsToday();
+    const tomorrow = opsAddDays(today, 1);
+    B2.interviews.forEach(iv => {
+      if(iv.status && iv.status !== 'scheduled') return;
+      const d = opsDateOnly(iv.date);
+      if(!d) return;
+      const t = iv.time ? ' at ' + iv.time : '';
+      const detail = (iv.role || '') + (iv.company ? ' at ' + iv.company : '') + (iv.location ? ' - ' + iv.location : '');
+      const act = {type:'tab', tab:'interviews'};
+      if(d === today) out.push({sev:'high', title:'Interview today: ' + iv.candidate_name + t, detail, act});
+      else if(d === tomorrow) out.push({sev:'med', title:'Interview tomorrow: ' + iv.candidate_name + t, detail, act});
+      else if(d < today) out.push({sev:'high', title:'Record interview outcome: ' + iv.candidate_name, detail: 'Interview was on ' + opsFmt(d) + ' - ' + detail, act});
+    });
+    B2.comms.forEach(c => {
+      if(!c.follow_up_date || c.follow_up_done === 'yes') return;
+      if(!signedInUser.admin && String(c.user || '').toLowerCase() !== signedInUser.key && String(c.user || '').toLowerCase() !== signedInUser.name.toLowerCase()) return;
+      const d = opsDateOnly(c.follow_up_date);
+      if(!d) return;
+      const diff = opsDaysBetween(d, today);
+      const act = {type:'tab', tab:'comms'};
+      if(diff > 0) out.push({sev:'high', title:'Overdue follow-up: ' + c.entity_name, detail: diff + ' day' + (diff === 1 ? '' : 's') + ' overdue - ' + opsTrunc(c.summary, 80), act});
+      else if(diff === 0) out.push({sev:'med', title:'Follow-up due today: ' + c.entity_name, detail: opsTrunc(c.summary, 80), act});
+    });
+    const rank = {high:0, med:1, low:2};
+    out.sort((a, b) => rank[a.sev] - rank[b.sev]);
+    return out;
+  };
+
+  const _rh = renderHome;
+  renderHome = function(){
+    _rh();
+    if(!signedInUser) return;
+    const today = opsToday();
+    const weekEnd = opsAddDays(today, 7);
+    const ivWeek = B2.interviews.filter(i => (!i.status || i.status === 'scheduled') && opsDateOnly(i.date) >= today && opsDateOnly(i.date) <= weekEnd).length;
+    const fuDue = B2.comms.filter(c => c.follow_up_date && c.follow_up_done !== 'yes' && opsDateOnly(c.follow_up_date) <= today).length;
+    document.getElementById('homeTiles').insertAdjacentHTML('beforeend',
+      `<div class="tile" onclick="switchTab('interviews')"><div class="n">${ivWeek}</div><div class="l">Interviews in next 7 days</div></div>` +
+      `<div class="tile ${fuDue ? 'warn' : ''}" onclick="switchTab('comms')"><div class="n">${fuDue}</div><div class="l">Contact follow-ups due</div></div>`);
+  };
+})();
+
+function onB2Tab(tab){
+  if(tab === 'interviews') loadInterviews();
+  if(tab === 'comms') loadComms();
+  if(tab === 'feedback') loadFeedback();
+  if(tab === 'templates') loadTemplates();
+  if(tab === 'forecast') renderForecast();
+  if(tab === 'team') loadTeam();
+}
+
+/* ============================================================
+   Interviews
+   ============================================================ */
+
+let ivMonth = new Date().toISOString().slice(0, 7);
+let ivEditingId = null;
+
+async function loadInterviews(){
+  try{ B2.interviews = b2List(await b2Api('/api/interviews')); }catch(e){ showToast('Could not load interviews'); }
+  renderInterviews();
+}
+
+function ivShiftMonth(n){
+  if(n === 0){ ivMonth = new Date().toISOString().slice(0, 7); }
+  else{
+    const [y, m] = ivMonth.split('-').map(Number);
+    const d = new Date(Date.UTC(y, m - 1 + n, 1));
+    ivMonth = d.toISOString().slice(0, 7);
+  }
+  renderInterviews();
+}
+
+const IV_TYPES = {site:'Site visit', phone:'Phone', video:'Video call', assessment:'Assessment', other:'Other'};
+const IV_STATUS = {scheduled:'Scheduled', completed:'Completed', cancelled:'Cancelled', no_show:'No show'};
+
+function renderInterviews(){
+  const today = opsToday();
+  const list = B2.interviews.slice();
+  const sched = list.filter(i => !i.status || i.status === 'scheduled');
+  const todayN = sched.filter(i => opsDateOnly(i.date) === today).length;
+  const weekN = sched.filter(i => { const d = opsDateOnly(i.date); return d >= today && d <= opsAddDays(today, 7); }).length;
+  const needs = sched.filter(i => opsDateOnly(i.date) && opsDateOnly(i.date) < today);
+  document.getElementById('ivSummary').textContent = sched.length + ' scheduled, ' + list.length + ' total';
+  document.getElementById('ivTiles').innerHTML = [
+    {n: todayN, l:'Today'}, {n: weekN, l:'Next 7 days'}, {n: sched.length - needs.length, l:'Upcoming'},
+    {n: needs.length, l:'Need an outcome', warn: needs.length > 0},
+  ].map(t => `<div class="tile static ${t.warn ? 'warn' : ''}"><div class="n">${t.n}</div><div class="l">${t.l}</div></div>`).join('');
+
+  const [y, m] = ivMonth.split('-').map(Number);
+  document.getElementById('ivMonthLabel').textContent =
+    new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-GB', {month:'long', year:'numeric', timeZone:'UTC'});
+  const startDow = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7;
+  const daysIn = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  let cells = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => `<div class="iv-dow">${d}</div>`).join('');
+  for(let i = 0; i < startDow; i++) cells += '<div class="iv-day blank"></div>';
+  for(let day = 1; day <= daysIn; day++){
+    const iso = ivMonth + '-' + String(day).padStart(2, '0');
+    const items = list.filter(i => opsDateOnly(i.date) === iso)
+      .sort((a, b) => String(a.time).localeCompare(String(b.time)));
+    cells += `<div class="iv-day ${iso === today ? 'today' : ''}" onclick="openInterviewModal(null,'${iso}')">
+      <div class="num">${day}</div>
+      ${items.map(i => `<span class="iv-chip ${esc(i.status || 'scheduled')}" onclick="event.stopPropagation();openInterviewModal('${esc(i.id)}')" title="${esc(i.candidate_name + ' - ' + i.role + ' at ' + i.company)}">${esc((i.time ? i.time + ' ' : '') + i.candidate_name)}</span>`).join('')}
+    </div>`;
+  }
+  document.getElementById('ivGrid').innerHTML = cells;
+
+  const upcoming = sched.filter(i => opsDateOnly(i.date) >= today).sort((a, b) => (opsDateOnly(a.date) + a.time).localeCompare(opsDateOnly(b.date) + b.time));
+  const past = list.filter(i => !sched.includes(i) || opsDateOnly(i.date) < today).filter(i => !needs.includes(i))
+    .sort((a, b) => (opsDateOnly(b.date) + b.time).localeCompare(opsDateOnly(a.date) + a.time)).slice(0, 25);
+  const table = (rows, empty) => rows.length ? `<div class="ops-table-wrap"><table class="ops-table"><thead><tr>
+      <th>Date</th><th>Time</th><th>Candidate</th><th>Role</th><th>Company</th><th>Type</th><th>Location</th><th>Status</th><th style="text-align:right;">Actions</th></tr></thead><tbody>
+      ${rows.map(i => `<tr><td>${esc(opsFmt(i.date))}</td><td>${esc(i.time)}</td><td class="strong">${esc(i.candidate_name)}</td><td>${esc(i.role)}</td><td>${esc(i.company)}</td>
+        <td>${esc(IV_TYPES[i.type] || i.type)}</td><td>${esc(opsTrunc(i.location, 40))}</td>
+        <td><span class="status-pill ${i.status === 'completed' ? 'completed' : (i.status === 'no_show' || i.status === 'cancelled' ? 'lost' : 'active')}">${esc(IV_STATUS[i.status] || 'Scheduled')}</span></td>
+        <td><div class="row-actions"><button onclick="openInterviewModal('${esc(i.id)}')">Edit</button><button onclick="ivDownloadIcs('${esc(i.id)}')">.ics</button></div></td></tr>`).join('')}
+      </tbody></table></div>` : `<div class="panel"><div class="panel-empty">${empty}</div></div>`;
+  document.getElementById('ivAgenda').innerHTML =
+    (needs.length ? `<div class="section-title">Needs an outcome</div>${table(needs, '')}` : '') +
+    `<div class="section-title">Upcoming</div>${table(upcoming, 'No upcoming interviews. Use Schedule Interview to add one.')}` +
+    (past.length ? `<div class="section-title">Recent history</div>${table(past, '')}` : '');
+}
+
+function ivPopulateCandidates(selectedVal){
+  const sel = document.getElementById('ivCandidate');
+  const opts = ['<option value="">Not in the pipeline / type manually</option>'];
+  flatCandidates().filter(x => x.c.stage !== 'rejected' && x.company !== UNASSIGNED_LABEL).forEach(x => {
+    const val = x.company + '||' + x.role + '||' + x.c.id;
+    opts.push(`<option value="${esc(val)}" ${val === selectedVal ? 'selected' : ''}>${esc(x.c.name)} - ${esc(x.role)} (${esc(x.company)})</option>`);
+  });
+  sel.innerHTML = opts.join('');
+}
+
+function ivPickCandidate(){
+  const v = b2Val('ivCandidate');
+  if(!v) return;
+  const [company, role, id] = v.split('||');
+  const hit = flatCandidates().find(x => x.c.id === id && x.company === company && x.role === role);
+  if(!hit) return;
+  b2Set('ivName', hit.c.name); b2Set('ivRole', role); b2Set('ivCompany', company);
+  if(!b2Val('ivInterviewer')){
+    const contact = (APPLICANT_CLIENT_LIST || []).find(cl => b2Same(cl.company, company));
+    if(contact) b2Set('ivInterviewer', contact.contactName);
+  }
+}
+
+function openInterviewModal(id, presetDate, preset){
+  ivEditingId = id || null;
+  const iv = id ? B2.interviews.find(x => x.id === id) : null;
+  document.getElementById('ivModalTitle').textContent = iv ? 'Edit interview' : 'Schedule interview';
+  let selected = '';
+  if(preset && preset.id) selected = preset.company + '||' + preset.role + '||' + preset.id;
+  else if(iv && iv.candidate_id) selected = flatCandidates().filter(x => x.c.id === iv.candidate_id).map(x => x.company + '||' + x.role + '||' + x.c.id)[0] || '';
+  ivPopulateCandidates(selected);
+  b2Set('ivName', iv ? iv.candidate_name : (preset ? preset.name : ''));
+  b2Set('ivRole', iv ? iv.role : (preset ? preset.role : ''));
+  b2Set('ivCompany', iv ? iv.company : (preset ? preset.company : ''));
+  b2Set('ivDate', iv ? opsDateOnly(iv.date) : (presetDate || ''));
+  b2Set('ivTime', iv ? iv.time : '');
+  b2Set('ivType', iv ? (iv.type || 'site') : 'site');
+  b2Set('ivStatus', iv ? (iv.status || 'scheduled') : 'scheduled');
+  b2Set('ivLocation', iv ? iv.location : '');
+  b2Set('ivInterviewer', iv ? iv.interviewer : '');
+  b2Set('ivNotes', iv ? iv.notes : '');
+  document.getElementById('ivExtraRow').style.display = iv ? 'flex' : 'none';
+  if(!iv && preset) ivPickCandidate();
+  document.getElementById('ivModal').classList.add('visible');
+}
+
+async function saveInterview(){
+  const name = b2Val('ivName').trim();
+  const date = b2Val('ivDate');
+  if(!name || !date){ showToast('Enter the candidate name and the interview date'); return; }
+  const picked = b2Val('ivCandidate');
+  const existing = ivEditingId ? B2.interviews.find(x => x.id === ivEditingId) : null;
+  const body = {
+    id: ivEditingId || b2Id('iv'),
+    candidate_id: picked ? picked.split('||')[2] : (existing ? existing.candidate_id : ''),
+    candidate_name: name, role: b2Val('ivRole').trim(), company: b2Val('ivCompany').trim(),
+    date, time: b2Val('ivTime'), type: b2Val('ivType'), location: b2Val('ivLocation').trim(),
+    interviewer: b2Val('ivInterviewer').trim(), status: b2Val('ivStatus'), notes: b2Val('ivNotes'),
+    created_by: existing ? existing.created_by : signedInUser.name,
+  };
+  try{
+    const json = await b2Post('/api/interviews', body);
+    const i = B2.interviews.findIndex(x => x.id === body.id);
+    if(i >= 0) B2.interviews[i] = json.data; else B2.interviews.push(json.data);
+    closeModal('ivModal');
+    showToast('Interview saved');
+    if(!existing) logActivity('interview_booked', {candidate:name, role:body.role, company:body.company, detail: date});
+    renderInterviews();
+    recomputeOps();
+  }catch(e){
+    showToast('Could not save interview: ' + e.message);
+  }
+}
+
+async function deleteInterview(){
+  if(!ivEditingId) return;
+  if(!confirm('Delete this interview?')) return;
+  try{
+    await b2Del('/api/interviews', ivEditingId);
+    B2.interviews = B2.interviews.filter(x => x.id !== ivEditingId);
+    closeModal('ivModal');
+    showToast('Interview deleted');
+    renderInterviews();
+    recomputeOps();
+  }catch(e){
+    showToast('Could not delete: ' + e.message);
+  }
+}
+
+function icsEscape(s){ return String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n'); }
+
+function ivDownloadIcs(id){
+  const iv = B2.interviews.find(x => x.id === id);
+  if(!iv) return;
+  const d = opsDateOnly(iv.date).replace(/-/g, '');
+  if(!d){ showToast('This interview has no date'); return; }
+  const pad = n => String(n).padStart(2, '0');
+  let start, end;
+  if(iv.time && /^\d{2}:\d{2}/.test(iv.time)){
+    const [h, mi] = iv.time.split(':').map(Number);
+    start = `DTSTART:${d}T${pad(h)}${pad(mi)}00`;
+    const eh = h + 1;
+    end = `DTEND:${d}T${pad(eh % 24)}${pad(mi)}00`;
+  }else{
+    start = `DTSTART;VALUE=DATE:${d}`;
+    end = `DTEND;VALUE=DATE:${opsAddDays(opsDateOnly(iv.date), 1).replace(/-/g, '')}`;
+  }
+  const lines = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Live 2 Help Recruitment//Pipeline//EN', 'BEGIN:VEVENT',
+    'UID:' + iv.id + '@live2helprecruitment.co.uk', 'DTSTAMP:' + new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z',
+    start, end,
+    'SUMMARY:' + icsEscape('Interview: ' + iv.candidate_name + ' - ' + iv.role + (iv.company ? ' (' + iv.company + ')' : '')),
+    iv.location ? 'LOCATION:' + icsEscape(iv.location) : '',
+    'DESCRIPTION:' + icsEscape((iv.interviewer ? 'Client contact: ' + iv.interviewer + '\n' : '') + (iv.notes || '')),
+    'END:VEVENT', 'END:VCALENDAR',
+  ].filter(Boolean);
+  const blob = new Blob([lines.join('\r\n')], {type:'text/calendar'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'Interview ' + iv.candidate_name + ' ' + opsDateOnly(iv.date) + '.ics';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+function scheduleFromCandidate(){
+  const c = findCandidate(openCandidateId);
+  if(!c) return;
+  const p = {id:c.id, name:c.name, role:currentRole, company:currentCompany};
+  closeModal('candModalOverlay');
+  switchTab('interviews');
+  openInterviewModal(null, null, p);
+}
+
+function logContactFromCandidate(){
+  const c = findCandidate(openCandidateId);
+  if(!c) return;
+  const p = {type:'candidate', name:c.name, company:currentCompany === UNASSIGNED_LABEL ? '' : currentCompany, role:currentRole};
+  closeModal('candModalOverlay');
+  openCommModal(p);
+}
+
+/* ============================================================
+   Communications log
+   ============================================================ */
+
+const CM_CHANNELS = {call:'Call', email:'Email', text:'Text', whatsapp:'WhatsApp', meeting:'Meeting', note:'Note'};
+
+async function loadComms(){
+  try{ B2.comms = b2List(await b2Api('/api/comms')); }catch(e){ showToast('Could not load the communications log'); }
+  renderComms();
+}
+
+function renderComms(){
+  const q = b2Val('cmSearch').trim().toLowerCase();
+  const ch = b2Val('cmChannelFilter'), ty = b2Val('cmTypeFilter'), fu = b2Val('cmFollowFilter');
+  const today = opsToday();
+  const list = B2.comms.filter(c => {
+    if(ch && c.channel !== ch) return false;
+    if(ty && c.entity_type !== ty) return false;
+    if(fu === 'due' && !(c.follow_up_date && c.follow_up_done !== 'yes')) return false;
+    if(q && !(`${c.entity_name} ${c.company} ${c.role} ${c.summary}`.toLowerCase().includes(q))) return false;
+    return true;
+  }).sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
+  const pending = B2.comms.filter(c => c.follow_up_date && c.follow_up_done !== 'yes').length;
+  document.getElementById('cmSummary').textContent = B2.comms.length + ' entries, ' + pending + ' follow-up' + (pending === 1 ? '' : 's') + ' outstanding';
+  const body = document.getElementById('cmBody');
+  if(!list.length){
+    body.innerHTML = '<tr><td colspan="8" class="empty-row">' + (B2.comms.length ? 'No entries match these filters.' : 'Nothing logged yet. Use Log Contact after each call, email or meeting.') + '</td></tr>';
+    return;
+  }
+  body.innerHTML = list.map(c => {
+    const fuDate = opsDateOnly(c.follow_up_date);
+    let fuHtml = '<span style="color:#bbb;">None</span>';
+    if(fuDate){
+      if(c.follow_up_done === 'yes') fuHtml = '<span class="status-pill completed">Done</span>';
+      else{
+        const diff = opsDaysBetween(fuDate, today);
+        fuHtml = `<span class="status-pill ${diff > 0 ? 'lost' : 'hold'}">${diff > 0 ? 'Overdue ' : ''}${esc(opsFmt(fuDate))}</span>`;
+      }
+    }
+    return `<tr>
+      <td>${esc(opsFmt(c.timestamp))}<div class="pool-muted">${esc(String(c.timestamp).slice(11, 16))}</div></td>
+      <td class="strong">${esc(c.entity_name)}<div class="pool-muted">${esc(c.entity_type === 'client' ? 'Client' : 'Candidate')}</div></td>
+      <td>${esc(c.company)}${c.role ? '<div class="pool-muted">' + esc(c.role) + '</div>' : ''}</td>
+      <td>${esc(CM_CHANNELS[c.channel] || c.channel)}<div class="pool-muted">${c.direction === 'inbound' ? 'Inbound' : 'Outbound'}</div></td>
+      <td style="max-width:320px;white-space:pre-wrap;">${esc(c.summary)}</td>
+      <td>${fuHtml}</td><td>${esc(userLabel(c.user))}</td>
+      <td><div class="row-actions">
+        ${fuDate && c.follow_up_done !== 'yes' ? `<button onclick="commDone('${esc(c.id)}')">Done</button>` : ''}
+        <button onclick="commDelete('${esc(c.id)}')">Delete</button></div></td></tr>`;
+  }).join('');
+}
+
+function openCommModal(preset){
+  preset = preset || {};
+  const names = new Set();
+  flatCandidates().forEach(x => names.add(x.c.name));
+  (APPLICANT_CLIENT_LIST || []).forEach(cl => { if(cl.contactName) names.add(cl.contactName); });
+  document.getElementById('cmNameList').innerHTML = [...names].sort().map(n => `<option value="${esc(n)}">`).join('');
+  b2Set('cmType', preset.type || 'candidate'); b2Set('cmChannel', 'call'); b2Set('cmDirection', 'outbound');
+  b2Set('cmName', preset.name || ''); b2Set('cmCompany', preset.company || ''); b2Set('cmRole', preset.role || '');
+  b2Set('cmSummaryInput', ''); b2Set('cmFollow', '');
+  document.getElementById('cmModal').classList.add('visible');
+}
+
+async function saveComm(){
+  const name = b2Val('cmName').trim(), summary = b2Val('cmSummaryInput').trim();
+  if(!name || !summary){ showToast('Enter who you spoke to and a short summary'); return; }
+  const body = {
+    id: b2Id('cm'), timestamp: new Date().toISOString(), user: signedInUser.key,
+    entity_type: b2Val('cmType'), entity_name: name, company: b2Val('cmCompany').trim(), role: b2Val('cmRole').trim(),
+    channel: b2Val('cmChannel'), direction: b2Val('cmDirection'), summary,
+    follow_up_date: b2Val('cmFollow'), follow_up_done: '',
+  };
+  try{
+    const json = await b2Post('/api/comms', body);
+    B2.comms.push(json.data);
+    closeModal('cmModal');
+    showToast('Contact logged');
+    logActivity('contact_logged', {candidate:name, role:body.role, company:body.company, detail: body.channel});
+    renderComms();
+    recomputeOps();
+    if(openPoolId) renderPoolDialog();
+  }catch(e){
+    showToast('Could not save: ' + e.message);
+  }
+}
+
+async function commDone(id){
+  try{
+    const json = await b2Post('/api/comms', {id, follow_up_done:'yes'});
+    const i = B2.comms.findIndex(x => x.id === id);
+    if(i >= 0) B2.comms[i] = json.data;
+    renderComms(); recomputeOps();
+  }catch(e){ showToast('Could not update: ' + e.message); }
+}
+
+async function commDelete(id){
+  if(!confirm('Delete this log entry?')) return;
+  try{
+    await b2Del('/api/comms', id);
+    B2.comms = B2.comms.filter(x => x.id !== id);
+    renderComms(); recomputeOps();
+  }catch(e){ showToast('Could not delete: ' + e.message); }
+}
+
+/* ============================================================
+   Client feedback
+   ============================================================ */
+
+const FB_OUTCOMES = {
+  rejected_by_client:'Rejected by client', rejected_after_interview:'Rejected after interview',
+  offer_declined:'Offer declined by candidate', on_hold:'On hold', positive:'Positive feedback',
+};
+const FB_REASONS = {
+  skills:'Skills', experience:'Experience level', salary:'Salary expectations', culture:'Culture or personality fit',
+  location:'Location or commute', availability:'Availability or notice period', communication:'Communication',
+  timing:'Timing or role changed', other:'Other',
+};
+let fbEditingId = null;
+
+async function loadFeedback(){
+  try{ B2.feedback = b2List(await b2Api('/api/client-feedback')); }catch(e){ showToast('Could not load client feedback'); }
+  renderFeedback();
+}
+
+function fbBars(counts){
+  const rows = Object.keys(counts).map(k => ({k, n: counts[k]})).sort((a, b) => b.n - a.n);
+  if(!rows.length) return '<div class="panel-empty">No feedback logged yet.</div>';
+  const max = Math.max(1, ...rows.map(r => r.n));
+  return rows.map(r => `<div class="bar-row"><div>${esc(r.k)}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(r.n / max * 100)}%"></div></div><div class="c">${r.n}</div></div>`).join('');
+}
+
+function renderFeedback(){
+  const list = B2.feedback.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const negative = list.filter(f => f.outcome !== 'positive');
+  const reasonCounts = {}, clientCounts = {};
+  negative.forEach(f => {
+    const r = FB_REASONS[f.reason] || 'Other';
+    reasonCounts[r] = (reasonCounts[r] || 0) + 1;
+    if(f.company) clientCounts[f.company] = (clientCounts[f.company] || 0) + 1;
+  });
+  const topReason = Object.keys(reasonCounts).sort((a, b) => reasonCounts[b] - reasonCounts[a])[0] || 'None yet';
+  document.getElementById('fbSummary').textContent = list.length + ' entr' + (list.length === 1 ? 'y' : 'ies') + ' logged';
+  document.getElementById('fbTiles').innerHTML = [
+    {n: list.length, l:'Feedback entries'},
+    {n: list.filter(f => f.outcome === 'rejected_after_interview').length, l:'Rejected after interview'},
+    {n: list.filter(f => f.outcome === 'offer_declined').length, l:'Offers declined'},
+    {n: topReason, l:'Most common reason'},
+  ].map(t => `<div class="tile static"><div class="n" style="${String(t.n).length > 6 ? 'font-size:17px;line-height:1.5;' : ''}">${esc(t.n)}</div><div class="l">${t.l}</div></div>`).join('');
+  document.getElementById('fbReasons').innerHTML = fbBars(reasonCounts);
+  document.getElementById('fbClients').innerHTML = fbBars(clientCounts);
+  const body = document.getElementById('fbBody');
+  body.innerHTML = list.length ? list.map(f => `<tr>
+    <td>${esc(opsFmt(f.date))}</td><td class="strong">${esc(f.candidate_name)}</td><td>${esc(f.role)}</td><td>${esc(f.company)}</td>
+    <td><span class="status-pill ${f.outcome === 'positive' ? 'active' : (f.outcome === 'on_hold' ? 'hold' : 'lost')}">${esc(FB_OUTCOMES[f.outcome] || f.outcome)}</span></td>
+    <td>${esc(FB_REASONS[f.reason] || f.reason)}</td><td style="max-width:300px;white-space:pre-wrap;">${esc(f.detail)}</td>
+    <td><div class="row-actions"><button onclick="openFeedbackModal('${esc(f.id)}')">Edit</button></div></td></tr>`).join('')
+    : '<tr><td colspan="8" class="empty-row">No feedback logged yet. It is prompted automatically when you reject a candidate after submission.</td></tr>';
+}
+
+function openFeedbackModal(id, preset){
+  fbEditingId = id || null;
+  const f = id ? B2.feedback.find(x => x.id === id) : null;
+  preset = preset || {};
+  document.getElementById('fbModalTitle').textContent = f ? 'Edit client feedback' : 'Log client feedback';
+  const prompt = document.getElementById('fbPrompt');
+  if(preset.candidate_name && !f){
+    prompt.style.display = 'block';
+    prompt.innerHTML = '<strong>Capture the reason while it is fresh.</strong> This builds the picture of why candidates do not progress, so submissions get sharper.';
+  }else{
+    prompt.style.display = 'none';
+  }
+  b2Set('fbDate', f ? opsDateOnly(f.date) : opsToday());
+  b2Set('fbOutcome', f ? f.outcome : (preset.outcome || 'rejected_by_client'));
+  b2Set('fbCandidate', f ? f.candidate_name : (preset.candidate_name || ''));
+  b2Set('fbCompany', f ? f.company : (preset.company || ''));
+  b2Set('fbRole', f ? f.role : (preset.role || ''));
+  b2Set('fbReason', f ? f.reason : 'skills');
+  b2Set('fbDetail', f ? f.detail : '');
+  document.getElementById('fbModal').classList.add('visible');
+}
+
+async function saveFeedback(){
+  const name = b2Val('fbCandidate').trim();
+  if(!name){ showToast('Enter the candidate name'); return; }
+  const body = {
+    id: fbEditingId || b2Id('fb'), date: b2Val('fbDate') || opsToday(), company: b2Val('fbCompany').trim(),
+    role: b2Val('fbRole').trim(), candidate_name: name, outcome: b2Val('fbOutcome'), reason: b2Val('fbReason'),
+    detail: b2Val('fbDetail'), logged_by: fbEditingId ? undefined : signedInUser.name,
+  };
+  try{
+    const json = await b2Post('/api/client-feedback', body);
+    const i = B2.feedback.findIndex(x => x.id === body.id);
+    if(i >= 0) B2.feedback[i] = json.data; else B2.feedback.push(json.data);
+    closeModal('fbModal');
+    showToast('Feedback saved');
+    if(!fbEditingId) logActivity('feedback_logged', {candidate:name, role:body.role, company:body.company, detail:body.reason});
+    if(opsIsVisible('feedbackView')) renderFeedback();
+  }catch(e){
+    showToast('Could not save feedback: ' + e.message);
+  }
+}
+
+/* ============================================================
+   Email templates
+   ============================================================ */
+
+let tplSelectedId = null;
+
+async function loadTemplates(){
+  try{ B2.templates = b2List(await b2Api('/api/templates')); }catch(e){ showToast('Could not load templates'); }
+  if(!tplSelectedId || !B2.templates.some(t => t.id === tplSelectedId)) tplSelectedId = B2.templates[0] ? B2.templates[0].id : null;
+  renderTemplates();
+}
+
+function renderTemplates(){
+  const cats = {};
+  B2.templates.forEach(t => { (cats[t.category || 'General'] = cats[t.category || 'General'] || []).push(t); });
+  document.getElementById('tplList').innerHTML = Object.keys(cats).sort().map(cat =>
+    `<div class="tpl-cat">${esc(cat)}</div>` + cats[cat].map(t =>
+      `<div class="tpl-item ${t.id === tplSelectedId ? 'active' : ''}" onclick="tplSelect('${esc(t.id)}')">${esc(t.name)}</div>`).join('')).join('')
+    || '<div class="panel-empty">No templates yet.</div>';
+  renderTplPane();
+}
+
+function tplSelect(id){ tplSelectedId = id; renderTemplates(); }
+
+function tplNew(){
+  const t = {id: b2Id('tpl'), name:'New template', category:'General', subject:'', body:'', updated_by: signedInUser.name};
+  B2.templates.push(t);
+  tplSelectedId = t.id;
+  renderTemplates();
+  b2Post('/api/templates', t).catch(() => {});
+}
+
+const TPL_FIELDS = ['first_name','candidate_name','role','company','contact_name','salary','start_date','interview_date','interview_time','interview_location','my_name'];
+
+function renderTplPane(){
+  const t = B2.templates.find(x => x.id === tplSelectedId);
+  const pane = document.getElementById('tplPane');
+  if(!t){ pane.innerHTML = ''; return; }
+  const cands = flatCandidates().filter(x => x.company !== UNASSIGNED_LABEL);
+  pane.innerHTML = `
+    <div class="tpl-editor">
+      <div class="two-col">
+        <div><label>Template name</label><input id="tplName" value="${esc(t.name)}" oninput="tplPreview()"></div>
+        <div><label>Category</label><input id="tplCat" value="${esc(t.category)}" list="tplCatList"><datalist id="tplCatList"><option value="Candidate"><option value="Client"><option value="General"></datalist></div>
+      </div>
+      <label>Subject</label><input id="tplSubject" value="${esc(t.subject)}" oninput="tplPreview()">
+      <label>Body</label><textarea id="tplBody" oninput="tplPreview()">${esc(t.body)}</textarea>
+      <div class="tpl-fields">Merge fields: ${TPL_FIELDS.map(f => '<code>{{' + f + '}}</code>').join(' ')}</div>
+      <div class="tpl-actions">
+        <button class="gold-btn" onclick="tplSave()">Save template</button>
+        <button class="ghost-btn" onclick="tplDuplicate()">Duplicate</button>
+        <button class="ghost-btn" style="color:var(--danger);border-color:var(--danger);" onclick="tplDelete()">Delete</button>
+      </div>
+      <div class="section-title" style="margin-top:26px;">Fill in and copy</div>
+      <div class="two-col">
+        <div><label>Candidate</label>
+          <select id="tplCand" onchange="tplPickCandidate()"><option value="">Choose a candidate...</option>
+          ${cands.map(x => `<option value="${esc(x.company + '||' + x.role + '||' + x.c.id)}">${esc(x.c.name)} - ${esc(x.role)} (${esc(x.company)})</option>`).join('')}</select></div>
+        <div><label>Client contact name</label><input id="tplContact" oninput="tplPreview()" placeholder="e.g. Guy"></div>
+      </div>
+      <div class="two-col">
+        <div><label>Interview date</label><input id="tplIvDate" oninput="tplPreview()" placeholder="e.g. Thursday 2 October"></div>
+        <div><label>Interview time</label><input id="tplIvTime" oninput="tplPreview()" placeholder="e.g. 10:30am"></div>
+      </div>
+      <label>Interview location</label><input id="tplIvLoc" oninput="tplPreview()">
+      <div class="tpl-preview" id="tplPreview"></div>
+      <div class="tpl-actions">
+        <button class="ghost-btn" onclick="tplCopy('subject')">Copy subject</button>
+        <button class="ghost-btn" onclick="tplCopy('body')">Copy body</button>
+        <button class="gold-btn" onclick="tplCopy('all')">Copy all</button>
+        <button class="ghost-btn" onclick="tplMailto()">Open in email app</button>
+      </div>
+    </div>`;
+  tplPreview();
+}
+
+function tplVars(){
+  const v = {my_name: signedInUser ? signedInUser.name : ''};
+  const sel = b2Val('tplCand');
+  if(sel){
+    const [company, role, id] = sel.split('||');
+    const hit = flatCandidates().find(x => x.c.id === id && x.company === company && x.role === role);
+    if(hit){
+      const c = hit.c;
+      v.candidate_name = c.name; v.first_name = String(c.name).split(' ')[0]; v.role = role; v.company = company;
+      if(c.salary) v.salary = opsMoney(String(c.salary).replace(/[^0-9.]/g, ''));
+      if(c.startDate) v.start_date = opsFmt(c.startDate);
+      window._tplEmail = c.email || '';
+      const iv = B2.interviews.filter(i => b2Same(i.candidate_name, c.name) && (!i.status || i.status === 'scheduled')).sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+      if(iv){
+        if(iv.date) v.interview_date = new Date(opsDateOnly(iv.date) + 'T00:00:00Z').toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long', timeZone:'UTC'});
+        if(iv.time) v.interview_time = iv.time;
+        if(iv.location) v.interview_location = iv.location;
+      }
+    }
+  }
+  const manual = {contact_name:'tplContact', interview_date:'tplIvDate', interview_time:'tplIvTime', interview_location:'tplIvLoc'};
+  Object.keys(manual).forEach(k => { const val = b2Val(manual[k]).trim(); if(val) v[k] = val; });
+  return v;
+}
+
+function tplPickCandidate(){
+  const sel = b2Val('tplCand');
+  if(sel){
+    const company = sel.split('||')[0];
+    const contact = (APPLICANT_CLIENT_LIST || []).find(cl => b2Same(cl.company, company));
+    if(contact && !b2Val('tplContact')) b2Set('tplContact', String(contact.contactName || '').split(' ')[0]);
+    const c = flatCandidates().find(x => x.c.id === sel.split('||')[2]);
+    const iv = c && B2.interviews.find(i => b2Same(i.candidate_name, c.c.name));
+    if(iv){ b2Set('tplIvDate', ''); b2Set('tplIvTime', ''); b2Set('tplIvLoc', ''); }
+  }
+  tplPreview();
+}
+
+function tplMerge(text, vars, mark){
+  let missing = 0;
+  const out = String(text || '').replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (m, k) => {
+    const val = vars[k.toLowerCase()];
+    if(val) return mark ? '\u0001' + esc(val) + '\u0002' : val;
+    missing++;
+    return mark ? '\u0003' + esc(m) + '\u0004' : m;
+  });
+  return {text: out, missing};
+}
+
+function tplPreview(){
+  const box = document.getElementById('tplPreview');
+  if(!box) return;
+  const vars = tplVars();
+  const subj = tplMerge(b2Val('tplSubject'), vars, false);
+  const body = tplMerge(b2Val('tplBody'), vars, false);
+  const missing = subj.missing + body.missing;
+  const hl = s => esc(s).replace(/\{\{\s*[a-z_]+\s*\}\}/gi, m => '<mark>' + m + '</mark>');
+  box.innerHTML = `<span class="subj">${hl(subj.text) || '<span style="color:#bbb;">No subject</span>'}</span>${hl(body.text)}` +
+    (missing ? `<div class="note-line" style="color:#8a6a12;">${missing} field${missing === 1 ? '' : 's'} still need filling before sending.</div>` : '');
+  box.dataset.subject = subj.text;
+  box.dataset.body = body.text;
+}
+
+async function tplCopy(what){
+  const box = document.getElementById('tplPreview');
+  const text = what === 'subject' ? box.dataset.subject : (what === 'body' ? box.dataset.body : box.dataset.subject + '\n\n' + box.dataset.body);
+  try{
+    await navigator.clipboard.writeText(text);
+    showToast('Copied to clipboard');
+  }catch(e){
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); showToast('Copied to clipboard'); }catch(err){ showToast('Could not copy - select the text and copy manually'); }
+    ta.remove();
+  }
+}
+
+function tplMailto(){
+  const box = document.getElementById('tplPreview');
+  tplVars();
+  const to = window._tplEmail || '';
+  window.location.href = 'mailto:' + encodeURIComponent(to) + '?subject=' + encodeURIComponent(box.dataset.subject) + '&body=' + encodeURIComponent(box.dataset.body);
+}
+
+async function tplSave(){
+  const t = B2.templates.find(x => x.id === tplSelectedId);
+  if(!t) return;
+  const body = {id:t.id, name:b2Val('tplName').trim() || 'Untitled', category:b2Val('tplCat').trim() || 'General', subject:b2Val('tplSubject'), body:b2Val('tplBody'), updated_by:signedInUser.name};
+  try{
+    const json = await b2Post('/api/templates', body);
+    const i = B2.templates.findIndex(x => x.id === t.id);
+    B2.templates[i] = json.data;
+    showToast('Template saved');
+    renderTemplates();
+  }catch(e){ showToast('Could not save template: ' + e.message); }
+}
+
+async function tplDuplicate(){
+  const t = B2.templates.find(x => x.id === tplSelectedId);
+  if(!t) return;
+  const copy = Object.assign({}, t, {id:b2Id('tpl'), name:t.name + ' (copy)', updated_by:signedInUser.name});
+  try{
+    const json = await b2Post('/api/templates', copy);
+    B2.templates.push(json.data);
+    tplSelectedId = copy.id;
+    renderTemplates();
+  }catch(e){ showToast('Could not duplicate: ' + e.message); }
+}
+
+async function tplDelete(){
+  const t = B2.templates.find(x => x.id === tplSelectedId);
+  if(!t || !confirm('Delete the template "' + t.name + '"?')) return;
+  try{
+    await b2Del('/api/templates', t.id);
+    B2.templates = B2.templates.filter(x => x.id !== t.id);
+    tplSelectedId = B2.templates[0] ? B2.templates[0].id : null;
+    renderTemplates();
+  }catch(e){ showToast('Could not delete: ' + e.message); }
+}
+
+/* ============================================================
+   Pipeline forecast (Dan only)
+   ============================================================ */
+
+const FORECAST_STAGES = ['submitted','interview_requested','interview_scheduled','interviewed','offer'];
+const FORECAST_DEFAULTS = {submitted:10, interview_requested:20, interview_scheduled:30, interviewed:40, offer:75};
+
+function forecastWeights(){
+  try{
+    const saved = JSON.parse(localStorage.getItem('l2h-forecast-weights') || 'null');
+    if(saved && typeof saved === 'object') return Object.assign({}, FORECAST_DEFAULTS, saved);
+  }catch(e){}
+  return Object.assign({}, FORECAST_DEFAULTS);
+}
+
+function feeRateFor(salary){
+  if(salary <= 22000) return 12;
+  if(salary <= 30000) return 15;
+  if(salary <= 40000) return 20;
+  return 25;
+}
+
+function parseSalaryNumber(s){
+  const n = parseFloat(String(s || '').replace(/[^0-9.]/g, ''));
+  return isFinite(n) && n > 0 ? n : 0;
+}
+
+function bandMidpoint(band){
+  const nums = (String(band || '').match(/\d[\d,]*(?:\.\d+)?\s*k?/gi) || []).map(x => {
+    const k = /k\s*$/i.test(x);
+    const n = parseFloat(x.replace(/[^0-9.]/g, ''));
+    return k ? n * 1000 : n;
+  }).filter(n => n > 0);
+  if(!nums.length) return 0;
+  return nums.length === 1 ? nums[0] : (nums[0] + nums[1]) / 2;
+}
+
+function saveForecastWeights(){
+  const w = {};
+  FORECAST_STAGES.forEach(k => {
+    const v = parseFloat(b2Val('fw_' + k));
+    w[k] = isFinite(v) ? Math.max(0, Math.min(100, v)) : FORECAST_DEFAULTS[k];
+  });
+  try{ localStorage.setItem('l2h-forecast-weights', JSON.stringify(w)); }catch(e){}
+  showToast('Weights saved');
+  renderForecast();
+}
+
+function resetForecastWeights(){
+  try{ localStorage.removeItem('l2h-forecast-weights'); }catch(e){}
+  renderForecast();
+}
+
+function renderForecast(){
+  const body = document.getElementById('forecastBody');
+  if(!signedInUser || !signedInUser.admin){ body.innerHTML = ''; return; }
+  const weights = forecastWeights();
+  const roles = mergedRoles();
+  const rows = [];
+  let noSalary = 0;
+  Object.keys(DATA).forEach(co => {
+    if(co === UNASSIGNED_LABEL) return;
+    Object.keys(DATA[co]).forEach(role => DATA[co][role].forEach(c => {
+      if(!FORECAST_STAGES.includes(c.stage)) return;
+      const r = roles.find(x => b2Same(x.company, co) && b2Same(x.role, role));
+      let salary = parseSalaryNumber(c.salary);
+      let source = 'candidate';
+      if(!salary && r){ salary = bandMidpoint(r.salary_band); source = 'band'; }
+      if(!salary){ noSalary++; return; }
+      const rate = r && parseFloat(r.fee_percent) > 0 ? parseFloat(r.fee_percent) : feeRateFor(salary);
+      const fee = salary * rate / 100;
+      rows.push({company:co, role, name:c.name, stage:c.stage, salary, rate, fee, weighted: fee * (weights[c.stage] || 0) / 100, source});
+    }));
+  });
+  const totalWeighted = rows.reduce((s, r) => s + r.weighted, 0);
+  const best = rows.reduce((s, r) => s + r.fee, 0);
+  const awaiting = OPS.placements.filter(p => !p.invoiceNumber && parseSalaryNumber(p.salary) > 0).reduce((s, p) => {
+    const sal = parseSalaryNumber(p.salary);
+    return s + sal * feeRateFor(sal) / 100;
+  }, 0);
+  const outstanding = OPS.invoices.filter(i => i.status !== 'paid').reduce((s, i) => s + (i.amount || 0), 0);
+
+  const byStage = FORECAST_STAGES.map(k => {
+    const rs = rows.filter(r => r.stage === k);
+    return {k, n: rs.length, fee: rs.reduce((s, r) => s + r.fee, 0), w: rs.reduce((s, r) => s + r.weighted, 0)};
+  });
+  const byCo = {};
+  rows.forEach(r => { byCo[r.company] = byCo[r.company] || {n:0, fee:0, w:0}; byCo[r.company].n++; byCo[r.company].fee += r.fee; byCo[r.company].w += r.weighted; });
+
+  body.innerHTML = `
+    <div class="tile-grid">
+      <div class="tile static"><div class="n">${opsMoney(totalWeighted)}</div><div class="l">Weighted forecast</div></div>
+      <div class="tile static"><div class="n">${opsMoney(best)}</div><div class="l">Best case (all placed)</div></div>
+      <div class="tile static"><div class="n">${opsMoney(awaiting)}</div><div class="l">Placed, invoice not raised</div></div>
+      <div class="tile static"><div class="n">${opsMoney(outstanding)}</div><div class="l">Invoices outstanding</div></div>
+      <div class="tile static ${noSalary ? 'warn' : ''}"><div class="n">${noSalary}</div><div class="l">Candidates with no salary data</div></div>
+    </div>
+    <div class="section-title">By stage</div>
+    <div class="ops-table-wrap"><table class="ops-table" style="min-width:640px;"><thead><tr><th>Stage</th><th>Candidates</th><th>Chance of placing (%)</th><th>Potential fees</th><th>Weighted</th></tr></thead><tbody>
+      ${byStage.map(s => `<tr><td class="strong">${esc(poolStageLabel(s.k))}</td><td>${s.n}</td>
+        <td><input class="weight-input" id="fw_${s.k}" type="number" min="0" max="100" value="${weights[s.k]}" style="border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13px;"></td>
+        <td>${opsMoney(s.fee)}</td><td>${opsMoney(s.w)}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="kv-tile-row"><button class="gold-btn" onclick="saveForecastWeights()">Save weights</button><button class="ghost-btn" onclick="resetForecastWeights()">Reset to defaults</button></div>
+    <div class="section-title">By client</div>
+    ${Object.keys(byCo).length ? `<div class="ops-table-wrap"><table class="ops-table" style="min-width:560px;"><thead><tr><th>Company</th><th>Candidates</th><th>Potential fees</th><th>Weighted</th></tr></thead><tbody>
+      ${Object.keys(byCo).sort((a, b) => byCo[b].w - byCo[a].w).map(k => `<tr><td class="strong">${esc(k)}</td><td>${byCo[k].n}</td><td>${opsMoney(byCo[k].fee)}</td><td>${opsMoney(byCo[k].w)}</td></tr>`).join('')}
+    </tbody></table></div>` : '<div class="panel"><div class="panel-empty">No candidates with salary data in the pipeline yet.</div></div>'}
+    <div class="note-line">Chance-of-placing percentages are starting estimates, so adjust them to match your real conversion rates. Fees use each role's own fee percent when set, otherwise the standard scale. Salary comes from the candidate record, falling back to the midpoint of the role's salary band. Weights are saved in this browser.</div>`;
+}
+
+/* ============================================================
+   Team performance (Dan only)
+   ============================================================ */
+
+const ACTIVITY_LABELS = {
+  candidate_added:'Added a candidate', submitted:'Submitted to client', interview_requested:'Interview requested',
+  interview_scheduled:'Interview scheduled', interviewed:'Interview completed', offer:'Offer made', placed:'Placement started',
+  rejected:'Candidate rejected', cold_call:'Logged a cold call', contact_logged:'Logged a contact',
+  interview_booked:'Booked an interview', feedback_logged:'Logged client feedback', task_completed:'Completed a task',
+};
+
+function teamSince(period){
+  const now = new Date();
+  if(period === 'all') return '';
+  if(period === 'week'){
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+    return d.toISOString();
+  }
+  if(period === 'quarter') return new Date(Date.UTC(now.getUTCFullYear(), Math.floor(now.getUTCMonth() / 3) * 3, 1)).toISOString();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+}
+
+async function loadTeam(){
+  const body = document.getElementById('teamBody');
+  if(!signedInUser || !signedInUser.admin){ body.innerHTML = ''; return; }
+  const period = b2Val('teamPeriod') || 'month';
+  body.innerHTML = '<div class="panel"><div class="panel-empty">Loading...</div></div>';
+  let rows = [];
+  try{
+    const since = teamSince(period);
+    rows = b2List(await b2Api('/api/activity' + (since ? '?since=' + encodeURIComponent(since) : '')));
+  }catch(e){
+    body.innerHTML = '<div class="panel"><div class="panel-empty">Could not load activity.</div></div>';
+    return;
+  }
+  let first = '';
+  try{ first = b2List(await b2Api('/api/activity')).map(r => r.timestamp).sort()[0] || ''; }catch(e){}
+  renderTeam(rows, first, period);
+}
+
+function renderTeam(rows, firstTs, period){
+  const body = document.getElementById('teamBody');
+  const cols = [
+    ['Candidates added','candidate_added'], ['Submissions','submitted'], ['Interviews arranged','interview_scheduled'],
+    ['Offers','offer'], ['Placements','placed'], ['Cold calls','cold_call'], ['Contacts logged','contact_logged'], ['Tasks completed','task_completed'],
+  ];
+  const keys = [...new Set(USERS.map(u => u.key).concat(rows.map(r => String(r.user).toLowerCase())))];
+  const count = (u, a) => rows.filter(r => String(r.user).toLowerCase() === u && r.action === a).length;
+  const totals = cols.map(c => rows.filter(r => r.action === c[1]).length);
+  document.getElementById('teamSummary').textContent = rows.length + ' tracked action' + (rows.length === 1 ? '' : 's') + ' in this period';
+  const recent = rows.slice().sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).slice(0, 30);
+  body.innerHTML = `
+    <div class="ops-table-wrap"><table class="ops-table" style="min-width:820px;"><thead><tr><th>Team member</th>${cols.map(c => `<th>${c[0]}</th>`).join('')}</tr></thead><tbody>
+      ${keys.map(u => `<tr><td class="strong">${esc(userLabel(u))}</td>${cols.map(c => `<td>${count(u, c[1])}</td>`).join('')}</tr>`).join('')}
+      <tr style="background:var(--lightbg);"><td class="strong">Total</td>${totals.map(t => `<td class="strong">${t}</td>`).join('')}</tr>
+    </tbody></table></div>
+    <div class="note-line">${firstTs ? 'Tracking began on ' + esc(opsFmt(firstTs)) + '. Anything done before then was not attributed to a person.' : 'Nothing tracked yet. Actions are recorded from now on as the team uses the dashboard.'}</div>
+    <div class="section-title">Recent activity</div>
+    <div class="panel"><div class="panel-body">${recent.length ? recent.map(r => `<div class="mini-row"><div><div class="t">${esc(userLabel(r.user))}: ${esc(ACTIVITY_LABELS[r.action] || r.action)}</div><div class="d">${esc([r.candidate, r.role, r.company].filter(Boolean).join(' - '))}${r.detail ? ' (' + esc(r.detail) + ')' : ''}</div></div><div class="r">${esc(opsFmt(r.timestamp))}<br>${esc(String(r.timestamp).slice(11, 16))}</div></div>`).join('') : '<div class="panel-empty">No activity in this period.</div>'}</div></div>`;
+}
+
+/* ============================================================
+   Activity hooks on existing actions
+   ============================================================ */
+
+(function(){
+  const _adv = advanceStage;
+  advanceStage = async function(newStage){
+    let snap = null;
+    try{
+      const c = findCandidate(openCandidateId);
+      if(c) snap = {id:c.id, name:c.name, role:currentRole, company:currentCompany, from:c.stage};
+    }catch(e){}
+    await _adv(newStage);
+    if(!snap) return;
+    let after = null;
+    try{ after = DATA[snap.company][snap.role].find(x => x.id === snap.id); }catch(e){}
+    if(!after || after.stage !== newStage || snap.from === newStage) return;
+    logActivity(newStage === 'start_date' ? 'placed' : newStage, {candidate:snap.name, role:snap.role, company:snap.company, detail:'from ' + snap.from});
+    if(newStage === 'rejected' && snap.from !== 'applied' && snap.company !== UNASSIGNED_LABEL){
+      openFeedbackModal(null, {
+        candidate_name: snap.name, role: snap.role, company: snap.company,
+        outcome: (snap.from === 'interview_scheduled' || snap.from === 'interviewed') ? 'rejected_after_interview' : 'rejected_by_client',
+      });
+    }
+  };
+
+  const _snc = saveNewCandidate;
+  saveNewCandidate = async function(){
+    const name = b2Val('newCandName').trim();
+    const role = currentRole, company = currentCompany;
+    await _snc();
+    if(name && !document.getElementById('addCandOverlay').classList.contains('visible')){
+      logActivity('candidate_added', {candidate:name, role, company});
+    }
+  };
+
+  const _sac = submitAddColdCall;
+  submitAddColdCall = async function(){
+    const company = b2Val('coldCallCompany') || b2Val('coldCallCompanyNew');
+    const contacts = b2Val('coldCallContactNames');
+    await _sac();
+    if(company && contacts && !document.getElementById('addColdCallOverlay').classList.contains('visible')){
+      logActivity('cold_call', {company, detail: contacts});
+    }
+  };
+
+  const _ct = completeTask;
+  completeTask = async function(id){
+    const t = OPS.tasks.find(x => x.id === id);
+    await _ct(id);
+    const toast = document.getElementById('toast');
+    if(toast && toast.textContent === 'Task completed') logActivity('task_completed', {detail: t ? t.title : ''});
+  };
+})();
+
+/* ============================================================
+   Candidate Pool: tags, role matching and a fuller dialog
+   ============================================================ */
+
+(function(){
+  const _rb = rebuildPoolFilterOptions;
+  rebuildPoolFilterOptions = function(){
+    _rb();
+    const sel = document.getElementById('poolTagFilter');
+    if(sel){
+      const cur = sel.value;
+      const tags = [...new Set(POOL.reduce((a, p) => a.concat(String(p.tags || '').split(',').map(t => t.trim()).filter(Boolean)), []))].sort();
+      sel.innerHTML = '<option value="">All tags</option>' + tags.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+      if(tags.includes(cur)) sel.value = cur;
+    }
+    const ms = document.getElementById('poolMatchRole');
+    if(ms && !ms.dataset.built){
+      ms.dataset.built = '1';
+    }
+  };
+
+  const _rpd = renderPoolDialog;
+  renderPoolDialog = function(){
+    _rpd();
+    poolExtras();
+  };
+})();
+
+function poolMatchOptions(){
+  const sel = document.getElementById('poolMatchRole');
+  if(!sel) return;
+  const cur = sel.value;
+  const roles = mergedRoles().sort((a, b) => (a.status === 'open' ? 0 : 1) - (b.status === 'open' ? 0 : 1));
+  sel.innerHTML = '<option value="">Choose a role...</option>' + roles.map(r => `<option value="${esc(r.id)}">${esc(r.role)} (${esc(r.company)})${r.status === 'open' ? '' : ' - ' + esc(roleStatusLabel(r.status))}</option>`).join('');
+  if(roles.some(r => r.id === cur)) sel.value = cur;
+}
+
+const MATCH_STOP = new Set(['and','the','for','of','to','a','in','at','with','new','senior','junior']);
+function matchTokens(s){ return String(s || '').toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length > 2 && !MATCH_STOP.has(t)); }
+
+function renderPoolMatch(){
+  poolMatchOptions();
+  const out = document.getElementById('poolMatchResults');
+  const id = b2Val('poolMatchRole');
+  if(!id){ out.innerHTML = ''; return; }
+  const r = mergedRoles().find(x => x.id === id);
+  if(!r){ out.innerHTML = ''; return; }
+  const tokens = [...new Set(matchTokens(r.role))];
+  const scored = POOL.filter(p => !b2Same(p.role, r.role)).map(p => {
+    const tags = String(p.tags || '').toLowerCase().split(',').map(t => t.trim()).filter(Boolean);
+    const tagTokens = tags.reduce((a, t) => a.concat(matchTokens(t)), []);
+    const roleTokens = matchTokens(p.role);
+    const notes = String(p.notes || '').toLowerCase();
+    let score = 0; const why = [];
+    tokens.forEach(t => {
+      if(tagTokens.includes(t)){ score += 3; why.push('tag: ' + t); }
+      if(roleTokens.includes(t)){ score += 2; why.push('applied for ' + p.role); }
+      if(notes.includes(t)){ score += 1; why.push('mentioned in notes'); }
+    });
+    return {p, score, why: [...new Set(why)]};
+  }).filter(x => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 10);
+  out.innerHTML = scored.length
+    ? `<div class="ops-table-wrap" style="margin-top:12px;"><table class="ops-table" style="min-width:640px;"><thead><tr><th>Candidate</th><th>Applied for</th><th>Tags</th><th>Last status</th><th>Why it matches</th><th></th></tr></thead><tbody>
+      ${scored.map(x => `<tr><td class="strong">${esc(x.p.name)}</td><td>${esc(x.p.role)}</td><td>${esc(x.p.tags || '')}</td><td>${esc(poolStageLabel(x.p.currentStage))}</td><td>${esc(x.why.join(', '))}</td><td><div class="row-actions"><button onclick="openPoolDialog('${esc(x.p.id)}')">Open</button></div></td></tr>`).join('')}
+      </tbody></table></div>`
+    : '<div class="hint" style="margin-top:10px;">No close matches yet. Add tags such as skills or job families to pool candidates to improve matching.</div>';
+}
+
+async function poolSaveTags(id){
+  try{
+    const json = await b2Api('/api/candidate-pool/' + encodeURIComponent(id) + '/tags', {
+      method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({tags: b2Val('poolTagsInput')})
+    });
+    applyPoolEntry(json.data);
+    showToast('Tags saved');
+  }catch(e){
+    showToast('Could not save tags: ' + e.message);
+  }
+}
+
+function poolLogContact(id){
+  const p = POOL.find(x => x.id === id);
+  if(!p) return;
+  openCommModal({type:'candidate', name:p.name, company:p.company, role:p.role});
+}
+
+function poolExtras(){
+  const p = POOL.find(x => x.id === openPoolId);
+  const host = document.getElementById('poolDialogBody');
+  if(!p || !host) return;
+  const comms = B2.comms.filter(c => b2Same(c.entity_name, p.name)).sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).slice(0, 5);
+  const ivs = B2.interviews.filter(i => b2Same(i.candidate_name, p.name)).sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 5);
+  const fbs = B2.feedback.filter(f => b2Same(f.candidate_name, p.name)).sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 5);
+  host.insertAdjacentHTML('beforeend', `
+    <div class="pool-section-label">Tags</div>
+    <div class="field-row"><input id="poolTagsInput" value="${esc(p.tags || '')}" placeholder="e.g. buyer, purchasing, logistics"></div>
+    <div class="stage-buttons" style="margin-top:0;"><button onclick="poolSaveTags('${esc(p.id)}')">Save tags</button></div>
+    <div class="pool-section-label">Contact history</div>
+    ${comms.length ? comms.map(c => `<div class="extras-row">${esc(CM_CHANNELS[c.channel] || c.channel)}: ${esc(opsTrunc(c.summary, 140))}<div class="m">${esc(opsFmt(c.timestamp))} by ${esc(userLabel(c.user))}</div></div>`).join('') : '<div class="pool-muted">No contact logged yet.</div>'}
+    <div class="stage-buttons" style="margin-top:8px;"><button onclick="poolLogContact('${esc(p.id)}')">Log contact</button></div>
+    ${ivs.length ? '<div class="pool-section-label">Interviews</div>' + ivs.map(i => `<div class="extras-row">${esc(opsFmt(i.date))}${i.time ? ' at ' + esc(i.time) : ''} - ${esc(IV_TYPES[i.type] || i.type)} - ${esc(IV_STATUS[i.status] || 'Scheduled')}<div class="m">${esc(i.role)} at ${esc(i.company)}</div></div>`).join('') : ''}
+    ${fbs.length ? '<div class="pool-section-label">Client feedback</div>' + fbs.map(f => `<div class="extras-row">${esc(FB_OUTCOMES[f.outcome] || f.outcome)}: ${esc(FB_REASONS[f.reason] || f.reason)}${f.detail ? ' - ' + esc(opsTrunc(f.detail, 140)) : ''}<div class="m">${esc(opsFmt(f.date))}, ${esc(f.company)}</div></div>`).join('') : ''}
+  `);
+  if(!B2.fetchedAt){
+    const id = openPoolId;
+    loadB2Core(true).then(() => { if(openPoolId === id) renderPoolDialog(); });
+  }
+}
 
 </script>
 
