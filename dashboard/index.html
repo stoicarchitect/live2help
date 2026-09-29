@@ -459,6 +459,19 @@
   #clientHealthView.visible,#referralsView.visible,#sourcingView.visible,#gdprView.visible,#auditView.visible{display:flex;}
   @media (max-width:780px){.board-scroll-btn{display:none !important;}}
 
+
+  /* ---- Round 3 ---- */
+  .tplf-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin-top:6px;}
+  @media (max-width:780px){.tplf-grid{grid-template-columns:1fr;}}
+  .tplf label{display:block;font-size:11px;color:#999;letter-spacing:.4px;margin:0 0 4px;}
+  .tplf .src{font-weight:400;color:#2D6A3E;margin-left:4px;letter-spacing:0;}
+  .tplf.miss .src{color:#8a6a12;}
+  .tplf.miss input,.tplf.miss select,.tplf.miss textarea{border-color:var(--gold);background:#FFFCF2;}
+  .tplf input,.tplf select,.tplf textarea{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:13px;font-family:inherit;background:#fff;}
+  .tpl-check{display:flex !important;gap:8px;align-items:center;font-size:12.5px !important;color:var(--grey) !important;letter-spacing:0 !important;margin-top:12px !important;}
+  .tpl-check input{width:auto !important;}
+  .tpl-link{color:var(--gold);cursor:pointer;font-size:12.5px;text-decoration:underline;}
+
   /* ---- Modal ---- */
   .modal-overlay{
     position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;
@@ -573,7 +586,7 @@
     border-radius:2px;font-size:13.5px;cursor:pointer;font-family:inherit;font-weight:600;
   }
   #addKPIBtn:hover{background:#b8963f;}
-  .kpi-row{display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:0;border-bottom:1px solid var(--border);align-items:center;}
+  .kpi-row{display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr auto;gap:0;border-bottom:1px solid var(--border);align-items:center;}
   .kpi-cell{padding:14px 16px;font-size:13px;color:var(--grey);}
   .kpi-quarter{color:var(--dark);font-weight:500;}
   .kpi-target{color:var(--dark);font-weight:600;}
@@ -1029,8 +1042,9 @@
         <div style="margin-bottom:32px;">
           <h3 style="font-size:16px;color:var(--dark);margin-bottom:14px;font-weight:500;">Quarterly Targets</h3>
           <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;overflow:hidden;">
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:0;background:var(--lightbg);border-bottom:1px solid var(--border);">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr auto;gap:0;background:var(--lightbg);border-bottom:1px solid var(--border);">
               <div style="padding:12px 16px;font-size:12px;font-weight:500;color:var(--dark);">Quarter</div>
+              <div style="padding:12px 16px;font-size:12px;font-weight:500;color:var(--dark);">For</div>
               <div style="padding:12px 16px;font-size:12px;font-weight:500;color:var(--dark);">Target Roles</div>
               <div style="padding:12px 16px;font-size:12px;font-weight:500;color:var(--dark);">Target New Clients</div>
               <div style="padding:12px 16px;font-size:12px;font-weight:500;color:var(--dark);">Target Avg Fill Speed</div>
@@ -1459,9 +1473,12 @@
         <div class="tile-grid" id="spTiles"></div>
         <div class="section-title">By channel</div>
         <div class="ops-table-wrap"><table class="ops-table" style="min-width:720px;"><thead><tr><th>Channel</th><th>Spend</th><th>Applicants</th><th>Submitted</th><th>Placed</th><th>Cost per applicant</th><th>Cost per hire</th></tr></thead><tbody id="spChannels"></tbody></table></div>
+        <div class="section-title">Cost by role</div>
+        <div class="ops-table-wrap"><table class="ops-table" style="min-width:820px;"><thead><tr><th>Role</th><th>Company</th><th>Status</th><th>Direct spend</th><th>Share of shared costs</th><th>Total</th><th>Placed</th><th>Cost per placement</th></tr></thead><tbody id="spRoles"></tbody></table></div>
+        <div class="note-line">Direct spend is anything logged against one role. Shared costs, such as a monthly candidate matching fee set to All open roles, are split equally between the roles that were open in each month.</div>
         <div class="note-line">Applicants are counted from the Candidate Pool by the date they were added. Set each candidate's source in their Candidate Pool dialog under Source and data protection.</div>
         <div class="section-title">Spend log</div>
-        <div class="ops-table-wrap"><table class="ops-table" style="min-width:720px;"><thead><tr><th>Date</th><th>Channel</th><th>Role</th><th>Company</th><th>Amount</th><th>Notes</th><th style="text-align:right;">Actions</th></tr></thead><tbody id="spEntries"></tbody></table></div>
+        <div class="ops-table-wrap"><table class="ops-table" style="min-width:720px;"><thead><tr><th>Date</th><th>Channel</th><th>Frequency</th><th>Applies to</th><th>Amount</th><th>Notes</th><th style="text-align:right;">Actions</th></tr></thead><tbody id="spEntries"></tbody></table></div>
       </div>
     </div>
 
@@ -1471,6 +1488,12 @@
         <button class="ghost-btn" onclick="gdprBulkConsent()">Record consent for all form applicants</button>
       </div>
       <div class="view-body">
+        <div class="panel" style="margin-bottom:16px;"><div class="panel-head">How consent and review dates work</div><div class="panel-body" style="padding:12px 16px;font-size:13px;color:var(--grey);line-height:1.6;">
+          <p style="margin-bottom:8px;"><strong>Consent record.</strong> This shows when and how a candidate agreed to us holding their details. Sending an email template does not create one. It is recorded in three ways: automatically for new application form candidates (switch below), by ticking the consent box when you log a contact, or by hand in the Candidate Pool dialog.</p>
+          <p style="margin-bottom:8px;"><strong>Review date.</strong> This moves forward by itself. It is always 12 months after the last activity on a record (a stage change, note, contact or interview), so only candidates who have gone quiet ever come up for review. Extend 12 months is an optional override that restarts the clock from today.</p>
+          <p style="margin-bottom:10px;">Many agencies rely on legitimate interests rather than consent for candidate data, so check with your adviser which applies to you.</p>
+          <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--dark);"><input type="checkbox" id="gdprFormConsent" onchange="gdprToggleFormConsent(this.checked)" style="margin-top:3px;"> My application form shows a privacy or consent statement, so record consent automatically for every new form applicant.</label>
+        </div></div>
         <div class="tile-grid" id="gdprTiles"></div>
         <div class="filter-bar">
           <input id="gdprSearch" placeholder="Search name, role or company" oninput="renderGdpr()">
@@ -1689,6 +1712,7 @@
           <option value="outbound">Outbound (we contacted them)</option><option value="inbound">Inbound (they contacted us)</option></select>
         <label>Summary</label>
         <textarea id="cmSummaryInput" placeholder="What was discussed or agreed" style="width:100%;min-height:80px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></textarea>
+        <label id="cmConsentRow" style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--dark);margin-top:10px;"><input type="checkbox" id="cmConsent"> Candidate agreed we can hold their details</label>
         <label>Follow-up date (optional)</label><input type="date" id="cmFollow">
         <div class="actions">
           <button class="cancel" onclick="closeModal('cmModal')">Cancel</button>
@@ -1754,9 +1778,15 @@
           <div><label>Date</label><input type="date" id="spDate" onclick="try{this.showPicker()}catch(e){}"></div>
           <div><label>Amount (&pound;)</label><input type="number" min="0" step="0.01" id="spAmount"></div>
         </div>
-        <label>Channel</label><input id="spChannel" list="spChannelList" placeholder="e.g. Indeed"><datalist id="spChannelList"></datalist>
+        <label>Channel or supplier</label><input id="spChannel" list="spChannelList" placeholder="e.g. Indeed or Candidate matching"><datalist id="spChannelList"></datalist>
         <div class="two-col">
-          <div><label>Role (optional)</label><input id="spRole" list="spRoleList"><datalist id="spRoleList"></datalist></div>
+          <div><label>How often</label><select id="spFrequency" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"><option value="one_off">One-off</option><option value="monthly">Monthly (recurring)</option></select></div>
+          <div><label>Recurring until (optional)</label><input type="date" id="spEnd" onclick="try{this.showPicker()}catch(e){}"></div>
+        </div>
+        <label>This cost is for</label>
+        <select id="spApplies" onchange="spApplyChanged()" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"><option value="general">General (not tied to a role)</option><option value="open_roles">All open roles (split equally)</option><option value="specific">One specific role</option></select>
+        <div class="two-col" id="spRoleWrap" style="display:none;">
+          <div><label>Role</label><input id="spRole" list="spRoleList"><datalist id="spRoleList"></datalist></div>
           <div><label>Company (optional)</label><input id="spCompany"></div>
         </div>
         <label>Notes</label><input id="spNotes">
@@ -1806,6 +1836,28 @@
     <div class="modal-inner">
       <button class="modal-close" onclick="closeModal('gdprEraseModal')">&times;</button>
       <div id="gdprEraseBody"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="siteModal">
+  <div class="modal wide">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="closeModal('siteModal')">&times;</button>
+      <h2 id="sdTitle">Site details</h2>
+      <div class="note-line" style="margin:6px 0 10px;">Kept once per client and used automatically in start date reminders and interview emails.</div>
+      <div class="simple-form">
+        <label>Where to go on arrival (address, entrance, building)</label><textarea id="sdArrival" style="width:100%;min-height:60px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></textarea>
+        <label>Parking</label><textarea id="sdParking" style="width:100%;min-height:54px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></textarea>
+        <label>Public transport</label><textarea id="sdTransport" style="width:100%;min-height:54px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></textarea>
+        <label>Site quirks (one-way systems, which entrance, building layout)</label><textarea id="sdQuirks" style="width:100%;min-height:54px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></textarea>
+        <div class="two-col">
+          <div><label>Dress code</label><input id="sdDress"></div>
+          <div><label>Number to call if running late</label><input id="sdPhone"></div>
+        </div>
+        <label>Security and reception</label><input id="sdSecurity">
+        <div class="actions"><button class="cancel" onclick="closeModal('siteModal')">Cancel</button><button class="save" onclick="saveSiteDetails()">Save site details</button></div>
+      </div>
     </div>
   </div>
 </div>
@@ -1916,6 +1968,9 @@
       <div class="simple-form">
         <label>Quarter</label>
         <input type="text" id="kpiQuarterInput" placeholder="e.g. Q1 2026" required>
+
+        <label>Target for</label>
+        <select id="kpiOwnerInput" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></select>
         
         <label>Target Roles to Fill</label>
         <input type="number" id="kpiTargetRolesInput" placeholder="e.g. 8" min="0" required>
@@ -7353,7 +7408,7 @@ function renderGdpr(){
       <td>${p.consentDate ? esc(opsFmt(p.consentDate)) + '<div class="pool-muted">' + esc(p.consentBasis) + '</div>' : '<span class="status-pill hold">Not recorded</span>'}</td>
       <td>${esc(opsFmt(p.reviewDue))}<div><span class="status-pill ${st.cls}">${st.label}</span></div></td>
       <td><div class="row-actions">
-        <button onclick="gdprExtend('${esc(p.id)}')">Keep 12 months</button>
+        <button onclick="gdprExtend('${esc(p.id)}')">Extend 12 months</button>
         <button onclick="gdprExport('${esc(p.id)}')">Export</button>
         <button style="color:var(--danger);border-color:var(--danger);" onclick="openGdprErase('${esc(p.id)}')">Erase</button></div></td></tr>`;
   }).join('') : '<tr><td colspan="7" class="empty-row">Nothing matches this filter.</td></tr>';
@@ -7760,7 +7815,7 @@ function renderClientHealth(){
       <td>${r.last ? esc(opsFmt(r.last)) + '<div class="pool-muted">' + r.sinceContact + ' days ago</div>' : '<span style="color:#bbb;">Never</span>'}</td>
       <td>${r.openRoles}</td><td>${r.waiting}</td>
       <td style="max-width:280px;">${r.reasons.length ? esc(r.reasons.join('. ')) : '<span style="color:#2D6A3E;">All good</span>'}</td>
-      <td><div class="row-actions"><button onclick="openCommModal({type:'client',name:'${esc(contact ? contact.contactName : '')}',company:'${esc(r.company).replace(/'/g, '')}'})">Log contact</button></div></td></tr>`;
+      <td><div class="row-actions"><button onclick="openCommModal({type:'client',name:'${esc(contact ? contact.contactName : '')}',company:'${esc(r.company).replace(/'/g, '')}'})">Log contact</button><button onclick="openSiteModal('${esc(r.company).replace(/'/g, '')}')">Site details</button></div></td></tr>`;
   }).join('') : '<tr><td colspan="7" class="empty-row">No clients in this band.</td></tr>';
 }
 
@@ -7863,7 +7918,7 @@ function poolDataSection(){
     </div>
     <div class="stage-buttons" style="margin-top:0;">
       <button onclick="poolSaveMeta('${esc(p.id)}')">Save source and consent</button>
-      ${admin ? `<button onclick="gdprExtend('${esc(p.id)}')">Keep 12 more months</button>` : ''}
+      ${admin ? `<button onclick="gdprExtend('${esc(p.id)}')">Extend 12 months from today</button>` : ''}
       ${admin ? `<button onclick="gdprExport('${esc(p.id)}')">Export data</button>` : ''}
       ${admin ? `<button class="reject" onclick="closePoolDialog();openGdprErase('${esc(p.id)}')">Erase</button>` : ''}
     </div>`);
@@ -7912,6 +7967,809 @@ async function poolSaveMeta(id){
     return out;
   };
 })();
+
+</script>
+<script>
+/* ============================================================
+   Round 3 part A: KPI targets per person, GDPR automation,
+   recurring spend and cost by role, stage automation
+   ============================================================ */
+
+function quarterStartISO(){
+  const n = new Date();
+  return new Date(Date.UTC(n.getUTCFullYear(), Math.floor(n.getUTCMonth() / 3) * 3, 1)).toISOString();
+}
+
+/* ---------- KPI targets per person ---------- */
+
+async function loadKPITargets(){
+  const body = document.getElementById('kpiBody');
+  const empty = document.getElementById('kpiEmpty');
+  const admin = currentUserRole === 'dan';
+  document.getElementById('addKPIBtn').style.display = admin ? 'block' : 'none';
+  try{
+    const res = await fetch(`${API_BASE}/api/kpi-targets`);
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    const data = await res.json();
+    let targets = data.data || [];
+    if(!admin) targets = targets.filter(t => !t.owner || t.owner === currentUserRole);
+    let summary = {};
+    try{
+      const sr = await fetch(`${API_BASE}/api/activity/summary?since=${encodeURIComponent(quarterStartISO())}`);
+      if(sr.ok) summary = (await sr.json()).users || {};
+    }catch(e){}
+    const thisQ = getQuarter(new Date()) + ' ' + new Date().getFullYear();
+
+    body.innerHTML = '';
+    if(targets.length === 0){
+      empty.style.display = 'block';
+    } else {
+      empty.style.display = 'none';
+      targets.slice().sort((a, b) => String(b.quarter).localeCompare(String(a.quarter)) || String(a.owner).localeCompare(String(b.owner))).forEach(target => {
+        const row = document.createElement('div');
+        row.className = 'kpi-row';
+        const forLabel = target.owner ? userLabel(target.owner) : 'Whole team';
+        const current = String(target.quarter).trim() === thisQ;
+        const placed = target.owner && summary[target.owner] ? (summary[target.owner].placed || 0) : 0;
+        const rolesCell = target.owner && current
+          ? `${target.targetRoles} <span style="font-weight:400;color:#999;font-size:11.5px;">(${placed} placed so far)</span>`
+          : target.targetRoles;
+        const deleteBtn = admin
+          ? `<button class="delete" onclick="deleteKPITarget('${esc(target.quarter)}','${esc(target.owner || '')}')">Delete</button>`
+          : '';
+        row.innerHTML = `
+          <div class="kpi-cell kpi-quarter">${esc(target.quarter)}</div>
+          <div class="kpi-cell" style="color:var(--dark);">${esc(forLabel)}</div>
+          <div class="kpi-cell kpi-target">${rolesCell}</div>
+          <div class="kpi-cell kpi-target">${target.targetNewClients}</div>
+          <div class="kpi-cell kpi-target">${target.targetAvgFillSpeedDays}</div>
+          <div class="kpi-actions">${deleteBtn}</div>`;
+        body.appendChild(row);
+      });
+    }
+
+    await loadProgressMetrics(targets.filter(t => !t.owner));
+
+    if(admin){
+      document.getElementById('businessHealthSection').style.display = 'block';
+      await loadBusinessHealth();
+      document.getElementById('weeklyCallReportSection').style.display = 'block';
+      await loadWeeklyCallReport();
+    } else {
+      document.getElementById('businessHealthSection').style.display = 'none';
+      document.getElementById('weeklyCallReportSection').style.display = 'none';
+    }
+    await loadLeadClientContactTracking();
+  }catch(e){
+    console.error('Error loading KPI targets:', e);
+    body.innerHTML = '<div style="padding:20px;color:var(--danger);">Error loading targets</div>';
+  }
+}
+
+(function(){
+  const _open = openAddKPIModal;
+  openAddKPIModal = function(){
+    _open();
+    const sel = document.getElementById('kpiOwnerInput');
+    if(sel){
+      sel.innerHTML = '<option value="">Whole team</option>' + USERS.map(u => `<option value="${esc(u.key)}">${esc(u.name)}</option>`).join('');
+      sel.value = '';
+    }
+  };
+})();
+
+submitAddKPI = async function(){
+  const quarter = document.getElementById('kpiQuarterInput').value.trim();
+  const owner = document.getElementById('kpiOwnerInput').value;
+  const targetRoles = parseInt(document.getElementById('kpiTargetRolesInput').value) || 0;
+  const targetNewClients = parseInt(document.getElementById('kpiTargetClientsInput').value) || 0;
+  const targetAvgFillSpeedDays = parseInt(document.getElementById('kpiTargetFillSpeedInput').value) || 0;
+  if(!quarter){ showToast('Quarter is required'); return; }
+  try{
+    const res = await fetch(`${API_BASE}/api/kpi-targets`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({quarter, owner, targetRoles, targetNewClients, targetAvgFillSpeedDays})
+    });
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    showToast('KPI target saved for ' + (owner ? userLabel(owner) : 'the whole team'));
+    closeModal('addKPIOverlay');
+    loadKPITargets();
+  }catch(e){
+    showToast('Could not save KPI target: ' + e.message);
+  }
+};
+
+deleteKPITarget = async function(quarter, owner){
+  if(!confirm('Delete this KPI target?')) return;
+  try{
+    const res = await fetch(`${API_BASE}/api/kpi-targets/${encodeURIComponent(quarter)}?owner=${encodeURIComponent(owner || '')}`, {method: 'DELETE'});
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    showToast('KPI target deleted');
+    loadKPITargets();
+  }catch(e){
+    showToast('Could not delete KPI target: ' + e.message);
+  }
+};
+
+/* ---------- GDPR automation ---------- */
+
+async function gdprLoadSettings(){
+  const box = document.getElementById('gdprFormConsent');
+  if(!box) return;
+  try{
+    const rows = b2List(await b2Api('/api/settings'));
+    box.checked = (rows.find(r => r.id === 'form_consent') || {}).value === 'yes';
+  }catch(e){}
+}
+
+async function gdprToggleFormConsent(on){
+  try{
+    await b2Post('/api/settings', {id:'form_consent', value: on ? 'yes' : 'no', updated_by: signedInUser.name});
+    showToast(on ? 'New form applicants will get a consent record automatically' : 'Automatic consent turned off');
+    if(on){
+      const missing = gdprList().filter(p => !p.consentDate).length;
+      if(missing && confirm(missing + ' candidate' + (missing === 1 ? ' has' : 's have') + ' no consent record. Record "Application form" consent for them now too?')){
+        await gdprBulkConsent(true);
+      }
+    }
+  }catch(e){
+    showToast('Could not save the setting: ' + e.message);
+    document.getElementById('gdprFormConsent').checked = !on;
+  }
+}
+
+gdprBulkConsent = async function(skipConfirm){
+  if(skipConfirm !== true && !confirm('Only use this if your application form shows a privacy notice or consent statement. It records "Application form" as the consent basis, dated when each candidate was added, for everyone with no consent record. Continue?')) return;
+  try{
+    const json = await b2Post('/api/gdpr/bulk-consent', {basis:'Application form'});
+    showToast(json.updated + ' candidate' + (json.updated === 1 ? '' : 's') + ' updated');
+    await loadCandidatePool(true);
+    renderGdpr();
+  }catch(e){ showToast('Could not update: ' + e.message); }
+};
+
+(function(){
+  const _lg = loadGdpr;
+  loadGdpr = async function(){ await _lg(); gdprLoadSettings(); };
+
+  const _rn = cmRefreshNames;
+  cmRefreshNames = function(){
+    _rn();
+    const row = document.getElementById('cmConsentRow');
+    if(row) row.style.display = b2Val('cmType') === 'client' ? 'none' : 'flex';
+  };
+
+  const _sc = saveComm;
+  saveComm = async function(){
+    const consent = document.getElementById('cmConsent') && document.getElementById('cmConsent').checked && b2Val('cmType') === 'candidate';
+    const name = b2Val('cmName').trim(), role = b2Val('cmRole').trim();
+    await _sc();
+    if(!consent || !name) return;
+    const p = (typeof POOL !== 'undefined' ? POOL : []).find(x => b2Same(x.name, name) && (!role || b2Same(x.role, role))) || POOL.find(x => b2Same(x.name, name));
+    if(!p) return;
+    try{
+      const json = await b2Api('/api/candidate-pool/' + encodeURIComponent(p.id) + '/meta', {
+        method:'PUT', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({consentDate: opsToday(), consentBasis: 'Agreed on a call'})
+      });
+      applyPoolEntry(json.data);
+    }catch(e){}
+    if(document.getElementById('cmConsent')) document.getElementById('cmConsent').checked = false;
+  };
+})();
+
+/* ---------- Sourcing: recurring spend, allocation to roles ---------- */
+
+function addMonthsUTC(iso, n){
+  const [y, m, d] = iso.split('-').map(Number);
+  const last = new Date(Date.UTC(y, m - 1 + n + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(y, m - 1 + n, Math.min(d, last))).toISOString().slice(0, 10);
+}
+
+function spendOccurrences(entries, fromISO, toISO){
+  const out = [];
+  entries.forEach(e => {
+    const amt = parseFloat(e.amount) || 0;
+    const start = opsDateOnly(e.date);
+    if(!start || !amt) return;
+    if(e.frequency !== 'monthly'){ out.push({e, date: start, amount: amt}); return; }
+    const end = opsDateOnly(e.end_date) || toISO;
+    for(let i = 0; i < 240; i++){
+      const d = addMonthsUTC(start, i);
+      if(d > end || d > toISO) break;
+      out.push({e, date: d, amount: amt});
+    }
+  });
+  return out.filter(o => (!fromISO || o.date >= fromISO) && o.date <= toISO);
+}
+
+function rolesOpenOn(date, roles){
+  return roles.filter(r => {
+    const from = opsDateOnly(r.date_opened) || '0000-00-00';
+    const to = opsDateOnly(r.date_closed) || (r.status === 'open' || r.status === 'hold' ? '9999-12-31' : from);
+    return from <= date && date <= to;
+  });
+}
+
+function findRoleForSpend(e, roles){
+  const cands = roles.filter(r => b2Same(r.role, e.role));
+  if(!cands.length) return null;
+  return cands.find(r => e.company && b2Same(r.company, e.company)) || cands[0];
+}
+
+const APPLIES_LABEL = {specific:'One role', open_roles:'All open roles (split)', general:'General'};
+function appliesFor(e){ return e.applies_to || (e.role ? 'specific' : 'general'); }
+
+renderSourcing = function(){
+  const from = sourcingPeriodStart(b2Val('spPeriod') || 'month');
+  const today = opsToday();
+  const occ = spendOccurrences(B3.adspend, from, today);
+  const inRange = d => { const x = opsDateOnly(d); return x && (!from || x >= from); };
+  const pool = (typeof POOL !== 'undefined' ? POOL : []).filter(p => !p.erased && inRange(p.dateAdded));
+  const total = occ.reduce((s, o) => s + o.amount, 0);
+  const placed = pool.filter(p => stageIdx(p.furthestStage) >= stageIdx('start_date')).length;
+  const untagged = (typeof POOL !== 'undefined' ? POOL : []).filter(p => !p.erased && !p.source).length;
+  document.getElementById('spTiles').innerHTML = [
+    {n: opsMoney(total), l:'Advertising spend'},
+    {n: pool.length, l:'Applicants'},
+    {n: placed, l:'Placed'},
+    {n: pool.length ? opsMoney(total / pool.length) : '-', l:'Cost per applicant'},
+    {n: placed ? opsMoney(total / placed) : '-', l:'Cost per hire'},
+    {n: untagged, l:'Candidates with no source', warn: untagged > 0},
+  ].map(t => `<div class="tile static ${t.warn ? 'warn' : ''}"><div class="n">${esc(t.n)}</div><div class="l">${t.l}</div></div>`).join('');
+
+  const channels = [...new Set(SOURCES.concat(occ.map(o => o.e.channel).filter(Boolean)).concat(pool.map(p => p.source).filter(Boolean)))];
+  const rows = channels.map(ch => {
+    const sp = occ.filter(o => o.e.channel === ch).reduce((s, o) => s + o.amount, 0);
+    const ps = pool.filter(p => p.source === ch);
+    return {ch, sp, n: ps.length, sub: ps.filter(p => stageIdx(p.furthestStage) >= 1).length, pl: ps.filter(p => stageIdx(p.furthestStage) >= stageIdx('start_date')).length};
+  }).filter(r => r.sp > 0 || r.n > 0).sort((a, b) => b.n - a.n);
+  document.getElementById('spChannels').innerHTML = rows.length ? rows.map(r => `<tr>
+    <td class="strong">${esc(r.ch)}</td><td>${opsMoney(r.sp)}</td><td>${r.n}</td><td>${r.sub}</td><td>${r.pl}</td>
+    <td>${r.n && r.sp ? opsMoney(r.sp / r.n) : '-'}</td><td>${r.pl && r.sp ? opsMoney(r.sp / r.pl) : '-'}</td></tr>`).join('')
+    : '<tr><td colspan="7" class="empty-row">No spend or tagged candidates in this period yet.</td></tr>';
+
+  const roles = mergedRoles();
+  const byRole = {};
+  const roleKey = r => r.id;
+  let general = 0;
+  occ.forEach(o => {
+    const mode = appliesFor(o.e);
+    if(mode === 'specific'){
+      const r = findRoleForSpend(o.e, roles);
+      if(!r){ general += o.amount; return; }
+      const b = byRole[roleKey(r)] = byRole[roleKey(r)] || {r, direct: 0, shared: 0};
+      b.direct += o.amount;
+    } else if(mode === 'open_roles'){
+      const open = rolesOpenOn(o.date, roles);
+      if(!open.length){ general += o.amount; return; }
+      open.forEach(r => {
+        const b = byRole[roleKey(r)] = byRole[roleKey(r)] || {r, direct: 0, shared: 0};
+        b.shared += o.amount / open.length;
+      });
+    } else general += o.amount;
+  });
+  const roleRows = Object.values(byRole).sort((a, b) => (b.direct + b.shared) - (a.direct + a.shared));
+  document.getElementById('spRoles').innerHTML = (roleRows.length || general) ? roleRows.map(b => {
+    const r = b.r, tot = b.direct + b.shared;
+    const placedN = flatCandidates().filter(x => b2Same(x.company, r.company) && b2Same(x.role, r.role) && ['start_date','day1','week1','month1'].includes(x.c.stage)).length;
+    return `<tr><td class="strong">${esc(r.role)}</td><td>${esc(r.company)}</td><td>${esc(roleStatusLabel(r.status))}</td>
+      <td>${opsMoney(b.direct)}</td><td>${opsMoney(b.shared)}</td><td><strong>${opsMoney(tot)}</strong></td><td>${placedN}</td><td>${placedN ? opsMoney(tot / placedN) : '-'}</td></tr>`;
+  }).join('') + (general ? `<tr><td class="strong">Not allocated to a role</td><td></td><td></td><td>${opsMoney(general)}</td><td></td><td>${opsMoney(general)}</td><td></td><td></td></tr>` : '')
+    : '<tr><td colspan="8" class="empty-row">No spend allocated to roles in this period.</td></tr>';
+
+  const entries = B3.adspend.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  document.getElementById('spEntries').innerHTML = entries.length ? entries.map(s => `<tr>
+    <td>${esc(opsFmt(s.date))}</td><td class="strong">${esc(s.channel)}</td>
+    <td>${s.frequency === 'monthly' ? 'Monthly' + (s.end_date ? ' until ' + esc(opsFmt(s.end_date)) : '') : 'One-off'}</td>
+    <td>${esc(APPLIES_LABEL[appliesFor(s)])}${s.role ? '<div class="pool-muted">' + esc(s.role) + '</div>' : ''}</td>
+    <td>${opsMoney(parseFloat(s.amount) || 0)}</td><td>${esc(s.notes)}</td>
+    <td><div class="row-actions"><button onclick="openSpendModal('${esc(s.id)}')">Edit</button></div></td></tr>`).join('')
+    : '<tr><td colspan="7" class="empty-row">No spend logged yet.</td></tr>';
+};
+
+function spApplyChanged(){
+  const mode = b2Val('spApplies');
+  document.getElementById('spRoleWrap').style.display = mode === 'specific' ? 'grid' : 'none';
+}
+
+openSpendModal = function(id){
+  spEditingId = id || null;
+  const s = id ? B3.adspend.find(x => x.id === id) : null;
+  document.getElementById('spChannelList').innerHTML = SOURCES.concat(['Candidate matching']).map(c => `<option value="${esc(c)}">`).join('');
+  document.getElementById('spRoleList').innerHTML = mergedRoles().map(r => `<option value="${esc(r.role)}">`).join('');
+  b2Set('spDate', s ? opsDateOnly(s.date) : opsToday());
+  b2Set('spChannel', s ? s.channel : '');
+  b2Set('spRole', s ? s.role : '');
+  b2Set('spCompany', s ? s.company : '');
+  b2Set('spAmount', s ? s.amount : '');
+  b2Set('spNotes', s ? s.notes : '');
+  b2Set('spFrequency', s && s.frequency === 'monthly' ? 'monthly' : 'one_off');
+  b2Set('spEnd', s ? opsDateOnly(s.end_date) : '');
+  b2Set('spApplies', s ? appliesFor(s) : 'general');
+  document.getElementById('spDeleteRow').style.display = s ? 'flex' : 'none';
+  spApplyChanged();
+  document.getElementById('spendModal').classList.add('visible');
+};
+
+saveSpend = async function(){
+  const amount = parseFloat(b2Val('spAmount'));
+  const channel = b2Val('spChannel').trim();
+  if(!channel || !(amount >= 0)){ showToast('Enter the channel and the amount'); return; }
+  const applies = b2Val('spApplies');
+  if(applies === 'specific' && !b2Val('spRole').trim()){ showToast('Choose which role this spend is for'); return; }
+  const body = {
+    id: spEditingId || b2Id('sp'), date: b2Val('spDate') || opsToday(), channel,
+    role: applies === 'specific' ? b2Val('spRole').trim() : '', company: applies === 'specific' ? b2Val('spCompany').trim() : '',
+    amount: String(amount), notes: b2Val('spNotes'), logged_by: signedInUser.name,
+    frequency: b2Val('spFrequency'), end_date: b2Val('spFrequency') === 'monthly' ? b2Val('spEnd') : '', applies_to: applies,
+  };
+  try{
+    const json = await b2Post('/api/ad-spend', body);
+    const i = B3.adspend.findIndex(x => x.id === body.id);
+    if(i >= 0) B3.adspend[i] = json.data; else B3.adspend.push(json.data);
+    closeModal('spendModal');
+    showToast('Spend saved');
+    renderSourcing();
+  }catch(e){ showToast('Could not save: ' + e.message); }
+};
+
+/* ---------- Stage automation from interviews, and role completion ---------- */
+
+async function autoMoveStage(company, role, id, newStage){
+  const c = DATA[company] && DATA[company][role] ? DATA[company][role].find(x => x.id === id) : null;
+  if(!c || c.stage === newStage) return false;
+  const from = c.stage;
+  c.stage = newStage;
+  c.date = new Date().toISOString().slice(0, 10);
+  renderBoard();
+  await saveCandidate(c);
+  showToast(c.name + ' moved to ' + poolStageLabel(newStage));
+  logActivity(newStage === 'start_date' ? 'placed' : newStage, {candidate:c.name, role, company, detail:'from ' + from + ' (automatic)'});
+  return true;
+}
+
+function pipelineHitFor(iv){
+  const list = flatCandidates();
+  return (iv.candidate_id && list.find(x => x.c.id === iv.candidate_id))
+    || list.find(x => b2Same(x.c.name, iv.candidate_name) && b2Same(x.role, iv.role) && b2Same(x.company, iv.company))
+    || list.find(x => b2Same(x.c.name, iv.candidate_name) && b2Same(x.role, iv.role));
+}
+
+async function syncStageFromInterview(iv){
+  const hit = pipelineHitFor(iv);
+  if(!hit) return;
+  if((iv.status || 'scheduled') === 'scheduled' && ['submitted', 'interview_requested'].includes(hit.c.stage)){
+    await autoMoveStage(hit.company, hit.role, hit.c.id, 'interview_scheduled');
+  } else if(iv.status === 'completed' && hit.c.stage === 'interview_scheduled'){
+    await autoMoveStage(hit.company, hit.role, hit.c.id, 'interviewed');
+  }
+}
+
+(function(){
+  const _si = saveInterview;
+  saveInterview = async function(){
+    const before = B2.interviews.length;
+    const editing = ivEditingId;
+    await _si();
+    const iv = editing ? B2.interviews.find(x => x.id === editing) : B2.interviews[B2.interviews.length - 1];
+    if(iv && (editing || B2.interviews.length > before)) syncStageFromInterview(iv);
+  };
+
+  const _bn = buildNotifications;
+  buildNotifications = function(){
+    const out = _bn();
+    if(!signedInUser) return out;
+    mergedRoles().forEach(r => {
+      if(r.status !== 'open') return;
+      const placedN = flatCandidates().filter(x => b2Same(x.company, r.company) && b2Same(x.role, r.role) && ['start_date','day1','week1','month1'].includes(x.c.stage)).length;
+      if(placedN >= rolePositions(r)){
+        out.push({sev:'med', title:'All positions filled: ' + r.role, detail:r.company + ' - mark the role as filled', act:{type:'tab', tab:'roles'}});
+      }
+    });
+    const rank = {high:0, med:1, low:2};
+    out.sort((a, b) => rank[a.sev] - rank[b.sev]);
+    return out;
+  };
+})();
+
+/* ============================================================
+   Round 3 part B: templates fill in from records (and save back),
+   client site details, candidate details, interview auto-sync
+   ============================================================ */
+
+const B4 = {site:[], cdet:[]};
+const TPL_STATE = {};
+let tplSigSeen = '';
+
+function slugOf(s){ return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); }
+function siteId(company){ return 'site-' + slugOf(company); }
+function candKey(name, role){ return 'cd-' + slugOf(name + '-' + role); }
+function siteFor(company){ return B4.site.find(s => s.id === siteId(company)) || {}; }
+function cdetFor(name, role){ return B4.cdet.find(d => d.id === candKey(name, role)) || {}; }
+const FMT_FROM_TYPE = {site:'Face to face', video:'Video call', phone:'Phone', assessment:'Assessment', other:'Other'};
+function typeFromFmt(f){ return Object.keys(FMT_FROM_TYPE).find(k => FMT_FROM_TYPE[k] === f) || 'site'; }
+
+async function loadTplData(){
+  try{ B4.site = b2List(await b2Api('/api/site-details')); }catch(e){}
+  try{ B4.cdet = b2List(await b2Api('/api/candidate-details')); }catch(e){}
+}
+
+(function(){
+  const _lt = loadTemplates;
+  loadTemplates = async function(){ await loadTplData(); await _lt(); };
+})();
+
+/* Every value an email can need, where it lives, and how it is asked for when missing */
+const TPL_INPUTS = [
+  {key:'contact_name', label:'Client contact', type:'contact', where:'client record'},
+  {key:'interview_date', label:'Interview date', type:'date', where:'interview'},
+  {key:'interview_time', label:'Interview time', type:'time', where:'interview'},
+  {key:'interview_format', label:'Interview format', type:'select', options:['Face to face','Video call','Phone','Assessment'], where:'interview'},
+  {key:'interview_location', label:'Interview location', type:'text', where:'interview'},
+  {key:'start_date', label:'Start date', type:'date', where:'candidate record'},
+  {key:'start_time', label:'Start time', type:'time', where:'candidate record'},
+  {key:'arrival_instructions', label:'Where to go on arrival', type:'textarea', where:'client site details'},
+  {key:'parking', label:'Parking', type:'textarea', where:'client site details'},
+  {key:'public_transport', label:'Public transport', type:'textarea', where:'client site details'},
+  {key:'site_quirks', label:'Site quirks and entrance', type:'textarea', where:'client site details'},
+  {key:'dress_code', label:'Dress code', type:'text', where:'client site details'},
+  {key:'late_contact_phone', label:'Number to call if running late', type:'text', where:'client site details'},
+  {key:'offer_return_date', label:'Sign and return by', type:'date', where:'this email only'},
+  {key:'payment_terms', label:'Payment terms', type:'select', options:['14 days','30 days'], where:'this email only'},
+];
+const TPL_HINTS = {
+  salary:'the candidate card (add it at the Offer stage)', invoice_ref:'the Invoices tab', fee_amount:'the Invoices tab or the candidate salary',
+  company_address:'the Clients tab (company address)', candidate_name:'the candidate', first_name:'the candidate', role:'the candidate', company:'the candidate',
+};
+
+function tplTextNow(){ return b2Val('tplSubject') + '\n' + b2Val('tplBody'); }
+function tplUsedKeys(){
+  const set = new Set();
+  (tplTextNow().match(/\{\{\s*([a-z_]+)\s*\}\}/gi) || []).forEach(m => set.add(m.replace(/[{}\s]/g, '').toLowerCase()));
+  if(set.has('interviewer') || set.has('contact_first_name')) set.add('contact_name');
+  return set;
+}
+
+function tplDefaults(){
+  const d = {};
+  const sel = tplSelectedCandidate();
+  if(!sel) return d;
+  const c = sel.c, company = sel.company, role = sel.role;
+  const iv = B2.interviews.filter(i => b2Same(i.candidate_name, c.name) && (!i.status || i.status === 'scheduled'))
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+  const site = siteFor(company), cd = cdetFor(c.name, role);
+  const contact = resolveClientContact(company, role, c);
+  const addr = companyAddress(company);
+  d.contact_name = iv && iv.interviewer ? iv.interviewer : (contact ? contact.name : '');
+  d.interview_date = iv ? opsDateOnly(iv.date) : '';
+  d.interview_time = iv ? iv.time : '';
+  d.interview_format = iv ? (FMT_FROM_TYPE[iv.type] || 'Face to face') : 'Face to face';
+  d.interview_location = iv && iv.location ? iv.location : addr;
+  d.start_date = opsDateOnly(c.startDate);
+  d.start_time = cd.start_time || '';
+  d.arrival_instructions = site.arrival_instructions || addr;
+  d.parking = site.parking || '';
+  d.public_transport = site.public_transport || '';
+  d.site_quirks = site.site_quirks || '';
+  d.dress_code = site.dress_code || '';
+  d.late_contact_phone = site.late_contact_phone || (contact ? contact.phone : '');
+  d.offer_return_date = opsAddDays(opsToday(), 1);
+  d.payment_terms = '14 days';
+  d._interviewFound = !!iv;
+  return d;
+}
+
+function tplVal(key){
+  if(Object.prototype.hasOwnProperty.call(TPL_STATE, key)) return TPL_STATE[key];
+  return tplDefaults()[key] || '';
+}
+
+function tplSourceLabel(f, defaults){
+  const v = Object.prototype.hasOwnProperty.call(TPL_STATE, f.key) ? TPL_STATE[f.key] : defaults[f.key];
+  if(v){
+    if(f.where === 'interview') return defaults._interviewFound ? 'from the interview' : 'suggested';
+    if(f.key === 'arrival_instructions' && v === companyAddress((tplSelectedCandidate() || {}).company)) return 'from the company address';
+    return f.where === 'this email only' ? 'suggested' : 'from the ' + f.where;
+  }
+  return f.where === 'this email only' ? 'enter it now' : 'not on file - enter it and it will be saved to the ' + f.where;
+}
+
+function tplFieldHtml(f, defaults){
+  const val = Object.prototype.hasOwnProperty.call(TPL_STATE, f.key) ? TPL_STATE[f.key] : (defaults[f.key] || '');
+  const missing = !val && f.where !== 'this email only';
+  const id = 'tplf_' + f.key;
+  let input;
+  if(f.type === 'date') input = `<input type="date" id="${id}" value="${esc(val)}" onclick="try{this.showPicker()}catch(e){}" onchange="tplFieldChanged('${f.key}')">`;
+  else if(f.type === 'time') input = `<select id="${id}" onchange="tplFieldChanged('${f.key}')">${timeOptionsHtml(val)}</select>`;
+  else if(f.type === 'select') input = `<select id="${id}" onchange="tplFieldChanged('${f.key}')">${f.options.map(o => `<option ${o === val ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+  else if(f.type === 'textarea') input = `<textarea id="${id}" rows="2" oninput="tplFieldChanged('${f.key}')">${esc(val)}</textarea>`;
+  else if(f.type === 'contact') input = `<input id="${id}" list="tplContactList" value="${esc(val)}" oninput="tplFieldChanged('${f.key}')" placeholder="Filled in from the candidate">`;
+  else input = `<input id="${id}" value="${esc(val)}" oninput="tplFieldChanged('${f.key}')">`;
+  return `<div class="tplf ${missing ? 'miss' : ''}"><label>${esc(f.label)} <span class="src">${esc(tplSourceLabel(f, defaults))}</span></label>${input}</div>`;
+}
+
+function tplFieldChanged(key){
+  const el = document.getElementById('tplf_' + key);
+  if(!el) return;
+  TPL_STATE[key] = el.value;
+  if(key === 'contact_name') tplContactTyped();
+  tplPreview();
+}
+
+function tplRenderFields(force){
+  const host = document.getElementById('tplFields');
+  if(!host) return;
+  const used = tplUsedKeys();
+  const inputs = TPL_INPUTS.filter(f => used.has(f.key));
+  const sig = inputs.map(f => f.key).join(',') + '|' + b2Val('tplCand');
+  if(!force && sig === tplSigSeen) return;
+  tplSigSeen = sig;
+  const defaults = tplDefaults();
+  host.innerHTML = inputs.length
+    ? '<div class="section-title" style="margin-top:14px;">Details this email needs</div><div class="tplf-grid">' + inputs.map(f => tplFieldHtml(f, defaults)).join('') + '</div>'
+    : '<div class="note-line">This template has no fields that need filling in.</div>';
+  const sel = tplSelectedCandidate();
+  document.getElementById('tplContactList').innerHTML = sel ? clientContactsFor(sel.company).map(c => `<option value="${esc(c.contactName)}">`).join('') : '';
+  const link = document.getElementById('tplSiteLink');
+  if(link) link.style.display = inputs.some(f => f.where === 'client site details') && sel ? 'block' : 'none';
+}
+
+renderTplPane = function(){
+  const t = B2.templates.find(x => x.id === tplSelectedId);
+  const pane = document.getElementById('tplPane');
+  if(!t){ pane.innerHTML = ''; return; }
+  tplSigSeen = '';
+  Object.keys(TPL_STATE).forEach(k => delete TPL_STATE[k]);
+  const cands = flatCandidates().filter(x => x.company !== UNASSIGNED_LABEL);
+  pane.innerHTML = `
+    <div class="tpl-editor">
+      <div class="two-col">
+        <div><label>Template name</label><input id="tplName" value="${esc(t.name)}"></div>
+        <div><label>Category</label><input id="tplCat" value="${esc(t.category)}" list="tplCatList"><datalist id="tplCatList"><option value="Candidate"><option value="Client"><option value="General"></datalist></div>
+      </div>
+      <label>Subject</label><input id="tplSubject" value="${esc(t.subject)}" oninput="tplPreview()">
+      <label>Body</label><textarea id="tplBody" oninput="tplPreview()">${esc(t.body)}</textarea>
+      <div class="tpl-fields">Merge fields: ${TPL_FIELDS.concat(['start_time','arrival_instructions','parking','public_transport','site_quirks','dress_code','late_contact_phone','offer_return_date','payment_terms']).filter((v, i, a) => a.indexOf(v) === i).map(f => '<code>{{' + f + '}}</code>').join(' ')}. Text in [SQUARE BRACKETS] is for you to write by hand.</div>
+      <div class="tpl-actions">
+        <button class="gold-btn" onclick="tplSave()">Save template</button>
+        <button class="ghost-btn" onclick="tplDuplicate()">Duplicate</button>
+        <button class="ghost-btn" style="color:var(--danger);border-color:var(--danger);" onclick="tplDelete()">Delete</button>
+      </div>
+      <div class="section-title" style="margin-top:26px;">Fill in and send</div>
+      <label>Candidate</label>
+      <select id="tplCand" onchange="tplPickCandidate()"><option value="">Choose a candidate...</option>
+        ${cands.map(x => `<option value="${esc(x.company + '||' + x.role + '||' + x.c.id)}">${esc(x.c.name)} - ${esc(x.role)} (${esc(x.company)})</option>`).join('')}</select>
+      <datalist id="tplContactList"></datalist>
+      <div id="tplFields"></div>
+      <div id="tplSiteLink" style="display:none;margin-top:6px;"><a class="tpl-link" onclick="openSiteModal()">Edit the site details for this company</a></div>
+      <label>Send to</label><input id="tplTo" placeholder="Email address">
+      <label class="tpl-check"><input type="checkbox" id="tplRemember" checked> Save details I enter to the candidate, client and interview records</label>
+      <div class="tpl-preview" id="tplPreview"></div>
+      <div id="tplMissingNote" class="note-line"></div>
+      <div id="tplSyncNote" class="note-line" style="display:none;"></div>
+      <div class="tpl-actions">
+        <button class="gold-btn" onclick="tplOutlook('web')">Open in Outlook</button>
+        <button class="ghost-btn" onclick="tplOutlook('desktop')">Outlook desktop app</button>
+        <button class="ghost-btn" onclick="tplCopy('all')">Copy all</button>
+        <button class="ghost-btn" onclick="tplCopy('subject')">Copy subject</button>
+        <button class="ghost-btn" onclick="tplCopy('body')">Copy body</button>
+        <button class="ghost-btn" onclick="tplSaveDetails(true)">Save details to records</button>
+      </div>
+      <div class="note-line">Open in Outlook opens a new email in Outlook on the web. Outlook desktop app tries the installed app instead. Long messages are copied to your clipboard to paste in.</div>
+    </div>`;
+  tplRenderFields(true);
+  tplPreview();
+};
+
+tplPickCandidate = function(){
+  Object.keys(TPL_STATE).forEach(k => delete TPL_STATE[k]);
+  const sel = tplSelectedCandidate();
+  window._tplContactEmail = ''; window._tplContactTitle = '';
+  if(sel){
+    const name = tplVal('contact_name');
+    const rec = clientContactsFor(sel.company).find(c => b2Same(c.contactName, name));
+    window._tplContactEmail = rec ? rec.email || '' : '';
+    window._tplContactTitle = rec ? rec.title || '' : '';
+  }
+  tplRenderFields(true);
+  tplSetRecipient();
+  tplPreview();
+};
+
+tplContactTyped = function(){
+  const sel = tplSelectedCandidate();
+  const rec = sel ? clientContactsFor(sel.company).find(c => b2Same(c.contactName, tplVal('contact_name'))) : null;
+  window._tplContactEmail = rec ? rec.email || '' : '';
+  window._tplContactTitle = rec ? rec.jobTitle || rec.title || '' : '';
+  tplSetRecipient();
+};
+
+tplVars = function(){
+  const v = {};
+  const me = senderProfile();
+  v.sender_name = me.name; v.sender_email = me.email; v.sender_phone = me.phone; v.signature = me.signature; v.my_name = me.name;
+  const sel = tplSelectedCandidate();
+  if(sel){
+    const c = sel.c;
+    v.candidate_name = c.name; v.first_name = String(c.name).split(' ')[0]; v.role = sel.role; v.company = sel.company;
+    v.company_address = companyAddress(sel.company);
+    if(c.salary) v.salary = opsMoney(String(c.salary).replace(/[^0-9.]/g, ''));
+    const inv = OPS.invoices.find(i => b2Same(i.candidateName, c.name) && b2Same(i.company, sel.company));
+    if(inv){ v.invoice_ref = inv.number; v.fee_amount = opsMoney(inv.amount); }
+    else{
+      const sal = parseSalaryNumber(c.salary);
+      if(sal && signedInUser && signedInUser.admin) v.fee_amount = opsMoney(sal * feeRateFor(sal) / 100);
+    }
+  }
+  const contact = tplVal('contact_name').trim();
+  if(contact){
+    v.contact_name = contact; v.contact_first_name = contact.split(' ')[0];
+    v.interviewer = contact + (window._tplContactTitle ? ' - ' + window._tplContactTitle : '');
+  }
+  const put = (k, val) => { if(val) v[k] = val; };
+  put('interview_date', tplVal('interview_date') ? fmtDateUK(tplVal('interview_date')) : '');
+  put('interview_time', tplVal('interview_time') ? fmtTime12(tplVal('interview_time')) : '');
+  put('interview_format', tplVal('interview_format'));
+  put('interview_location', tplVal('interview_location'));
+  put('start_date', tplVal('start_date') ? fmtDateLong(tplVal('start_date')) : '');
+  put('start_time', tplVal('start_time') ? fmtTime12(tplVal('start_time')) : '');
+  ['arrival_instructions','parking','public_transport','site_quirks','dress_code','late_contact_phone'].forEach(k => put(k, tplVal(k)));
+  put('offer_return_date', tplVal('offer_return_date') ? fmtDateLong(tplVal('offer_return_date')) : '');
+  put('payment_terms', tplVal('payment_terms'));
+  return v;
+};
+
+function fmtDateUK(iso){
+  const d = opsDateOnly(iso);
+  return d ? d.slice(8, 10) + '/' + d.slice(5, 7) + '/' + d.slice(0, 4) : '';
+}
+
+(function(){
+  const _pv = tplPreview;
+  tplPreview = function(){
+    _pv();
+    tplRenderFields(false);
+    const note = document.getElementById('tplMissingNote');
+    if(!note) return;
+    const vars = tplVars();
+    const used = [...tplUsedKeys()];
+    const gaps = used.filter(k => !vars[k] && !TPL_INPUTS.some(f => f.key === k) && TPL_HINTS[k]);
+    note.innerHTML = gaps.length ? 'Not on file yet: ' + gaps.map(k => '<strong>' + esc(k.replace(/_/g, ' ')) + '</strong> (add it in ' + esc(TPL_HINTS[k]) + ')').join(', ') + '.' : '';
+    if(!tplSelectedCandidate() && used.size){ note.textContent = 'Choose a candidate to fill this email in from their records.'; }
+  };
+})();
+
+/* ---------- saving what was entered back to the records ---------- */
+
+async function tplSaveDetails(explicit){
+  const sel = tplSelectedCandidate();
+  if(!sel){ if(explicit) showToast('Choose a candidate first'); return; }
+  const used = tplUsedKeys();
+  const saved = [];
+  const c = sel.c, company = sel.company, role = sel.role;
+  const d = tplDefaults();
+
+  const startDate = used.has('start_date') ? tplVal('start_date') : '';
+  if(startDate && startDate !== opsDateOnly(c.startDate)){
+    c.startDate = startDate;
+    try{ await saveCandidate(c); saved.push('start date'); }catch(e){}
+  }
+  const startTime = used.has('start_time') ? tplVal('start_time') : '';
+  if(startTime && startTime !== (cdetFor(c.name, role).start_time || '')){
+    try{
+      const json = await b2Post('/api/candidate-details', {id: candKey(c.name, role), candidate_name: c.name, role, company, start_time: startTime, reporting_to: tplVal('contact_name'), updated_by: signedInUser.name});
+      const i = B4.cdet.findIndex(x => x.id === json.data.id);
+      if(i >= 0) B4.cdet[i] = json.data; else B4.cdet.push(json.data);
+      saved.push('start time');
+    }catch(e){}
+  }
+  const siteKeys = ['arrival_instructions','parking','public_transport','site_quirks','dress_code','late_contact_phone'].filter(k => used.has(k));
+  const site = siteFor(company);
+  const patch = {};
+  siteKeys.forEach(k => { const v = (tplVal(k) || '').trim(); if(v && v !== (site[k] || '') && !(k === 'arrival_instructions' && v === companyAddress(company))) patch[k] = v; });
+  if(Object.keys(patch).length){
+    try{
+      const json = await b2Post('/api/site-details', Object.assign({id: siteId(company), company, updated_by: signedInUser.name}, patch));
+      const i = B4.site.findIndex(x => x.id === json.data.id);
+      if(i >= 0) B4.site[i] = json.data; else B4.site.push(json.data);
+      saved.push('site details for ' + company);
+    }catch(e){}
+  }
+  if(used.has('interview_date') && tplVal('interview_date')){
+    const iv = await syncInterviewFromTemplate();
+    if(iv) saved.push('interview');
+  }
+  if(saved.length) showToast('Saved to records: ' + saved.join(', '));
+  else if(explicit) showToast('Everything is already saved');
+}
+
+async function syncInterviewFromTemplate(){
+  const sel = tplSelectedCandidate();
+  const date = tplVal('interview_date');
+  if(!sel || !date) return null;
+  const c = sel.c;
+  const existing = B2.interviews.find(i => b2Same(i.candidate_name, c.name) && opsDateOnly(i.date) === date && i.status !== 'cancelled');
+  const contact = tplVal('contact_name');
+  const rec = clientContactsFor(sel.company).find(x => b2Same(x.contactName, contact));
+  const category = (B2.templates.find(x => x.id === tplSelectedId) || {}).category;
+  const body = {
+    id: existing ? existing.id : b2Id('iv'), candidate_id: c.id, candidate_name: c.name, role: sel.role, company: sel.company,
+    date, time: tplVal('interview_time') || (existing ? existing.time : ''), type: typeFromFmt(tplVal('interview_format')),
+    location: tplVal('interview_location'), interviewer: contact, status: existing ? (existing.status || 'scheduled') : 'scheduled',
+    notes: existing ? existing.notes : '', created_by: existing ? existing.created_by : signedInUser.name,
+    duration: existing && existing.duration ? existing.duration : '60',
+    candidate_email: String(category).toLowerCase() === 'candidate' && b2Val('tplTo').trim() ? b2Val('tplTo').trim() : (existing && existing.candidate_email) || candidateEmailFor(c.name, sel.role, sel.company),
+    interviewer_email: (rec && rec.email) || (existing && existing.interviewer_email) || '',
+  };
+  const unchanged = existing && ['time','type','location','interviewer','interviewer_email'].every(k => String(existing[k] || '') === String(body[k] || ''));
+  if(unchanged) return existing;
+  try{
+    const json = await b2Post('/api/interviews', body);
+    const i = B2.interviews.findIndex(x => x.id === body.id);
+    if(i >= 0) B2.interviews[i] = json.data; else B2.interviews.push(json.data);
+    if(!existing) logActivity('interview_booked', {candidate:c.name, role:sel.role, company:sel.company, detail: date});
+    const note = document.getElementById('tplSyncNote');
+    if(note){
+      note.style.display = 'block';
+      note.innerHTML = (existing ? 'Interview updated' : 'Added to the Interviews calendar') + ' for ' + esc(fmtDateUK(date)) + '. <a class="tpl-link" onclick="openInviteDialog(\'' + esc(body.id) + '\')">Create the calendar invites</a>';
+    }
+    if(opsIsVisible('interviewsView')) renderInterviews();
+    recomputeOps();
+    syncStageFromInterview(json.data);
+    return json.data;
+  }catch(e){
+    showToast('Could not add the interview to the calendar: ' + e.message);
+    return null;
+  }
+}
+
+(function(){
+  const _copy = tplCopy;
+  tplCopy = async function(what){
+    await _copy(what);
+    if(b2Check('tplRemember')) tplSaveDetails(false);
+  };
+  const _out = tplOutlook;
+  tplOutlook = function(mode){
+    _out(mode);
+    if(b2Check('tplRemember')) tplSaveDetails(false);
+  };
+})();
+function b2Check(id){ const el = document.getElementById(id); return !!(el && el.checked); }
+
+/* ---------- Client site details ---------- */
+
+let siteEditingCompany = '';
+
+function openSiteModal(company){
+  const sel = tplSelectedCandidate();
+  siteEditingCompany = company || (sel ? sel.company : '');
+  if(!siteEditingCompany){ showToast('Choose a candidate or client first'); return; }
+  const s = siteFor(siteEditingCompany);
+  document.getElementById('sdTitle').textContent = 'Site details: ' + siteEditingCompany;
+  b2Set('sdArrival', s.arrival_instructions || companyAddress(siteEditingCompany));
+  b2Set('sdParking', s.parking); b2Set('sdTransport', s.public_transport); b2Set('sdQuirks', s.site_quirks);
+  b2Set('sdDress', s.dress_code); b2Set('sdPhone', s.late_contact_phone); b2Set('sdSecurity', s.security_reception);
+  document.getElementById('siteModal').classList.add('visible');
+}
+
+async function saveSiteDetails(){
+  const body = {
+    id: siteId(siteEditingCompany), company: siteEditingCompany, updated_by: signedInUser.name,
+    arrival_instructions: b2Val('sdArrival').trim(), parking: b2Val('sdParking').trim(), public_transport: b2Val('sdTransport').trim(),
+    site_quirks: b2Val('sdQuirks').trim(), dress_code: b2Val('sdDress').trim(), late_contact_phone: b2Val('sdPhone').trim(),
+    security_reception: b2Val('sdSecurity').trim(),
+  };
+  try{
+    const json = await b2Post('/api/site-details', body);
+    const i = B4.site.findIndex(x => x.id === body.id);
+    if(i >= 0) B4.site[i] = json.data; else B4.site.push(json.data);
+    closeModal('siteModal');
+    showToast('Site details saved');
+    if(document.getElementById('tplFields')) tplRenderFields(true), tplPreview();
+  }catch(e){ showToast('Could not save: ' + e.message); }
+}
 
 </script>
 
