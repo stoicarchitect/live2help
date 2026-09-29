@@ -232,6 +232,126 @@
   .pool-reminder-row .who{font-size:13.5px;color:var(--dark);}
   .pool-reminder-row .what{font-size:12px;color:#999;}
 
+
+  /* ---- Batch 1: tabs bar, user chip, home, notifications, roles, placements ---- */
+  #tabs{overflow-x:auto;align-items:center;}
+  .tab-btn{white-space:nowrap;flex-shrink:0;}
+  #userChip{margin-left:auto;flex-shrink:0;display:flex;align-items:center;gap:12px;padding-left:20px;}
+  #userChip .who{font-size:13px;color:var(--dark);font-weight:500;}
+  #userChip button{
+    padding:6px 12px;font-size:12px;border:1px solid var(--border);background:var(--white);
+    color:var(--grey);cursor:pointer;border-radius:2px;font-family:inherit;
+  }
+  #userChip button:hover{border-color:var(--dark);color:var(--dark);}
+  .splash-welcome{font-size:20px;color:var(--white);margin-top:26px;letter-spacing:1px;}
+  .splash-welcome span{color:var(--gold);}
+  .splash-btn.overview{background:var(--gold);color:var(--dark);font-weight:500;}
+  .splash-btn.overview:hover{background:#dcc06a;transform:translateY(-2px);box-shadow:0 8px 20px rgba(201,168,76,.35);}
+  .tab-badge.alert{background:#B3372B;color:#fff;}
+
+  #homeView,#notificationsView,#rolesView,#placementsView{display:none;flex:1;flex-direction:column;}
+  #homeView.visible,#notificationsView.visible,#rolesView.visible,#placementsView.visible{display:flex;}
+  .view-head{
+    padding:16px 24px 14px;display:flex;justify-content:space-between;align-items:center;
+    border-bottom:1px solid var(--border);gap:16px;
+  }
+  .view-head h2{font-size:18px;color:var(--dark);font-weight:normal;}
+  .view-head .sub{font-size:12px;color:#999;margin-top:3px;}
+  .view-body{flex:1;overflow-y:auto;padding:18px 24px;}
+  .gold-btn{
+    padding:9px 18px;background:var(--gold);color:var(--white);border:none;border-radius:2px;
+    font-size:13.5px;cursor:pointer;font-family:inherit;font-weight:600;white-space:nowrap;
+  }
+  .gold-btn:hover{background:#b8963f;}
+
+  .tile-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-bottom:18px;}
+  .tile{
+    background:var(--white);border:1px solid var(--border);border-top:3px solid var(--gold);
+    border-radius:2px;padding:14px 16px;cursor:pointer;transition:transform .15s,box-shadow .15s;
+  }
+  .tile:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(0,0,0,.06);}
+  .tile.static{cursor:default;}
+  .tile.static:hover{transform:none;box-shadow:none;}
+  .tile .n{font-size:26px;color:var(--dark);font-weight:500;line-height:1.1;}
+  .tile .l{font-size:11.5px;color:#999;margin-top:6px;letter-spacing:.3px;}
+  .tile.warn{border-top-color:#B3372B;}
+  .tile.warn .n{color:#B3372B;}
+
+  .panel-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  @media (max-width:980px){.panel-grid{grid-template-columns:1fr;}}
+  .panel{background:var(--white);border:1px solid var(--border);border-radius:2px;}
+  .panel-head{
+    padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;
+    align-items:center;font-size:13.5px;color:var(--dark);font-weight:600;
+  }
+  .panel-head a{font-size:12px;color:var(--gold);cursor:pointer;font-weight:400;text-decoration:none;}
+  .panel-head a:hover{text-decoration:underline;}
+  .panel-body{padding:6px 16px 10px;}
+  .panel-empty{padding:18px 0;font-size:13px;color:#999;text-align:center;}
+  .mini-row{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px;}
+  .mini-row:last-child{border-bottom:none;}
+  .mini-row .t{color:var(--dark);}
+  .mini-row .d{color:#999;font-size:12px;margin-top:2px;}
+  .mini-row .r{color:#999;font-size:12px;white-space:nowrap;text-align:right;}
+  .bar-row{display:grid;grid-template-columns:130px 1fr 30px;gap:10px;align-items:center;padding:6px 0;font-size:12.5px;color:var(--grey);}
+  .bar-track{background:var(--lightbg);height:10px;border-radius:2px;overflow:hidden;}
+  .bar-fill{background:var(--gold);height:100%;}
+  .bar-row .c{text-align:right;color:var(--dark);}
+
+  .sev-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;vertical-align:middle;}
+  .sev-dot.high{background:#B3372B;}
+  .sev-dot.med{background:var(--gold);}
+  .sev-dot.low{background:#9AA5B1;}
+  .notif-group-title{font-size:11px;color:#999;letter-spacing:.6px;text-transform:uppercase;font-weight:600;margin:18px 0 8px;}
+  .notif-group-title:first-child{margin-top:0;}
+  .notif-item{
+    display:flex;justify-content:space-between;align-items:center;gap:14px;background:var(--white);
+    border:1px solid var(--border);border-left:3px solid var(--gold);border-radius:2px;padding:11px 14px;margin-bottom:8px;
+  }
+  .notif-item.high{border-left-color:#B3372B;}
+  .notif-item.low{border-left-color:#9AA5B1;}
+  .notif-item .t{font-size:13.5px;color:var(--dark);}
+  .notif-item .d{font-size:12px;color:#999;margin-top:2px;}
+  .notif-item button{
+    padding:6px 14px;font-size:12px;border:1px solid var(--border);background:var(--white);color:var(--grey);
+    cursor:pointer;border-radius:2px;font-family:inherit;white-space:nowrap;
+  }
+  .notif-item button:hover{background:var(--lightbg);}
+  .all-clear{text-align:center;padding:48px 16px;color:#999;font-size:14px;}
+  .all-clear strong{display:block;font-size:18px;color:var(--dark);font-weight:500;margin-bottom:6px;}
+
+  .ops-table-wrap{background:var(--white);border:1px solid var(--border);border-radius:2px;overflow-x:auto;}
+  table.ops-table{width:100%;border-collapse:collapse;font-size:13px;min-width:860px;}
+  table.ops-table th{
+    text-align:left;padding:11px 14px;background:var(--lightbg);font-weight:500;font-size:12px;color:var(--dark);
+    border-bottom:1px solid var(--border);white-space:nowrap;
+  }
+  table.ops-table td{padding:11px 14px;border-bottom:1px solid var(--border);color:var(--grey);vertical-align:middle;}
+  table.ops-table tbody tr:hover{background:var(--lightbg);}
+  table.ops-table td.strong{color:var(--dark);font-weight:500;}
+  .status-pill{display:inline-block;padding:3px 9px;border-radius:2px;font-size:11px;background:var(--lightbg);color:var(--dark);white-space:nowrap;}
+  .status-pill.open,.status-pill.active{background:#E6F2E9;color:#2D6A3E;}
+  .status-pill.hold{background:#FBF1D9;color:#8a6a12;}
+  .status-pill.filled,.status-pill.completed{background:#E4EBF5;color:#274b7a;}
+  .status-pill.lost,.status-pill.left{background:#F7E3E1;color:#9B2C22;}
+  .status-pill.auto{background:var(--lightbg);color:#999;margin-left:6px;}
+  .row-actions{display:flex;gap:6px;justify-content:flex-end;white-space:nowrap;}
+  .row-actions button{
+    padding:5px 10px;font-size:11.5px;border:1px solid var(--border);background:var(--white);
+    color:var(--grey);cursor:pointer;border-radius:2px;font-family:inherit;
+  }
+  .row-actions button:hover:not(:disabled){background:var(--lightbg);}
+  .row-actions button:disabled{opacity:.4;cursor:default;}
+  .days-left.soon{color:#8a6a12;font-weight:600;}
+  .days-left.over{color:#9B2C22;font-weight:600;}
+  .filter-bar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+  .filter-bar input,.filter-bar select{
+    padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:13px;
+    font-family:inherit;background:#fff;color:var(--grey);
+  }
+  .filter-bar input{flex:1;min-width:220px;}
+  .empty-row{text-align:center;color:#999;padding:32px 14px !important;}
+
   /* ---- Modal ---- */
   .modal-overlay{
     position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;
@@ -673,8 +793,10 @@
   <div class="splash-content">
     <div class="splash-wordmark">LIVE <span>2</span> HELP</div>
     <div class="splash-tagline">ANYONE &middot; ANYWHERE &middot; ANYTIME</div>
+    <div class="splash-welcome" id="splashWelcome"></div>
   </div>
   <div class="splash-buttons">
+    <button class="splash-btn overview" onclick="chooseHome()">Overview</button>
     <button class="splash-btn candidates" onclick="chooseDashboard('candidates')">View Candidates</button>
     <button class="splash-btn clients" onclick="chooseDashboard('clients')">Manage Clients</button>
   </div>
@@ -692,14 +814,19 @@
 
   <div id="main">
     <div id="tabs">
+      <button class="tab-btn" data-tab="home" onclick="switchTab('home')">Home</button>
+      <button class="tab-btn" data-tab="notifications" onclick="switchTab('notifications')">Notifications<span class="tab-badge" id="notifBadge"></span></button>
       <button class="tab-btn active" data-tab="candidates" onclick="switchTab('candidates')">Candidates</button>
       <button class="tab-btn" data-tab="candidatePool" onclick="switchTab('candidatePool')">Candidate Pool<span class="tab-badge" id="poolMissingBadge"></span></button>
+      <button class="tab-btn" data-tab="roles" onclick="switchTab('roles')">Roles</button>
+      <button class="tab-btn" data-tab="placements" onclick="switchTab('placements')">Placements</button>
       <button class="tab-btn" data-tab="leadClients" onclick="switchTab('leadClients')">Lead Clients</button>
       <button class="tab-btn" data-tab="clients" onclick="switchTab('clients')">Clients</button>
       <button class="tab-btn" data-tab="invoices" onclick="switchTab('invoices')">Invoices</button>
       <button class="tab-btn" data-tab="tasks" onclick="switchTab('tasks')">Tasks</button>
       <button class="tab-btn" data-tab="kpi" onclick="switchTab('kpi')">KPI Reporting</button>
       <button class="tab-btn" data-tab="coldCalls" onclick="switchTab('coldCalls')">Cold Call Tracker</button>
+      <div id="userChip"><span class="who">Signed in as <span id="userChipName"></span></span><button onclick="signOut()">Log out</button></div>
     </div>
     
     <div id="candidatesView" class="visible">
@@ -969,6 +1096,99 @@
       </div>
     </div>
 
+    <div id="homeView">
+      <div class="view-head">
+        <div>
+          <h2 id="homeWelcome">Welcome</h2>
+          <div class="sub" id="homeDate"></div>
+        </div>
+      </div>
+      <div class="view-body">
+        <div class="tile-grid" id="homeTiles"></div>
+        <div class="panel-grid">
+          <div class="panel">
+            <div class="panel-head">Needs attention <a onclick="switchTab('notifications')">View all</a></div>
+            <div class="panel-body" id="homeAttention"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head">My tasks <a onclick="switchTab('tasks')">Open tasks</a></div>
+            <div class="panel-body" id="homeTasks"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head">Pipeline by stage</div>
+            <div class="panel-body" id="homeFunnel"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head">Recent movement</div>
+            <div class="panel-body" id="homeRecent"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="notificationsView">
+      <div class="view-head">
+        <div>
+          <h2>Notifications</h2>
+          <div class="sub" id="notifSummary">Everything that needs action, in one place.</div>
+        </div>
+        <button class="gold-btn" onclick="refreshOps(true)">Refresh</button>
+      </div>
+      <div class="view-body" id="notifBody"></div>
+    </div>
+
+    <div id="rolesView">
+      <div class="view-head">
+        <div>
+          <h2>Roles</h2>
+          <div class="sub" id="rolesSummary"></div>
+        </div>
+        <button class="gold-btn" onclick="openRoleModal()">+ Add Role</button>
+      </div>
+      <div class="view-body">
+        <div class="filter-bar">
+          <input id="rolesSearch" placeholder="Search role, company or hiring manager" oninput="renderRoles()">
+          <select id="rolesStatusFilter" onchange="renderRoles()">
+            <option value="">All statuses</option>
+            <option value="open">Open</option>
+            <option value="hold">On hold</option>
+            <option value="filled">Filled</option>
+            <option value="lost">Lost</option>
+          </select>
+        </div>
+        <div class="ops-table-wrap">
+          <table class="ops-table">
+            <thead><tr>
+              <th>Role</th><th>Company</th><th>Hiring manager</th><th>Salary band</th><th>Fee</th>
+              <th>Status</th><th>Opened</th><th>Days open</th><th>Candidates</th><th style="text-align:right;">Actions</th>
+            </tr></thead>
+            <tbody id="rolesBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="placementsView">
+      <div class="view-head">
+        <div>
+          <h2>Placements and guarantee</h2>
+          <div class="sub" id="placementsSummary"></div>
+        </div>
+      </div>
+      <div class="view-body">
+        <div class="tile-grid" id="placementTiles"></div>
+        <div class="ops-table-wrap">
+          <table class="ops-table">
+            <thead><tr>
+              <th>Candidate</th><th>Role</th><th>Company</th><th>Start date</th><th>Salary</th><th>Invoice</th>
+              <th>Guarantee ends</th><th>Days left</th><th>Status</th><th style="text-align:right;">Actions</th>
+            </tr></thead>
+            <tbody id="placementsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <div id="candidatePoolView">
       <div id="poolHeader">
         <div>
@@ -1066,6 +1286,56 @@
           <button class="save" onclick="submitGenerateInvoice()">Generate &amp; Download</button>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="roleModal">
+  <div class="modal">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="closeModal('roleModal')">&times;</button>
+      <h2 id="roleModalTitle">Add role</h2>
+      <div class="simple-form">
+        <label>Company</label>
+        <input id="rmCompany" list="rmCompanyList" placeholder="Company name" oninput="rmRefreshContacts()">
+        <datalist id="rmCompanyList"></datalist>
+        <label>Role title</label>
+        <input id="rmRole" placeholder="e.g. Group Buyer">
+        <label>Hiring manager</label>
+        <input id="rmContact" list="rmContactList" placeholder="Contact name">
+        <datalist id="rmContactList"></datalist>
+        <div class="two-col">
+          <div><label>Salary band</label><input id="rmSalary" placeholder="e.g. 35,000 - 40,000"></div>
+          <div><label>Fee % (blank = standard scale)</label><input id="rmFee" placeholder="e.g. 20"></div>
+        </div>
+        <div class="two-col">
+          <div><label>Status</label>
+            <select id="rmStatus" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;">
+              <option value="open">Open</option><option value="hold">On hold</option>
+              <option value="filled">Filled</option><option value="lost">Lost</option>
+            </select>
+          </div>
+          <div><label>Date opened</label><input type="date" id="rmOpened"></div>
+        </div>
+        <label>Notes</label>
+        <textarea id="rmNotes" style="width:100%;min-height:70px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></textarea>
+        <div class="actions">
+          <button class="cancel" onclick="closeModal('roleModal')">Cancel</button>
+          <button class="save" onclick="saveRole()">Save role</button>
+        </div>
+        <div class="actions" id="rmDeleteRow" style="margin-top:8px;">
+          <button class="cancel" style="color:var(--danger);border-color:var(--danger);" onclick="deleteRole()">Delete role record</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="placementModal">
+  <div class="modal">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="closeModal('placementModal')">&times;</button>
+      <div id="placementModalBody"></div>
     </div>
   </div>
 </div>
@@ -1419,24 +1689,12 @@ let currentUserRole = null;
 
 function tryUnlock(){
   const pw = document.getElementById('gatePw').value;
-  if(pw === "l2h2026dan"){
-    currentUserRole = 'dan';
-    document.getElementById('gate').style.display = 'none';
-    document.getElementById('splashScreen').classList.remove('hidden');
-    renderSidebar();
-    loadCandidates();
-    loadApplicantClientList();
-  } else if(pw === "l2h2026"){
-    currentUserRole = 'ella';
-    document.getElementById('gate').style.display = 'none';
-    document.getElementById('splashScreen').classList.remove('hidden');
-    document.querySelector('.tab-btn[data-tab="invoices"]').style.display = 'none';
-    renderSidebar();
-    loadCandidates();
-    loadApplicantClientList();
-  } else {
+  const user = (typeof USERS !== 'undefined') ? USERS.find(u => u.password === pw) : null;
+  if(!user){
     document.getElementById('gateErr').textContent = "Incorrect password";
+    return;
   }
+  signIn(user);
 }
 document.getElementById('gatePw').addEventListener('keydown', e => { if(e.key === 'Enter') tryUnlock(); });
 
@@ -2133,6 +2391,14 @@ function switchTab(tab){
   document.getElementById('kpiReportingView').classList.toggle('visible', tab === 'kpi');
   document.getElementById('coldCallTrackerView').classList.toggle('visible', tab === 'coldCalls');
   document.getElementById('candidatePoolView').classList.toggle('visible', tab === 'candidatePool');
+  document.getElementById('homeView').classList.toggle('visible', tab === 'home');
+  document.getElementById('notificationsView').classList.toggle('visible', tab === 'notifications');
+  document.getElementById('rolesView').classList.toggle('visible', tab === 'roles');
+  document.getElementById('placementsView').classList.toggle('visible', tab === 'placements');
+  if(['home','notifications','roles','placements'].includes(tab)){
+    recomputeOps();
+    refreshOps(false);
+  }
   if(tab === 'candidatePool') loadCandidatePool();
   if(tab === 'leadClients') loadLeadClients();
   if(tab === 'clients') loadClients();
@@ -4228,6 +4494,623 @@ function renderCvReminder(){
       loadCandidatePool(true);
     }
   };
+})();
+
+</script>
+<script>
+/* ============================================================
+   Batch 1: individual logins, Home overview, Notifications,
+   Roles / Vacancies and Placements + guarantee tracker.
+
+   To add a new team member, add one line to USERS below:
+   {key:'sam', name:'Sam', password:'a-unique-password', admin:false}
+   - key: lowercase, no spaces, used to keep their tasks separate
+   - name: shown in "Welcome <name>"
+   - password: must be different from everyone else's
+   - admin: true only for Dan (invoices, KPI targets, business health)
+   ============================================================ */
+
+const USERS = [
+  {key:'dan',  name:'Dan',  password:'l2h2026dan', admin:true},
+  {key:'ella', name:'Ella', password:'l2h2026',    admin:false},
+];
+
+let signedInUser = null;
+
+function signIn(user){
+  signedInUser = user;
+  currentUserRole = user.key;
+  document.getElementById('gate').style.display = 'none';
+  document.getElementById('splashScreen').classList.remove('hidden');
+  document.getElementById('splashWelcome').innerHTML = 'Welcome <span>' + esc(user.name) + '</span>';
+  document.getElementById('homeWelcome').textContent = 'Welcome ' + user.name;
+  document.getElementById('homeDate').textContent =
+    new Date().toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+  document.getElementById('userChipName').textContent = user.name;
+  if(!user.admin){
+    const inv = document.querySelector('.tab-btn[data-tab="invoices"]');
+    if(inv) inv.style.display = 'none';
+  }
+  renderSidebar();
+  loadCandidates();
+  loadApplicantClientList();
+}
+
+function signOut(){ location.reload(); }
+
+function chooseHome(){
+  document.getElementById('splashScreen').classList.add('hidden');
+  document.getElementById('app').classList.add('visible');
+  switchTab('home');
+}
+
+/* ---------- shared helpers ---------- */
+
+const OPS = {tasks:[], invoices:[], placements:[], roles:[], notes:[], fetchedAt:0, loading:null, defaultWeeks:12};
+const STALE_DAYS = {interview_requested:3, interview_scheduled:7, interviewed:5, offer:5};
+
+function opsToday(){ return new Date().toISOString().slice(0,10); }
+function opsDaysBetween(a, b){ return Math.round((new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / 86400000); }
+function opsDateOnly(v){
+  if(!v) return '';
+  const s = String(v).trim();
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? '' : d.toISOString().slice(0,10);
+}
+function opsFmt(v){
+  const s = opsDateOnly(v);
+  if(!s) return '';
+  return new Date(s + 'T00:00:00Z').toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric', timeZone:'UTC'});
+}
+function opsMoney(n){ return '\u00A3' + Number(n || 0).toLocaleString('en-GB', {maximumFractionDigits:0}); }
+function opsTrunc(s, n){ s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '...' : s; }
+function opsIsVisible(id){ const el = document.getElementById(id); return !!(el && el.classList.contains('visible')); }
+
+function flatCandidates(){
+  const out = [];
+  Object.keys(DATA).forEach(co => Object.keys(DATA[co]).forEach(role => {
+    DATA[co][role].forEach(c => out.push({company:co, role, c}));
+  }));
+  return out;
+}
+
+/* ---------- data refresh ---------- */
+
+async function refreshOps(force){
+  if(!signedInUser) return;
+  if(OPS.loading) return OPS.loading;
+  if(!force && Date.now() - OPS.fetchedAt < 3 * 60 * 1000){ recomputeOps(); return; }
+  const get = async (path, headers) => {
+    try{
+      const r = await fetch(API_BASE + path, {headers: headers || {}});
+      return r.ok ? await r.json() : null;
+    }catch(e){ return null; }
+  };
+  const p = (async () => {
+    const hdr = {'X-User-Role': currentUserRole};
+    const [tasks, invoices, placements, roles] = await Promise.all([
+      get('/api/tasks', hdr),
+      signedInUser.admin ? get('/api/invoices') : Promise.resolve(null),
+      get('/api/placements'),
+      get('/api/roles'),
+    ]);
+    if(Array.isArray(tasks)) OPS.tasks = tasks;
+    if(invoices && invoices.data) OPS.invoices = invoices.data;
+    if(placements && placements.data){ OPS.placements = placements.data; OPS.defaultWeeks = placements.defaultWeeks || 12; }
+    if(roles && roles.data) OPS.roles = roles.data;
+    OPS.fetchedAt = Date.now();
+  })().then(() => { OPS.loading = null; recomputeOps(); }, () => { OPS.loading = null; recomputeOps(); });
+  OPS.loading = p;
+  return p;
+}
+
+function recomputeOps(){
+  OPS.notes = buildNotifications();
+  updateNotifBadge();
+  if(opsIsVisible('homeView')) renderHome();
+  if(opsIsVisible('notificationsView')) renderNotifications();
+  if(opsIsVisible('rolesView')) renderRoles();
+  if(opsIsVisible('placementsView')) renderPlacements();
+}
+
+/* ---------- merged roles (stored records plus roles seen on candidates) ---------- */
+
+function opsRoleKey(company, role){
+  return 'role-' + (company + '|' + role).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function mergedRoles(){
+  const list = OPS.roles.map(r => Object.assign({}, r, {stored:true}));
+  const same = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+  Object.keys(DATA).forEach(co => {
+    if(co === UNASSIGNED_LABEL) return;
+    Object.keys(DATA[co]).forEach(role => {
+      if(list.some(r => same(r.company, co) && same(r.role, role))) return;
+      const dates = DATA[co][role].map(c => opsDateOnly(c.date)).filter(Boolean).sort();
+      list.push({
+        id: opsRoleKey(co, role), company: co, role, contact: '', salary_band: '', fee_percent: '',
+        status: 'open', date_opened: dates[0] || '', date_closed: '', notes: '', stored: false,
+      });
+    });
+  });
+  list.forEach(r => {
+    let cands = [];
+    Object.keys(DATA).forEach(co => {
+      if(!same(co, r.company)) return;
+      Object.keys(DATA[co]).forEach(role => { if(same(role, r.role)) cands = cands.concat(DATA[co][role]); });
+    });
+    r.total = cands.length;
+    r.active = cands.filter(c => c.stage !== 'rejected' && c.stage !== 'applied').length;
+  });
+  return list;
+}
+
+/* ---------- notifications ---------- */
+
+function buildNotifications(){
+  const out = [];
+  if(!signedInUser) return out;
+  const today = opsToday();
+  const admin = signedInUser.admin;
+  const add = (sev, title, detail, act) => out.push({sev, title, detail, act});
+
+  OPS.tasks.forEach(t => {
+    if(t.status === 'Complete' || t.archived) return;
+    const due = opsDateOnly(t.dueDate);
+    if(!due) return;
+    const d = opsDaysBetween(due, today);
+    const ctx = opsTrunc(t.context, 90);
+    if(d > 0) add('high', 'Overdue task: ' + t.title, d + ' day' + (d === 1 ? '' : 's') + ' overdue' + (ctx ? ' - ' + ctx : ''), {type:'tab', tab:'tasks'});
+    else if(d === 0) add('med', 'Task due today: ' + t.title, ctx, {type:'tab', tab:'tasks'});
+  });
+
+  const unassigned = DATA[UNASSIGNED_LABEL] ? Object.keys(DATA[UNASSIGNED_LABEL]).reduce((n, r) => n + DATA[UNASSIGNED_LABEL][r].length, 0) : 0;
+  if(unassigned > 0){
+    add('med', unassigned + ' new application' + (unassigned === 1 ? ' needs' : 's need') + ' a company assigned',
+      'Assign a company and contact to move them into a client pipeline', {type:'unassigned'});
+  }
+
+  Object.keys(DATA).forEach(co => Object.keys(DATA[co]).forEach(role => DATA[co][role].forEach(c => {
+    const days = daysSince(c.date);
+    if(isNaN(days)) return;
+    const where = role + (co && co !== UNASSIGNED_LABEL ? ' at ' + co : '');
+    const act = {type:'candidate', company:co, role, id:c.id};
+    if(c.stage === 'submitted' && co !== UNASSIGNED_LABEL && days >= 1){
+      add(days >= 3 ? 'high' : 'med', 'Chase client for feedback: ' + c.name,
+        where + ' - submitted ' + days + ' day' + (days === 1 ? '' : 's') + ' ago', act);
+    }else if(STALE_DAYS[c.stage] && days >= STALE_DAYS[c.stage]){
+      add('med', 'No movement: ' + c.name, poolStageLabel(c.stage) + ' for ' + days + ' days - ' + where, act);
+    }
+  })));
+
+  if(typeof poolLoaded !== 'undefined' && poolLoaded){
+    const n = POOL.filter(poolNeedsCv).length;
+    if(n > 0) add('med', n + ' submitted candidate' + (n === 1 ? ' has' : 's have') + ' no CV on file', 'Upload them from the Candidate Pool tab', {type:'tab', tab:'candidatePool'});
+  }
+
+  if(admin){
+    OPS.invoices.forEach(inv => {
+      if(inv.status === 'paid') return;
+      const due = opsDateOnly(inv.dueDate);
+      if(due && opsDaysBetween(due, today) > 0){
+        add('high', 'Invoice overdue: ' + inv.number, inv.company + ' - ' + inv.candidateName + ' - ' + opsMoney(inv.amount) + ' (due ' + opsFmt(due) + ')', {type:'tab', tab:'invoices'});
+      }
+    });
+    OPS.placements.forEach(p => {
+      if(p.invoiceNumber || !p.salary || !p.startDate) return;
+      const diff = opsDaysBetween(today, p.startDate);
+      if(diff < 0) add('high', 'Invoice not raised: ' + p.name, p.company + ' - started ' + opsFmt(p.startDate), {type:'candidate', company:p.company, role:p.role, id:null, name:p.name});
+      else if(diff <= 3) add('med', 'Raise invoice: ' + p.name, p.company + ' - starts ' + opsFmt(p.startDate), {type:'candidate', company:p.company, role:p.role, id:null, name:p.name});
+    });
+  }
+
+  OPS.placements.forEach(p => {
+    if(p.status !== 'active' || p.daysLeft === null || p.daysLeft === undefined) return;
+    if(p.daysLeft < 0) add('low', 'Guarantee period finished: ' + p.name, p.company + ' - mark the placement as completed', {type:'tab', tab:'placements'});
+    else if(p.daysLeft <= 14) add('low', 'Guarantee ends in ' + p.daysLeft + ' day' + (p.daysLeft === 1 ? '' : 's') + ': ' + p.name, p.company + ' - ends ' + opsFmt(p.guaranteeEnd), {type:'tab', tab:'placements'});
+  });
+
+  OPS.roles.forEach(r => {
+    if(r.status !== 'open') return;
+    const merged = mergedRoles().find(m => m.id === r.id);
+    if(merged && merged.active === 0){
+      add('low', 'Open role has no active candidates: ' + r.role, r.company, {type:'tab', tab:'roles'});
+    }
+  });
+
+  const rank = {high:0, med:1, low:2};
+  out.sort((a, b) => rank[a.sev] - rank[b.sev]);
+  return out;
+}
+
+function updateNotifBadge(){
+  const el = document.getElementById('notifBadge');
+  if(!el) return;
+  const n = OPS.notes.length;
+  el.textContent = n > 0 ? String(n) : '';
+  el.classList.toggle('alert', OPS.notes.some(x => x.sev === 'high'));
+}
+
+function opsAct(i){
+  const n = OPS.notes[i];
+  if(!n || !n.act) return;
+  const a = n.act;
+  if(a.type === 'tab'){ switchTab(a.tab); return; }
+  if(a.type === 'unassigned'){
+    switchTab('candidates');
+    const roles = DATA[UNASSIGNED_LABEL] ? Object.keys(DATA[UNASSIGNED_LABEL]) : [];
+    if(roles.length) selectRole(UNASSIGNED_LABEL, roles[0]);
+    return;
+  }
+  if(a.type === 'candidate') opsOpenCandidate(a.company, a.role, a.id, a.name);
+}
+
+function opsOpenCandidate(company, role, id, name){
+  let realCompany = company, realRole = role, realId = id;
+  if(!realId){
+    const hit = flatCandidates().find(x => x.c.name === name && x.role === role);
+    if(!hit){ switchTab('candidates'); return; }
+    realCompany = hit.company; realRole = hit.role; realId = hit.c.id;
+  }
+  switchTab('candidates');
+  selectRole(realCompany, realRole);
+  setTimeout(() => { try{ openCandidateModal(realId); }catch(e){} }, 60);
+}
+
+function renderNotifications(){
+  const body = document.getElementById('notifBody');
+  const notes = OPS.notes;
+  document.getElementById('notifSummary').textContent = notes.length
+    ? notes.length + ' item' + (notes.length === 1 ? '' : 's') + ' need attention'
+    : 'Everything that needs action, in one place.';
+  if(!notes.length){
+    body.innerHTML = '<div class="all-clear"><strong>All clear</strong>Nothing needs your attention right now.</div>';
+    return;
+  }
+  const groups = [['high','Urgent'], ['med','Action needed'], ['low','For awareness']];
+  body.innerHTML = groups.map(([sev, label]) => {
+    const items = notes.map((n, i) => ({n, i})).filter(x => x.n.sev === sev);
+    if(!items.length) return '';
+    return '<div class="notif-group-title">' + label + ' (' + items.length + ')</div>' + items.map(x => `
+      <div class="notif-item ${sev}">
+        <div><div class="t">${esc(x.n.title)}</div><div class="d">${esc(x.n.detail)}</div></div>
+        <button onclick="opsAct(${x.i})">Open</button>
+      </div>`).join('');
+  }).join('');
+}
+
+/* ---------- Home ---------- */
+
+function renderHome(){
+  if(!signedInUser) return;
+  const cands = flatCandidates();
+  const count = stages => cands.filter(x => stages.includes(x.c.stage)).length;
+  const roles = mergedRoles();
+  const today = opsToday();
+  const myTasks = OPS.tasks.filter(t => t.status !== 'Complete' && !t.archived);
+  const dueNow = myTasks.filter(t => { const d = opsDateOnly(t.dueDate); return d && d <= today; }).length;
+  const inGuarantee = OPS.placements.filter(p => p.status === 'active' && (p.daysLeft === null || p.daysLeft >= 0)).length;
+  const outstanding = OPS.invoices.filter(i => i.status !== 'paid').reduce((s, i) => s + (i.amount || 0), 0);
+  const high = OPS.notes.filter(n => n.sev === 'high').length;
+
+  const tiles = [
+    {n: roles.filter(r => r.status === 'open').length, l:'Open roles', tab:'roles'},
+    {n: count(['applied']), l:'New applications', tab:'candidates'},
+    {n: count(['submitted']), l:'Awaiting client feedback', tab:'candidates'},
+    {n: count(['interview_requested','interview_scheduled','interviewed']), l:'In interview stages', tab:'candidates'},
+    {n: count(['offer']), l:'Offers out', tab:'candidates'},
+    {n: inGuarantee, l:'Placements in guarantee', tab:'placements'},
+    {n: dueNow, l:'Tasks due or overdue', tab:'tasks', warn: dueNow > 0},
+    {n: high, l:'Urgent notifications', tab:'notifications', warn: high > 0},
+  ];
+  if(signedInUser.admin) tiles.push({n: opsMoney(outstanding), l:'Invoices outstanding', tab:'invoices'});
+  document.getElementById('homeTiles').innerHTML = tiles.map(t =>
+    `<div class="tile ${t.warn ? 'warn' : ''}" onclick="switchTab('${t.tab}')"><div class="n">${esc(t.n)}</div><div class="l">${esc(t.l)}</div></div>`).join('');
+
+  const top = OPS.notes.slice(0, 6);
+  document.getElementById('homeAttention').innerHTML = top.length
+    ? top.map((n, i) => `<div class="mini-row"><div><div class="t"><span class="sev-dot ${n.sev}"></span>${esc(n.title)}</div><div class="d">${esc(n.detail)}</div></div><div class="r"><a style="color:var(--gold);cursor:pointer;" onclick="opsAct(${i})">Open</a></div></div>`).join('')
+    : '<div class="panel-empty">All clear. Nothing needs attention.</div>';
+
+  const soon = myTasks
+    .map(t => ({t, d: opsDateOnly(t.dueDate)}))
+    .filter(x => x.d)
+    .sort((a, b) => a.d.localeCompare(b.d))
+    .slice(0, 6);
+  document.getElementById('homeTasks').innerHTML = soon.length
+    ? soon.map(x => {
+        const diff = opsDaysBetween(x.d, today);
+        const label = diff > 0 ? diff + 'd overdue' : (diff === 0 ? 'Today' : opsFmt(x.d));
+        return `<div class="mini-row"><div><div class="t">${esc(x.t.title)}</div><div class="d">${esc(opsTrunc(x.t.context, 70))}</div></div><div class="r" style="${diff > 0 ? 'color:#B3372B;' : ''}">${esc(label)}</div></div>`;
+      }).join('')
+    : '<div class="panel-empty">No open tasks with a due date.</div>';
+
+  const stageList = STAGES.filter(s => s.key !== 'rejected');
+  const counts = stageList.map(s => ({label: s.label, n: cands.filter(x => x.c.stage === s.key).length}));
+  const max = Math.max(1, ...counts.map(c => c.n));
+  document.getElementById('homeFunnel').innerHTML = counts.map(c =>
+    `<div class="bar-row"><div>${esc(c.label)}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(c.n / max * 100)}%"></div></div><div class="c">${c.n}</div></div>`).join('');
+
+  const recent = cands
+    .map(x => ({x, d: opsDateOnly(x.c.date)}))
+    .filter(r => r.d)
+    .sort((a, b) => b.d.localeCompare(a.d))
+    .slice(0, 8);
+  document.getElementById('homeRecent').innerHTML = recent.length
+    ? recent.map(r => `<div class="mini-row"><div><div class="t">${esc(r.x.c.name)}</div><div class="d">${esc(r.x.role)}${r.x.company && r.x.company !== UNASSIGNED_LABEL ? ' - ' + esc(r.x.company) : ''}</div></div><div class="r">${esc(poolStageLabel(r.x.c.stage))}<br>${esc(opsFmt(r.d))}</div></div>`).join('')
+    : '<div class="panel-empty">No candidate activity yet.</div>';
+}
+
+/* ---------- Roles ---------- */
+
+let editingRoleId = null;
+
+function roleStatusLabel(s){ return {open:'Open', hold:'On hold', filled:'Filled', lost:'Lost'}[s] || 'Open'; }
+
+function renderRoles(){
+  const all = mergedRoles();
+  const q = (document.getElementById('rolesSearch').value || '').trim().toLowerCase();
+  const st = document.getElementById('rolesStatusFilter').value;
+  const today = opsToday();
+  const list = all.filter(r => {
+    if(st && r.status !== st) return false;
+    if(q && !(`${r.role} ${r.company} ${r.contact}`.toLowerCase().includes(q))) return false;
+    return true;
+  }).sort((a, b) => {
+    const order = {open:0, hold:1, filled:2, lost:3};
+    return (order[a.status] - order[b.status]) || String(b.date_opened).localeCompare(String(a.date_opened));
+  });
+  document.getElementById('rolesSummary').textContent =
+    all.filter(r => r.status === 'open').length + ' open, ' + all.length + ' total';
+  const body = document.getElementById('rolesBody');
+  if(!list.length){
+    body.innerHTML = '<tr><td colspan="10" class="empty-row">' + (all.length ? 'No roles match these filters.' : 'No roles yet. Add one to get started.') + '</td></tr>';
+    return;
+  }
+  body.innerHTML = list.map(r => {
+    const opened = opsDateOnly(r.date_opened);
+    const end = opsDateOnly(r.date_closed) || today;
+    const days = opened ? opsDaysBetween(opened, end) : '';
+    const hasBoard = !!(DATA[r.company] && Object.keys(DATA[r.company]).some(k => k.trim().toLowerCase() === r.role.trim().toLowerCase()));
+    return `<tr>
+      <td class="strong">${esc(r.role)}${r.stored ? '' : '<span class="status-pill auto" title="Created automatically from the pipeline">Auto</span>'}</td>
+      <td>${esc(r.company)}</td>
+      <td>${r.contact ? esc(r.contact) : '<span style="color:#bbb;">Not set</span>'}</td>
+      <td>${r.salary_band ? esc(r.salary_band) : '<span style="color:#bbb;">Not set</span>'}</td>
+      <td>${r.fee_percent ? esc(r.fee_percent) + '%' : '<span style="color:#bbb;">Standard</span>'}</td>
+      <td><span class="status-pill ${esc(r.status)}">${esc(roleStatusLabel(r.status))}</span></td>
+      <td>${esc(opsFmt(opened))}</td>
+      <td>${days === '' ? '' : esc(days)}</td>
+      <td>${r.active} active / ${r.total} total</td>
+      <td><div class="row-actions">
+        <button ${hasBoard ? '' : 'disabled'} onclick="rolesOpenBoard('${esc(r.id)}')">Pipeline</button>
+        <button onclick="openRoleModal('${esc(r.id)}')">Edit</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+function rolesOpenBoard(id){
+  const r = mergedRoles().find(x => x.id === id);
+  if(!r) return;
+  const co = Object.keys(DATA).find(c => c.trim().toLowerCase() === r.company.trim().toLowerCase());
+  if(!co) return;
+  const role = Object.keys(DATA[co]).find(k => k.trim().toLowerCase() === r.role.trim().toLowerCase());
+  if(!role) return;
+  switchTab('candidates');
+  selectRole(co, role);
+}
+
+function rmRefreshContacts(){
+  const company = document.getElementById('rmCompany').value.trim();
+  const contacts = (APPLICANT_CLIENT_LIST || []).filter(c => c.company === company && c.contactName);
+  document.getElementById('rmContactList').innerHTML = contacts.map(c => `<option value="${esc(c.contactName)}">`).join('');
+}
+
+function openRoleModal(id){
+  editingRoleId = id || null;
+  const r = id ? mergedRoles().find(x => x.id === id) : null;
+  const companies = [...new Set([].concat(
+    (APPLICANT_CLIENT_LIST || []).map(c => c.company),
+    Object.keys(DATA).filter(c => c !== UNASSIGNED_LABEL)
+  ).filter(Boolean))].sort();
+  document.getElementById('rmCompanyList').innerHTML = companies.map(c => `<option value="${esc(c)}">`).join('');
+  document.getElementById('roleModalTitle').textContent = r ? 'Edit role' : 'Add role';
+  document.getElementById('rmCompany').value = r ? r.company : '';
+  document.getElementById('rmRole').value = r ? r.role : '';
+  document.getElementById('rmContact').value = r ? r.contact : '';
+  document.getElementById('rmSalary').value = r ? r.salary_band : '';
+  document.getElementById('rmFee').value = r ? r.fee_percent : '';
+  document.getElementById('rmStatus').value = r ? r.status : 'open';
+  document.getElementById('rmOpened').value = r ? opsDateOnly(r.date_opened) : opsToday();
+  document.getElementById('rmNotes').value = r ? r.notes : '';
+  document.getElementById('rmDeleteRow').style.display = r && r.stored ? 'flex' : 'none';
+  rmRefreshContacts();
+  document.getElementById('roleModal').classList.add('visible');
+}
+
+async function saveRole(){
+  const company = document.getElementById('rmCompany').value.trim();
+  const role = document.getElementById('rmRole').value.trim();
+  if(!company || !role){ showToast('Enter both a company and a role title'); return; }
+  const status = document.getElementById('rmStatus').value;
+  const existing = editingRoleId ? mergedRoles().find(x => x.id === editingRoleId) : null;
+  let closed = '';
+  if(status === 'filled' || status === 'lost') closed = (existing && opsDateOnly(existing.date_closed)) || opsToday();
+  const body = {
+    id: editingRoleId || opsRoleKey(company, role),
+    company, role,
+    contact: document.getElementById('rmContact').value.trim(),
+    salary_band: document.getElementById('rmSalary').value.trim(),
+    fee_percent: document.getElementById('rmFee').value.trim().replace('%', ''),
+    status,
+    date_opened: document.getElementById('rmOpened').value || opsToday(),
+    date_closed: closed,
+    notes: document.getElementById('rmNotes').value,
+  };
+  try{
+    const res = await fetch(API_BASE + '/api/roles', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    if(!res.ok){ const err = await res.json().catch(() => ({})); throw new Error(err.error || ('Server returned ' + res.status)); }
+    const json = await res.json();
+    const i = OPS.roles.findIndex(x => x.id === body.id);
+    if(i >= 0) OPS.roles[i] = json.data; else OPS.roles.push(json.data);
+    closeModal('roleModal');
+    showToast('Role saved');
+    recomputeOps();
+  }catch(e){
+    showToast('Could not save role: ' + e.message);
+  }
+}
+
+async function deleteRole(){
+  if(!editingRoleId) return;
+  if(!confirm('Delete this role record? Candidates in the pipeline are not affected.')) return;
+  try{
+    const res = await fetch(API_BASE + '/api/roles/' + encodeURIComponent(editingRoleId), {method:'DELETE'});
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    OPS.roles = OPS.roles.filter(x => x.id !== editingRoleId);
+    closeModal('roleModal');
+    showToast('Role record deleted');
+    recomputeOps();
+  }catch(e){
+    showToast('Could not delete role: ' + e.message);
+  }
+}
+
+/* ---------- Placements and guarantee ---------- */
+
+let editingPlacementId = null;
+
+function placementState(p){
+  if(p.status === 'completed') return {cls:'completed', label:'Completed'};
+  if(p.status === 'left') return {cls:'left', label:'Left in guarantee'};
+  if(p.daysLeft !== null && p.daysLeft !== undefined && p.daysLeft < 0) return {cls:'hold', label:'Guarantee ended'};
+  return {cls:'active', label:'In guarantee'};
+}
+
+function renderPlacements(){
+  const list = OPS.placements;
+  const active = list.filter(p => p.status === 'active' && (p.daysLeft === null || p.daysLeft >= 0));
+  const ending = active.filter(p => p.daysLeft !== null && p.daysLeft <= 14);
+  const done = list.filter(p => p.status === 'completed').length;
+  const left = list.filter(p => p.status === 'left').length;
+  document.getElementById('placementsSummary').textContent =
+    list.length + ' placement' + (list.length === 1 ? '' : 's') + ' - guarantee defaults to ' + OPS.defaultWeeks + ' weeks and can be set per placement';
+  document.getElementById('placementTiles').innerHTML = [
+    {n:active.length, l:'In guarantee'},
+    {n:ending.length, l:'Ending within 14 days', warn: ending.length > 0},
+    {n:done, l:'Completed'},
+    {n:left, l:'Left in guarantee', warn: left > 0},
+  ].map(t => `<div class="tile static ${t.warn ? 'warn' : ''}"><div class="n">${t.n}</div><div class="l">${esc(t.l)}</div></div>`).join('');
+
+  const body = document.getElementById('placementsBody');
+  if(!list.length){
+    body.innerHTML = '<tr><td colspan="10" class="empty-row">No placements yet. Candidates appear here once they reach Start Date.</td></tr>';
+    return;
+  }
+  body.innerHTML = list.map(p => {
+    const st = placementState(p);
+    let dl = '';
+    if(p.status === 'active' && p.daysLeft !== null && p.daysLeft !== undefined){
+      const cls = p.daysLeft < 0 ? 'over' : (p.daysLeft <= 14 ? 'soon' : '');
+      dl = `<span class="days-left ${cls}">${p.daysLeft < 0 ? Math.abs(p.daysLeft) + ' days past' : p.daysLeft + ' days'}</span>`;
+    }
+    return `<tr>
+      <td class="strong">${esc(p.name)}</td>
+      <td>${esc(p.role)}</td>
+      <td>${esc(p.company)}</td>
+      <td>${p.startDate ? esc(opsFmt(p.startDate)) : '<span style="color:#bbb;">Not set</span>'}</td>
+      <td>${p.salary ? esc(opsMoney(String(p.salary).replace(/[^0-9.]/g, ''))) : '<span style="color:#bbb;">Not set</span>'}</td>
+      <td>${p.invoiceNumber ? esc(p.invoiceNumber) : '<span style="color:#bbb;">None yet</span>'}</td>
+      <td>${p.guaranteeEnd ? esc(opsFmt(p.guaranteeEnd)) + ' <span style="color:#bbb;">(' + p.guaranteeWeeks + 'w)</span>' : '<span style="color:#bbb;">Needs start date</span>'}</td>
+      <td>${dl}</td>
+      <td><span class="status-pill ${st.cls}">${esc(st.label)}</span>${p.status === 'left' && p.leftDate ? '<div style="font-size:11px;color:#999;margin-top:3px;">' + esc(opsFmt(p.leftDate)) + '</div>' : ''}</td>
+      <td><div class="row-actions"><button onclick="openPlacementModal('${esc(p.id)}')">Manage</button></div></td>
+    </tr>`;
+  }).join('');
+}
+
+function openPlacementModal(id){
+  const p = OPS.placements.find(x => x.id === id);
+  if(!p) return;
+  editingPlacementId = id;
+  const inputStyle = 'width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;';
+  document.getElementById('placementModalBody').innerHTML = `
+    <div class="modal-head">
+      <div class="avatar">${esc(initials(p.name))}</div>
+      <div><h2>${esc(p.name)}</h2><div class="role-sub">${esc(p.role)} &middot; ${esc(p.company)}</div></div>
+    </div>
+    <div class="two-col">
+      <div class="field-row"><label>Start date</label><div class="val">${p.startDate ? esc(opsFmt(p.startDate)) : 'Not set'}</div></div>
+      <div class="field-row"><label>Guarantee ends</label><div class="val">${p.guaranteeEnd ? esc(opsFmt(p.guaranteeEnd)) : 'Needs a start date'}</div></div>
+    </div>
+    <div class="simple-form">
+      <div class="two-col">
+        <div><label>Guarantee length (weeks)</label><input type="number" min="1" id="plWeeks" value="${esc(p.guaranteeWeeks)}"></div>
+        <div><label>Status</label>
+          <select id="plStatus" onchange="plToggleLeft()" style="${inputStyle}">
+            <option value="active" ${p.status === 'active' ? 'selected' : ''}>In guarantee</option>
+            <option value="completed" ${p.status === 'completed' ? 'selected' : ''}>Completed</option>
+            <option value="left" ${p.status === 'left' ? 'selected' : ''}>Left in guarantee</option>
+          </select>
+        </div>
+      </div>
+      <div id="plLeftBox" style="display:${p.status === 'left' ? 'block' : 'none'};">
+        <div class="two-col">
+          <div><label>Date they left</label><input type="date" id="plLeftDate" value="${esc(opsDateOnly(p.leftDate))}"></div>
+          <div><label>Reason</label><input id="plLeftReason" value="${esc(p.leftReason)}" placeholder="e.g. resigned, dismissed"></div>
+        </div>
+      </div>
+      <label>Notes</label>
+      <textarea id="plNotes" style="${inputStyle}min-height:70px;">${esc(p.notes)}</textarea>
+      <div class="actions">
+        <button class="cancel" onclick="closeModal('placementModal')">Cancel</button>
+        <button class="save" onclick="savePlacement()">Save</button>
+      </div>
+    </div>`;
+  document.getElementById('placementModal').classList.add('visible');
+}
+
+function plToggleLeft(){
+  document.getElementById('plLeftBox').style.display = document.getElementById('plStatus').value === 'left' ? 'block' : 'none';
+  if(document.getElementById('plStatus').value === 'left' && !document.getElementById('plLeftDate').value){
+    document.getElementById('plLeftDate').value = opsToday();
+  }
+}
+
+async function savePlacement(){
+  const weeks = parseInt(document.getElementById('plWeeks').value, 10);
+  if(!(weeks > 0)){ showToast('Enter the guarantee length in weeks'); return; }
+  const body = {
+    guaranteeWeeks: weeks,
+    status: document.getElementById('plStatus').value,
+    leftDate: document.getElementById('plLeftDate').value,
+    leftReason: document.getElementById('plLeftReason').value,
+    notes: document.getElementById('plNotes').value,
+  };
+  try{
+    const res = await fetch(API_BASE + '/api/placements/' + encodeURIComponent(editingPlacementId), {
+      method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    if(!res.ok) throw new Error('Server returned ' + res.status);
+    closeModal('placementModal');
+    showToast('Placement saved');
+    await refreshOps(true);
+  }catch(e){
+    showToast('Could not save placement: ' + e.message);
+  }
+}
+
+/* ---------- wiring ---------- */
+
+(function(){
+  const prev = loadCandidates;
+  loadCandidates = async function(){
+    await prev();
+    if(signedInUser){ refreshOps(false); recomputeOps(); }
+  };
+  setInterval(() => { if(signedInUser) refreshOps(true); }, 5 * 60 * 1000);
 })();
 
 </script>
