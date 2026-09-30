@@ -1038,6 +1038,7 @@
       </select>
       <div class="sync-status" id="syncStatus"><span class="sync-dot"></span><span id="syncTime">Last synced: never</span></div>
       <button id="addCandBtn" onclick="openAddCandidate()" style="display:none;padding:10px 16px;background:var(--dark);color:var(--white);border:none;border-radius:2px;font-family:inherit;font-size:12.5px;cursor:pointer;">+ Add candidate</button>
+      <button id="briefBtn" onclick="openBriefModal()" style="display:none;padding:10px 16px;background:#fff;color:var(--dark);border:1px solid var(--dark);border-radius:2px;font-family:inherit;font-size:12.5px;cursor:pointer;">Role brief</button>
       <button id="subSendBtn" onclick="subOpenSendForCurrentRole()" style="display:none;padding:10px 16px;background:var(--gold);color:var(--white);border:none;border-radius:2px;font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;">Send submissions</button>
     </div>
     <div id="subPendingBar" style="display:none;"></div>
@@ -1978,8 +1979,10 @@
         </div>
         <label>Positions available (how many people this role will place)</label>
         <input type="number" min="1" id="rmPositions" value="1">
-        <label>Role requirements <span style="color:#999;">(used to match candidates in submissions - one per line)</span></label>
-        <textarea id="rmRequirements" placeholder="e.g. Highly analytical&#10;Comfortable challenging suppliers&#10;Confident with senior stakeholders" style="width:100%;min-height:90px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></textarea>
+        <label>Key requirements <span style="color:#999;">(one per line - shared with every candidate submission for this role)</span></label>
+        <textarea id="rmRequirements" maxlength="20000" placeholder="e.g. Highly analytical&#10;Comfortable challenging suppliers&#10;Confident with senior stakeholders" style="width:100%;min-height:90px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></textarea>
+        <label>Job description <span style="color:#999;">(paste the full text)</span></label>
+        <textarea id="rmJobDescription" maxlength="40000" placeholder="Paste the client's job description here" style="width:100%;min-height:110px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></textarea>
         <label>Notes</label>
         <textarea id="rmNotes" style="width:100%;min-height:70px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></textarea>
         <div class="actions">
@@ -2035,6 +2038,26 @@
     <div class="modal-inner">
       <button class="modal-close" onclick="subClose()">&times;</button>
       <div id="subBody"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="briefOverlay">
+  <div class="modal wide">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="closeModal('briefOverlay')">&times;</button>
+      <h2 id="briefTitle">Role brief</h2>
+      <div class="role-sub">Added once per role. Every candidate submission for this role is matched against it, so you never re-type it.</div>
+      <div class="simple-form">
+        <label>Key requirements <span class="sub-hint">One per line, in the client's words. These become the rows of the fit table.</span></label>
+        <textarea id="brRequirements" maxlength="20000" style="width:100%;min-height:130px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;" placeholder="e.g. Highly analytical&#10;Comfortable challenging suppliers&#10;Confident with senior stakeholders"></textarea>
+        <label>Job description <span class="sub-hint">Paste the full text. Used if no key requirements are listed, and for context.</span></label>
+        <textarea id="brJd" maxlength="40000" style="width:100%;min-height:200px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;" placeholder="Paste the client's job description here"></textarea>
+        <div class="actions">
+          <button class="cancel" onclick="closeModal('briefOverlay')">Cancel</button>
+          <button class="save" onclick="saveBrief()">Save role brief</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -5412,7 +5435,7 @@ function mergedRoles(){
       const dates = DATA[co][role].map(c => opsDateOnly(c.date)).filter(Boolean).sort();
       list.push({
         id: opsRoleKey(co, role), company: co, role, contact: '', salary_band: '', fee_percent: '',
-        status: 'open', date_opened: dates[0] || '', date_closed: '', notes: '', requirements: '', positions: '1', stored: false,
+        status: 'open', date_opened: dates[0] || '', date_closed: '', notes: '', positions: '1', stored: false,
       });
     });
   });
@@ -5715,7 +5738,8 @@ function openRoleModal(id){
   document.getElementById('rmStatus').value = r ? r.status : 'open';
   document.getElementById('rmOpened').value = r ? opsDateOnly(r.date_opened) : opsToday();
   document.getElementById('rmNotes').value = r ? r.notes : '';
-  document.getElementById('rmRequirements').value = r && r.requirements ? r.requirements : '';
+  document.getElementById('rmRequirements').value = '';
+  document.getElementById('rmJobDescription').value = '';
   document.getElementById('rmPositions').value = r && r.positions ? r.positions : 1;
   document.getElementById('rmDeleteRow').style.display = r && r.stored ? 'flex' : 'none';
   rmRefreshContacts();
@@ -5740,7 +5764,6 @@ async function saveRole(){
     date_opened: document.getElementById('rmOpened').value || opsToday(),
     date_closed: closed,
     notes: document.getElementById('rmNotes').value,
-    requirements: document.getElementById('rmRequirements').value,
     positions: String(Math.max(1, parseInt(document.getElementById('rmPositions').value, 10) || 1)),
   };
   try{
@@ -9089,7 +9112,7 @@ async function moveBackStage(){
 let SUBS = [];   // light draft records: status only, no document text
 const SUB = {
   ctx: null, rec: null, sub: null, cv: null, view: 'prepare', tab: 'sub',
-  sources: null, callNotes: '', requirements: '', warnings: [], errors: {},
+  sources: null, callNotes: '', warnings: [], errors: {},
   sel: {}, full: {}, contactName: '', to: '', subject: '', body: '', emailEdited: false,
   batchIds: [], busy: false, loadingMsg: '',
 };
@@ -9124,7 +9147,6 @@ function subJoin(list){
 function subRows(text, min, max){ return Math.min(max || 16, Math.max(min || 3, String(text || '').split('\n').length + 1)); }
 function subBody(html){ document.getElementById('subBody').innerHTML = html; }
 function subCandidate(ctx){ return ((DATA[ctx.company] || {})[ctx.role] || []).find(x => x.id === ctx.id) || null; }
-function subRoleRec(company, role){ return mergedRoles().find(r => b2Same(r.company, company) && b2Same(r.role, role)) || null; }
 
 function subMergeLight(rec){
   const keys = ['id','candidate_id','candidate_name','role','company','status','contact_name','contact_email','batch_id','created_by','created_at','approved_at','sent_at'];
@@ -9138,6 +9160,7 @@ function subMergeLight(rec){
 
 async function subLoadDrafts(){
   if(!signedInUser) return;
+  briefsLoad();
   try{ SUBS = b2List(await b2Api('/api/submission-drafts')); }catch(e){ return; }
   subUpdateSendButton();
   subRenderPendingBar();
@@ -9233,12 +9256,99 @@ function subClose(){
   subRenderPendingBar();
 }
 
+/* ---------- role brief: job description and key requirements, entered once per role ---------- */
+
+let BRIEFS = [];
+
+function briefKey(role){ return String(role || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); }
+
+function briefFor(role){
+  const k = briefKey(role);
+  const b = BRIEFS.find(x => x.id === k);
+  if(b) return b;
+  // Older builds kept requirements on the role record
+  const legacy = (typeof OPS !== 'undefined' ? OPS.roles : []).find(r => briefKey(r.role) === k && String(r.requirements || '').trim());
+  return legacy ? {id: k, role, requirements: legacy.requirements, job_description: ''} : null;
+}
+
+function briefHas(role){
+  const b = briefFor(role);
+  return !!(b && (String(b.requirements || '').trim() || String(b.job_description || '').trim()));
+}
+
+async function briefsLoad(){
+  if(!signedInUser) return;
+  try{ BRIEFS = b2List(await b2Api('/api/role-briefs')); }catch(e){ return; }
+  briefUpdateButton();
+  if(typeof recomputeOps === 'function') try{ recomputeOps(); }catch(e){}
+}
+
+function briefUpdateButton(){
+  const btn = document.getElementById('briefBtn');
+  if(!btn) return;
+  if(boardScope.all || !currentRole){ btn.style.display = 'none'; return; }
+  const has = briefHas(currentRole);
+  btn.style.display = 'inline-block';
+  btn.textContent = has ? 'Role brief' : 'Add role brief';
+  btn.style.background = has ? '#fff' : '#FBF1D6';
+  btn.style.borderColor = has ? 'var(--dark)' : 'var(--gold)';
+  btn.title = has ? 'View or edit the job description and requirements for this role' : 'No job description or requirements yet - add them once for every candidate';
+}
+
+let briefCtx = null;
+
+function openBriefModal(role, after){
+  role = typeof role === 'string' && role ? role : currentRole;
+  if(!role){ showToast('Choose a role first'); return; }
+  briefCtx = {role, after: typeof after === 'function' ? after : null};
+  const b = briefFor(role) || {};
+  b2Set('brRequirements', b.requirements || '');
+  b2Set('brJd', b.job_description || '');
+  document.getElementById('briefTitle').textContent = 'Role brief - ' + role;
+  document.getElementById('briefOverlay').classList.add('visible');
+}
+
+async function briefPost(role, requirements, jd){
+  const body = {
+    id: briefKey(role), role, requirements: requirements || '', job_description: jd || '',
+    updated_by: signedInUser ? signedInUser.name : '', updated_at: new Date().toISOString(),
+  };
+  const json = await b2Post('/api/role-briefs', body);
+  const i = BRIEFS.findIndex(x => x.id === body.id);
+  if(i >= 0) BRIEFS[i] = json.data; else BRIEFS.push(json.data);
+}
+
+async function saveBrief(){
+  if(!briefCtx) return;
+  try{
+    await briefPost(briefCtx.role, b2Val('brRequirements').trim(), b2Val('brJd').trim());
+    closeModal('briefOverlay');
+    showToast('Role brief saved');
+    briefUpdateButton();
+    try{ recomputeOps(); }catch(e){}
+    const cb = briefCtx.after; briefCtx = null;
+    if(cb) cb();
+  }catch(e){ showToast('Could not save the role brief: ' + e.message); }
+}
+
+function briefSummaryHtml(role){
+  const b = briefFor(role);
+  const reqN = b && b.requirements ? String(b.requirements).split('\n').filter(x => x.trim()).length : 0;
+  const jdW = b && b.job_description ? String(b.job_description).trim().split(/\s+/).filter(Boolean).length : 0;
+  const btn = (label) => '<button class="sub-btn small" style="margin-top:8px;" onclick="openBriefModal(\'' + esc(role).replace(/'/g, '') + '\', function(){ subCollectPrepare(); subRender(); })">' + label + '</button>';
+  if(reqN || jdW){
+    const parts = [];
+    if(reqN) parts.push(reqN + ' key requirement' + (reqN === 1 ? '' : 's'));
+    if(jdW) parts.push('job description (' + jdW + ' words)');
+    return '<div class="sub-src ok" id="subBriefBox">Role brief on file: ' + parts.join(' and ') + '. Used for every candidate on this role.<br>' + btn('View or edit role brief') + '</div>';
+  }
+  return '<div class="sub-src bad" id="subBriefBox">No role brief for this role yet. Add the key requirements or the job description once and every candidate for this role will be matched against it. You can generate without it, but the fit table will be generic.<br>' + btn('Add role brief') + '</div>';
+}
+
 /* ---------- step 1: prepare ---------- */
 
 async function subShowPrepare(){
   const ctx = SUB.ctx;
-  const role = subRoleRec(ctx.company, ctx.role);
-  SUB.requirements = role && role.requirements ? role.requirements : '';
   SUB.sources = null;
   SUB.view = 'prepare';
   subRender();
@@ -9267,9 +9377,7 @@ function subPrepareHtml(){
   }
   return '<h2>Prepare submission</h2>' +
     '<div class="role-sub">' + esc(ctx.name) + ' &middot; ' + esc(ctx.role) + ' &middot; ' + esc(ctx.company) + '</div>' +
-    '<div class="sub-srcs">' + src + '</div>' +
-    '<label class="sub-label">Role requirements <span class="sub-hint">The fit table is built from these. Saved to the role for next time.</span></label>' +
-    '<textarea id="subReq" rows="' + subRows(SUB.requirements, 4, 10) + '" placeholder="One requirement per line, e.g. Highly analytical&#10;Comfortable challenging suppliers">' + esc(SUB.requirements) + '</textarea>' +
+    '<div class="sub-srcs">' + src + briefSummaryHtml(ctx.role) + '</div>' +
     '<label class="sub-label">Call notes <span class="sub-hint">Optional. Paste your notes or the call transcript.</span></label>' +
     '<textarea id="subNotes" rows="' + subRows(SUB.callNotes, 5, 12) + '" placeholder="What the candidate told you on the call: motivation, notice, salary, availability, examples...">' + esc(SUB.callNotes) + '</textarea>' +
     '<div class="sub-actions"><button class="sub-btn gold" onclick="subGenerate()">Generate draft</button>' +
@@ -9304,27 +9412,8 @@ function subUploadCv(){
 }
 
 function subCollectPrepare(){
-  const r = document.getElementById('subReq'), n = document.getElementById('subNotes');
-  if(r) SUB.requirements = r.value;
+  const n = document.getElementById('subNotes');
   if(n) SUB.callNotes = n.value;
-}
-
-async function subSaveRequirements(text){
-  const ctx = SUB.ctx;
-  const r = subRoleRec(ctx.company, ctx.role);
-  if(r && String(r.requirements || '') === String(text || '')) return;
-  const body = {
-    id: r ? r.id : opsRoleKey(ctx.company, ctx.role), company: ctx.company, role: ctx.role,
-    contact: r ? (r.contact || '') : '', salary_band: r ? (r.salary_band || '') : '', fee_percent: r ? (r.fee_percent || '') : '',
-    status: r ? (r.status || 'open') : 'open', date_opened: r ? (opsDateOnly(r.date_opened) || opsToday()) : opsToday(),
-    date_closed: r ? (opsDateOnly(r.date_closed) || '') : '', notes: r ? (r.notes || '') : '',
-    positions: String(r && r.positions ? r.positions : 1), requirements: text || '',
-  };
-  try{
-    const json = await b2Post('/api/roles', body);
-    const i = OPS.roles.findIndex(x => x.id === body.id);
-    if(i >= 0) OPS.roles[i] = json.data; else OPS.roles.push(json.data);
-  }catch(e){ /* the draft still works without saving the requirements */ }
 }
 
 /* ---------- step 2: generate ---------- */
@@ -9336,11 +9425,10 @@ async function subGenerate(){
   SUB.view = 'loading';
   SUB.loadingMsg = 'Reading the CV and application answers and writing the submission and anonymised CV. This usually takes 30 to 60 seconds.';
   subRender();
-  await subSaveRequirements(SUB.requirements);
   try{
     const res = await fetch(API_BASE + '/api/submissions/generate', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({name: c.name, role: ctx.role, company: ctx.company, callNotes: SUB.callNotes, requirements: SUB.requirements, cardNotes: c.notes || ''}),
+      body: JSON.stringify({name: c.name, role: ctx.role, company: ctx.company, callNotes: SUB.callNotes, cardNotes: c.notes || ''}),
     });
     const json = await res.json().catch(() => ({}));
     if(!res.ok) throw new Error(json.error || ('Server returned ' + res.status));
@@ -9883,7 +9971,7 @@ function subRender(){
 
   // Keep the "Send submissions" button correct after every board draw
   const _rb = renderBoard;
-  renderBoard = function(){ _rb(); subUpdateSendButton(); };
+  renderBoard = function(){ _rb(); subUpdateSendButton(); briefUpdateButton(); };
 
   // Load drafts soon after sign in
   const _si = signIn;
@@ -9906,6 +9994,54 @@ function subRender(){
       });
     }catch(e){}
     return out;
+  };
+
+
+  // Prompt for a role brief as soon as applications arrive for a role that has none
+  const _bn2 = buildNotifications;
+  buildNotifications = function(){
+    const out = _bn2();
+    try{
+      const seen = {};
+      Object.keys(DATA).forEach(co => Object.keys(DATA[co]).forEach(role => {
+        const waiting = DATA[co][role].filter(c => c.stage === 'applied' || c.stage === 'ready_to_submit').length;
+        if(!waiting || briefHas(role) || seen[role]) return;
+        seen[role] = true;
+        out.push({sev: 'med', title: 'Add a role brief for ' + role, detail: waiting + ' candidate' + (waiting === 1 ? '' : 's') + ' waiting. Add the job description or key requirements once so submissions match the role.', act: {type: 'brief', role, company: co}});
+      }));
+    }catch(e){}
+    return out;
+  };
+
+  const _oa = opsAct;
+  opsAct = function(i){
+    const n = OPS.notes[i];
+    if(n && n.act && n.act.type === 'brief'){
+      switchTab('candidates');
+      selectRole(n.act.company, n.act.role);
+      setTimeout(() => openBriefModal(n.act.role), 80);
+      return;
+    }
+    _oa(i);
+  };
+
+  // The role form edits the same shared brief
+  const _orm = openRoleModal;
+  openRoleModal = function(id){
+    _orm(id);
+    const b = briefFor(b2Val('rmRole'));
+    b2Set('rmRequirements', b ? b.requirements || '' : '');
+    b2Set('rmJobDescription', b ? b.job_description || '' : '');
+  };
+  const _srl = saveRole;
+  saveRole = async function(){
+    const role = b2Val('rmRole').trim(), req = b2Val('rmRequirements').trim(), jd = b2Val('rmJobDescription').trim();
+    await _srl();
+    if(!role || document.getElementById('roleModal').classList.contains('visible')) return;
+    const b = briefFor(role);
+    if(!req && !jd && !(b && (b.requirements || b.job_description))) return;
+    if(b && String(b.requirements || '').trim() === req && String(b.job_description || '').trim() === jd) return;
+    try{ await briefPost(role, req, jd); briefUpdateButton(); }catch(e){ showToast('Role saved, but the role brief could not be saved: ' + e.message); }
   };
 
   // Merge fields for the new client submission template
