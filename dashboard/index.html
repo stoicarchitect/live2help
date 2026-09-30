@@ -10091,6 +10091,8 @@ function subRender(){
   .cl-sites{margin:12px 0 6px;border-top:1px solid var(--border);padding-top:10px;}
   .cl-sites-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:#8a7638;font-weight:600;}
   .site-add-btns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;text-transform:none;letter-spacing:0;}
+  .cl-sites-head button.del,.site-row button.del{color:#a33;border-color:#e3b9b9;}
+  .cl-sites-head button.del:hover,.site-row button.del:hover{border-color:#a33;color:#a33;background:#fdf3f3;}
   .cl-sites-head button.site-add{border-color:var(--gold);color:#8a6a12;font-weight:600;}
   .cl-sites-head button,.site-row button{padding:4px 10px;border:1px solid var(--border);background:#fff;color:var(--grey);border-radius:2px;font-size:11.5px;cursor:pointer;font-family:inherit;}
   .cl-sites-head button:hover,.site-row button:hover{border-color:var(--dark);color:var(--dark);}
@@ -10397,10 +10399,8 @@ function siteStatus(s){
 function siteHasData(s){ return !!(s && (Object.values(siteFields(s)).some(v => String(v || '').trim()))); }
 
 function sitesBlockHtml(company, contacts){
-  let list = sitesFor(company);
-  const c0 = (contacts && contacts[0]) || {};
+  const list = sitesFor(company);
   const co = escapeAttr(company);
-  if(!list.length) list = [{id:'', company, site_name:'Main site', address:c0.address || '', postcode:c0.postcode || '', virtual:true, logistics_json:'{}'}];
   const rows = list.map(s => {
     const st = siteStatus(s);
     const sid = escapeAttr(s.id || '');
@@ -10408,34 +10408,77 @@ function sitesBlockHtml(company, contacts){
       <span class="chip ${st.cls}">${st.text}</span>
       <button onclick="siteQuickUpload('${co}','${sid}')">${s.pdf_file_id || siteHasData(s) ? 'Replace PDF' : 'Upload PDF'}</button>
       ${s.pdf_file_id ? `<button onclick="siteRemovePdf('${sid}')">Remove PDF</button>` : ''}
-      <button onclick="openSiteModal('${co}','${sid}')">${s.virtual ? 'Add manually' : 'Edit'}</button></div>`;
+      <button onclick="openSiteModal('${co}','${sid}')">Edit</button>
+      <button class="del" onclick="siteDeleteById('${sid}')">Delete</button></div>`;
   }).join('');
-  const saved = sitesFor(company).length;
-  const addBtns = `<span class="site-add-btns"><button class="site-add" onclick="siteQuickUpload('${co}','','new')">+ Add ${saved ? 'another ' : 'a '}site from PDF</button><button class="site-add" onclick="openSiteModal('${co}','',true)">+ Add ${saved ? 'another ' : 'a '}site manually</button></span>`;
-  return `<div class="cl-sites"><div class="cl-sites-head"><span>Sites</span>${addBtns}</div>${rows}</div>`;
+  const saved = list.length;
+  const addBtns = `<span class="site-add-btns"><button class="site-add" onclick="siteQuickUpload('${co}','','new')">+ Add ${saved ? 'another ' : 'a '}site from PDF</button><button class="site-add" onclick="openSiteModal('${co}','',true)">+ Add ${saved ? 'another ' : 'a '}site manually</button>${saved ? `<button class="del" onclick="siteDeleteAll('${co}')">Delete all sites</button>` : ''}</span>`;
+  const empty = saved ? '' : '<div class="note-line" style="margin:6px 0 2px;">No sites added yet. Upload the client\'s completed site onboarding PDF, or add a site by hand.</div>';
+  return `<div class="cl-sites"><div class="cl-sites-head"><span>Sites</span>${addBtns}</div>${empty}${rows}</div>`;
 }
 
-
-async function siteRemovePdf(id, fromModal){
-  const site = SITES.find(s => s.id === id);
-  const fileId = fromModal ? (SITE_ED && SITE_ED.pdfId) : (site && site.pdf_file_id);
-  if(!fileId && !(site && site.pdf_link)){ showToast('There is no PDF to remove'); return; }
-  if(!confirm('Remove this PDF? It moves to the bin in Google Drive. The site details stay as they are.')) return;
+/* ---------- Reading the form's typed-in answers in the browser ----------
+   A fillable PDF keeps what the client typed in form fields, not in the page text.
+   pdf-lib is loaded from the same CDN as the other libraries, so nothing needs installing. */
+let PDFLIB_PROMISE = null;
+function loadPdfLibBrowser(){
+  if(window.PDFLib) return Promise.resolve(window.PDFLib);
+  if(PDFLIB_PROMISE) return PDFLIB_PROMISE;
+  PDFLIB_PROMISE = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+    s.onload = () => window.PDFLib ? resolve(window.PDFLib) : reject(new Error('the PDF reader did not start'));
+    s.onerror = () => { PDFLIB_PROMISE = null; reject(new Error('the PDF reader could not be downloaded')); };
+    document.head.appendChild(s);
+  });
+  return PDFLIB_PROMISE;
+}
+async function readPdfFormInBrowser(b64){
   try{
-    const q = fileId ? '?fileId=' + encodeURIComponent(fileId) : '';
-    const j = await b2Api('/api/client-sites/' + encodeURIComponent(id) + '/pdf' + q, {method:'DELETE'});
-    if(site){
-      const i = SITES.findIndex(s => s.id === id);
-      if(j.data && i >= 0) SITES[i] = j.data; else { site.pdf_file_id = ''; site.pdf_link = ''; site.pdf_name = ''; }
-    }
-    if(fromModal && SITE_ED){
-      SITE_ED.pdfId = ''; SITE_ED.pdfLink = ''; SITE_ED.pdfName = '';
-      const st = document.getElementById('siteUploadStatus'); if(st) st.innerHTML = 'PDF removed.';
-      const rw = document.getElementById('siteRmWrap'); if(rw) rw.style.display = 'none';
-    }
-    showToast(j.driveNote ? 'PDF removed from the site, but Drive said: ' + j.driveNote : 'PDF removed');
-    loadClients();
-  }catch(e){ showToast('Could not remove the PDF: ' + e.message); }
+    const lib = await loadPdfLibBrowser();
+    const doc = await lib.PDFDocument.load(b64, {ignoreEncryption:true, updateMetadata:false});
+    const fields = doc.getForm().getFields();
+    const values = {};
+    fields.forEach(f => {
+      let v = '';
+      try{
+        if(f instanceof lib.PDFCheckBox) v = f.isChecked();
+        else if(f instanceof lib.PDFTextField) v = String(f.getText() || '').replace(/\s+/g, ' ').trim();
+        else if(f instanceof lib.PDFRadioGroup) v = String(f.getSelected() || '');
+        else if(f instanceof lib.PDFDropdown || f instanceof lib.PDFOptionList) v = (f.getSelected() || []).join(', ');
+      }catch(e){ v = ''; }
+      values[f.getName()] = v;
+    });
+    const hasValues = Object.values(values).some(v => v === true || (typeof v === 'string' && v.trim()));
+    return {ok:true, values, count: fields.length, hasValues};
+  }catch(e){
+    return {ok:false, error: e.message};
+  }
+}
+
+/* ---------- Deleting sites completely ---------- */
+async function siteDeleteById(id, fromModal){
+  const site = SITES.find(s => s.id === id);
+  const label = site ? (site.company + ' - ' + (site.site_name || 'site')) : 'this site';
+  if(!confirm('Delete ' + label + ' completely?\n\nThe site details are removed and its PDF moves to the Drive bin. This cannot be undone.')) return;
+  try{
+    const j = await b2Post('/api/client-sites/' + encodeURIComponent(id) + '/delete', {});
+    SITES = SITES.filter(s => s.id !== id);
+    if(fromModal) closeModal('siteModal');
+    showToast(j.driveNote ? 'Site deleted, but Drive said: ' + j.driveNote : 'Site deleted');
+    await loadClients();
+  }catch(e){ showToast('Could not delete the site: ' + e.message); }
+}
+async function siteDeleteAll(company){
+  const n = sitesFor(company).length;
+  if(!n){ showToast('There are no sites to delete'); return; }
+  if(!confirm('Delete all ' + n + ' site' + (n === 1 ? '' : 's') + ' for ' + company + '?\n\nTheir details are removed and the PDFs move to the Drive bin. You can then start again. This cannot be undone.')) return;
+  try{
+    const j = await b2Post('/api/client-sites/delete-all', {company});
+    SITES = SITES.filter(s => !b2Same(s.company, company));
+    showToast(j.driveNote ? 'Sites deleted, but Drive said: ' + j.driveNote : 'All sites deleted for ' + company);
+    await loadClients();
+  }catch(e){ showToast('Could not delete the sites: ' + e.message); }
 }
 
 /* Upload the client's completed site onboarding PDF straight from the client card.
@@ -10461,7 +10504,9 @@ async function siteProcessUpload(company, existing, file, forceNew){
   try{
     const b64 = await fileToB64(file);
     const guess = existing ? existing.site_name : (others.length ? '' : 'Main site');
-    const j = await b2Post('/api/client-sites/' + encodeURIComponent(id) + '/pdf', {company, siteName: guess, fileName: file.name, fileData: b64});
+    const form = await readPdfFormInBrowser(b64);
+    const j = await b2Post('/api/client-sites/' + encodeURIComponent(id) + '/pdf', {company, siteName: guess, fileName: file.name, fileData: b64, formValues: form.ok ? form.values : undefined});
+    j._formNote = form.ok ? '' : form.error;
     const ex = j.extracted;
     const fields = {};
     SITE_FIELD_DEFS.forEach(d => { fields[d.key] = ex ? String(ex[d.key] || '').trim() : ''; });
@@ -10485,6 +10530,7 @@ async function siteProcessUpload(company, existing, file, forceNew){
       <h2>${esc(company)} - ${esc(body.site_name)}</h2>
       ${ex && found > 0 ? `<div class="upload-box"><strong>${found} details added from the form.</strong><br>${esc(siteAddressLine(body)) || 'No address found on the form.'}<br>They are marked "Needs checking" until you review them.</div>` : ''}
       ${!ex || found === 0 ? `<div class="warn-box"><strong>Nothing could be read from this form.</strong> The PDF has been saved, but no details were added. Check the form has been filled in and saved as a PDF (not printed or scanned), or use Review and edit to type them in.</div>` : ''}
+      <div class="note-line" style="margin:6px 0;">${j.readBy === 'form' ? "Read from the answers typed into the form." : j.readBy === 'ai' ? "The typed-in answers could not be found, so the pages were read instead." : "Nothing could be read."}${j._formNote ? ' (Form reader: ' + esc(j._formNote) + ')' : ''}</div>
       ${j.file ? `<div class="note-line" style="margin:6px 0;">Saved to Drive: <a href="${esc(j.file.link)}" target="_blank" rel="noopener">${esc(j.file.name)}</a></div>` : ''}
       ${j.fileError ? `<div class="warn-box">The PDF could not be saved to Drive (${esc(j.fileError)}). The details were still saved.</div>` : ''}
       ${j.warning ? `<div class="warn-box">${esc(j.warning)}</div>` : ''}
@@ -10559,7 +10605,7 @@ function openSiteModal(company, id, forceNew){
     </label>
     <div class="stage-buttons">
       <button onclick="closeModal('siteModal')">Cancel</button>
-      ${existing ? '<button class="reject" onclick="siteDelete()">Delete site</button>' : ''}
+      ${existing ? '<button class="reject" onclick="siteDeleteById(SITE_ED.id, true)">Delete site completely</button>' : ''}
       <button class="primary" onclick="siteSave()">Save site</button>
     </div>`;
   document.getElementById('siteModal').classList.add('visible');
@@ -10574,8 +10620,10 @@ async function siteUploadPdf(){
   status.innerHTML = 'Reading the form. This can take up to a minute...';
   try{
     const b64 = await fileToB64(file);
+    const form = await readPdfFormInBrowser(b64);
     const j = await b2Post('/api/client-sites/' + encodeURIComponent(SITE_ED.id) + '/pdf', {
       company: SITE_ED.company, siteName: b2Val('siteName').trim(), fileName: file.name, fileData: b64,
+      formValues: form.ok ? form.values : undefined,
     });
     const ex = j.extracted;
     let filled = 0;
