@@ -775,6 +775,42 @@ app.post('/api/applications/:role', async (req, res) => {
 });
 
 // Delete a candidate by id
+// Find a form-application candidate by id across every "Applications - [Role]" tab
+async function findApplicationRowById(id) {
+  const sheets = getSheetsClient();
+  const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
+  for (const tab of spreadsheet.data.sheets) {
+    const tabName = tab.properties.title;
+    if (!tabName.startsWith('Applications -')) continue;
+    const result = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: `'${tabName}'!A2:Z`,
+    });
+    const rows = result.data.values || [];
+    const idx = rows.findIndex(r => r && r[0] === id && r[2]);
+    if (idx === -1) continue;
+    const row = rows[idx];
+    return {
+      tabName,
+      sheetRowNumber: idx + 2,
+      candidate: {
+        id: row[0] || '',
+        company: row[17] || '',
+        contact: row[18] || '',
+        role: tabName.replace('Applications - ', ''),
+        name: row[2] || '',
+        stage: row[19] || 'applied',
+        date: row[1] || '',
+        notes: row[20] || '',
+        salary: row[15] || '',
+        email: row[3] || '',
+        phone: row[4] || '',
+      },
+    };
+  }
+  return null;
+}
+
 app.delete('/api/candidates/:id', async (req, res) => {
   try {
     const id = req.params.id;
@@ -786,7 +822,26 @@ app.delete('/api/candidates/:id', async (req, res) => {
     const rowIndex = rows.findIndex(r => r[0] === id);
 
     if (rowIndex === -1) {
-      return res.status(404).json({ error: 'candidate not found' });
+      // Not on the Dashboard tab: Applied (and not-yet-graduated Submitted) candidates
+      // live only in their "Applications - [Role]" tab, so look there by id.
+      const app = await findApplicationRowById(id);
+      if (!app) {
+        return res.status(404).json({ error: 'candidate not found' });
+      }
+      try {
+        const gone = app.candidate;
+        if (gone.name && gone.role) {
+          auditLog(actorOf(req), 'candidate_deleted', 'candidate', `${gone.name} - ${gone.role}`, `stage ${gone.stage}`);
+          await upsertPoolEntry({ ...gone, dateAdded: gone.date, source: 'application' }, false);
+        }
+      } catch (snapErr) {
+        console.error('Could not snapshot application to pool before delete:', snapErr.message);
+      }
+      await sheets.spreadsheets.values.clear({
+        spreadsheetId: SHEET_ID,
+        range: `'${app.tabName}'!A${app.sheetRowNumber}:Z${app.sheetRowNumber}`,
+      });
+      return res.json({ ok: true, deleted: id, source: 'application' });
     }
 
     try {
