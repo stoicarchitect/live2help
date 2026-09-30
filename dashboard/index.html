@@ -10129,11 +10129,11 @@ function subRender(){
   #folderBtn:hover{border-color:var(--dark);color:var(--dark);}
 </style>
 
-<div class="modal-overlay" id="siteModal">
+<div class="modal-overlay" id="csSiteModal">
   <div class="modal xwide">
     <div class="modal-inner">
-      <button class="modal-close" onclick="closeModal('siteModal')">&times;</button>
-      <div id="siteBody"></div>
+      <button class="modal-close" onclick="closeModal('csSiteModal')">&times;</button>
+      <div id="csSiteBody"></div>
     </div>
   </div>
 </div>
@@ -10408,11 +10408,11 @@ function sitesBlockHtml(company, contacts){
       <span class="chip ${st.cls}">${st.text}</span>
       <button onclick="siteQuickUpload('${co}','${sid}')">${s.pdf_file_id || siteHasData(s) ? 'Replace PDF' : 'Upload PDF'}</button>
       ${s.pdf_file_id ? `<button onclick="siteRemovePdf('${sid}')">Remove PDF</button>` : ''}
-      <button onclick="openSiteModal('${co}','${sid}')">Edit</button>
+      <button onclick="openClientSiteModal('${co}','${sid}')">Edit</button>
       <button class="del" onclick="siteDeleteById('${sid}')">Delete</button></div>`;
   }).join('');
   const saved = list.length;
-  const addBtns = `<span class="site-add-btns"><button class="site-add" onclick="siteQuickUpload('${co}','','new')">+ Add ${saved ? 'another ' : 'a '}site from PDF</button><button class="site-add" onclick="openSiteModal('${co}','',true)">+ Add ${saved ? 'another ' : 'a '}site manually</button>${saved ? `<button class="del" onclick="siteDeleteAll('${co}')">Delete all sites</button>` : ''}</span>`;
+  const addBtns = `<span class="site-add-btns"><button class="site-add" onclick="siteQuickUpload('${co}','','new')">+ Add ${saved ? 'another ' : 'a '}site from PDF</button><button class="site-add" onclick="openClientSiteModal('${co}','',true)">+ Add ${saved ? 'another ' : 'a '}site manually</button>${saved ? `<button class="del" onclick="siteDeleteAll('${co}')">Delete all sites</button>` : ''}</span>`;
   const empty = saved ? '' : '<div class="note-line" style="margin:6px 0 2px;">No sites added yet. Upload the client\'s completed site onboarding PDF, or add a site by hand.</div>';
   return `<div class="cl-sites"><div class="cl-sites-head"><span>Sites</span>${addBtns}</div>${empty}${rows}</div>`;
 }
@@ -10427,8 +10427,9 @@ function loadPdfLibBrowser(){
   PDFLIB_PROMISE = new Promise((resolve, reject) => {
     const s = document.createElement('script');
     s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
-    s.onload = () => window.PDFLib ? resolve(window.PDFLib) : reject(new Error('the PDF reader did not start'));
-    s.onerror = () => { PDFLIB_PROMISE = null; reject(new Error('the PDF reader could not be downloaded')); };
+    const timer = setTimeout(() => { PDFLIB_PROMISE = null; reject(new Error('the PDF reader took too long to download')); }, 10000);
+    s.onload = () => { clearTimeout(timer); window.PDFLib ? resolve(window.PDFLib) : reject(new Error('the PDF reader did not start')); };
+    s.onerror = () => { clearTimeout(timer); PDFLIB_PROMISE = null; reject(new Error('the PDF reader could not be downloaded')); };
     document.head.appendChild(s);
   });
   return PDFLIB_PROMISE;
@@ -10506,7 +10507,7 @@ function mapSiteFormLocal(v){
   return out;
 }
 function countSiteDetailsLocal(ex){ return SITE_FIELD_DEFS.filter(d => String((ex && ex[d.key]) || '').trim()).length; }
-const DASH_VERSION = 'r9';
+const DASH_VERSION = 'r10';
 const SITE_DIAG = {};
 function siteFormDiag(form, serverRead){
   const filled = form.ok ? Object.values(form.values).filter(x => x === true || (typeof x === 'string' && x.trim())).length : 0;
@@ -10522,7 +10523,7 @@ async function siteDeleteById(id, fromModal){
   try{
     const j = await b2Post('/api/client-sites/' + encodeURIComponent(id) + '/delete', {});
     SITES = SITES.filter(s => s.id !== id);
-    if(fromModal) closeModal('siteModal');
+    if(fromModal) closeModal('csSiteModal');
     showToast(j.driveNote ? 'Site deleted, but Drive said: ' + j.driveNote : 'Site deleted');
     await loadClients();
   }catch(e){ showToast('Could not delete the site: ' + e.message); }
@@ -10556,9 +10557,9 @@ async function siteProcessUpload(company, existing, file, forceNew){
   const others = sitesFor(company);
   const id = existing ? existing.id : b2Id('site');
   const c0 = (clientsData || []).find(c => b2Same(c.company, company)) || {};
-  const box = document.getElementById('siteBody');
+  const box = document.getElementById('csSiteBody');
   box.innerHTML = `<h2>${esc(company)}</h2><div class="ip-busy">Reading ${esc(file.name)}...<br>This can take up to a minute. Please keep this window open.</div>`;
-  document.getElementById('siteModal').classList.add('visible');
+  document.getElementById('csSiteModal').classList.add('visible');
   try{
     const b64 = await fileToB64(file);
     const guess = existing ? existing.site_name : (others.length ? '' : 'Main site');
@@ -10598,13 +10599,13 @@ async function siteProcessUpload(company, existing, file, forceNew){
       ${j.warning ? `<div class="warn-box">${esc(j.warning)}</div>` : ''}
       ${miss.length ? `<div class="warn-box">The form did not answer:<ul>${miss.map(m => `<li>${esc(m)}</li>`).join('')}</ul>Ask the client for these, or add them under Review and edit.</div>` : ''}
       <div class="stage-buttons">
-        <button onclick="closeModal('siteModal')">Done</button>
-        <button class="primary" onclick="closeModal('siteModal');openSiteModal('${escapeAttr(company)}','${escapeAttr(id)}')">Review and edit</button>
+        <button onclick="closeModal('csSiteModal')">Done</button>
+        <button class="primary" onclick="closeModal('csSiteModal');openClientSiteModal('${escapeAttr(company)}','${escapeAttr(id)}')">Review and edit</button>
       </div>`;
     loadClients();
   }catch(e){
     box.innerHTML = `<h2>${esc(company)}</h2><div class="warn-box">Could not process the form: ${esc(e.message)}</div>
-      <div class="stage-buttons"><button onclick="closeModal('siteModal')">Close</button></div>`;
+      <div class="stage-buttons"><button onclick="closeModal('csSiteModal')">Close</button></div>`;
   }
 }
 
@@ -10634,7 +10635,7 @@ async function siteProcessUpload(company, existing, file, forceNew){
 
 let SITE_ED = null;
 
-function openSiteModal(company, id, forceNew){
+function openClientSiteModal(company, id, forceNew){
   const existing = id ? SITES.find(s => s.id === id) : null;
   const contacts = (clientsData || []).filter(c => b2Same(c.company, company));
   const c0 = contacts[0] || {};
@@ -10651,7 +10652,7 @@ function openSiteModal(company, id, forceNew){
     <div class="sec-title">${esc(sec)}</div>
     ${SITE_FIELD_DEFS.filter(d => d.section === sec).map(d => `<label class="sfl">${esc(d.label)}</label>
       <textarea class="sf" id="sf_${d.key}">${esc(f[d.key] || '')}</textarea>`).join('')}`).join('');
-  document.getElementById('siteBody').innerHTML = `
+  document.getElementById('csSiteBody').innerHTML = `
     <h2>${esc(company)} - ${existing ? 'Edit site' : 'Add site'}</h2>
     ${existing && existing.pdf_file_id && !siteHasData(existing) ? `<div class="warn-box"><strong>This site has a PDF but no details were read from it.</strong> Use Replace PDF on the client card to try again, or type the details in below.${SITE_DIAG[existing.id] ? '<br><span style="font-size:11.5px;">' + esc(SITE_DIAG[existing.id]) + '</span>' : ''}</div>` : ''}
     <div class="two-col" style="margin-top:10px;">
@@ -10673,11 +10674,11 @@ function openSiteModal(company, id, forceNew){
       These details are checked and correct (details typed by hand are marked checked automatically)
     </label>
     <div class="stage-buttons">
-      <button onclick="closeModal('siteModal')">Cancel</button>
+      <button onclick="closeModal('csSiteModal')">Cancel</button>
       ${existing ? '<button class="reject" onclick="siteDeleteById(SITE_ED.id, true)">Delete site completely</button>' : ''}
       <button class="primary" onclick="siteSave()">Save site</button>
     </div>`;
-  document.getElementById('siteModal').classList.add('visible');
+  document.getElementById('csSiteModal').classList.add('visible');
 }
 
 async function siteUploadPdf(){
@@ -10743,7 +10744,7 @@ async function siteSave(){
     const j = await b2Post('/api/client-sites', body);
     const i = SITES.findIndex(s => s.id === body.id);
     if(i >= 0) SITES[i] = j.data; else SITES.push(j.data);
-    closeModal('siteModal');
+    closeModal('csSiteModal');
     showToast('Site saved');
     loadClients();
   }catch(e){ showToast('Could not save the site: ' + e.message); }
@@ -10754,7 +10755,7 @@ async function siteDelete(){
   try{
     await b2Del('/api/client-sites', SITE_ED.id);
     SITES = SITES.filter(s => s.id !== SITE_ED.id);
-    closeModal('siteModal');
+    closeModal('csSiteModal');
     showToast('Site deleted');
     loadClients();
   }catch(e){ showToast('Could not delete: ' + e.message); }
