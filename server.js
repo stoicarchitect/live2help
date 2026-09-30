@@ -4968,7 +4968,7 @@ async function buildDocx(kind, data, meta) {
     sectionOrder.forEach((sec, idx) => {
       const list = SITE_FIELDS.filter(x => x.section === sec).map(x => ({ label: x.label, value: f[x.key] }));
       if (idx === 0) {
-        const where = [site.site_name, site.address, site.postcode].filter(Boolean).join(', ');
+        const where = [/^main site$/i.test(String(site.site_name || '').trim()) ? '' : site.site_name, site.address, site.postcode].filter(Boolean).join(', ');
         list.unshift({ label: 'Address', value: where });
       }
       const rows = rowsFor(list);
@@ -5367,6 +5367,117 @@ async function extractSiteInfo(pdfBuffer, company, siteName) {
   return cleanDeep(out);
 }
 
+
+// ---- Reading the fillable fields inside the client's PDF -----------------------
+// The Site Onboarding Information Form is a fillable PDF. What the client typed lives in the
+// form fields, not in the page text, so the fields are read directly. That is exact, fast and does
+// not depend on the AI. A flattened or scanned copy falls back to the AI reading the pages.
+
+let pdfLibCache;
+async function getPdfLib() {
+  if (pdfLibCache !== undefined) return pdfLibCache;
+  try { pdfLibCache = await import('pdf-lib'); } catch (e) { pdfLibCache = null; }
+  return pdfLibCache;
+}
+
+async function readPdfFormValues(buf) {
+  const lib = await getPdfLib();
+  if (!lib) return { available: false, hasValues: false, values: {} };
+  try {
+    const doc = await lib.PDFDocument.load(buf, { ignoreEncryption: true, updateMetadata: false });
+    const fields = doc.getForm().getFields();
+    const values = {};
+    for (const f of fields) {
+      let v = '';
+      try {
+        if (f instanceof lib.PDFCheckBox) v = f.isChecked();
+        else if (f instanceof lib.PDFTextField) v = String(f.getText() || '').replace(/\s+/g, ' ').trim();
+        else if (f instanceof lib.PDFRadioGroup) v = String(f.getSelected() || '');
+        else if (f instanceof lib.PDFDropdown || f instanceof lib.PDFOptionList) v = (f.getSelected() || []).join(', ');
+      } catch (e) { v = ''; }
+      values[f.getName()] = v;
+    }
+    const hasValues = Object.values(values).some(v => v === true || (typeof v === 'string' && v.trim()));
+    return { available: true, hasValues, values, count: fields.length };
+  } catch (e) {
+    return { available: true, hasValues: false, values: {}, error: e.message };
+  }
+}
+
+const UK_POSTCODE_RE = /\b([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})\b/i;
+
+// Turns the form's fields into the site details. Field names come from our own form template.
+function mapSiteForm(v) {
+  v = v || {};
+  const t = k => (typeof v[k] === 'string' ? v[k].replace(/\s+/g, ' ').trim() : '');
+  const on = k => v[k] === true;
+  const ticked = pairs => pairs.filter(([k]) => on(k)).map(([, label]) => label);
+  const sentence = s => { s = String(s || '').trim(); return s && !/[.!?]$/.test(s) ? s + '.' : s; };
+
+  const out = {};
+  SITE_FIELDS.forEach(f => { out[f.key] = ''; });
+
+  let address = t('site_address'), postcode = '';
+  const pm = UK_POSTCODE_RE.exec(address);
+  if (pm) {
+    postcode = (pm[1] + ' ' + pm[2]).toUpperCase();
+    address = address.replace(UK_POSTCODE_RE, '').replace(/[\s,]+$/, '').trim();
+  }
+  out.address = address;
+  out.postcode = postcode;
+
+  const parkKinds = ticked([['park_onsite', 'On-site parking'], ['park_reserved', 'Reserved space'], ['park_nearby', 'Nearby car park'], ['park_street', 'Street parking'], ['park_none', 'Very limited parking']]);
+  out.parking = [parkKinds.join(', '), t('parking_details')].filter(Boolean).map(sentence).join(' ');
+  out.transport = t('transport');
+  out.access_notes = t('access_routes');
+
+  out.arrival_time = t('arrival_time');
+  const buf = t('security_buffer');
+  out.clearance_allowance = /^\d+$/.test(buf) ? `${buf} minutes` : buf;
+  const gate = on('gate_yes') ? 'There is a gate house with a security check on arrival.' : on('gate_no') ? 'There is no gate house or security check on arrival.' : '';
+  out.security = [gate, sentence(t('security_process'))].filter(Boolean).join(' ');
+  out.pre_registration = ticked([['prereg_yes', 'Registration is required in advance.'], ['signin_yes', 'Sign in on arrival.'], ['noreg', 'No registration is needed.']]).join(' ');
+  out.reception = t('reception_location');
+  out.reception_contact = t('ask_for');
+  out.badges = on('badge_yes') ? 'A visitor badge or pass is required.' : on('badge_no') ? 'No visitor badge or pass is needed.' : '';
+  out.building_floor = t('building_floor');
+  out.directions = t('directions');
+  out.layout_notes = t('layout_quirks');
+  out.escort = t('escort');
+
+  out.dress_code = ticked([['dress_formal', 'Business formal'], ['dress_smart', 'Business smart'], ['dress_casual', 'Smart casual'], ['dress_hivis', 'Hi-vis / PPE required']]).join(', ');
+  out.safety_requirements = t('dress_notes');
+
+  out.accessibility = t('accessibility');
+  out.induction = on('hs_yes')
+    ? [ 'A health and safety induction is required before the interview.', sentence(t('hs_details')) ].filter(Boolean).join(' ')
+    : on('hs_no') ? 'No health and safety induction is needed.' : t('hs_details');
+
+  out.interview_duration = t('duration');
+  out.late_contact = t('late_contact');
+  out.other_info = t('other_notes');
+
+  out.contact1_name = t('contact1_name');
+  out.contact1_phone = t('contact1_phone');
+  out.contact1_email = t('contact1_email');
+  out.contact2_name = t('contact2_name');
+  out.contact2_phone = t('contact2_phone');
+  out.contact2_email = t('contact2_email');
+
+  const important = [
+    ['parking', 'Where to park'], ['reception', 'Where reception is'], ['reception_contact', 'Who to ask for at reception'],
+    ['directions', 'Directions from reception to the interview room'], ['arrival_time', 'What time to arrive'],
+    ['dress_code', 'The dress code'], ['contact1_name', 'A main contact for the day'],
+  ];
+  out.missing = important.filter(([k]) => !out[k]).map(([, label]) => label);
+  out._company = t('client_company');
+  return out;
+}
+
+function countSiteDetails(ex) {
+  return SITE_FIELDS.filter(f => String((ex && ex[f.key]) || '').trim()).length;
+}
+
 app.post('/api/client-sites/:id/pdf', async (req, res) => {
   try {
     const { company, siteName, fileName, fileData } = req.body || {};
@@ -5380,12 +5491,30 @@ app.post('/api/client-sites/:id/pdf', async (req, res) => {
 
     let extracted = null;
     let warning = '';
-    if (!API_KEY) {
-      warning = 'The AI key is not set on the server, so the form could not be read. Enter the details by hand.';
-    } else {
-      try { extracted = await extractSiteInfo(buf, company, siteName); }
-      catch (e) { warning = `The form could not be read (${e.message}). Enter the details by hand.`; }
+    let readBy = '';
+    const form = await readPdfFormValues(buf);
+    if (form.hasValues) {
+      const mapped = mapSiteForm(form.values);
+      if (countSiteDetails(mapped) > 0 || mapped.address) { extracted = mapped; readBy = 'form'; }
+      const formCo = mapped._company;
+      if (formCo && folderNameKey(formCo) && folderNameKey(formCo) !== folderNameKey(company)) {
+        warning = `This form is for "${formCo}" but you uploaded it to ${company}. Check it is the right client.`;
+      }
     }
+    if (!extracted) {
+      if (!API_KEY) {
+        warning = 'The form could not be read: it has no filled-in fields and the AI key is not set on the server. Enter the details by hand.';
+      } else {
+        try {
+          extracted = await extractSiteInfo(buf, company, siteName);
+          readBy = 'ai';
+          if (!form.available) warning = (warning ? warning + ' ' : '') + 'The server cannot read the form fields yet (the pdf-lib package is not installed), so the AI read the pages instead. Add pdf-lib to package.json for exact results.';
+        } catch (e) {
+          warning = `The form could not be read (${e.message}). Enter the details by hand.`;
+        }
+      }
+    }
+    if (extracted) delete extracted._company;
 
     let finalName = String(siteName || '').trim();
     if (!finalName && extracted && extracted.address) finalName = String(extracted.address).split(',')[0].trim().slice(0, 40);
@@ -5416,9 +5545,38 @@ app.post('/api/client-sites/:id/pdf', async (req, res) => {
       fileError = e.message;
     }
     auditLog(actorOf(req), 'site_pdf_uploaded', 'client_site', `${company} - ${siteName || 'Main site'}`, fileError ? 'not saved to Drive' : '');
-    res.json({ ok: true, file, fileError, extracted, warning, siteName: finalName });
+    res.json({ ok: true, file, fileError, extracted, warning, siteName: finalName, readBy });
   } catch (e) {
     console.error('POST /api/client-sites/:id/pdf error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+// Remove an uploaded site PDF (moves the file to the Drive bin and clears the link on the site)
+app.delete('/api/client-sites/:id/pdf', async (req, res) => {
+  try {
+    const site = (await clientSitesTable.list()).find(o => o.id === req.params.id);
+    const fileId = (site && site.pdf_file_id) || String(req.query.fileId || '');
+    if (!fileId && !site) return res.status(404).json({ error: 'That site was not found' });
+    let trashed = false;
+    let driveNote = '';
+    if (fileId) {
+      try {
+        await getUploadDriveClient().files.update({ fileId, requestBody: { trashed: true }, fields: 'id' });
+        trashed = true;
+      } catch (e) {
+        const msg = friendlyDriveError(e);
+        if (/not found|404/i.test(String(e && (e.code || e.message)))) trashed = true;
+        else driveNote = msg;
+      }
+    }
+    let saved = null;
+    if (site) saved = await clientSitesTable.upsert({ ...site, pdf_file_id: '', pdf_link: '', pdf_name: '', updated_by: actorOf(req), updated_at: new Date().toISOString() });
+    auditLog(actorOf(req), 'site_pdf_removed', 'client_site', site ? `${site.company} - ${site.site_name}` : fileId, driveNote);
+    res.json({ ok: true, trashed, driveNote, data: saved });
+  } catch (e) {
+    console.error('DELETE /api/client-sites/:id/pdf error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
