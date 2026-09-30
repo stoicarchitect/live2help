@@ -5,6 +5,7 @@ import { google } from 'googleapis';
 import PDFDocument from 'pdfkit';
 import nodemailer from 'nodemailer';
 import path from 'path';
+import fs from 'fs';
 import { Readable } from 'stream';
 import crypto from 'crypto';
 import zlib from 'zlib';
@@ -982,7 +983,20 @@ app.post('/api/clients', async (req, res) => {
       requestBody: { values: [clientToRow(newClient)] },
     });
 
-    res.json({ ok: true, client: newClient });
+    // Create the client's Drive folders (including its folder in Candidates Submissions).
+    // The client is already saved, so a Drive problem never blocks adding them.
+    let folders = { ok: false };
+    try {
+      const f = await ensureClientFolders(company);
+      await markClientFolders(company);
+      newClient.folderCreated = 'Yes';
+      folders = { ok: true, created: f.created };
+    } catch (fe) {
+      console.error('Client folders could not be created:', fe.message);
+      folders = { ok: false, error: fe.message };
+    }
+
+    res.json({ ok: true, client: newClient, folders });
   } catch (e) {
     console.error('POST /api/clients error:', e.message);
     res.status(500).json({ error: e.message });
@@ -4864,7 +4878,114 @@ async function buildDocx(kind, data, meta) {
 
     body.push(new Paragraph({ spacing: { before: 320, after: 40 }, children: [run(`Submitted by Live 2 Help Recruitment \u00b7 For exclusive consideration for the ${data.role_title || meta.role || ''} role`, { italics: true, size: 18 })] }));
     body.push(new Paragraph({ spacing: { after: 0 }, children: [run(SUBMISSION_CONTACT_LINE, { size: 18 })] }));
-  } else {
+  } else if (kind === 'interview_pack') {
+    const cons = data.consultant || {};
+    const consFirst = cons.first_name || String(cons.name || 'Your consultant').split(' ')[0];
+    const firstName = data.first_name || String(data.candidate_ref || '').split(' ')[0] || 'there';
+    const company = data.company || '';
+    body.push(new Paragraph({ spacing: { before: 200, after: 40 }, children: [run('Interview Preparation Pack', { bold: true, size: 52, color: DX.dark })] }));
+    body.push(new Paragraph({ spacing: { after: 40 }, children: [run([data.candidate_ref, data.role_title, company].filter(Boolean).join('  \u00b7  '), { size: 21, color: DX.gold })] }));
+    body.push(new Paragraph({ spacing: { after: 160 }, children: [run('Prepared exclusively by Live 2 Help Recruitment', { italics: true, size: 19 })] }));
+
+    const sched = (data.schedule || []).filter(r => r && r.label && String(r.value || '').trim());
+    if (sched.length) {
+      body.push(heading('Interview Schedule'));
+      body.push(table([2800, 6560], sched.map(r => new TableRow({
+        cantSplit: true,
+        children: [cell(cellText(r.label, { bold: true, color: DX.dark }), 2800, { fill: DX.light }), cell(cellText(r.value), 6560)],
+      }))));
+    }
+    body.push(new Paragraph({
+      spacing: { before: 140, after: 80 },
+      children: [run(`Important: contact ${consFirst}${cons.phone ? ' immediately on ' + cons.phone : ' immediately'} if anything changes - do not leave it until the last minute.`, { bold: true, italics: true, color: DX.dark })],
+    }));
+    if (data.has_site_pack) {
+      body.push(para('Travel, parking, arrival, dress code and site details are in your separate Site Pack, attached to the same email.'));
+    }
+
+    if (String(data.about_company || '').trim()) { body.push(heading(`About ${company || 'the Company'}`)); body.push(...blocksToParas(data.about_company)); }
+    if (String(data.meeting_summary || '').trim()) { body.push(heading('Who You Will Be Meeting')); body.push(...blocksToParas(data.meeting_summary)); }
+    if (String(data.interview_format || '').trim()) { body.push(heading('Interview Format')); body.push(...blocksToParas(data.interview_format)); }
+
+    const qs = (data.questions || []).filter(q => q && q.question);
+    if (qs.length) {
+      body.push(heading('Competency Questions - Prepared For You'));
+      body.push(para('The questions below are tailored to your background and to what the role needs. Prepare a specific STAR answer for each one before the interview and know your examples in detail.'));
+      qs.forEach((q, i) => {
+        body.push(new Paragraph({ spacing: { before: 240, after: 80 }, keepNext: true, children: [run(`${i + 1}. ${q.question}`, { bold: true, size: 22, color: DX.dark })] }));
+        body.push(...blocksToParas(q.points));
+        if (String(q.tip || '').trim()) {
+          body.push(new Paragraph({
+            spacing: { before: 60, after: 100, line: 276 },
+            indent: { left: 200 },
+            border: { left: { style: BorderStyle.SINGLE, size: 18, color: DX.gold, space: 8 } },
+            children: [run(`${consFirst}'s tip: `, { bold: true, color: DX.dark }), ...runsFrom(q.tip, { italics: true })],
+          }));
+        }
+      });
+    }
+
+    body.push(heading('The STAR Technique - How to Answer Every Competency Question'));
+    body.push(para('Structure every competency answer using the STAR method. It keeps your response focused, evidenced and compelling.'));
+    const sw = [900, 1800, 6660];
+    body.push(table(sw, [
+      headRow(['Stage', 'What it means', 'What to include'], sw),
+      ...[
+        ['S', 'Situation', 'Set the scene briefly - where were you and what was happening? Keep this to two or three sentences.'],
+        ['T', 'Task', 'What was your specific responsibility? What were you trying to achieve or resolve?'],
+        ['A', 'Action', 'What did YOU do? Use "I", not "we". This is the most important part. Be specific about your decisions and your approach.'],
+        ['R', 'Result', 'What was the measurable outcome? A number, a percentage, a clear business impact. Always finish here, and know your numbers.'],
+      ].map(r => new TableRow({
+        cantSplit: true,
+        children: [cell(cellText(r[0], { bold: true, color: DX.dark }), sw[0], { fill: DX.light }), cell(cellText(r[1], { bold: true, color: DX.dark }), sw[1]), cell(cellText(r[2]), sw[2])],
+      })),
+    ]));
+    body.push(para('If you cannot think of a strong example straight away, ask for a moment to gather your thoughts - that is far better than stumbling through a weak answer. Never invent experience; an experienced interviewer will spot it quickly.'));
+
+    const ask = (data.questions_to_ask || []).filter(Boolean);
+    if (ask.length) {
+      body.push(heading('Questions You Could Ask'));
+      body.push(para('Asking good questions shows genuine interest. Choose the ones that matter most to you.'));
+      ask.forEach(a => body.push(bullet(a)));
+    }
+
+    body.push(new Paragraph({ spacing: { before: 320, after: 60 }, children: [run(`Good luck, ${firstName}. You are well prepared and we are right behind you.`, { bold: true, color: DX.dark })] }));
+    body.push(new Paragraph({ spacing: { after: 0 }, children: [run([cons.name, cons.phone, cons.email].filter(Boolean).join('  |  ') || SUBMISSION_CONTACT_LINE, { size: 18 })] }));
+  } else if (kind === 'site_pack') {
+    const cons = data.consultant || {};
+    const site = data.site || {};
+    const f = site.fields || {};
+    const firstName = data.first_name || String(data.candidate_ref || '').split(' ')[0] || 'there';
+    body.push(new Paragraph({ spacing: { before: 200, after: 40 }, children: [run('Interview Day Site Pack', { bold: true, size: 52, color: DX.dark })] }));
+    body.push(new Paragraph({ spacing: { after: 160 }, children: [run([data.candidate_ref, data.role_title, data.company].filter(Boolean).join('  \u00b7  '), { size: 21, color: DX.gold })] }));
+    body.push(para(`Hi ${firstName}, everything below is designed to take the guesswork out of the day, so that all your energy goes into the interview itself.`));
+
+    const rowsFor = list => list.filter(x => String(x.value || '').trim()).map(x => new TableRow({
+      cantSplit: true,
+      children: [cell(cellText(x.label, { bold: true, color: DX.dark }), 2800, { fill: DX.light }), cell(cellText(x.value), 6560)],
+    }));
+    const sectionOrder = ['Getting There', 'On Arrival', 'What to Wear', 'Health, Safety and Accessibility', 'Good to Know'];
+    sectionOrder.forEach((sec, idx) => {
+      const list = SITE_FIELDS.filter(x => x.section === sec).map(x => ({ label: x.label, value: f[x.key] }));
+      if (idx === 0) {
+        const where = [site.site_name, site.address, site.postcode].filter(Boolean).join(', ');
+        list.unshift({ label: 'Address', value: where });
+      }
+      const rows = rowsFor(list);
+      if (!rows.length) return;
+      body.push(heading(sec));
+      body.push(table([2800, 6560], rows));
+    });
+
+    const contacts = [];
+    if (f.contact1_name || f.contact1_phone || f.contact1_email) contacts.push({ label: 'On the day', value: [f.contact1_name, f.contact1_phone, f.contact1_email].filter(Boolean).join('  |  ') });
+    if (f.contact2_name || f.contact2_phone || f.contact2_email) contacts.push({ label: 'Second contact', value: [f.contact2_name, f.contact2_phone, f.contact2_email].filter(Boolean).join('  |  ') });
+    if (cons.name) contacts.push({ label: 'Your consultant', value: [cons.name, cons.phone, cons.email].filter(Boolean).join('  |  ') });
+    const crow = rowsFor(contacts);
+    if (crow.length) { body.push(heading('If You Have Any Questions')); body.push(table([2800, 6560], crow)); }
+
+    body.push(new Paragraph({ spacing: { before: 320, after: 0 }, children: [run(`You have done the preparation, ${firstName}. Arrive calm, be yourself, and let your experience do the talking.`, { bold: true, color: DX.dark })] }));
+  } else if (kind === 'cv') {
     body.push(new Paragraph({ spacing: { before: 200, after: 40 }, children: [run('Anonymised CV', { bold: true, size: 52, color: DX.dark })] }));
     body.push(new Paragraph({ spacing: { after: 160 }, children: [run(`Live 2 Help Recruitment  \u00b7  ${data.role_title || meta.role || ''}`, { size: 21, color: DX.gold })] }));
     (data.sections || []).forEach(s => {
@@ -4878,7 +4999,7 @@ async function buildDocx(kind, data, meta) {
 
   const doc = new Document({
     creator: 'Live 2 Help Recruitment',
-    title: kind === 'submission' ? 'Candidate Submission' : 'Anonymised CV',
+    title: ({ submission: 'Candidate Submission', cv: 'Anonymised CV', interview_pack: 'Interview Preparation Pack', site_pack: 'Interview Day Site Pack' })[kind] || 'Live 2 Help Recruitment',
     styles: { default: { document: { run: { font: FONT, size: 20, color: DX.grey } } } },
     numbering: {
       config: [{
@@ -5011,6 +5132,584 @@ app.delete('/api/submission-drafts/:id', async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error('DELETE /api/submission-drafts/:id error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+/* ======================================================================
+   Client sites, client Drive folders, email signatures and interview packs
+   ====================================================================== */
+
+// ---- Client folders in Drive ----------------------------------------------
+// Adding a client creates:
+//   1. a folder with the company name inside the Candidates Submissions folder, so new
+//      submissions already have somewhere to go
+//   2. Clients / [Company] / Site Info, Submissions, Invoices
+// Set CLIENTS_FOLDER_ID on Render to use an existing Clients folder; otherwise a folder called
+// "Clients" is found or created in the main Google Drive that the upload sign-in belongs to.
+
+const CLIENTS_ROOT_NAME = 'Clients';
+const CLIENT_SUBFOLDERS = ['Site Info', 'Submissions', 'Invoices'];
+let clientsRootCache = process.env.CLIENTS_FOLDER_ID || null;
+let clientsRootShared = false;
+const clientFolderJobs = new Map();
+
+function botEmail() {
+  try { return JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON).client_email || ''; } catch (e) { return ''; }
+}
+
+async function findOrCreateDriveFolder(parentId, name) {
+  const drive = getUploadDriveClient();
+  let list;
+  try {
+    list = await drive.files.list({
+      q: `'${parentId}' in parents and name='${escDriveQuery(name)}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+      spaces: 'drive', pageSize: 1, fields: 'files(id, name)',
+    });
+  } catch (e) { throw new Error(friendlyDriveError(e)); }
+  if (list.data.files && list.data.files.length) return { id: list.data.files[0].id, created: false };
+  try {
+    const f = await drive.files.create({
+      resource: { name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] },
+      fields: 'id',
+    });
+    return { id: f.data.id, created: true };
+  } catch (e) { throw new Error(friendlyDriveError(e)); }
+}
+
+async function getClientsRootId() {
+  if (clientsRootCache && clientsRootShared) return clientsRootCache;
+  if (!clientsRootCache) {
+    const r = await findOrCreateDriveFolder('root', CLIENTS_ROOT_NAME);
+    clientsRootCache = r.id;
+  }
+  if (!clientsRootShared) {
+    // The dashboard's service account needs to see this tree too
+    const bot = botEmail();
+    if (bot && oauthUploadsConfigured()) {
+      try {
+        await getUploadDriveClient().permissions.create({
+          fileId: clientsRootCache,
+          requestBody: { type: 'user', role: 'writer', emailAddress: bot },
+          sendNotificationEmail: false,
+        });
+      } catch (e) { console.error('Could not share the Clients folder with the service account:', e.message); }
+    }
+    clientsRootShared = true;
+  }
+  return clientsRootCache;
+}
+
+function ensureClientFolders(company, opts = {}) {
+  const name = String(company || '').trim();
+  if (!name) return Promise.reject(new Error('A company name is required'));
+  const key = name.toLowerCase() + (opts.skipSubmissions ? '|skip' : '');
+  if (clientFolderJobs.has(key)) return clientFolderJobs.get(key);
+  const job = (async () => {
+    const submissions = opts.skipSubmissions ? { id: '', created: false } : await findOrCreateDriveFolder(SUBMISSIONS_FOLDER_ID, name);
+    const root = await getClientsRootId();
+    const clientFolder = await findOrCreateDriveFolder(root, name);
+    const subs = {};
+    let createdAny = submissions.created || clientFolder.created;
+    for (const s of CLIENT_SUBFOLDERS) {
+      const f = await findOrCreateDriveFolder(clientFolder.id, s);
+      subs[s] = f.id;
+      if (f.created) createdAny = true;
+    }
+    return {
+      submissionsFolderId: submissions.id,
+      clientFolderId: clientFolder.id,
+      siteInfoId: subs['Site Info'],
+      created: createdAny,
+    };
+  })().finally(() => clientFolderJobs.delete(key));
+  clientFolderJobs.set(key, job);
+  return job;
+}
+
+async function markClientFolders(company) {
+  const sheets = getSheetsClient();
+  const rows = await readClientRows();
+  const data = [];
+  rows.forEach((r, i) => {
+    if (r[1] && r[1].trim() === String(company).trim() && (r[8] || '') !== 'Yes') {
+      data.push({ range: `${CLIENT_TAB}!I${i + 2}`, values: [['Yes']] });
+    }
+  });
+  if (data.length) {
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: CLIENT_SHEET_ID,
+      requestBody: { valueInputOption: 'RAW', data },
+    });
+  }
+}
+
+// Words that differ between how a company is written on the client sheet and how its
+// existing folder in Candidates Submissions was named
+function folderNameKey(name) {
+  const skip = new Set(['ltd', 'limited', 'uk', 'plc', 'the', 'and', 'group']);
+  const words = String(name || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(w => w && !skip.has(w));
+  return words[0] || '';
+}
+
+// One-off (and safe to repeat): create the folders for every client already on the sheet.
+// { preview: true } only reports what would happen. A client whose name looks like a folder that
+// already exists in Candidates Submissions keeps that folder and does not get a second one.
+app.post('/api/clients/ensure-folders', requireAdmin, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const only = body.company ? [String(body.company).trim()] : null;
+    const rows = await readClientRows();
+    const companies = only || [...new Set(rows.filter(r => r[1]).map(r => r[1].trim()))];
+    const existing = (await listFolderContents(SUBMISSIONS_FOLDER_ID)).filter(f => f.mimeType === 'application/vnd.google-apps.folder');
+    const results = [];
+    for (const c of companies) {
+      const exact = existing.find(f => f.name === c);
+      const similar = exact ? null : existing.find(f => folderNameKey(f.name) && folderNameKey(f.name) === folderNameKey(c));
+      const plan = exact ? 'exists' : similar ? 'similar' : 'create';
+      if (body.preview) { results.push({ company: c, plan, similarTo: similar ? similar.name : '' }); continue; }
+      try {
+        const f = await ensureClientFolders(c, { skipSubmissions: plan === 'similar' });
+        await markClientFolders(c);
+        results.push({ company: c, ok: true, created: f.created, plan, similarTo: similar ? similar.name : '' });
+      } catch (e) {
+        results.push({ company: c, ok: false, error: e.message, plan });
+      }
+    }
+    if (!body.preview) auditLog(actorOf(req), 'folders_created', 'client', `${results.filter(r => r.ok).length} clients`, '');
+    res.json({ ok: true, preview: !!body.preview, results });
+  } catch (e) {
+    console.error('POST /api/clients/ensure-folders error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---- Client sites -----------------------------------------------------------
+// A client can have several sites. Each site has its own address and its own logistics,
+// read from the client's completed Site Onboarding Information Form (PDF).
+
+const SITE_FIELDS = [
+  { key: 'parking', label: 'Parking', section: 'Getting There' },
+  { key: 'transport', label: 'Public transport and walking distance', section: 'Getting There' },
+  { key: 'access_notes', label: 'Access routes and anything unusual', section: 'Getting There' },
+  { key: 'arrival_time', label: 'Arrive at', section: 'On Arrival' },
+  { key: 'clearance_allowance', label: 'Time to allow for security', section: 'On Arrival' },
+  { key: 'security', label: 'Gates and security', section: 'On Arrival' },
+  { key: 'pre_registration', label: 'Pre-registration', section: 'On Arrival' },
+  { key: 'reception', label: 'Reception', section: 'On Arrival' },
+  { key: 'reception_contact', label: 'Who to ask for', section: 'On Arrival' },
+  { key: 'badges', label: 'Badges or passes', section: 'On Arrival' },
+  { key: 'building_floor', label: 'Building and floor', section: 'On Arrival' },
+  { key: 'directions', label: 'Directions from reception', section: 'On Arrival' },
+  { key: 'layout_notes', label: 'Layout notes', section: 'On Arrival' },
+  { key: 'escort', label: 'Escort', section: 'On Arrival' },
+  { key: 'dress_code', label: 'Dress code', section: 'What to Wear' },
+  { key: 'safety_requirements', label: 'Site safety requirements', section: 'What to Wear' },
+  { key: 'accessibility', label: 'Accessibility (lifts, toilets, access)', section: 'Health, Safety and Accessibility' },
+  { key: 'refreshments', label: 'Refreshments', section: 'Health, Safety and Accessibility' },
+  { key: 'dietary', label: 'Dietary needs', section: 'Health, Safety and Accessibility' },
+  { key: 'induction', label: 'Health and safety induction', section: 'Health, Safety and Accessibility' },
+  { key: 'interview_duration', label: 'Expected length of visit', section: 'Good to Know' },
+  { key: 'late_contact', label: 'If you are running late', section: 'Good to Know' },
+  { key: 'other_info', label: 'Anything else', section: 'Good to Know' },
+  { key: 'contact1_name', label: 'Main contact name', section: 'Contacts' },
+  { key: 'contact1_phone', label: 'Main contact phone', section: 'Contacts' },
+  { key: 'contact1_email', label: 'Main contact email', section: 'Contacts' },
+  { key: 'contact2_name', label: 'Second contact name', section: 'Contacts' },
+  { key: 'contact2_phone', label: 'Second contact phone', section: 'Contacts' },
+  { key: 'contact2_email', label: 'Second contact email', section: 'Contacts' },
+];
+
+const clientSitesTable = makeSimpleTable({
+  tab: 'Client Sites',
+  header: [
+    'id', 'company', 'site_name', 'address', 'postcode', 'pdf_file_id', 'pdf_link', 'pdf_name',
+    'logistics_json', 'checked', 'updated_by', 'updated_at',
+  ],
+  path: '/api/client-sites',
+  label: 'Client site',
+  auditType: 'client_site',
+  auditName: o => `${o.company} - ${o.site_name}`,
+});
+
+const SITE_SYSTEM = `You read a completed Site Onboarding Information Form for Live 2 Help Recruitment, a UK recruitment agency. The form was filled in by a client (or by a recruiter on a call) and describes what a candidate needs to know to attend an interview at the client's site.
+
+RULES
+- Copy what has actually been filled in, using the client's own wording as far as possible. Tidy spelling and punctuation only.
+- If a box is blank, unticked or still shows placeholder text, return an empty string for that field. Never guess, infer or invent access details, times, names or numbers.
+- For tick boxes, write the option that was ticked (for example "Free on-site car park"). If several are ticked, list them.
+- Keep phone numbers and email addresses exactly as written.
+- British English. Never use em dashes or en dashes. Use a plain hyphen with spaces for a break in a sentence.
+- In "missing", list in plain words the important things a candidate would need that the form does not answer (for example "Where to park", "Who to ask for at reception").`;
+
+const SITE_TOOL = {
+  name: 'submit_site_information',
+  description: 'Return the site information found in the form.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      address: { type: 'string', description: 'Street address of the site as written on the form' },
+      postcode: { type: 'string' },
+      ...Object.fromEntries(SITE_FIELDS.map(f => [f.key, { type: 'string', description: f.label }])),
+      missing: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['address', 'postcode', ...SITE_FIELDS.map(f => f.key), 'missing'],
+  },
+};
+
+async function extractSiteInfo(pdfBuffer, company, siteName) {
+  const content = [
+    { type: 'text', text: `Read this completed Site Onboarding Information Form for ${company}${siteName ? ` (${siteName})` : ''}.` },
+    { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBuffer.toString('base64') } },
+  ];
+  const out = await callClaudeTool({ system: SITE_SYSTEM, content, tool: SITE_TOOL, maxTokens: 4000 });
+  return cleanDeep(out);
+}
+
+app.post('/api/client-sites/:id/pdf', async (req, res) => {
+  try {
+    const { company, siteName, fileName, fileData } = req.body || {};
+    if (!company) return res.status(400).json({ error: 'The company is required' });
+    if (!fileName || !/\.pdf$/i.test(String(fileName)) || !fileData) {
+      return res.status(400).json({ error: 'Upload the completed site onboarding form as a PDF file' });
+    }
+    if (String(fileData).length > 13 * 1024 * 1024) return res.status(400).json({ error: 'That PDF is larger than 9MB' });
+    const buf = Buffer.from(String(fileData), 'base64');
+    if (buf.subarray(0, 4).toString() !== '%PDF') return res.status(400).json({ error: 'That file is not a valid PDF' });
+
+    let extracted = null;
+    let warning = '';
+    if (!API_KEY) {
+      warning = 'The AI key is not set on the server, so the form could not be read. Enter the details by hand.';
+    } else {
+      try { extracted = await extractSiteInfo(buf, company, siteName); }
+      catch (e) { warning = `The form could not be read (${e.message}). Enter the details by hand.`; }
+    }
+
+    let file = null;
+    let fileError = '';
+    try {
+      const folders = await ensureClientFolders(company);
+      const drive = getUploadDriveClient();
+      const driveName = safeFileName(`Site Info ${company} ${siteName || 'Main site'}`) + '.pdf';
+      const existing = await drive.files.list({
+        q: `'${folders.siteInfoId}' in parents and name='${escDriveQuery(driveName)}' and trashed=false`,
+        spaces: 'drive', pageSize: 1, fields: 'files(id)',
+      });
+      const media = { mimeType: 'application/pdf', body: Readable.from([buf]) };
+      let saved;
+      try {
+        if (existing.data.files && existing.data.files.length) {
+          saved = await drive.files.update({ fileId: existing.data.files[0].id, media, fields: 'id, name, webViewLink' });
+        } else {
+          saved = await drive.files.create({ resource: { name: driveName, parents: [folders.siteInfoId] }, media, fields: 'id, name, webViewLink' });
+        }
+      } catch (e) { throw new Error(friendlyDriveError(e)); }
+      file = { id: saved.data.id, name: saved.data.name || driveName, link: saved.data.webViewLink || '' };
+      markClientFolders(company).catch(() => {});
+    } catch (e) {
+      fileError = e.message;
+    }
+    auditLog(actorOf(req), 'site_pdf_uploaded', 'client_site', `${company} - ${siteName || 'Main site'}`, fileError ? 'not saved to Drive' : '');
+    res.json({ ok: true, file, fileError, extracted, warning });
+  } catch (e) {
+    console.error('POST /api/client-sites/:id/pdf error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---- Email signatures ---------------------------------------------------------
+// Each person has one signature. The defaults live in assets/signatures/<user key>.html;
+// anything saved from the dashboard replaces the default.
+
+const signaturesTable = makeSimpleTable({
+  tab: 'Signatures',
+  header: ['id', 'html', 'updated_by', 'updated_at'],
+  path: null,
+  label: 'Signature',
+});
+
+function sniffImageMime(b64, declared) {
+  const s = String(b64 || '').slice(0, 12);
+  if (s.startsWith('/9j/')) return 'image/jpeg';
+  if (s.startsWith('iVBOR')) return 'image/png';
+  if (s.startsWith('R0lGOD')) return 'image/gif';
+  return declared || 'image/png';
+}
+
+function parseSignatureHtml(raw) {
+  let html = String(raw || '');
+  const body = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  if (body) html = body[1];
+  html = html.replace(/<!--[\s\S]*?-->/g, '').replace(/<script[\s\S]*?<\/script>/gi, '').trim();
+  const images = [];
+  html = html.replace(/(<img\b[^>]*?\bsrc=)(["'])data:([a-z]+\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+?)\2/gi, (m, pre, q, mime, data) => {
+    const clean = data.replace(/\s+/g, '');
+    const cid = `l2hsig${images.length + 1}@live2help`;
+    images.push({ cid, mime: sniffImageMime(clean, mime), base64: clean });
+    return `${pre}${q}cid:${cid}${q}`;
+  });
+  return { html, images };
+}
+
+function htmlToPlainText(html) {
+  return String(html || '')
+    .replace(/<img[^>]*>/gi, '')
+    .replace(/<\s*br\s*\/?>/gi, '\n')
+    .replace(/<\/(tr|p|div|table)>/gi, '\n')
+    .replace(/<\/(td|th)>/gi, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&middot;/g, '-').replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function signatureKeyFor(req) {
+  const asked = String((req.query && req.query.user) || (req.body && req.body.user) || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
+  if (asked && asked !== actorOf(req) && isAdmin(req)) return asked;
+  return String(actorOf(req)).toLowerCase().replace(/[^a-z0-9-]/g, '');
+}
+
+async function loadSignature(key) {
+  let raw = '';
+  let source = 'none';
+  try {
+    const hit = (await signaturesTable.list()).find(o => o.id === key);
+    if (hit && hit.html) { raw = hit.html; source = 'saved'; }
+  } catch (e) { /* fall back to the default file */ }
+  if (!raw && key) {
+    try {
+      raw = fs.readFileSync(path.join(__dirname, 'assets', 'signatures', `${key}.html`), 'utf8');
+      source = 'default';
+    } catch (e) { raw = ''; }
+  }
+  if (!raw) return { html: '', images: [], text: '', source: 'none' };
+  const parsed = parseSignatureHtml(raw);
+  return { ...parsed, text: htmlToPlainText(parsed.html), source };
+}
+
+app.get('/api/signature', async (req, res) => {
+  try {
+    res.json(await loadSignature(signatureKeyFor(req)));
+  } catch (e) {
+    console.error('GET /api/signature error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.put('/api/signature', async (req, res) => {
+  try {
+    const key = signatureKeyFor(req);
+    const html = String((req.body && req.body.html) || '').trim();
+    if (!key) return res.status(400).json({ error: 'Could not tell whose signature this is' });
+    if (!html) return res.status(400).json({ error: 'Paste the signature HTML first' });
+    if (html.length > 45000) return res.status(400).json({ error: 'That signature is too large to store (over 45,000 characters). Use a smaller logo image.' });
+    if (!/<(table|div|p|span|img|a|br)\b/i.test(html)) return res.status(400).json({ error: 'That does not look like signature HTML' });
+    await signaturesTable.upsert({ id: key, html, updated_by: actorOf(req), updated_at: new Date().toISOString() });
+    auditLog(actorOf(req), 'signature_saved', 'signature', key, '');
+    res.json({ ok: true, ...(await loadSignature(key)) });
+  } catch (e) {
+    console.error('PUT /api/signature error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Go back to the default signature file
+app.delete('/api/signature', async (req, res) => {
+  try {
+    const key = signatureKeyFor(req);
+    await signaturesTable.remove(key);
+    res.json({ ok: true, ...(await loadSignature(key)) });
+  } catch (e) {
+    console.error('DELETE /api/signature error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---- Interview packs -------------------------------------------------------------
+
+const interviewPackDraftsTable = makeSimpleTable({
+  tab: 'Interview Packs',
+  header: [
+    'id', 'interview_id', 'candidate_id', 'candidate_name', 'role', 'company', 'site_id',
+    'status', 'pack_json', 'created_by', 'created_at', 'approved_at', 'sent_at',
+  ],
+  path: '/api/interview-pack-drafts',
+  label: 'Interview pack',
+  auditType: 'interview_pack',
+  auditName: o => `${o.candidate_name} - ${o.role}`,
+});
+
+const PACK_SYSTEM = `You write interview preparation packs for Live 2 Help Recruitment, a UK recruitment agency. The pack goes to the CANDIDATE, so it speaks to them directly as "you". The tone is warm, encouraging and practical, like a consultant who has done the homework and is in their corner.
+
+HOUSE RULES
+- British English. Confident and supportive, never gushing. Be specific, never generic.
+- Use ONLY facts in the material supplied (the candidate's CV, application answers, call notes, the submission the client has seen, the role brief and the company notes). Never invent employers, dates, figures, qualifications, projects, or anything about the company or the interviewer.
+- If the company overview is thin, write a short "about_company" from what is supplied and add a plain-English line to "gaps" saying what the recruiter should add. Never write company facts from memory.
+- Say nothing about the interviewer's personality or interview style unless it is in the material. If the interviewer is only a name and title, say who they are and what they are likely to want to see in this role, based on the role brief, and add a gap.
+- Never mention salary negotiation, other applicants, or anything about the client's view of the candidate beyond what is in the submission.
+- Never use em dashes or en dashes. Use a plain hyphen with spaces (" - ") for a break in a sentence.
+- ${MARKUP_HELP}
+
+STRUCTURE
+1. about_company: two or three short paragraphs on the company and why the role exists, from the material only.
+2. meeting_summary: who they will be meeting and what that person will want to see, in two short paragraphs.
+3. interview_format: how the interview is likely to run (face to face, phone or video) and what to expect, in one or two short paragraphs. Only claim a competency-based format if the material says so.
+4. questions: six to eight competency questions tailored to the role's stated requirements and this candidate's real background. For each: the question; "points" as three or four bullet lines telling the candidate which of THEIR real examples to use (name the employer, system or project from their CV or answers) and how to structure it, including the result to finish on; and "tip" as one or two sentences of practical coaching. Where the candidate has a genuine gap against a requirement, include an honest question on it and coach them to answer truthfully and confidently, never to overclaim.
+5. questions_to_ask: four or five thoughtful questions the candidate could ask the interviewer, specific to the role.
+6. gaps: anything the recruiter should check or add before sending. Empty array if none.`;
+
+const PACK_TOOL = {
+  name: 'submit_interview_pack',
+  description: 'Return the finished interview preparation pack content.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      about_company: { type: 'string' },
+      meeting_summary: { type: 'string' },
+      interview_format: { type: 'string' },
+      questions: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { question: { type: 'string' }, points: { type: 'string', description: 'Bullet lines (markup)' }, tip: { type: 'string' } },
+          required: ['question', 'points', 'tip'],
+        },
+      },
+      questions_to_ask: { type: 'array', items: { type: 'string' } },
+      gaps: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['about_company', 'meeting_summary', 'interview_format', 'questions', 'questions_to_ask', 'gaps'],
+  },
+};
+
+app.post('/api/interview-packs/generate', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const { name, role, company } = b;
+    if (!name || !role) return res.status(400).json({ error: 'name and role are required' });
+    if (!API_KEY) return res.status(500).json({ error: 'The AI key is not set on the server' });
+
+    const [cvFile, screen, brief] = await Promise.all([
+      loadCvFile(company, name, role).catch(() => null),
+      loadScreening(name, role),
+      loadRoleBrief(role),
+    ]);
+    let cvDoc = null;
+    const gapsFromSources = [];
+    if (cvFile && (cvFile.kind === 'pdf' || cvFile.kind === 'docx' || cvFile.kind === 'gdoc')) {
+      const dl = await downloadCv(cvFile);
+      cvDoc = { kind: dl.kind, buffer: dl.buffer, text: dl.kind === 'docx' ? docxToText(dl.buffer) : '' };
+    } else {
+      gapsFromSources.push('No readable CV was on file, so the pack is built from the application answers, the submission and any call notes.');
+    }
+    if (!screen.found) gapsFromSources.push('No application form answers were found for this candidate.');
+    if (!brief.requirements && !brief.jobDescription) gapsFromSources.push('No role brief is on file for this role, so the questions are based on the general themes of the role.');
+
+    let submissionText = '';
+    try {
+      const drafts = (await submissionDraftsTable.list())
+        .filter(o => o.submission_json && String(o.role).toLowerCase() === String(role).toLowerCase() &&
+          candidateRef(o.candidate_name).toLowerCase() === candidateRef(name).toLowerCase())
+        .sort((a, c) => String(c.created_at).localeCompare(String(a.created_at)));
+      if (drafts[0]) {
+        const s = JSON.parse(drafts[0].submission_json);
+        submissionText = [
+          s.profile ? `Profile: ${s.profile}` : '',
+          ...(s.fit || []).map(f => `Requirement: ${f.requirement} | Evidence: ${f.evidence}`),
+          s.motivation ? `Motivation: ${s.motivation}` : '',
+        ].filter(Boolean).join('\n').slice(0, 9000);
+      }
+    } catch (e) { /* the pack can be built without it */ }
+
+    const context = [
+      `ROLE: ${role}${company ? ` at ${company}` : ''}`,
+      `CANDIDATE (address them as "you"; use their first name only in the closing): ${screen.fullName || name}`,
+      `INTERVIEW: ${[b.typeLabel, b.interviewer ? `with ${b.interviewer}${b.interviewerTitle ? `, ${b.interviewerTitle}` : ''}` : ''].filter(Boolean).join(' ') || 'Details to be confirmed'}`,
+      `COMPANY NOTES FROM THE RECRUITER:\n${String(b.companyOverview || '').trim() || 'None provided.'}`,
+      `ROLE REQUIREMENTS:\n${brief.requirements || 'NONE PROVIDED'}`,
+      `JOB DESCRIPTION:\n${brief.jobDescription ? brief.jobDescription.slice(0, 14000) : 'NONE PROVIDED'}`,
+      `APPLICATION ANSWERS:\n${screeningText(screen)}`,
+      `THE SUBMISSION THE CLIENT HAS ALREADY SEEN:\n${submissionText || 'Not available.'}`,
+      `RECRUITER NOTES ON THE CANDIDATE CARD:\n${[b.cardNotes, screen.recruiterNotes].map(s => String(s || '').trim()).filter(Boolean).join('\n') || 'None.'}`,
+      `NOTES FROM THE RECRUITER'S CALLS WITH THE CANDIDATE:\n${String(b.callNotes || '').trim() || 'None provided.'}`,
+    ].join('\n\n');
+
+    const content = [{ type: 'text', text: context }, ...(cvDoc ? cvBlocks(cvDoc) : [])];
+    const out = await callClaudeTool({ system: PACK_SYSTEM, content, tool: PACK_TOOL, maxTokens: 7000 });
+    const cleaned = scrubIdentifiers(cleanDeep(out), { fullName: '', emails: [screen.email], phones: [screen.phone], keepFirstName: true }).value;
+    cleaned.gaps = [...gapsFromSources, ...(Array.isArray(cleaned.gaps) ? cleaned.gaps : [])].filter(Boolean);
+    auditLog(actorOf(req), 'interview_pack_generated', 'interview_pack', `${name} - ${role}`, '');
+    res.json({ pack: cleaned });
+  } catch (e) {
+    console.error('POST /api/interview-packs/generate error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+function packFileNames(pack) {
+  const ref = candidateRef(pack.candidate_name || pack.candidate_ref || '');
+  return {
+    interview: safeFileName(`${ref} Interview Prep ${pack.role_title || 'Role'}`) + '.docx',
+    site: safeFileName(`${ref} Site Pack ${pack.company || 'Client'}`) + '.docx',
+  };
+}
+
+function packHasSite(pack) {
+  const s = pack && pack.site;
+  if (!s) return false;
+  return !!(s.address || Object.values(s.fields || {}).some(v => String(v || '').trim()));
+}
+
+app.post('/api/interview-packs/docx', async (req, res) => {
+  try {
+    const { pack } = req.body || {};
+    if (!pack) return res.status(400).json({ error: 'pack is required' });
+    const clean = cleanDeep(pack);
+    const names = packFileNames(clean);
+    const files = [{ kind: 'interview_pack', fileName: names.interview, base64: (await buildDocx('interview_pack', clean, { role: clean.role_title })).toString('base64') }];
+    if (packHasSite(clean)) {
+      files.push({ kind: 'site_pack', fileName: names.site, base64: (await buildDocx('site_pack', clean, { role: clean.role_title })).toString('base64') });
+    }
+    res.json({ files });
+  } catch (e) {
+    console.error('POST /api/interview-packs/docx error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Filed in the candidate's Drive folder once the email has been built
+app.post('/api/interview-packs/archive', async (req, res) => {
+  try {
+    const { pack } = req.body || {};
+    if (!pack) return res.status(400).json({ error: 'pack is required' });
+    const clean = cleanDeep(pack);
+    const folderId = await resolveCandidateCvFolder(clean.company, clean.candidate_name);
+    const drive = getUploadDriveClient();
+    const names = packFileNames(clean);
+    const saved = [];
+    const put = async (fileName, buffer) => {
+      const existing = await drive.files.list({
+        q: `'${folderId}' in parents and name='${escDriveQuery(fileName)}' and trashed=false`,
+        spaces: 'drive', pageSize: 1, fields: 'files(id)',
+      });
+      const media = { mimeType: DOCX_MIME, body: Readable.from([buffer]) };
+      let file;
+      try {
+        if (existing.data.files && existing.data.files.length) {
+          file = await drive.files.update({ fileId: existing.data.files[0].id, media, fields: 'id, name, webViewLink' });
+        } else {
+          file = await drive.files.create({ resource: { name: fileName, parents: [folderId] }, media, fields: 'id, name, webViewLink' });
+        }
+      } catch (e) { throw new Error(friendlyDriveError(e)); }
+      saved.push({ name: fileName, link: file.data.webViewLink || '' });
+    };
+    await put(names.interview, await buildDocx('interview_pack', clean, { role: clean.role_title }));
+    if (packHasSite(clean)) await put(names.site, await buildDocx('site_pack', clean, { role: clean.role_title }));
+    res.json({ ok: true, files: saved });
+  } catch (e) {
+    console.error('POST /api/interview-packs/archive error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
