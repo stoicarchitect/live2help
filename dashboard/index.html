@@ -2975,12 +2975,21 @@ async function uploadCV(){
   input.onchange = async (e) => {
     const file = e.target.files[0];
     if(!file) return;
+    if(!/\.(pdf|docx?)$/i.test(file.name)){
+      showToast('Please choose a PDF, DOC or DOCX file');
+      return;
+    }
+    if(file.size > 5 * 1024 * 1024){
+      showToast('That file is over 5 MB - please use a smaller CV');
+      return;
+    }
     const reader = new FileReader();
     reader.onload = async (ev) => {
       const c = findCandidate(openCandidateId);
       try{
+        showToast('Uploading CV...');
         const base64 = ev.target.result.split(',')[1];
-        const res = await fetch(`${API_BASE}/api/candidates/${c.id}/cv`, {
+        const res = await fetch(`${API_BASE}/api/candidates/${encodeURIComponent(c.id)}/cv`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({
@@ -2991,9 +3000,13 @@ async function uploadCV(){
             fileName: file.name
           })
         });
-        if(!res.ok) throw new Error('Upload failed');
+        if(!res.ok){
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || ('Server returned ' + res.status));
+        }
         showToast('CV uploaded successfully');
         refreshCVStatus();
+        if(typeof loadPool === 'function'){ try{ loadPool(); }catch(_){} }
       }catch(e){
         showToast('Could not upload CV: ' + e.message);
       }
@@ -4935,8 +4948,8 @@ function poolUploadCv(id){
   input.onchange = e => {
     const file = e.target.files[0];
     if(!file) return;
-    if(file.size > 10 * 1024 * 1024){
-      showToast('That file is over 10 MB - please use a smaller CV');
+    if(file.size > 5 * 1024 * 1024){
+      showToast('That file is over 5 MB - please use a smaller CV');
       return;
     }
     const reader = new FileReader();
