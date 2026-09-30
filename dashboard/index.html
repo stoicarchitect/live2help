@@ -2742,6 +2742,7 @@ function buildStageButtons(c){
   }
   if(c.stage === 'interview_requested' || c.stage === 'interview_scheduled'){
     html += `<button onclick="scheduleFromCandidate()">Schedule interview</button>`;
+    if(c.stage === 'interview_scheduled') html += `<button class="primary" onclick="packFromCandidate()">Interview pack</button>`;
   }
   html += backStageControl(c);
   html += `<button onclick="logContactFromCandidate()">Log contact</button>`;
@@ -3860,7 +3861,9 @@ async function submitAddClient(){
     });
     
     if(!res.ok) throw new Error('Server returned ' + res.status);
-    showToast('Client added successfully');
+    const addJson = await res.json().catch(() => ({}));
+    showToast(addJson.folders && addJson.folders.ok ? 'Client added and their Drive folders are ready'
+      : 'Client added. The Drive folders could not be created' + (addJson.folders && addJson.folders.error ? ' (' + addJson.folders.error + ')' : '') + ' - use Create missing folders to try again');
     closeModal('addClientOverlay');
     loadClients();
   }catch(e){
@@ -6123,7 +6126,7 @@ function renderInterviews(){
       ${rows.map(i => `<tr><td>${esc(opsFmt(i.date))}</td><td>${esc(i.time)}</td><td class="strong">${esc(i.candidate_name)}</td><td>${esc(i.role)}</td><td>${esc(i.company)}</td>
         <td>${esc(IV_TYPES[i.type] || i.type)}</td><td>${esc(opsTrunc(i.location, 40))}</td>
         <td><span class="status-pill ${i.status === 'completed' ? 'completed' : (i.status === 'no_show' || i.status === 'cancelled' ? 'lost' : 'active')}">${esc(IV_STATUS[i.status] || 'Scheduled')}</span></td>
-        <td><div class="row-actions"><button onclick="openInterviewModal('${esc(i.id)}')">Edit</button><button onclick="openInviteDialog('${esc(i.id)}')">Invites</button></div></td></tr>`).join('')}
+        <td><div class="row-actions"><button onclick="openInterviewModal('${esc(i.id)}')">Edit</button><button onclick="openPackBuilder('${esc(i.id)}')">Pack</button><button onclick="openInviteDialog('${esc(i.id)}')">Invites</button></div></td></tr>`).join('')}
       </tbody></table></div>` : `<div class="panel"><div class="panel-empty">${empty}</div></div>`;
   document.getElementById('ivAgenda').innerHTML =
     (needs.length ? `<div class="section-title">Needs an outcome</div>${table(needs, '')}` : '') +
@@ -6911,7 +6914,7 @@ function ivInviteContent(iv){
   const cInfo = clientContactsFor(iv.company).find(c => b2Same(c.contactName, contact));
   const typeLabel = IV_TYPES[iv.type] || iv.type || '';
   const address = companyAddress(iv.company);
-  const place = (iv.type === 'site' || !iv.location) ? (address || iv.location || '') : iv.location;
+  const place = iv.location || address || '';
   const candSubject = `Interview scheduled with ${iv.company}${time12 ? ' at ' + time12 : ''}${contact ? ' with ' + contact : ''}`;
   const candBody = [
     candSubject + '.', '',
@@ -10078,6 +10081,905 @@ function subRender(){
   // Merge fields for the new client submission template
   ['candidate_names', 'candidate_summaries', 'submission_intro', 'interview_target'].forEach(f => { if(TPL_FIELDS.indexOf(f) === -1) TPL_FIELDS.push(f); });
 })();
+</script>
+
+<!-- ============================================================
+     Client sites, signatures, client folders and interview packs
+     ============================================================ -->
+<style>
+  .modal.xwide{max-width:880px;}
+  .cl-sites{margin:12px 0 6px;border-top:1px solid var(--border);padding-top:10px;}
+  .cl-sites-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:#8a7638;font-weight:600;}
+  .cl-sites-head button,.site-row button{padding:4px 10px;border:1px solid var(--border);background:#fff;color:var(--grey);border-radius:2px;font-size:11.5px;cursor:pointer;font-family:inherit;}
+  .cl-sites-head button:hover,.site-row button:hover{border-color:var(--dark);color:var(--dark);}
+  .site-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #f0efe9;}
+  .site-row:last-child{border-bottom:none;}
+  .site-main{flex:1;min-width:0;display:flex;flex-direction:column;font-size:12.5px;color:var(--grey);}
+  .site-main strong{color:var(--dark);font-weight:600;}
+  .site-main span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .chip{font-size:10.5px;padding:2px 8px;border-radius:10px;white-space:nowrap;}
+  .chip.ok{background:#e7f3e8;color:#2f6b34;}
+  .chip.warn{background:#fbf1d6;color:#8a6a12;}
+  .chip.none{background:#eee;color:#777;}
+  .sec-title{font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:#8a7638;font-weight:600;margin:18px 0 8px;border-bottom:1px solid var(--border);padding-bottom:4px;}
+  .modal .sf{min-height:38px;height:38px;resize:vertical;margin-bottom:8px;}
+  .modal label.sfl{display:block;font-size:11px;color:#999;letter-spacing:.4px;margin:6px 0 3px;}
+  .upload-box{background:#FBF6EA;border-left:3px solid var(--gold);padding:12px 14px;margin:10px 0;font-size:13px;color:var(--grey);}
+  .upload-box a{color:#8a6a12;}
+  .warn-box{background:#fff6e0;border-left:3px solid #d9a521;padding:10px 12px;margin:10px 0;font-size:12.5px;color:#6b5210;line-height:1.5;}
+  .warn-box ul{margin:6px 0 0 18px;padding:0;}
+  .ip-steps{display:flex;gap:6px;margin:4px 0 14px;font-size:11.5px;color:#999;}
+  .ip-steps span{padding:3px 10px;border-radius:10px;background:#f0efe9;}
+  .ip-steps span.on{background:var(--dark);color:#fff;}
+  .ip-row{display:grid;grid-template-columns:150px 1fr;gap:8px;margin-bottom:6px;align-items:center;}
+  .ip-row input{padding:7px 9px;}
+  .ip-q{border:1px solid var(--border);border-left:3px solid var(--gold);padding:10px 12px;margin:10px 0;background:#fff;}
+  .ip-q .ip-qhead{display:flex;gap:8px;align-items:flex-start;}
+  .ip-q .ip-qhead input{flex:1;font-weight:600;}
+  .ip-q textarea{min-height:84px;margin-top:6px;}
+  .ip-q textarea.tip{min-height:46px;}
+  .ip-mini{padding:4px 9px;border:1px solid var(--border);background:#fff;color:#a33;border-radius:2px;font-size:11.5px;cursor:pointer;font-family:inherit;}
+  .ip-busy{padding:34px 10px;text-align:center;color:var(--grey);font-size:13.5px;line-height:1.7;}
+  .sig-preview{border:1px solid var(--border);padding:14px;background:#fff;margin:8px 0 12px;overflow:auto;}
+  #folderBtn{margin-left:8px;padding:8px 14px;background:#fff;color:var(--grey);border:1px solid var(--border);border-radius:2px;font-size:12.5px;cursor:pointer;font-family:inherit;}
+  #folderBtn:hover{border-color:var(--dark);color:var(--dark);}
+</style>
+
+<div class="modal-overlay" id="siteModal">
+  <div class="modal xwide">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="closeModal('siteModal')">&times;</button>
+      <div id="siteBody"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="sigModal">
+  <div class="modal wide">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="closeModal('sigModal')">&times;</button>
+      <div id="sigBody"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="ipModal">
+  <div class="modal xwide">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="ipClose()">&times;</button>
+      <div id="ipBody"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   Shared helpers
+   ============================================================ */
+
+const DOCX_MIME_FE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+function fileToB64(file){
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(',')[1] || '');
+    r.onerror = () => reject(new Error('Could not read that file'));
+    r.readAsDataURL(file);
+  });
+}
+function firstWord(s){ return String(s || '').trim().split(/\s+/)[0] || ''; }
+function refOfName(name){
+  const p = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if(!p.length) return 'Candidate';
+  return p.length === 1 ? p[0] : p[0] + ' ' + p[p.length - 1][0].toUpperCase();
+}
+function noDashes(s){
+  return String(s == null ? '' : s).replace(/[ \t]*[\u2014\u2015][ \t]*/g, ' - ').replace(/[ \t]*\u2013[ \t]*/g, m => /[ \t]/.test(m) ? ' - ' : '-');
+}
+
+/* ============================================================
+   Email signature and the .eml builder
+   ============================================================ */
+
+const SIG = {html:'', images:[], text:'', source:'none', loaded:false};
+
+async function loadMySignature(){
+  try{
+    const j = await b2Api('/api/signature');
+    SIG.html = j.html || ''; SIG.images = j.images || []; SIG.text = j.text || ''; SIG.source = j.source || 'none'; SIG.loaded = true;
+  }catch(e){ SIG.loaded = false; }
+}
+
+(function(){
+  const _si = signIn;
+  signIn = function(user){
+    _si(user);
+    loadMySignature();
+    const chip = document.getElementById('userChip');
+    if(chip && !document.getElementById('sigBtn')){
+      const b = document.createElement('button');
+      b.id = 'sigBtn'; b.textContent = 'Signature'; b.onclick = () => openSigModal();
+      chip.insertBefore(b, chip.querySelector('button'));
+    }
+    const fb = document.getElementById('folderBtn');
+    if(fb) fb.style.display = user.admin ? '' : 'none';
+  };
+})();
+
+function emlWrap(b64){ return (String(b64).match(/.{1,76}/g) || []).join('\r\n'); }
+function emlHtmlFromText(text){
+  const style = "font-family:Calibri,'Segoe UI',Arial,sans-serif;font-size:11pt;color:#222222;";
+  const paras = String(text || '').replace(/\r\n/g, '\n').trim().split(/\n{2,}/).map(p =>
+    '<p style="margin:0 0 12px 0;' + style + '">' + esc(p).replace(/\n/g, '<br>') + '</p>').join('');
+  return paras;
+}
+function emlStripTextSignature(body){
+  let b = String(body || '').replace(/\s+$/, '');
+  try{
+    const t = senderProfile().signature;
+    if(SIG.html && t && b.endsWith(t)) b = b.slice(0, -t.length).replace(/\s+$/, '');
+  }catch(e){ /* keep the body as it is */ }
+  return b;
+}
+
+/* Builds a draft email file (.eml). Outlook opens it ready to send.
+   Adds the saved signature, with its logo as an inline image, and any attachments. */
+function emlBuildRich(to, subject, body, atts){
+  atts = atts || [];
+  const useSig = !!SIG.html;
+  const cleanBody = useSig ? emlStripTextSignature(body) : String(body || '');
+  const textPart = (cleanBody + (useSig && SIG.text ? '\n\n' + SIG.text : '')).replace(/\r?\n/g, '\r\n');
+  const htmlDoc = '<html><head><meta charset="utf-8"></head><body>' + emlHtmlFromText(cleanBody) +
+    (useSig ? '<div style="margin-top:8px;">' + SIG.html + '</div>' : '') + '</body></html>';
+  const rnd = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const bAlt = '----=_L2H_alt_' + rnd(), bRel = '----=_L2H_rel_' + rnd(), bMix = '----=_L2H_mix_' + rnd();
+  const part = (headers, b64) => headers.concat(['', emlWrap(b64)]).join('\r\n');
+
+  const alt = ['Content-Type: multipart/alternative; boundary="' + bAlt + '"', '',
+    '--' + bAlt,
+    part(['Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64'], b64utf8(textPart)),
+    '--' + bAlt,
+    part(['Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64'], b64utf8(htmlDoc)),
+    '--' + bAlt + '--', ''].join('\r\n');
+
+  let core = alt;
+  const imgs = useSig ? (SIG.images || []) : [];
+  if(imgs.length){
+    const relParts = ['Content-Type: multipart/related; type="multipart/alternative"; boundary="' + bRel + '"', '', '--' + bRel, alt];
+    imgs.forEach((im, i) => {
+      const ext = im.mime === 'image/png' ? 'png' : im.mime === 'image/gif' ? 'gif' : 'jpg';
+      relParts.push('--' + bRel);
+      relParts.push(part([
+        'Content-Type: ' + im.mime + '; name="logo' + (i + 1) + '.' + ext + '"',
+        'Content-Transfer-Encoding: base64',
+        'Content-ID: <' + im.cid + '>',
+        'Content-Disposition: inline; filename="logo' + (i + 1) + '.' + ext + '"',
+      ], im.base64));
+    });
+    relParts.push('--' + bRel + '--', '');
+    core = relParts.join('\r\n');
+  }
+
+  const head = ['X-Unsent: 1', 'To: ' + (to || ''), 'Subject: ' + emlSubject(subject), 'MIME-Version: 1.0'];
+  if(!atts.length) return head.concat([core]).join('\r\n');
+
+  const out = head.concat(['Content-Type: multipart/mixed; boundary="' + bMix + '"', '', '--' + bMix, core]);
+  atts.forEach(a => {
+    const fn = String(a.fileName).replace(/[^\x20-\x7e]/g, '').replace(/"/g, '');
+    out.push('--' + bMix);
+    out.push(part([
+      'Content-Type: ' + a.mime + '; name="' + fn + '"',
+      'Content-Transfer-Encoding: base64',
+      'Content-Disposition: attachment; filename="' + fn + '"',
+    ], a.base64));
+  });
+  out.push('--' + bMix + '--', '');
+  return out.join('\r\n');
+}
+
+/* Every draft email file now carries the signature */
+emlBuild = function(to, subject, body){ return emlBuildRich(to, subject, body, []); };
+emlBuildMulti = function(to, subject, body, atts){ return emlBuildRich(to, subject, body, atts); };
+
+/* ---------- Signature settings ---------- */
+
+let sigEditingUser = '';
+function sigPreviewHtml(s){
+  let h = s.html || '';
+  (s.images || []).forEach(im => { h = h.split('cid:' + im.cid).join('data:' + im.mime + ';base64,' + im.base64); });
+  return h;
+}
+async function openSigModal(userKey){
+  sigEditingUser = userKey || '';
+  document.getElementById('sigModal').classList.add('visible');
+  document.getElementById('sigBody').innerHTML = '<div class="ip-busy">Loading...</div>';
+  try{
+    const q = sigEditingUser ? '?user=' + encodeURIComponent(sigEditingUser) : '';
+    const s = await b2Api('/api/signature' + q);
+    const isAdmin = signedInUser && signedInUser.admin;
+    const who = sigEditingUser || (signedInUser ? signedInUser.key : '');
+    const srcText = {saved:'Saved from the dashboard', default:'Using the default signature file', none:'No signature yet'}[s.source] || '';
+    document.getElementById('sigBody').innerHTML = `
+      <h2>Email signature</h2>
+      <div class="note-line" style="margin:4px 0 10px;">This signature is added to the bottom of every email file (.eml) the dashboard builds, so it matches what you use in Outlook. ${esc(srcText)}.</div>
+      ${isAdmin ? `<label class="sfl">Whose signature</label><select id="sigUser" onchange="openSigModal(this.value)" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;">
+        ${USERS.map(u => `<option value="${esc(u.key)}" ${u.key === who ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select>` : ''}
+      <div class="sig-preview">${s.html ? sigPreviewHtml(s) : '<span style="color:#999;">No signature to show.</span>'}</div>
+      <label class="sfl">Replace it: choose the signature .html file, or paste the HTML below</label>
+      <input type="file" id="sigFile" accept=".html,.htm,text/html" onchange="sigLoadFile()" style="margin-bottom:8px;">
+      <textarea id="sigHtml" placeholder="Paste signature HTML here" style="min-height:110px;font-family:monospace;font-size:12px;"></textarea>
+      <div class="stage-buttons">
+        <button onclick="closeModal('sigModal')">Close</button>
+        ${s.source === 'saved' ? '<button onclick="sigReset()">Go back to the default file</button>' : ''}
+        <button class="primary" onclick="sigSave()">Save signature</button>
+      </div>`;
+  }catch(e){
+    document.getElementById('sigBody').innerHTML = '<div class="ip-busy">Could not load the signature (' + esc(e.message) + ').</div>';
+  }
+}
+async function sigLoadFile(){
+  const f = document.getElementById('sigFile').files[0];
+  if(!f) return;
+  document.getElementById('sigHtml').value = await f.text();
+}
+async function sigSave(){
+  const html = b2Val('sigHtml').trim();
+  if(!html){ showToast('Choose the signature file or paste the HTML first'); return; }
+  try{
+    const q = sigEditingUser ? '?user=' + encodeURIComponent(sigEditingUser) : '';
+    await b2Api('/api/signature' + q, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({html, user: sigEditingUser || undefined})});
+    showToast('Signature saved');
+    if(!sigEditingUser || sigEditingUser === (signedInUser && signedInUser.key)) await loadMySignature();
+    openSigModal(sigEditingUser);
+  }catch(e){ showToast('Could not save the signature: ' + e.message); }
+}
+async function sigReset(){
+  if(!confirm('Go back to the default signature file?')) return;
+  try{
+    const q = sigEditingUser ? '?user=' + encodeURIComponent(sigEditingUser) : '';
+    await b2Api('/api/signature' + q, {method:'DELETE'});
+    if(!sigEditingUser || sigEditingUser === (signedInUser && signedInUser.key)) await loadMySignature();
+    openSigModal(sigEditingUser);
+  }catch(e){ showToast('Could not reset: ' + e.message); }
+}
+
+/* ============================================================
+   Client sites
+   ============================================================ */
+
+const SITE_FIELD_DEFS = [
+  {key:'parking', label:'Parking', section:'Getting There'},
+  {key:'transport', label:'Public transport and walking distance', section:'Getting There'},
+  {key:'access_notes', label:'Access routes and anything unusual', section:'Getting There'},
+  {key:'arrival_time', label:'Arrive at', section:'On Arrival'},
+  {key:'clearance_allowance', label:'Time to allow for security', section:'On Arrival'},
+  {key:'security', label:'Gates and security', section:'On Arrival'},
+  {key:'pre_registration', label:'Pre-registration', section:'On Arrival'},
+  {key:'reception', label:'Reception', section:'On Arrival'},
+  {key:'reception_contact', label:'Who to ask for', section:'On Arrival'},
+  {key:'badges', label:'Badges or passes', section:'On Arrival'},
+  {key:'building_floor', label:'Building and floor', section:'On Arrival'},
+  {key:'directions', label:'Directions from reception', section:'On Arrival'},
+  {key:'layout_notes', label:'Layout notes', section:'On Arrival'},
+  {key:'escort', label:'Escort', section:'On Arrival'},
+  {key:'dress_code', label:'Dress code', section:'What to Wear'},
+  {key:'safety_requirements', label:'Site safety requirements', section:'What to Wear'},
+  {key:'accessibility', label:'Accessibility (lifts, toilets, access)', section:'Health, Safety and Accessibility'},
+  {key:'refreshments', label:'Refreshments', section:'Health, Safety and Accessibility'},
+  {key:'dietary', label:'Dietary needs', section:'Health, Safety and Accessibility'},
+  {key:'induction', label:'Health and safety induction', section:'Health, Safety and Accessibility'},
+  {key:'interview_duration', label:'Expected length of visit', section:'Good to Know'},
+  {key:'late_contact', label:'If you are running late', section:'Good to Know'},
+  {key:'other_info', label:'Anything else', section:'Good to Know'},
+  {key:'contact1_name', label:'Main contact name', section:'Contacts'},
+  {key:'contact1_phone', label:'Main contact phone', section:'Contacts'},
+  {key:'contact1_email', label:'Main contact email', section:'Contacts'},
+  {key:'contact2_name', label:'Second contact name', section:'Contacts'},
+  {key:'contact2_phone', label:'Second contact phone', section:'Contacts'},
+  {key:'contact2_email', label:'Second contact email', section:'Contacts'},
+];
+const SITE_SECTIONS = ['Getting There','On Arrival','What to Wear','Health, Safety and Accessibility','Good to Know','Contacts'];
+
+let SITES = [];
+async function loadSites(){
+  try{ SITES = b2List(await b2Api('/api/client-sites')); }catch(e){ SITES = []; }
+}
+function siteFields(s){ try{ return JSON.parse((s && s.logistics_json) || '{}') || {}; }catch(e){ return {}; } }
+function sitesFor(company){ return SITES.filter(s => b2Same(s.company, company)); }
+function siteAddressLine(s){ return [s.address, s.postcode].filter(Boolean).join(', '); }
+function siteStatus(s){
+  const n = Object.values(siteFields(s)).filter(v => String(v || '').trim()).length;
+  if(!n) return {cls:'none', text:'No site info'};
+  return s.checked === 'yes' ? {cls:'ok', text:'Site info ready'} : {cls:'warn', text:'Needs checking'};
+}
+function siteHasData(s){ return !!(s && (Object.values(siteFields(s)).some(v => String(v || '').trim()))); }
+
+function sitesBlockHtml(company, contacts){
+  let list = sitesFor(company);
+  const c0 = (contacts && contacts[0]) || {};
+  const co = escapeAttr(company);
+  if(!list.length) list = [{id:'', company, site_name:'Main site', address:c0.address || '', postcode:c0.postcode || '', virtual:true, logistics_json:'{}'}];
+  const rows = list.map(s => {
+    const st = siteStatus(s);
+    return `<div class="site-row"><div class="site-main"><strong>${esc(s.site_name || 'Site')}</strong><span>${esc(siteAddressLine(s)) || 'No address yet'}</span></div>
+      <span class="chip ${st.cls}">${st.text}</span>
+      <button onclick="openSiteModal('${co}','${escapeAttr(s.id || '')}')">${s.virtual ? 'Add site info' : 'Edit'}</button></div>`;
+  }).join('');
+  return `<div class="cl-sites"><div class="cl-sites-head"><span>Sites</span><button onclick="openSiteModal('${co}','',true)">+ Add site</button></div>${rows}</div>`;
+}
+
+(function(){
+  const _rcc = renderClientCard;
+  renderClientCard = function(company, contacts){
+    const html = _rcc(company, contacts);
+    return html.replace('<div class="client-card-actions">', sitesBlockHtml(company, contacts) + '<div class="client-card-actions">');
+  };
+  const _lc = loadClients;
+  loadClients = async function(){
+    await loadSites();
+    return _lc();
+  };
+  const _cm = companyAddress;
+  companyAddress = function(company){
+    const s = sitesFor(company).find(x => x.address);
+    return s ? siteAddressLine(s) : _cm(company);
+  };
+})();
+
+let SITE_ED = null;
+
+function openSiteModal(company, id, forceNew){
+  const existing = id ? SITES.find(s => s.id === id) : null;
+  const contacts = (clientsData || []).filter(c => b2Same(c.company, company));
+  const c0 = contacts[0] || {};
+  const firstSite = !sitesFor(company).length;
+  SITE_ED = {
+    id: existing ? existing.id : b2Id('site'), company, isNew: !existing,
+    pdfId: existing ? existing.pdf_file_id : '', pdfLink: existing ? existing.pdf_link : '', pdfName: existing ? existing.pdf_name : '',
+  };
+  const f = existing ? siteFields(existing) : {};
+  const name = existing ? existing.site_name : (firstSite && !forceNew ? 'Main site' : '');
+  const address = existing ? existing.address : (firstSite && !forceNew ? (c0.address || '') : '');
+  const postcode = existing ? existing.postcode : (firstSite && !forceNew ? (c0.postcode || '') : '');
+  const fieldsHtml = SITE_SECTIONS.map(sec => `
+    <div class="sec-title">${esc(sec)}</div>
+    ${SITE_FIELD_DEFS.filter(d => d.section === sec).map(d => `<label class="sfl">${esc(d.label)}</label>
+      <textarea class="sf" id="sf_${d.key}">${esc(f[d.key] || '')}</textarea>`).join('')}`).join('');
+  document.getElementById('siteBody').innerHTML = `
+    <h2>${esc(company)} - ${existing ? 'Edit site' : 'Add site'}</h2>
+    <div class="two-col" style="margin-top:10px;">
+      <div><label class="sfl">Site name</label><input id="siteName" value="${esc(name)}" placeholder="For example Trentham site"></div>
+      <div><label class="sfl">Postcode</label><input id="sitePostcode" value="${esc(postcode)}"></div>
+    </div>
+    <label class="sfl">Address</label><input id="siteAddress" value="${esc(address)}" placeholder="Street address">
+    <div class="upload-box">
+      <strong>Site onboarding form (PDF)</strong><br>
+      Upload the client's completed form. It is saved in their Site Info folder in Drive and the details below are filled in for you to check.
+      <div style="margin-top:8px;"><input type="file" id="sitePdf" accept="application/pdf,.pdf" onchange="siteUploadPdf()"></div>
+      <div id="siteUploadStatus" style="margin-top:8px;">${SITE_ED.pdfLink ? `Saved: <a href="${esc(SITE_ED.pdfLink)}" target="_blank" rel="noopener">${esc(SITE_ED.pdfName || 'Open the PDF')}</a>` : ''}</div>
+    </div>
+    <div id="siteMissing"></div>
+    ${fieldsHtml}
+    <label style="display:flex;gap:8px;align-items:center;margin:16px 0 4px;font-size:13px;color:var(--grey);">
+      <input type="checkbox" id="siteChecked" style="width:auto;" ${existing && existing.checked === 'yes' ? 'checked' : ''}>
+      I have checked these details against the client's form
+    </label>
+    <div class="stage-buttons">
+      <button onclick="closeModal('siteModal')">Cancel</button>
+      ${existing ? '<button class="reject" onclick="siteDelete()">Delete site</button>' : ''}
+      <button class="primary" onclick="siteSave()">Save site</button>
+    </div>`;
+  document.getElementById('siteModal').classList.add('visible');
+}
+
+async function siteUploadPdf(){
+  const input = document.getElementById('sitePdf');
+  const file = input && input.files[0];
+  if(!file) return;
+  const status = document.getElementById('siteUploadStatus');
+  if(!/\.pdf$/i.test(file.name)){ showToast('Choose the completed site onboarding form as a PDF file'); input.value = ''; return; }
+  status.innerHTML = 'Reading the form. This can take up to a minute...';
+  try{
+    const b64 = await fileToB64(file);
+    const j = await b2Post('/api/client-sites/' + encodeURIComponent(SITE_ED.id) + '/pdf', {
+      company: SITE_ED.company, siteName: b2Val('siteName').trim(), fileName: file.name, fileData: b64,
+    });
+    const ex = j.extracted;
+    let filled = 0;
+    if(ex){
+      SITE_FIELD_DEFS.forEach(d => {
+        const el = document.getElementById('sf_' + d.key);
+        const v = String(ex[d.key] || '').trim();
+        if(el && v){ el.value = v; filled++; }
+      });
+      if(ex.address && !b2Val('siteAddress').trim()) b2Set('siteAddress', ex.address);
+      if(ex.postcode && !b2Val('sitePostcode').trim()) b2Set('sitePostcode', ex.postcode);
+      document.getElementById('siteChecked').checked = false;
+    }
+    if(j.file){ SITE_ED.pdfId = j.file.id; SITE_ED.pdfLink = j.file.link; SITE_ED.pdfName = j.file.name; }
+    let msg = j.file ? `Saved to Drive: <a href="${esc(j.file.link)}" target="_blank" rel="noopener">${esc(j.file.name)}</a>` : '';
+    if(j.fileError) msg += `<div class="warn-box">The PDF could not be saved to Drive (${esc(j.fileError)}). The details below can still be used.</div>`;
+    if(j.warning) msg += `<div class="warn-box">${esc(j.warning)}</div>`;
+    if(ex) msg += `<div style="margin-top:6px;">${filled} fields filled in. Please check each one against the form, then tick the box at the bottom and save.</div>`;
+    status.innerHTML = msg;
+    const miss = ex && Array.isArray(ex.missing) ? ex.missing.filter(Boolean) : [];
+    document.getElementById('siteMissing').innerHTML = miss.length
+      ? `<div class="warn-box">The form did not answer:<ul>${miss.map(m => `<li>${esc(m)}</li>`).join('')}</ul></div>` : '';
+  }catch(e){
+    status.innerHTML = `<div class="warn-box">Could not process the form: ${esc(e.message)}</div>`;
+  }
+  input.value = '';
+}
+
+async function siteSave(){
+  const fields = {};
+  SITE_FIELD_DEFS.forEach(d => { const el = document.getElementById('sf_' + d.key); fields[d.key] = el ? el.value.trim() : ''; });
+  const name = b2Val('siteName').trim() || 'Main site';
+  const body = {
+    id: SITE_ED.id, company: SITE_ED.company, site_name: name,
+    address: b2Val('siteAddress').trim(), postcode: b2Val('sitePostcode').trim(),
+    pdf_file_id: SITE_ED.pdfId || '', pdf_link: SITE_ED.pdfLink || '', pdf_name: SITE_ED.pdfName || '',
+    logistics_json: JSON.stringify(fields),
+    checked: document.getElementById('siteChecked').checked ? 'yes' : '',
+    updated_by: signedInUser ? signedInUser.name : '', updated_at: new Date().toISOString(),
+  };
+  try{
+    const j = await b2Post('/api/client-sites', body);
+    const i = SITES.findIndex(s => s.id === body.id);
+    if(i >= 0) SITES[i] = j.data; else SITES.push(j.data);
+    closeModal('siteModal');
+    showToast('Site saved');
+    loadClients();
+  }catch(e){ showToast('Could not save the site: ' + e.message); }
+}
+
+async function siteDelete(){
+  if(!confirm('Delete this site?')) return;
+  try{
+    await b2Del('/api/client-sites', SITE_ED.id);
+    SITES = SITES.filter(s => s.id !== SITE_ED.id);
+    closeModal('siteModal');
+    showToast('Site deleted');
+    loadClients();
+  }catch(e){ showToast('Could not delete: ' + e.message); }
+}
+
+/* ---------- Site choice on the interview form ---------- */
+
+function ivPopulateSites(){
+  const box = document.getElementById('ivSiteRow');
+  if(!box) return;
+  const list = sitesFor(b2Val('ivCompany'));
+  const sel = document.getElementById('ivSite');
+  if(!list.length){ box.style.display = 'none'; return; }
+  const cur = b2Val('ivLocation').trim();
+  sel.innerHTML = '<option value="">Choose the site</option>' + list.map(s =>
+    `<option value="${esc(s.id)}" ${cur && cur === siteAddressLine(s) ? 'selected' : ''}>${esc(s.site_name)}${s.address ? ' - ' + esc(siteAddressLine(s)) : ''}</option>`).join('');
+  box.style.display = list.length > 1 || !cur ? '' : 'none';
+  if(!cur && list.length === 1 && b2Val('ivType') === 'site' && list[0].address){
+    b2Set('ivLocation', siteAddressLine(list[0]));
+    sel.value = list[0].id;
+  }
+}
+function ivSitePicked(){
+  const s = SITES.find(x => x.id === b2Val('ivSite'));
+  if(s && s.address) b2Set('ivLocation', siteAddressLine(s));
+}
+
+(function(){
+  const loc = document.getElementById('ivLocation');
+  if(loc && !document.getElementById('ivSiteRow')){
+    const row = document.createElement('div');
+    row.id = 'ivSiteRow'; row.style.display = 'none';
+    row.innerHTML = '<label>Site</label><select id="ivSite" onchange="ivSitePicked()" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;margin-bottom:8px;"></select>';
+    const label = loc.previousElementSibling;
+    (label && label.tagName === 'LABEL' ? label : loc).before(row);
+  }
+  const _oim = openInterviewModal;
+  openInterviewModal = function(id, presetDate, preset){
+    _oim(id, presetDate, preset);
+    loadSites().then(ivPopulateSites);
+  };
+  if(typeof ivPickCandidate === 'function'){
+    const _ipc = ivPickCandidate;
+    ivPickCandidate = function(){ _ipc(); ivPopulateSites(); };
+  }
+  const _itc = ivTypeChanged;
+  ivTypeChanged = function(){ _itc(); ivPopulateSites(); };
+})();
+
+/* ============================================================
+   Client folders
+   ============================================================ */
+
+(function(){
+  const btn = document.getElementById('addClientBtn');
+  if(btn && !document.getElementById('folderBtn')){
+    const b = document.createElement('button');
+    b.id = 'folderBtn'; b.textContent = 'Create missing folders'; b.onclick = () => ensureFoldersFlow();
+    b.style.display = 'none';
+    btn.after(b);
+  }
+})();
+
+async function ensureFoldersFlow(){
+  try{
+    showToast('Checking Drive...');
+    const p = await b2Post('/api/clients/ensure-folders', {preview: true});
+    const r = p.results || [];
+    const create = r.filter(x => x.plan === 'create'), exists = r.filter(x => x.plan === 'exists'), similar = r.filter(x => x.plan === 'similar');
+    let msg = create.length + ' client folder' + (create.length === 1 ? '' : 's') + ' will be created in Candidates Submissions' + (create.length ? ':\n  ' + create.map(x => x.company).join('\n  ') : '.');
+    if(exists.length) msg += '\n\nAlready there: ' + exists.map(x => x.company).join(', ');
+    if(similar.length) msg += '\n\nThese look like folders that already exist, so no second folder will be made:\n  ' + similar.map(x => x.company + '  (existing: ' + x.similarTo + ')').join('\n  ');
+    msg += '\n\nEvery client also gets its own Site Info, Submissions and Invoices folders. Continue?';
+    if(!confirm(msg)) return;
+    showToast('Creating folders...');
+    const j = await b2Post('/api/clients/ensure-folders', {});
+    const failed = (j.results || []).filter(x => !x.ok);
+    showToast(failed.length ? failed.length + ' could not be created: ' + (failed[0].error || 'see the server log') : 'Folders are ready');
+    loadClients();
+  }catch(e){ showToast('Could not create folders: ' + e.message); }
+}
+
+/* ============================================================
+   Interview packs
+   ============================================================ */
+
+const IP = {iv:null, cand:null, site:null, pack:null, draftId:'', step:'setup', busy:false, files:null, subject:'', body:'', to:'', setup:{}, bypass:false};
+
+(function(){
+  const _oid = openInviteDialog;
+  IP.openInvites = _oid;
+  openInviteDialog = function(id, justSaved){
+    if(justSaved && !IP.bypass){ openPackBuilder(id); return; }
+    return _oid(id, justSaved);
+  };
+})();
+
+function ipClose(){
+  closeModal('ipModal');
+}
+function ipSkipToInvites(){
+  const id = IP.iv && IP.iv.id;
+  ipClose();
+  if(id) IP.openInvites(id, true);
+}
+
+function packFromCandidate(){
+  const c = findCandidate(openCandidateId);
+  if(!c) return;
+  const iv = B2.interviews.filter(i => b2Same(i.candidate_name, c.name) && b2Same(i.role, currentRole))
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+  closeModal('candModalOverlay');
+  if(iv) openPackBuilder(iv.id);
+  else { showToast('Book the interview first, then the pack can be built'); switchTab('interviews'); openInterviewModal(null, null, {id:c.id, name:c.name, role:currentRole, company:currentCompany}); }
+}
+
+async function openPackBuilder(interviewId){
+  const iv = B2.interviews.find(x => x.id === interviewId);
+  if(!iv){ showToast('Save the interview first'); return; }
+  await loadSites();
+  const hit = findPipelineCandidate(iv.candidate_name, iv.role, iv.company);
+  IP.iv = iv; IP.cand = hit; IP.pack = null; IP.draftId = ''; IP.created = ''; IP.files = null; IP.step = 'setup'; IP.busy = false;
+  const contacts = clientContactsFor(iv.company);
+  const rec = contacts.find(c => b2Same(c.contactName, iv.interviewer));
+  const sites = sitesFor(iv.company);
+  let site = sites.find(s => iv.location && siteAddressLine(s) === iv.location) || (sites.length === 1 ? sites[0] : null);
+  IP.site = site;
+  const notes = (clientsData || []).find(c => b2Same(c.company, iv.company));
+  IP.setup = {
+    interviewer: iv.interviewer || '', title: rec ? rec.title : '',
+    format: {site:'Face to face', video:'Video call', phone:'Phone', assessment:'Assessment', other:'Other'}[iv.type] || 'Face to face',
+    companyNotes: notes && notes.notes ? notes.notes : '', callNotes: hit && hit.notes ? hit.notes : '',
+  };
+  document.getElementById('ipModal').classList.add('visible');
+  // Pick up a saved draft for this interview
+  try{
+    const drafts = b2List(await b2Api('/api/interview-pack-drafts'));
+    const d = drafts.filter(x => x.interview_id === iv.id).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0];
+    if(d && d.pack_json){
+      IP.pack = JSON.parse(d.pack_json); IP.draftId = d.id; IP.created = d.created_at || '';
+      if(d.site_id) IP.site = SITES.find(s => s.id === d.site_id) || IP.site;
+      IP.step = d.status === 'email_built' || d.status === 'sent' ? 'email' : 'review';
+      if(IP.step === 'email') await ipPrepareEmail();
+    }
+  }catch(e){ /* start fresh */ }
+  ipRender();
+}
+
+function ipSteps(){
+  const order = [['setup','1. Details'],['review','2. Review the pack'],['email','3. Email']];
+  return '<div class="ip-steps">' + order.map(o => `<span class="${IP.step === o[0] || (IP.step === 'sent' && o[0] === 'email') ? 'on' : ''}">${o[1]}</span>`).join('') + '</div>';
+}
+
+function ipRender(){
+  const body = document.getElementById('ipBody');
+  const iv = IP.iv;
+  const head = `<h2>Interview pack</h2><div class="note-line" style="margin:4px 0 8px;">${esc(iv.candidate_name)} - ${esc(iv.role)} at ${esc(iv.company)}<br>${esc(fmtDateLong(iv.date))}${iv.time ? ' at ' + esc(fmtTime12(iv.time)) : ''}</div>`;
+  if(IP.busy){ body.innerHTML = head + `<div class="ip-busy">${IP.busy}</div>`; return; }
+  if(IP.step === 'setup') body.innerHTML = head + ipSteps() + ipSetupHtml();
+  else if(IP.step === 'review') body.innerHTML = head + ipSteps() + ipReviewHtml();
+  else body.innerHTML = head + ipSteps() + ipEmailHtml();
+}
+
+function ipSelectStyle(){ return 'width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;'; }
+
+function ipSetupHtml(){
+  const iv = IP.iv, s = IP.setup;
+  const sites = sitesFor(iv.company);
+  let siteHtml;
+  if(!sites.length){
+    siteHtml = `<div class="warn-box">There is no site information for ${esc(iv.company)} yet. Add it on the Clients tab (upload their site onboarding form) and the Site Pack will be built automatically. You can carry on without it and the pack will go without a Site Pack.</div>`;
+  }else{
+    siteHtml = `<label class="sfl">Site for this interview</label>
+      <select id="ipSite" onchange="ipSiteChanged()" style="${ipSelectStyle()}">
+        <option value="">No site pack</option>
+        ${sites.map(x => `<option value="${esc(x.id)}" ${IP.site && IP.site.id === x.id ? 'selected' : ''}>${esc(x.site_name)}${x.address ? ' - ' + esc(siteAddressLine(x)) : ''} (${esc(siteStatus(x).text)})</option>`).join('')}
+      </select>`;
+  }
+  return `
+    <div class="two-col">
+      <div><label class="sfl">Meeting with</label><input id="ipInterviewer" value="${esc(s.interviewer)}"></div>
+      <div><label class="sfl">Their job title</label><input id="ipTitle" value="${esc(s.title)}"></div>
+    </div>
+    <label class="sfl">Format</label>
+    <select id="ipFormat" style="${ipSelectStyle()}">${['Face to face','Video call','Phone','Assessment','Other'].map(f => `<option ${f === s.format ? 'selected' : ''}>${f}</option>`).join('')}</select>
+    ${siteHtml}
+    <label class="sfl">About the company (optional - anything you know that should go in the pack)</label>
+    <textarea id="ipCompanyNotes" placeholder="What they do, size, recent news, culture. The pack only uses what is written here and in the role brief." style="min-height:80px;">${esc(s.companyNotes)}</textarea>
+    <label class="sfl">Your notes on the candidate (optional)</label>
+    <textarea id="ipCallNotes" style="min-height:80px;">${esc(s.callNotes)}</textarea>
+    <div class="note-line">The pack is built from the candidate's CV, application answers, the role brief and the submission the client has seen. It usually takes under a minute.</div>
+    <div class="stage-buttons">
+      <button onclick="ipSkipToInvites()">Skip the pack</button>
+      <button class="primary" onclick="ipDraft()">Draft the pack</button>
+    </div>`;
+}
+
+function ipSiteChanged(){
+  const id = b2Val('ipSite');
+  IP.site = id ? SITES.find(s => s.id === id) : null;
+}
+function ipCollectSetup(){
+  IP.setup = {
+    interviewer: b2Val('ipInterviewer').trim(), title: b2Val('ipTitle').trim(), format: b2Val('ipFormat') || 'Face to face',
+    companyNotes: b2Val('ipCompanyNotes'), callNotes: b2Val('ipCallNotes'),
+  };
+}
+
+function ipSiteSnapshot(){
+  const s = IP.site;
+  if(!s) return null;
+  return {site_name: s.site_name, address: s.address, postcode: s.postcode, fields: siteFields(s)};
+}
+
+async function ipDraft(){
+  ipCollectSetup();
+  const iv = IP.iv, cand = IP.cand, st = IP.setup;
+  IP.busy = 'Drafting the pack from the CV, application answers and role brief...<br>This usually takes under a minute. Please keep this window open.';
+  ipRender();
+  try{
+    const name = (cand && cand.name) || iv.candidate_name;
+    const j = await b2Post('/api/interview-packs/generate', {
+      name, role: iv.role, company: iv.company, interviewer: st.interviewer, interviewerTitle: st.title,
+      typeLabel: st.format, companyOverview: st.companyNotes, callNotes: st.callNotes, cardNotes: cand && cand.notes ? cand.notes : '',
+    });
+    const me = signedInUser || {};
+    const siteSnap = ipSiteSnapshot();
+    const hasSite = !!(siteSnap && (siteSnap.address || Object.values(siteSnap.fields).some(v => String(v || '').trim())));
+    const location = siteSnap ? [siteSnap.site_name, siteSnap.address, siteSnap.postcode].filter(Boolean).join(', ') : (iv.location || '');
+    const consName = me.fullName || me.name || '';
+    IP.pack = {
+      candidate_name: name, candidate_ref: refOfName(name), first_name: firstWord(name),
+      role_title: iv.role, company: iv.company,
+      consultant: {name: consName, first_name: firstWord(consName), phone: me.phone || '', email: me.email || ''},
+      schedule: [
+        {label:'Interview Date', value: fmtDateLong(iv.date)},
+        {label:'Interview Time', value: iv.time ? fmtTime12(iv.time) : ''},
+        {label:'You will be meeting', value: [st.interviewer, st.title].filter(Boolean).join(' - ')},
+        {label:'Format', value: st.format},
+        {label:'Location', value: location},
+        {label:'Your Consultant', value: consName + ' - Live 2 Help Recruitment'},
+        {label:'Contact Number', value: me.phone || ''},
+        {label:'Email', value: me.email || ''},
+      ],
+      has_site_pack: hasSite, site: siteSnap,
+      about_company: j.pack.about_company, meeting_summary: j.pack.meeting_summary, interview_format: j.pack.interview_format,
+      questions: j.pack.questions || [], questions_to_ask: j.pack.questions_to_ask || [], gaps: j.pack.gaps || [],
+    };
+    if(siteSnap && IP.site && IP.site.checked !== 'yes') IP.pack.gaps.push('The site information for ' + IP.site.site_name + ' has not been ticked as checked yet.');
+    if(!siteSnap) IP.pack.gaps.push('No site information is attached, so this email will go without a Site Pack.');
+    IP.step = 'review';
+    IP.busy = false;
+    await ipSaveDraft('draft', true);
+    ipRender();
+  }catch(e){
+    IP.busy = false;
+    IP.step = 'setup';
+    ipRender();
+    showToast('Could not draft the pack: ' + e.message);
+  }
+}
+
+async function ipSaveDraft(status, quiet){
+  const iv = IP.iv;
+  const json = JSON.stringify(IP.pack);
+  if(json.length > 45000){ showToast('The pack is too long to store. Shorten some of the text.'); return false; }
+  if(!IP.draftId) IP.draftId = b2Id('ipk');
+  if(!IP.created) IP.created = new Date().toISOString();
+  const body = {
+    id: IP.draftId, interview_id: iv.id, candidate_id: (IP.cand && IP.cand.id) || iv.candidate_id || '',
+    candidate_name: iv.candidate_name, role: iv.role, company: iv.company, site_id: IP.site ? IP.site.id : '',
+    status: status || 'draft', pack_json: json, created_by: signedInUser ? signedInUser.name : '',
+    created_at: IP.created,
+  };
+  if(status === 'approved') body.approved_at = new Date().toISOString();
+  if(status === 'sent') body.sent_at = new Date().toISOString();
+  try{
+    await b2Post('/api/interview-pack-drafts', body);
+    if(!quiet) showToast('Draft saved');
+    return true;
+  }catch(e){ showToast('Could not save the draft: ' + e.message); return false; }
+}
+
+function ipReviewHtml(){
+  const p = IP.pack;
+  const gaps = (p.gaps || []).filter(Boolean);
+  const ta = (id, v, h) => `<textarea id="${id}" style="min-height:${h || 90}px;">${esc(v || '')}</textarea>`;
+  return `
+    ${gaps.length ? `<div class="warn-box"><strong>Check before sending</strong><ul>${gaps.map(g => `<li>${esc(g)}</li>`).join('')}</ul></div>` : ''}
+    <div class="sec-title">Interview schedule</div>
+    ${(p.schedule || []).map((r, i) => `<div class="ip-row"><input id="ips_l${i}" value="${esc(r.label)}"><input id="ips_v${i}" value="${esc(r.value)}"></div>`).join('')}
+    <div class="sec-title">About the company</div>${ta('ip_about', p.about_company, 110)}
+    <div class="sec-title">Who they will be meeting</div>${ta('ip_meeting', p.meeting_summary, 90)}
+    <div class="sec-title">Interview format</div>${ta('ip_format', p.interview_format, 70)}
+    <div class="sec-title">Competency questions</div>
+    <div id="ipQuestions">${(p.questions || []).map((q, i) => ipQuestionHtml(q, i)).join('')}</div>
+    <button class="ghost-btn" onclick="ipAddQuestion()">+ Add a question</button>
+    <div class="sec-title">Questions the candidate could ask (one per line)</div>${ta('ip_ask', (p.questions_to_ask || []).join('\n'), 90)}
+    <div class="sec-title">Site pack</div>
+    <div class="note-line" style="margin:0 0 6px;">${p.has_site_pack ? `A separate Site Pack will be attached for ${esc((p.site && p.site.site_name) || 'the site')}.` : 'No Site Pack will be attached.'}</div>
+    <label style="display:flex;gap:8px;align-items:center;margin:16px 0 4px;font-size:13px;color:var(--grey);">
+      <input type="checkbox" id="ipReviewed" style="width:auto;"> I have read this pack and edited anything that needs changing
+    </label>
+    <div class="stage-buttons">
+      <button onclick="ipBackToSetup()">Back</button>
+      <button onclick="ipSaveReview()">Save draft</button>
+      <button class="primary" onclick="ipApprove()">Approve and prepare the email</button>
+    </div>`;
+}
+function ipQuestionHtml(q, i){
+  return `<div class="ip-q" id="ipq_${i}">
+    <div class="ip-qhead"><input id="ipq_q${i}" value="${esc(q.question)}" placeholder="Question"><button class="ip-mini" onclick="ipRemoveQuestion(${i})">Remove</button></div>
+    <textarea id="ipq_p${i}" placeholder="Points, one per line starting with - ">${esc(q.points)}</textarea>
+    <textarea class="tip" id="ipq_t${i}" placeholder="Tip">${esc(q.tip)}</textarea></div>`;
+}
+function ipCollectReview(){
+  const p = IP.pack;
+  p.schedule = (p.schedule || []).map((r, i) => ({label: b2Val('ips_l' + i).trim(), value: noDashes(b2Val('ips_v' + i).trim())}));
+  p.about_company = noDashes(b2Val('ip_about')); p.meeting_summary = noDashes(b2Val('ip_meeting')); p.interview_format = noDashes(b2Val('ip_format'));
+  const qs = [];
+  for(let i = 0; document.getElementById('ipq_q' + i); i++){
+    qs.push({question: noDashes(b2Val('ipq_q' + i).trim()), points: noDashes(b2Val('ipq_p' + i)), tip: noDashes(b2Val('ipq_t' + i))});
+  }
+  p.questions = qs.filter(q => q.question);
+  p.questions_to_ask = b2Val('ip_ask').split('\n').map(s => noDashes(s.trim())).filter(Boolean);
+}
+function ipAddQuestion(){
+  ipCollectReview();
+  IP.pack.questions.push({question:'', points:'- ', tip:''});
+  ipRender();
+}
+function ipRemoveQuestion(i){
+  ipCollectReview();
+  IP.pack.questions.splice(i, 1);
+  ipRender();
+}
+function ipBackToSetup(){ ipCollectReview(); IP.step = 'setup'; ipRender(); }
+async function ipSaveReview(){ ipCollectReview(); await ipSaveDraft('draft'); }
+async function ipApprove(){
+  ipCollectReview();
+  if(!document.getElementById('ipReviewed').checked){ showToast('Tick the box to confirm you have read the pack'); return; }
+  if(!(IP.pack.questions || []).length){ showToast('The pack needs at least one question'); return; }
+  if(!(await ipSaveDraft('approved', true))) return;
+  IP.files = null;
+  IP.step = 'email';
+  await ipPrepareEmail();
+  ipRender();
+}
+
+/* ---------- step 3: the email ---------- */
+
+async function ipPrepareEmail(){
+  const iv = IP.iv, p = IP.pack, me = senderProfile();
+  let tpl = (B2.templates || []).find(t => t.id === 'tpl-interview-confirmation');
+  if(!tpl){
+    try{ B2.templates = b2List(await b2Api('/api/templates')); tpl = B2.templates.find(t => t.id === 'tpl-interview-confirmation'); }catch(e){ /* use the fallback */ }
+  }
+  if(!tpl) tpl = {
+    subject: 'Your Interview Confirmed - {{company}}, {{role}} - {{interview_date}}',
+    body: 'Hi {{first_name}},\n\nGreat news - your interview with {{company}} has been confirmed. Please see the details below.\n\nInterview Details:\nDate: {{interview_date}}\nTime: {{interview_time}}\nLocation: {{interview_location}}\nFormat: {{interview_format}}\nYou will be meeting: {{interviewer}}\n\nImportant Information:\n- Please arrive 5-10 minutes early\n- I have attached your interview preparation pack - please read it in full before the day\n- If anything changes or you need to reschedule, please contact me immediately on {{sender_phone}} - do not leave it until the last minute\n- Bring a notepad and pen with you\n\nBest regards,\n\n{{signature}}',
+  };
+  const row = label => ((p.schedule || []).find(r => b2Same(r.label, label)) || {}).value || '';
+  const vars = {
+    first_name: p.first_name, candidate_name: p.candidate_name, role: iv.role, company: iv.company,
+    interview_date: fmtDateUK(iv.date), interview_time: iv.time ? fmtTime12(iv.time) : '',
+    interview_location: row('Location'), interview_format: row('Format'), interviewer: row('You will be meeting'),
+    sender_name: me.name, sender_email: me.email, sender_phone: me.phone, signature: me.signature, my_name: me.name,
+  };
+  let subject = tplMerge(tpl.subject, vars).text;
+  let body = tplMerge(tpl.body, vars).text;
+  if(p.has_site_pack && !/site pack/i.test(body)){
+    const line = 'I have also attached your Site Pack, with travel, parking and arrival details for the day.';
+    body = /\n\nWe are confident/.test(body) ? body.replace(/\n\nWe are confident/, '\n\n' + line + '\n\nWe are confident') : body.replace(/\n\nBest regards/, '\n\n' + line + '\n\nBest regards');
+  }
+  IP.subject = noDashes(subject); IP.body = noDashes(body);
+  IP.to = iv.candidate_email || candidateEmailFor(iv.candidate_name, iv.role, iv.company) || '';
+}
+
+function ipEmailHtml(){
+  const p = IP.pack;
+  if(IP.step === 'sent'){
+    return `<div class="ip-busy">Was the email sent from Outlook?</div>
+      <div class="stage-buttons"><button onclick="ipNotYet()">Not yet</button><button class="primary" onclick="ipMarkSent()">Yes, it has been sent</button></div>`;
+  }
+  const names = [];
+  const ref = refOfName(p.candidate_name);
+  names.push(`${ref} Interview Prep ${p.role_title}.docx`);
+  if(p.has_site_pack) names.push(`${ref} Site Pack ${p.company}.docx`);
+  return `
+    <label class="sfl">To</label><input id="ipTo" value="${esc(IP.to)}" placeholder="Candidate email">
+    <label class="sfl">Subject</label><input id="ipSubject" value="${esc(IP.subject)}">
+    <label class="sfl">Message</label><textarea id="ipBodyText" style="min-height:250px;">${esc(IP.body)}</textarea>
+    <div class="upload-box"><strong>Attached to the email</strong><br>${names.map(n => esc(n)).join('<br>')}</div>
+    <div class="note-line">${SIG.html ? 'Your saved signature will be added at the bottom of the email.' : 'No signature is saved yet - open Signature at the top right to add one.'}</div>
+    <div class="stage-buttons">
+      <button onclick="IP.step='review';ipRender()">Back to the pack</button>
+      <button class="primary" onclick="ipBuildEml()">Open in Outlook (.eml with the pack attached)</button>
+    </div>`;
+}
+
+async function ipBuildEml(){
+  IP.to = b2Val('ipTo').trim(); IP.subject = b2Val('ipSubject'); IP.body = b2Val('ipBodyText');
+  if(!IP.to || IP.to.indexOf('@') < 1){ showToast('Enter the candidate\'s email address'); return; }
+  IP.busy = 'Building the Word documents and the email file...';
+  ipRender();
+  try{
+    const j = await b2Post('/api/interview-packs/docx', {pack: IP.pack});
+    const atts = j.files.map(f => ({fileName: f.fileName, mime: DOCX_MIME_FE, base64: f.base64}));
+    const eml = emlBuildRich(IP.to, IP.subject, IP.body, atts);
+    const fname = 'Draft ' + String(IP.subject || 'interview pack').replace(/[^A-Za-z0-9 \-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 70) + '.eml';
+    downloadText(fname, eml, 'message/rfc822');
+    await ipSaveDraft('email_built', true);
+    b2Post('/api/interview-packs/archive', {pack: IP.pack}).then(() => showToast('Pack saved to the candidate folder in Drive'))
+      .catch(e => showToast('The pack could not be filed in Drive: ' + e.message));
+    IP.busy = false;
+    IP.step = 'sent';
+    showToast('Email file downloaded. Open it in Outlook, check it, then send.');
+    ipRender();
+  }catch(e){
+    IP.busy = false;
+    IP.step = 'email';
+    ipRender();
+    showToast('Could not build the email: ' + e.message);
+  }
+}
+
+function ipNotYet(){
+  IP.step = 'email';
+  ipClose();
+  showToast('Saved. Open the pack again from the Interviews tab when you are ready.');
+}
+async function ipMarkSent(){
+  await ipSaveDraft('sent', true);
+  const iv = IP.iv;
+  try{ logActivity('interview_pack_sent', {candidate: iv.candidate_name, role: iv.role, company: iv.company}); }catch(e){ /* not essential */ }
+  ipClose();
+  showToast('Pack marked as sent');
+  IP.openInvites(iv.id, true);
+}
+
+/* ---------- entry points ---------- */
 </script>
 
 </body>
