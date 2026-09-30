@@ -7,6 +7,7 @@ import nodemailer from 'nodemailer';
 import path from 'path';
 import { Readable } from 'stream';
 import crypto from 'crypto';
+import zlib from 'zlib';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -2707,6 +2708,7 @@ const POOL_CV_FOLDER_NAME = 'Candidate Pool CVs';
 // never changes how far someone got.
 const STAGE_RANK = {
   applied: 0,
+  ready_to_submit: 0.5,
   submitted: 1,
   interview_requested: 2,
   interview_scheduled: 3,
@@ -3446,7 +3448,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
 
 const rolesTable = makeSimpleTable({
   tab: 'Roles',
-  header: ['id', 'company', 'role', 'contact', 'salary_band', 'fee_percent', 'status', 'date_opened', 'date_closed', 'notes', 'positions'],
+  header: ['id', 'company', 'role', 'contact', 'salary_band', 'fee_percent', 'status', 'date_opened', 'date_closed', 'notes', 'positions', 'requirements'],
   path: '/api/roles',
   label: 'Role',
   auditType: 'role',
@@ -3617,6 +3619,14 @@ const DEFAULT_TEMPLATES = [
     "updated_by": "system"
   },
   {
+    "id": "tpl-client-submission",
+    "name": "Client submission (candidate attached)",
+    "category": "Client",
+    "subject": "{{role}} - {{candidate_names}} for your review",
+    "body": "Hi {{contact_first_name}},\n\nI have {{submission_intro}} for your {{role}} vacancy, attached for your review.\n\n{{candidate_summaries}}\n\nEach attachment includes the full submission and an anonymised CV.\n\nCould you let me know whether you would like to interview {{interview_target}}? If so, I will confirm availability straight away.\n\nKind regards,\n\n{{signature}}",
+    "updated_by": "system"
+  },
+  {
     "id": "tpl-client-placement",
     "name": "Client placement confirmation",
     "category": "Client",
@@ -3670,7 +3680,7 @@ let tplMigrated = false;
 async function migrateTemplates() {
   if (tplMigrated) return;
   const all = await templatesTable.listAll();
-  if (all.some(t => t.id === '__templates_v3')) { tplMigrated = true; return; }
+  if (all.some(t => t.id === '__templates_v4')) { tplMigrated = true; return; }
   for (const d of DEFAULT_TEMPLATES) {
     const ex = all.find(t => t.id === d.id);
     if (!ex || ex.updated_by === 'system') await templatesTable.upsert(d);
@@ -3679,7 +3689,7 @@ async function migrateTemplates() {
     const ex = all.find(t => t.id === oldId);
     if (ex && ex.updated_by === 'system') await templatesTable.remove(oldId);
   }
-  await templatesTable.upsert({ id: '__templates_v3', name: 'migration marker', category: '', subject: '', body: '', updated_by: 'system' });
+  await templatesTable.upsert({ id: '__templates_v4', name: 'migration marker', category: '', subject: '', body: '', updated_by: 'system' });
   tplMigrated = true;
 }
 
@@ -4093,6 +4103,7 @@ app.post('/api/gdpr/erase/:id', requireAdmin, async (req, res) => {
     cleared.interviews = await interviewsTable.updateWhere(o => match(o.candidate_name), o => ({ ...o, candidate_name: ERASED, candidate_email: '', notes: '' }));
     cleared.contactLog = await commsTable.updateWhere(o => match(o.entity_name), o => ({ ...o, entity_name: ERASED, summary: '[erased]' }));
     await candidateDetailsTable.updateWhere(o => match(o.candidate_name), o => ({ ...o, candidate_name: ERASED, start_time: '', reporting_to: '' }));
+    await submissionDraftsTable.updateWhere(o => match(o.candidate_name), o => ({ ...o, candidate_name: ERASED, call_notes: '', submission_json: '', cv_json: '', contact_email: '' }));
     cleared.feedback = await feedbackTable.updateWhere(o => match(o.candidate_name), o => ({ ...o, candidate_name: ERASED, detail: '' }));
     cleared.activity = await activityTable.updateWhere(o => match(o.candidate), o => ({ ...o, candidate: ERASED, detail: '' }));
     cleared.audit = await auditTable.updateWhere(
@@ -4130,6 +4141,836 @@ app.post('/api/gdpr/erase/:id', requireAdmin, async (req, res) => {
     });
   } catch (e) {
     console.error('POST /api/gdpr/erase error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+/* ======================================================================
+   Automated candidate submissions
+
+   Flow: Applied -> Ready to submit -> AI draft (submission + anonymised CV)
+   -> Ella reviews and approves -> client email built as an .eml with the
+   attachments -> Ella confirms it was sent -> card moves to Submitted.
+
+   Needs one extra npm dependency for the Word files: "docx".
+   The API key stays on this server (ANTHROPIC_API_KEY). Nothing here ever
+   sends an email - it only prepares drafts for a person to review and send.
+   ====================================================================== */
+
+const SUBMISSION_MODEL = process.env.SUBMISSION_MODEL || 'claude-sonnet-4-6';
+const SUBMISSION_CONTACT_LINE = 'dan.brown@live2helprecruitment.co.uk  |  07424 087576  |  www.live2helprecruitment.co.uk';
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+const submissionDraftsTable = makeSimpleTable({
+  tab: 'Submission Drafts',
+  header: [
+    'id', 'candidate_id', 'candidate_name', 'role', 'company', 'status', 'call_notes',
+    'submission_json', 'cv_json', 'contact_name', 'contact_email', 'batch_id',
+    'created_by', 'created_at', 'approved_at', 'sent_at',
+  ],
+  path: null,
+  label: 'Submission draft',
+});
+
+const DRAFT_STATUSES = ['draft', 'approved', 'email_built', 'sent'];
+const SHEET_CELL_LIMIT = 45000;
+
+// ---- Text helpers --------------------------------------------------------
+
+// No em dashes or en dashes anywhere in generated documents
+function cleanDashes(s) {
+  return String(s == null ? '' : s)
+    .replace(/[ \t]*\u2014[ \t]*/g, ' - ')
+    .replace(/[ \t]*\u2015[ \t]*/g, ' - ')
+    .replace(/[ \t]*\u2013[ \t]*/g, m => (/[ \t]/.test(m) ? ' - ' : '-'));
+}
+
+function cleanDeep(v) {
+  if (typeof v === 'string') return cleanDashes(v);
+  if (Array.isArray(v)) return v.map(cleanDeep);
+  if (v && typeof v === 'object') {
+    const o = {};
+    Object.keys(v).forEach(k => { o[k] = cleanDeep(v[k]); });
+    return o;
+  }
+  return v;
+}
+
+function candidateRef(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return 'Candidate';
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[parts.length - 1][0].toUpperCase()}`;
+}
+
+function safeFileName(s) {
+  return String(s || '').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function submissionFileNames(name, role) {
+  const ref = candidateRef(name);
+  const r = safeFileName(role);
+  return {
+    submission: safeFileName(`Candidate Submission ${ref} ${r}`) + '.docx',
+    cv: safeFileName(`Anonymised CV ${ref} ${r}`) + '.docx',
+  };
+}
+
+// Mini markup used inside body fields so drafts are easy to edit:
+//   plain line = paragraph, "- " = bullet, "## " = sub-heading, **text** = bold
+function parseMarkup(text) {
+  const blocks = [];
+  String(text || '').split(/\r?\n/).forEach(raw => {
+    const line = raw.trim();
+    if (!line) return;
+    if (/^##\s+/.test(line)) blocks.push({ type: 'sub', text: line.replace(/^##\s+/, '') });
+    else if (/^[-*\u2022]\s+/.test(line)) blocks.push({ type: 'bullet', text: line.replace(/^[-*\u2022]\s+/, '') });
+    else blocks.push({ type: 'p', text: line });
+  });
+  return blocks;
+}
+
+function splitBold(text) {
+  const out = [];
+  String(text || '').split(/(\*\*[^*]+\*\*)/g).forEach(part => {
+    if (!part) return;
+    if (/^\*\*[^*]+\*\*$/.test(part)) out.push({ text: part.slice(2, -2), bold: true });
+    else out.push({ text: part.replace(/\*\*/g, ''), bold: false });
+  });
+  return out;
+}
+
+// Safety net: strip contact details and the candidate's full name from generated text.
+// Lone name words are only flagged (never auto-removed) because a surname can also be an
+// ordinary word such as "Price" or "Cook".
+function scrubIdentifiers(value, { fullName, keepFirstName, emails, phones }) {
+  const found = new Set();
+  const check = new Set();
+  const tokens = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+  const first = tokens[0] || '';
+  const last = tokens.length > 1 ? tokens[tokens.length - 1] : '';
+  const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const phrases = [];
+  if (tokens.length > 1) {
+    phrases.push(tokens.map(escapeRe).join('\\s+'));
+    if (tokens.length > 2) phrases.push(`${escapeRe(first)}\\s+${escapeRe(last)}`);
+  }
+  const replacement = keepFirstName && first ? `${first} ${last.charAt(0).toUpperCase()}` : 'the candidate';
+  const scrub = str => {
+    let s = String(str);
+    s = s.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, () => { found.add('email address'); return '[removed]'; });
+    s = s.replace(/(?:\+44\s?\(?0?\)?|\b0)\s?\d[\d\s()-]{8,}\d/g, () => { found.add('phone number'); return '[removed]'; });
+    s = s.replace(/(?:https?:\/\/)?(?:www\.)?linkedin\.com\/[^\s)]*/gi, () => { found.add('LinkedIn link'); return '[removed]'; });
+    (emails || []).filter(Boolean).forEach(e => {
+      s = s.replace(new RegExp(escapeRe(e), 'gi'), () => { found.add('email address'); return '[removed]'; });
+    });
+    (phones || []).map(p => String(p || '').replace(/\D/g, '')).filter(p => p.length >= 9).forEach(p => {
+      const loose = p.split('').join('\\s*');
+      s = s.replace(new RegExp(loose, 'g'), () => { found.add('phone number'); return '[removed]'; });
+    });
+    phrases.forEach(ph => {
+      s = s.replace(new RegExp(`\\b${ph}\\b`, 'gi'), () => { found.add('candidate name'); return replacement; });
+    });
+    const lone = [];
+    if (last && last.length >= 3) lone.push(last);
+    if (!keepFirstName && first && first.length >= 3) lone.push(first);
+    lone.forEach(tok => {
+      if (new RegExp(`\\b(?:${escapeRe(tok)}|${escapeRe(tok.toUpperCase())})\\b`).test(s)) check.add(tok);
+    });
+    return s;
+  };
+  const walk = v => {
+    if (typeof v === 'string') return scrub(v);
+    if (Array.isArray(v)) return v.map(walk);
+    if (v && typeof v === 'object') {
+      const o = {};
+      Object.keys(v).forEach(k => { o[k] = walk(v[k]); });
+      return o;
+    }
+    return v;
+  };
+  return { value: walk(value), found: [...found], check: [...check] };
+}
+
+// ---- Reading CV files ----------------------------------------------------
+
+function readZipEntry(buf, wanted) {
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) return null;
+  const total = buf.readUInt16LE(eocd + 10);
+  let off = buf.readUInt32LE(eocd + 16);
+  for (let n = 0; n < total; n++) {
+    if (off + 46 > buf.length || buf.readUInt32LE(off) !== 0x02014b50) break;
+    const method = buf.readUInt16LE(off + 10);
+    const compSize = buf.readUInt32LE(off + 20);
+    const nameLen = buf.readUInt16LE(off + 28);
+    const extraLen = buf.readUInt16LE(off + 30);
+    const commentLen = buf.readUInt16LE(off + 32);
+    const localOff = buf.readUInt32LE(off + 42);
+    const name = buf.toString('utf8', off + 46, off + 46 + nameLen);
+    if (name === wanted) {
+      const lNameLen = buf.readUInt16LE(localOff + 26);
+      const lExtraLen = buf.readUInt16LE(localOff + 28);
+      const start = localOff + 30 + lNameLen + lExtraLen;
+      const data = buf.subarray(start, start + compSize);
+      return method === 0 ? Buffer.from(data) : zlib.inflateRawSync(data);
+    }
+    off += 46 + nameLen + extraLen + commentLen;
+  }
+  return null;
+}
+
+function xmlDecode(s) {
+  return s
+    .replace(/&#x([0-9a-f]+);/gi, (m, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (m, d) => String.fromCodePoint(parseInt(d, 10)))
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+}
+
+function docxToText(buf) {
+  const xml = readZipEntry(buf, 'word/document.xml');
+  if (!xml) throw new Error('This Word file could not be read. Ask for a PDF version of the CV.');
+  let s = xml.toString('utf8');
+  s = s.replace(/<w:tab\/>/g, '\t').replace(/<w:br[^>]*\/>/g, '\n')
+    .replace(/<\/w:p>/g, '\n').replace(/<\/w:tc>/g, ' | ')
+    .replace(/<[^>]+>/g, '');
+  return xmlDecode(s).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+async function findCvInfo(company, name, role) {
+  let info = null;
+  try {
+    const found = await findPoolRowById(poolIdFor(name, role));
+    if (found && found.row[11]) info = { fileId: found.row[11], fileName: found.row[12] || '' };
+  } catch (e) { /* fall through to the folder search */ }
+  if (!info) {
+    const legacy = await findLegacyCv(company, name).catch(() => null);
+    if (legacy && legacy.fileId) info = { fileId: legacy.fileId, fileName: legacy.fileName || '' };
+  }
+  return info;
+}
+
+function cvKind(fileName, mime) {
+  const n = String(fileName || '').toLowerCase();
+  if (n.endsWith('.pdf') || mime === 'application/pdf') return 'pdf';
+  if (n.endsWith('.docx') || mime === DOCX_MIME) return 'docx';
+  if (mime === 'application/vnd.google-apps.document') return 'gdoc';
+  if (n.endsWith('.doc') || mime === 'application/msword') return 'doc';
+  return 'other';
+}
+
+async function loadCvFile(company, name, role) {
+  const info = await findCvInfo(company, name, role);
+  if (!info) return null;
+  const drive = getDriveClient();
+  const meta = await drive.files.get({ fileId: info.fileId, fields: 'name, mimeType, size' });
+  const fileName = meta.data.name || info.fileName || 'CV';
+  const mime = meta.data.mimeType || '';
+  const kind = cvKind(fileName, mime);
+  return { fileId: info.fileId, fileName, mime, kind, size: Number(meta.data.size || 0) };
+}
+
+async function downloadCv(file) {
+  const drive = getDriveClient();
+  if (file.kind === 'gdoc') {
+    const r = await drive.files.export({ fileId: file.fileId, mimeType: 'application/pdf' }, { responseType: 'arraybuffer' });
+    return { buffer: Buffer.from(r.data), kind: 'pdf' };
+  }
+  const r = await drive.files.get({ fileId: file.fileId, alt: 'media' }, { responseType: 'arraybuffer' });
+  return { buffer: Buffer.from(r.data), kind: file.kind };
+}
+
+// ---- Reading the screening answers --------------------------------------
+
+async function loadScreening(name, role) {
+  const sheets = getSheetsClient();
+  const tabName = `Applications - ${role}`;
+  let all;
+  try {
+    const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tabName}'!A1:Z` });
+    all = r.data.values || [];
+  } catch (e) {
+    return { found: false, qa: [], reason: `No application form tab for ${role}` };
+  }
+  const header = all[0] || [];
+  const rows = all.slice(1);
+  const norm = s => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const target = norm(name);
+  let row = rows.find(r => norm(r[2]) === target);
+  if (!row) {
+    const parts = target.split(' ');
+    if (parts.length >= 2) {
+      const first = parts[0], initial = parts[parts.length - 1].charAt(0);
+      row = rows.find(r => {
+        const p = norm(r[2]).split(' ');
+        return p[0] === first && p.length >= 2 && p[p.length - 1].charAt(0) === initial;
+      });
+    }
+  }
+  if (!row) return { found: false, qa: [], reason: 'No matching application form answers' };
+  const qa = [];
+  for (let i = 5; i <= 16; i++) {
+    const a = String(row[i] || '').trim();
+    if (!a) continue;
+    qa.push({ question: String(header[i] || `Question ${i - 4}`).trim(), answer: a });
+  }
+  return {
+    found: true, qa, fullName: row[2] || name,
+    email: row[3] || '', phone: row[4] || '', recruiterNotes: String(row[20] || '').trim(),
+  };
+}
+
+// ---- Calling the model ---------------------------------------------------
+
+async function callClaudeTool({ system, content, tool, maxTokens }) {
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({
+      model: SUBMISSION_MODEL,
+      max_tokens: maxTokens,
+      temperature: 0.2,
+      system,
+      tools: [tool],
+      tool_choice: { type: 'tool', name: tool.name },
+      messages: [{ role: 'user', content }],
+    }),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error((data.error && data.error.message) || `AI service returned ${resp.status}`);
+  if (data.stop_reason === 'max_tokens') throw new Error('The draft was cut off before it finished. Try again.');
+  const block = (data.content || []).find(b => b.type === 'tool_use');
+  if (!block || !block.input) throw new Error('The AI did not return a draft. Try again.');
+  return block.input;
+}
+
+const MARKUP_HELP =
+  'Body text uses a simple markup: each plain line is a paragraph; a line starting with "- " is a bullet point; ' +
+  'a line starting with "## " is a bold sub-heading; **double asterisks** make text bold. Put each item on its own line.';
+
+const SUBMISSION_SYSTEM = `You write client-facing candidate submissions for Live 2 Help Recruitment, a UK recruitment agency. The reader is a hiring manager deciding whether to interview.
+
+HOUSE RULES
+- British English. Confident and professional, persuasive without overselling. Be specific, never generic.
+- Use ONLY facts in the material supplied (CV, screening answers, recruiter call notes). Never invent or assume employers, dates, figures, qualifications, salary, notice periods, availability or motivations.
+- If something a client would expect is missing, write "To be confirmed" in that field and add a plain-English line to "gaps" so the recruiter can fill it in before sending.
+- Read the screening answers precisely. Notice period, salary, employment status, location and any option ticked must be reproduced exactly as given. If the CV and the screening answers disagree, use the screening answers and note the difference in "gaps".
+- Never mention a screener, form, questionnaire or "screening answers". Where that information is used, phrase it as coming from discussion with the candidate, for example "In discussion, Sam confirmed he is expert level in Excel".
+- Call the candidate by first name in prose. In "candidate_ref" and details use first name plus surname initial only (for example "Yihsin C"). Never output a surname, email address, phone number or street address.
+- Never include interview areas to explore, questions to ask, weaknesses, or anything that gives away unconfirmed details or the candidate's negotiating position.
+- Never use em dashes or en dashes. Use a plain hyphen with spaces (" - ") for a break in a sentence and a plain hyphen in date ranges (for example "Nov 2022-Present").
+- Match the candidate's evidence directly to the role's stated requirements. Strongest match first. Name the systems, figures, employers and outcomes given in the material.
+- ${MARKUP_HELP}
+
+STRUCTURE (mirror the agency's standard submission)
+1. details: rows for the Candidate Details table, in this order: Candidate Name, Role Submitted For, Location, Current Salary (only if known), Salary Expectation, Notice Period, Availability for Interview, Current Employment. Add a "Commute to <site>" row only if commute information is given. Use "To be confirmed" for any of Location, Salary Expectation, Notice Period, Availability for Interview or Current Employment that is not in the material.
+2. email_summary: one or two sentences (maximum 45 words) for the covering email, naming the candidate's strongest evidence against the role's main requirement. Use the first name.
+3. profile: two or three paragraphs (Profile Overview) that sell the candidate against the role.
+4. sections: two to four background sections with headings chosen to suit the role (for example "Supply Chain and Procurement Background"). Use sub-headings and bullets carrying concrete evidence.
+5. fit: one row per role requirement: the requirement, and the candidate's specific evidence. If no role requirements were supplied, build the rows from the main themes of the role and add a gap saying no requirements were on file.
+6. motivation: the candidate's reasons for moving and fit with the role, using only what was said.
+7. employment: most recent first, with employer, a short role description with responsibilities, and dates.
+8. gaps: every item marked "To be confirmed", every disagreement, and anything the recruiter should check. Empty array if none.`;
+
+const SUBMISSION_TOOL = {
+  name: 'submit_candidate_submission',
+  description: 'Return the finished candidate submission.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      candidate_ref: { type: 'string', description: 'First name and surname initial, e.g. "Yihsin C"' },
+      details: {
+        type: 'array',
+        items: { type: 'object', properties: { label: { type: 'string' }, value: { type: 'string' } }, required: ['label', 'value'] },
+      },
+      email_summary: { type: 'string' },
+      profile: { type: 'string', description: 'Profile Overview paragraphs (markup)' },
+      sections: {
+        type: 'array',
+        items: { type: 'object', properties: { heading: { type: 'string' }, body: { type: 'string' } }, required: ['heading', 'body'] },
+      },
+      fit: {
+        type: 'array',
+        items: { type: 'object', properties: { requirement: { type: 'string' }, evidence: { type: 'string' } }, required: ['requirement', 'evidence'] },
+      },
+      motivation: { type: 'string' },
+      employment: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { employer: { type: 'string' }, role: { type: 'string' }, dates: { type: 'string' } },
+          required: ['employer', 'role', 'dates'],
+        },
+      },
+      gaps: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['candidate_ref', 'details', 'email_summary', 'profile', 'sections', 'fit', 'motivation', 'employment', 'gaps'],
+  },
+};
+
+const CV_SYSTEM = `You prepare anonymised CVs for Live 2 Help Recruitment, a UK recruitment agency. The anonymised CV goes to a client alongside a submission, so the candidate cannot be contacted directly.
+
+RULES
+- Reproduce the candidate's CV faithfully. Do not add, embellish, infer or reword achievements beyond tidying layout and wording. Never invent anything.
+- REMOVE all personal identifiers: full name (any part of it), postal address and postcode (a town or region may stay as a general location), phone numbers, email addresses, website and social media links, date of birth, age, photograph, nationality, visa or right-to-work status, marital status, driving licence details, referee names and contact details, and any hobby detail that names a person.
+- Wherever the candidate's own name appears in the text, write "the candidate" or rewrite the sentence without it.
+- KEEP employer names, job titles, dates, qualifications, awards, systems, skills and achievements exactly as given.
+- Never use em dashes or en dashes. Use a plain hyphen with spaces (" - ") for a break in a sentence and a plain hyphen in date ranges (for example "Nov 2022-Present").
+- British English.
+- Sections, in this order and only where the CV has the content: Profile, Key Skills, Employment History, Education and Qualifications, Training and Certifications, Additional Information.
+- In Employment History, start each job with a sub-heading line in this form: "## Employer | Job title | Dates" followed by "- " bullets for responsibilities and achievements.
+- ${MARKUP_HELP}
+- In "removed" list, in plain words, the kinds of detail you removed (for example "Email address", "Home address", "Referees").`;
+
+const CV_TOOL = {
+  name: 'submit_anonymised_cv',
+  description: 'Return the anonymised CV.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      sections: {
+        type: 'array',
+        items: { type: 'object', properties: { heading: { type: 'string' }, body: { type: 'string' } }, required: ['heading', 'body'] },
+      },
+      removed: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['sections', 'removed'],
+  },
+};
+
+function screeningText(screen) {
+  if (!screen.found || !screen.qa.length) return 'None on file.';
+  return screen.qa.map(x => `- ${x.question}: ${x.answer}`).join('\n');
+}
+
+function cvBlocks(cvDoc) {
+  if (cvDoc.kind === 'pdf') {
+    return [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: cvDoc.buffer.toString('base64') } }];
+  }
+  return [{ type: 'text', text: `CV TEXT:\n${cvDoc.text}` }];
+}
+
+app.get('/api/submissions/sources', async (req, res) => {
+  try {
+    const { name, role, company } = req.query;
+    if (!name || !role) return res.status(400).json({ error: 'name and role are required' });
+    const [cv, screen] = await Promise.all([
+      loadCvFile(company, name, role).catch(() => null),
+      loadScreening(name, role),
+    ]);
+    res.json({
+      cv: cv ? { found: true, fileName: cv.fileName, kind: cv.kind, readable: ['pdf', 'docx', 'gdoc'].includes(cv.kind) } : { found: false },
+      screener: { found: !!screen.found, answers: screen.qa.length, reason: screen.reason || '' },
+    });
+  } catch (e) {
+    console.error('GET /api/submissions/sources error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/submissions/generate', async (req, res) => {
+  try {
+    const { name, role, company, callNotes, requirements, cardNotes } = req.body || {};
+    if (!name || !role) return res.status(400).json({ error: 'name and role are required' });
+    if (!API_KEY) return res.status(500).json({ error: 'The AI key is not set on the server' });
+
+    const [cvFile, screen] = await Promise.all([
+      loadCvFile(company, name, role),
+      loadScreening(name, role),
+    ]);
+    if (!cvFile && !screen.found && !String(callNotes || '').trim()) {
+      return res.status(422).json({ error: 'There is no CV, no application answers and no call notes to build a submission from.' });
+    }
+
+    let cvDoc = null;
+    if (cvFile) {
+      if (cvFile.kind === 'doc') {
+        return res.status(422).json({ error: 'The CV on file is an old .doc file, which cannot be read. Upload a PDF or DOCX version and try again.' });
+      }
+      if (cvFile.kind === 'other') {
+        return res.status(422).json({ error: 'The CV on file is not a PDF or Word document. Upload a PDF or DOCX version.' });
+      }
+      const dl = await downloadCv(cvFile);
+      cvDoc = { kind: dl.kind, buffer: dl.buffer, text: dl.kind === 'docx' ? docxToText(dl.buffer) : '' };
+    }
+
+    const ref = candidateRef(name);
+    const gapsFromSources = [];
+    if (!cvFile) gapsFromSources.push('No CV was on file, so the employment history and background are based on the call notes only.');
+    if (!screen.found) gapsFromSources.push('No application form answers were found for this candidate.');
+    if (!String(requirements || '').trim()) gapsFromSources.push('No role requirements are on file, so the fit table is based on the main themes of the role. Add requirements to the role for a sharper match.');
+
+    const context = [
+      `ROLE: ${role}${company && company !== UNASSIGNED_LABEL ? ` at ${company}` : ''}`,
+      `ROLE REQUIREMENTS (build the fit table from these):\n${String(requirements || '').trim() || 'NONE PROVIDED'}`,
+      `CANDIDATE (for your reference only; output first name and initial "${ref}" and never a surname): ${screen.fullName || name}`,
+      `APPLICATION ANSWERS:\n${screeningText(screen)}`,
+      `RECRUITER NOTES ON THE CANDIDATE CARD:\n${[cardNotes, screen.recruiterNotes].map(s => String(s || '').trim()).filter(Boolean).join('\n') || 'None.'}`,
+      `NOTES FROM THE RECRUITER'S CALL WITH THE CANDIDATE:\n${String(callNotes || '').trim() || 'None provided.'}`,
+    ].join('\n\n');
+
+    const content = [{ type: 'text', text: context }, ...(cvDoc ? cvBlocks(cvDoc) : [])];
+
+    const jobs = [
+      callClaudeTool({ system: SUBMISSION_SYSTEM, content, tool: SUBMISSION_TOOL, maxTokens: 6000 }),
+    ];
+    if (cvDoc) {
+      const cvContent = [
+        { type: 'text', text: `Anonymise this CV. The candidate's name is ${screen.fullName || name}.` },
+        ...cvBlocks(cvDoc),
+      ];
+      jobs.push(callClaudeTool({ system: CV_SYSTEM, content: cvContent, tool: CV_TOOL, maxTokens: 6000 }));
+    }
+    const settled = await Promise.allSettled(jobs);
+
+    const scrubOpts = { fullName: screen.fullName || name, emails: [screen.email], phones: [screen.phone] };
+    const out = { warnings: [], errors: {} };
+
+    if (settled[0].status === 'fulfilled') {
+      const cleaned = scrubIdentifiers(cleanDeep(settled[0].value), { ...scrubOpts, keepFirstName: true });
+      const sub = cleaned.value;
+      sub.gaps = [...gapsFromSources, ...(Array.isArray(sub.gaps) ? sub.gaps : [])].filter(Boolean);
+      sub.candidate_ref = ref;
+      sub.role_title = role;
+      out.submission = sub;
+      if (cleaned.found.length) out.warnings.push(`Removed from the submission: ${cleaned.found.join(', ')}.`);
+      if (cleaned.check.length) out.warnings.push(`Check the submission text - it still contains "${cleaned.check.join('", "')}", which may be the candidate's name.`);
+    } else {
+      out.errors.submission = settled[0].reason && settled[0].reason.message ? settled[0].reason.message : 'Submission draft failed';
+    }
+
+    if (!cvDoc) {
+      out.errors.cv = 'There is no CV on file to anonymise.';
+    } else if (settled[1] && settled[1].status === 'fulfilled') {
+      const cleaned = scrubIdentifiers(cleanDeep(settled[1].value), { ...scrubOpts, keepFirstName: false });
+      out.cv = { role_title: role, sections: cleaned.value.sections || [], removed: cleaned.value.removed || [] };
+      if (cleaned.found.length) out.warnings.push(`Extra details removed from the anonymised CV: ${cleaned.found.join(', ')}.`);
+      if (cleaned.check.length) out.warnings.push(`Check the anonymised CV - it still contains "${cleaned.check.join('", "')}", which may be the candidate's name.`);
+    } else if (settled[1]) {
+      out.errors.cv = settled[1].reason && settled[1].reason.message ? settled[1].reason.message : 'Anonymised CV failed';
+    }
+
+    if (out.errors.submission && !out.cv) return res.status(502).json({ error: out.errors.submission });
+    auditLog(actorOf(req), 'submission_generated', 'submission', `${name} - ${role}`, out.errors.cv ? 'CV not produced' : '');
+    res.json(out);
+  } catch (e) {
+    console.error('POST /api/submissions/generate error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---- Word documents ------------------------------------------------------
+
+let docxLib = null;
+async function getDocx() {
+  if (docxLib) return docxLib;
+  try {
+    docxLib = await import('docx');
+  } catch (e) {
+    throw new Error('The "docx" package is not installed on the server. Add "docx" to the dependencies in package.json and redeploy.');
+  }
+  return docxLib;
+}
+
+function imageInfo(buf) {
+  if (!buf || buf.length < 24) return null;
+  if (buf[0] === 0x89 && buf[1] === 0x50) return { type: 'png', width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+  if (buf[0] === 0xff && buf[1] === 0xd8) {
+    let i = 2;
+    while (i + 9 < buf.length) {
+      if (buf[i] !== 0xff) { i++; continue; }
+      const marker = buf[i + 1];
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        return { type: 'jpg', height: buf.readUInt16BE(i + 5), width: buf.readUInt16BE(i + 7) };
+      }
+      i += 2 + buf.readUInt16BE(i + 2);
+    }
+  }
+  return null;
+}
+
+const DX = { gold: 'C9A84C', dark: '1A1A1A', grey: '444444', light: 'F7F6F3', border: 'DDDDDD' };
+const FONT = 'Gill Sans MT';
+
+async function buildDocx(kind, data, meta) {
+  const d = await getDocx();
+  const {
+    Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, BorderStyle, ShadingType,
+    ImageRun, Header, Footer, AlignmentType, TableLayoutType, LevelFormat,
+  } = d;
+
+  const run = (text, o = {}) => new TextRun({ text, font: FONT, size: o.size || 20, bold: !!o.bold, italics: !!o.italics, color: o.color || DX.grey });
+  const runsFrom = (text, o = {}) => splitBold(text).map(p => run(p.text, { ...o, bold: o.bold || p.bold }));
+
+  const heading = text => new Paragraph({
+    spacing: { before: 300, after: 120 },
+    border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: DX.gold, space: 3 } },
+    keepNext: true,
+    children: [run(String(text).toUpperCase(), { bold: true, size: 22, color: DX.dark })],
+  });
+  const para = (text, o = {}) => new Paragraph({ spacing: { after: 110, line: 276 }, children: runsFrom(text, o) });
+  const bullet = text => new Paragraph({ numbering: { reference: 'bullets', level: 0 }, spacing: { after: 70, line: 264 }, children: runsFrom(text) });
+  const subHeading = text => {
+    const parts = String(text).split(/\s\|\s/);
+    const kids = [run(parts[0], { bold: true, color: DX.dark, size: 21 })];
+    if (parts.length > 1) kids.push(run('  |  ' + parts.slice(1).join('  |  '), { color: DX.grey, italics: true }));
+    return new Paragraph({ spacing: { before: 160, after: 80 }, keepNext: true, children: kids });
+  };
+  const blocksToParas = text => parseMarkup(text).map(b => (b.type === 'bullet' ? bullet(b.text) : b.type === 'sub' ? subHeading(b.text) : para(b.text)));
+
+  const border = { style: BorderStyle.SINGLE, size: 4, color: DX.border };
+  const borders = { top: border, bottom: border, left: border, right: border };
+  const cell = (children, width, o = {}) => new TableCell({
+    width: { size: width, type: WidthType.DXA },
+    borders,
+    margins: { top: 80, bottom: 80, left: 120, right: 120 },
+    shading: o.fill ? { type: ShadingType.CLEAR, color: 'auto', fill: o.fill } : undefined,
+    children,
+  });
+  const cellText = (text, o = {}) => [new Paragraph({ spacing: { after: 0, line: 264 }, children: runsFrom(text || '', o) })];
+  const table = (widths, rows) => new Table({
+    width: { size: widths.reduce((a, b) => a + b, 0), type: WidthType.DXA },
+    columnWidths: widths,
+    layout: TableLayoutType.FIXED,
+    rows,
+  });
+  const headRow = (labels, widths) => new TableRow({
+    tableHeader: true,
+    children: labels.map((l, i) => cell(cellText(l, { bold: true, color: 'FFFFFF' }), widths[i], { fill: DX.dark })),
+  });
+
+  // Header with logo and gold rule
+  let logoPara = null;
+  try {
+    const fs = await import('fs');
+    const buf = fs.readFileSync(path.join(__dirname, 'assets', 'Logo_3.png'));
+    const info = imageInfo(buf);
+    if (info) {
+      const w = 70, h = Math.round((70 * info.height) / info.width);
+      logoPara = new Paragraph({
+        spacing: { after: 60 },
+        border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: DX.gold, space: 4 } },
+        children: [new ImageRun({ type: info.type, data: buf, transformation: { width: w, height: h }, altText: { title: 'Live 2 Help', description: 'Live 2 Help Recruitment logo', name: 'logo' } })],
+      });
+    }
+  } catch (e) { /* the logo is optional */ }
+  if (!logoPara) {
+    logoPara = new Paragraph({
+      spacing: { after: 60 },
+      border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: DX.gold, space: 4 } },
+      children: [run('LIVE 2 HELP RECRUITMENT', { bold: true, size: 22, color: DX.dark })],
+    });
+  }
+
+  const footer = new Footer({
+    children: [new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [run('Live 2 Help Recruitment Ltd \u00b7 Company No. 11731080 \u00b7 Anyone \u00b7 Anywhere \u00b7 Anytime', { italics: true, size: 16, color: '777777' })],
+    })],
+  });
+
+  const body = [];
+  const W = 9360;
+
+  if (kind === 'submission') {
+    body.push(new Paragraph({ spacing: { before: 200, after: 40 }, children: [run('Candidate Submission', { bold: true, size: 52, color: DX.dark })] }));
+    body.push(new Paragraph({ spacing: { after: 160 }, children: [run('Live 2 Help Recruitment  \u00b7  For Exclusive Consideration', { size: 21, color: DX.gold })] }));
+
+    body.push(heading('Candidate Details'));
+    const detailRows = (data.details || []).filter(r => r && (r.label || r.value)).map(r => new TableRow({
+      cantSplit: true,
+      children: [cell(cellText(r.label, { bold: true, color: DX.dark }), 2800, { fill: DX.light }), cell(cellText(r.value), 6560)],
+    }));
+    if (detailRows.length) body.push(table([2800, 6560], detailRows));
+
+    if (String(data.profile || '').trim()) { body.push(heading('Profile Overview')); body.push(...blocksToParas(data.profile)); }
+    (data.sections || []).forEach(s => {
+      if (!s || (!s.heading && !s.body)) return;
+      if (s.heading) body.push(heading(s.heading));
+      body.push(...blocksToParas(s.body));
+    });
+
+    const fitRows = (data.fit || []).filter(r => r && (r.requirement || r.evidence));
+    if (fitRows.length) {
+      body.push(heading(`Fit for the ${data.role_title || 'Role'}`));
+      const fw = [4160, 5200];
+      body.push(table(fw, [
+        headRow(['Role Requirement', `${data.candidate_ref ? String(data.candidate_ref).split(' ')[0] + "'s" : 'Candidate'} Evidence`], fw),
+        ...fitRows.map(r => new TableRow({
+          cantSplit: true,
+          children: [cell(cellText(r.requirement, { bold: true, color: DX.dark }), fw[0]), cell(cellText(r.evidence), fw[1])],
+        })),
+      ]));
+    }
+
+    if (String(data.motivation || '').trim()) { body.push(heading('Motivation and Role Fit')); body.push(...blocksToParas(data.motivation)); }
+
+    const emp = (data.employment || []).filter(r => r && (r.employer || r.role));
+    if (emp.length) {
+      body.push(heading('Employment History'));
+      const ew = [2800, 4560, 2000];
+      body.push(table(ew, [
+        headRow(['Employer', 'Role', 'Dates'], ew),
+        ...emp.map(r => new TableRow({
+          cantSplit: true,
+          children: [cell(cellText(r.employer, { bold: true, color: DX.dark }), ew[0]), cell(cellText(r.role), ew[1]), cell(cellText(r.dates), ew[2])],
+        })),
+      ]));
+    }
+
+    body.push(new Paragraph({ spacing: { before: 320, after: 40 }, children: [run(`Submitted by Live 2 Help Recruitment \u00b7 For exclusive consideration for the ${data.role_title || meta.role || ''} role`, { italics: true, size: 18 })] }));
+    body.push(new Paragraph({ spacing: { after: 0 }, children: [run(SUBMISSION_CONTACT_LINE, { size: 18 })] }));
+  } else {
+    body.push(new Paragraph({ spacing: { before: 200, after: 40 }, children: [run('Anonymised CV', { bold: true, size: 52, color: DX.dark })] }));
+    body.push(new Paragraph({ spacing: { after: 160 }, children: [run(`Live 2 Help Recruitment  \u00b7  ${data.role_title || meta.role || ''}`, { size: 21, color: DX.gold })] }));
+    (data.sections || []).forEach(s => {
+      if (!s || (!s.heading && !s.body)) return;
+      if (s.heading) body.push(heading(s.heading));
+      body.push(...blocksToParas(s.body));
+    });
+    body.push(new Paragraph({ spacing: { before: 320, after: 40 }, children: [run('Personal details have been removed by Live 2 Help Recruitment. Full details are available on request once you would like to proceed.', { italics: true, size: 18 })] }));
+    body.push(new Paragraph({ spacing: { after: 0 }, children: [run(SUBMISSION_CONTACT_LINE, { size: 18 })] }));
+  }
+
+  const doc = new Document({
+    creator: 'Live 2 Help Recruitment',
+    title: kind === 'submission' ? 'Candidate Submission' : 'Anonymised CV',
+    styles: { default: { document: { run: { font: FONT, size: 20, color: DX.grey } } } },
+    numbering: {
+      config: [{
+        reference: 'bullets',
+        levels: [{ level: 0, format: LevelFormat.BULLET, text: '\u2022', alignment: AlignmentType.LEFT, style: { paragraph: { indent: { left: 540, hanging: 270 } } } }],
+      }],
+    },
+    sections: [{
+      properties: { page: { size: { width: 11906, height: 16838 }, margin: { top: 1134, right: 1273, bottom: 1134, left: 1273, header: 500, footer: 500 } } },
+      headers: { default: new Header({ children: [logoPara] }) },
+      footers: { default: footer },
+      children: body,
+    }],
+  });
+  return Packer.toBuffer(doc);
+}
+
+app.post('/api/submissions/docx', async (req, res) => {
+  try {
+    const { kind, data, name, role } = req.body || {};
+    if (!['submission', 'cv'].includes(kind) || !data) return res.status(400).json({ error: 'kind and data are required' });
+    const buf = await buildDocx(kind, cleanDeep(data), { role });
+    const names = submissionFileNames(name, role);
+    res.json({ fileName: kind === 'submission' ? names.submission : names.cv, base64: buf.toString('base64') });
+  } catch (e) {
+    console.error('POST /api/submissions/docx error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Filed automatically once a person confirms the email was sent
+app.post('/api/submissions/archive', async (req, res) => {
+  try {
+    const { name, role, company, submission, cv } = req.body || {};
+    if (!name || !role || !submission) return res.status(400).json({ error: 'name, role and submission are required' });
+    const folderId = await resolveCandidateCvFolder(company, name);
+    const drive = getUploadDriveClient();
+    const names = submissionFileNames(name, role);
+    const saved = [];
+    const put = async (fileName, buffer) => {
+      const existing = await drive.files.list({
+        q: `'${folderId}' in parents and name='${escDriveQuery(fileName)}' and trashed=false`,
+        spaces: 'drive', pageSize: 1, fields: 'files(id)',
+      });
+      const media = { mimeType: DOCX_MIME, body: Readable.from([buffer]) };
+      let file;
+      try {
+        if (existing.data.files && existing.data.files.length) {
+          file = await drive.files.update({ fileId: existing.data.files[0].id, media, fields: 'id, name, webViewLink' });
+        } else {
+          file = await drive.files.create({ resource: { name: fileName, parents: [folderId] }, media, fields: 'id, name, webViewLink' });
+        }
+      } catch (e) { throw new Error(friendlyDriveError(e)); }
+      saved.push({ name: fileName, link: file.data.webViewLink || '' });
+    };
+    await put(names.submission, await buildDocx('submission', cleanDeep(submission), { role }));
+    if (cv) await put(names.cv, await buildDocx('cv', cleanDeep(cv), { role }));
+    res.json({ ok: true, files: saved });
+  } catch (e) {
+    console.error('POST /api/submissions/archive error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---- Draft records ---------------------------------------------------------
+
+const DRAFT_LIGHT_FIELDS = [
+  'id', 'candidate_id', 'candidate_name', 'role', 'company', 'status', 'contact_name', 'contact_email',
+  'batch_id', 'created_by', 'created_at', 'approved_at', 'sent_at',
+];
+
+app.get('/api/submission-drafts', async (req, res) => {
+  try {
+    const all = await submissionDraftsTable.list();
+    res.json({
+      data: all.map(o => {
+        const l = {};
+        DRAFT_LIGHT_FIELDS.forEach(k => { l[k] = o[k]; });
+        return l;
+      }),
+    });
+  } catch (e) {
+    console.error('GET /api/submission-drafts error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/submission-drafts/:id', async (req, res) => {
+  try {
+    const hit = (await submissionDraftsTable.list()).find(o => o.id === req.params.id);
+    if (!hit) return res.status(404).json({ error: 'Draft not found' });
+    res.json({ data: hit });
+  } catch (e) {
+    console.error('GET /api/submission-drafts/:id error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/submission-drafts', async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!b.id) return res.status(400).json({ error: 'id is required' });
+    if (b.status && !DRAFT_STATUSES.includes(b.status)) return res.status(400).json({ error: 'Unknown status' });
+    ['submission_json', 'cv_json', 'call_notes'].forEach(k => {
+      if (b[k] !== undefined && String(b[k]).length > SHEET_CELL_LIMIT) {
+        throw new Error(`The ${k.replace('_json', '').replace('_', ' ')} is too long to store. Shorten it and save again.`);
+      }
+    });
+    const existing = (await submissionDraftsTable.list()).find(o => o.id === b.id);
+    const clean = {};
+    Object.keys(b).forEach(k => {
+      if (['id', 'candidate_id', 'candidate_name', 'role', 'company', 'status', 'call_notes', 'submission_json', 'cv_json',
+        'contact_name', 'contact_email', 'batch_id', 'created_by', 'created_at', 'approved_at', 'sent_at'].includes(k)) clean[k] = b[k];
+    });
+    const saved = await submissionDraftsTable.upsert({ ...(existing || {}), ...clean });
+    if (!existing || (clean.status && existing.status !== clean.status)) {
+      auditLog(actorOf(req), existing ? `submission_${clean.status}` : 'submission_draft_created', 'submission', `${saved.candidate_name} - ${saved.role}`, '');
+    }
+    res.json({ ok: true, data: saved });
+  } catch (e) {
+    console.error('POST /api/submission-drafts error:', e.message);
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.delete('/api/submission-drafts/:id', async (req, res) => {
+  try {
+    const ok = await submissionDraftsTable.remove(req.params.id);
+    if (!ok) return res.status(404).json({ error: 'Draft not found' });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('DELETE /api/submission-drafts/:id error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
