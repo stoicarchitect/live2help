@@ -10456,6 +10456,62 @@ async function readPdfFormInBrowser(b64){
   }
 }
 
+/* ---------- Turning the form's answers into site details (in the browser) ----------
+   Same rules as the server, so the details fill in even if the server has not been updated. */
+function mapSiteFormLocal(v){
+  v = v || {};
+  const t = k => (typeof v[k] === 'string' ? v[k].replace(/\s+/g, ' ').trim() : '');
+  const on = k => v[k] === true;
+  const ticked = pairs => pairs.filter(p => on(p[0])).map(p => p[1]);
+  const sentence = s => { s = String(s || '').trim(); return s && !/[.!?]$/.test(s) ? s + '.' : s; };
+  const out = {};
+  SITE_FIELD_DEFS.forEach(d => { out[d.key] = ''; });
+
+  let address = t('site_address'), postcode = '';
+  const re = /\b([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})\b/i;
+  const pm = re.exec(address);
+  if(pm){ postcode = (pm[1] + ' ' + pm[2]).toUpperCase(); address = address.replace(re, '').replace(/[\s,]+$/, '').trim(); }
+  out.address = address; out.postcode = postcode;
+
+  const parkKinds = ticked([['park_onsite','On-site parking'],['park_reserved','Reserved space'],['park_nearby','Nearby car park'],['park_street','Street parking'],['park_none','Very limited parking']]);
+  out.parking = [parkKinds.join(', '), t('parking_details')].filter(Boolean).map(sentence).join(' ');
+  out.transport = t('transport');
+  out.access_notes = t('access_routes');
+  out.arrival_time = t('arrival_time');
+  const buf = t('security_buffer');
+  out.clearance_allowance = /^\d+$/.test(buf) ? buf + ' minutes' : buf;
+  const gate = on('gate_yes') ? 'There is a gate house with a security check on arrival.' : on('gate_no') ? 'There is no gate house or security check on arrival.' : '';
+  out.security = [gate, sentence(t('security_process'))].filter(Boolean).join(' ');
+  out.pre_registration = ticked([['prereg_yes','Registration is required in advance.'],['signin_yes','Sign in on arrival.'],['noreg','No registration is needed.']]).join(' ');
+  out.reception = t('reception_location');
+  out.reception_contact = t('ask_for');
+  out.badges = on('badge_yes') ? 'A visitor badge or pass is required.' : on('badge_no') ? 'No visitor badge or pass is needed.' : '';
+  out.building_floor = t('building_floor');
+  out.directions = t('directions');
+  out.layout_notes = t('layout_quirks');
+  out.escort = t('escort');
+  out.dress_code = ticked([['dress_formal','Business formal'],['dress_smart','Business smart'],['dress_casual','Smart casual'],['dress_hivis','Hi-vis / PPE required']]).join(', ');
+  out.safety_requirements = t('dress_notes');
+  out.accessibility = t('accessibility');
+  out.induction = on('hs_yes') ? ['A health and safety induction is required before the interview.', sentence(t('hs_details'))].filter(Boolean).join(' ')
+    : on('hs_no') ? 'No health and safety induction is needed.' : t('hs_details');
+  out.interview_duration = t('duration');
+  out.late_contact = t('late_contact');
+  out.other_info = t('other_notes');
+  ['contact1_name','contact1_phone','contact1_email','contact2_name','contact2_phone','contact2_email'].forEach(k => { out[k] = t(k); });
+
+  const important = [['parking','Where to park'],['reception','Where reception is'],['reception_contact','Who to ask for at reception'],
+    ['directions','Directions from reception to the interview room'],['arrival_time','What time to arrive'],['dress_code','The dress code'],['contact1_name','A main contact for the day']];
+  out.missing = important.filter(p => !out[p[0]]).map(p => p[1]);
+  return out;
+}
+function countSiteDetailsLocal(ex){ return SITE_FIELD_DEFS.filter(d => String((ex && ex[d.key]) || '').trim()).length; }
+function siteFormDiag(form, serverRead){
+  const filled = form.ok ? Object.values(form.values).filter(x => x === true || (typeof x === 'string' && x.trim())).length : 0;
+  const reader = form.ok ? form.count + ' form fields found, ' + filled + ' filled in' : 'could not read (' + form.error + ')';
+  return 'Form reader: ' + reader + '. Server result: ' + (serverRead || 'none') + '.';
+}
+
 /* ---------- Deleting sites completely ---------- */
 async function siteDeleteById(id, fromModal){
   const site = SITES.find(s => s.id === id);
@@ -10506,13 +10562,16 @@ async function siteProcessUpload(company, existing, file, forceNew){
     const guess = existing ? existing.site_name : (others.length ? '' : 'Main site');
     const form = await readPdfFormInBrowser(b64);
     const j = await b2Post('/api/client-sites/' + encodeURIComponent(id) + '/pdf', {company, siteName: guess, fileName: file.name, fileData: b64, formValues: form.ok ? form.values : undefined});
-    j._formNote = form.ok ? '' : form.error;
-    const ex = j.extracted;
+    const local = form.ok && form.hasValues ? mapSiteFormLocal(form.values) : null;
+    const useLocal = !!(local && (countSiteDetailsLocal(local) > 0 || local.address));
+    j._formNote = siteFormDiag(form, j.readBy);
+    if(useLocal) j.readBy = 'form';
+    const ex = useLocal ? local : j.extracted;
     const fields = {};
     SITE_FIELD_DEFS.forEach(d => { fields[d.key] = ex ? String(ex[d.key] || '').trim() : ''; });
     const firstSite = !others.length && !existing;
     const body = {
-      id, company, site_name: existing ? existing.site_name : (j.siteName || guess || 'Main site'),
+      id, company, site_name: existing ? existing.site_name : (firstSite ? 'Main site' : ((ex && ex.address ? String(ex.address).split(',')[0].trim().slice(0, 40) : '') || j.siteName || ('Site ' + (others.length + 1)))),
       address: (ex && ex.address) || (existing && existing.address) || (firstSite ? (c0.address || '') : ''),
       postcode: (ex && ex.postcode) || (existing && existing.postcode) || (firstSite ? (c0.postcode || '') : ''),
       pdf_file_id: j.file ? j.file.id : (existing ? existing.pdf_file_id : ''),
@@ -10530,7 +10589,7 @@ async function siteProcessUpload(company, existing, file, forceNew){
       <h2>${esc(company)} - ${esc(body.site_name)}</h2>
       ${ex && found > 0 ? `<div class="upload-box"><strong>${found} details added from the form.</strong><br>${esc(siteAddressLine(body)) || 'No address found on the form.'}<br>They are marked "Needs checking" until you review them.</div>` : ''}
       ${!ex || found === 0 ? `<div class="warn-box"><strong>Nothing could be read from this form.</strong> The PDF has been saved, but no details were added. Check the form has been filled in and saved as a PDF (not printed or scanned), or use Review and edit to type them in.</div>` : ''}
-      <div class="note-line" style="margin:6px 0;">${j.readBy === 'form' ? "Read from the answers typed into the form." : j.readBy === 'ai' ? "The typed-in answers could not be found, so the pages were read instead." : "Nothing could be read."}${j._formNote ? ' (Form reader: ' + esc(j._formNote) + ')' : ''}</div>
+      <div class="note-line" style="margin:6px 0;">${j.readBy === 'form' ? "Read from the answers typed into the form." : j.readBy === 'ai' ? "The typed-in answers could not be found, so the pages were read instead." : "Nothing could be read."}<br><span style="color:#aaa;">${esc(j._formNote || '')}</span></div>
       ${j.file ? `<div class="note-line" style="margin:6px 0;">Saved to Drive: <a href="${esc(j.file.link)}" target="_blank" rel="noopener">${esc(j.file.name)}</a></div>` : ''}
       ${j.fileError ? `<div class="warn-box">The PDF could not be saved to Drive (${esc(j.fileError)}). The details were still saved.</div>` : ''}
       ${j.warning ? `<div class="warn-box">${esc(j.warning)}</div>` : ''}
@@ -10600,8 +10659,8 @@ function openSiteModal(company, id, forceNew){
     <div id="siteMissing"></div>
     ${fieldsHtml}
     <label style="display:flex;gap:8px;align-items:center;margin:16px 0 4px;font-size:13px;color:var(--grey);">
-      <input type="checkbox" id="siteChecked" style="width:auto;" ${existing && existing.checked === 'yes' ? 'checked' : ''}>
-      I have checked these details against the client's form
+      <input type="checkbox" id="siteChecked" style="width:auto;" ${!existing || existing.checked === 'yes' || !existing.pdf_file_id ? 'checked' : ''}>
+      These details are checked and correct (details typed by hand are marked checked automatically)
     </label>
     <div class="stage-buttons">
       <button onclick="closeModal('siteModal')">Cancel</button>
@@ -10625,7 +10684,11 @@ async function siteUploadPdf(){
       company: SITE_ED.company, siteName: b2Val('siteName').trim(), fileName: file.name, fileData: b64,
       formValues: form.ok ? form.values : undefined,
     });
-    const ex = j.extracted;
+    const local = form.ok && form.hasValues ? mapSiteFormLocal(form.values) : null;
+    const useLocal = !!(local && (countSiteDetailsLocal(local) > 0 || local.address));
+    const diagNote = siteFormDiag(form, j.readBy);
+    if(useLocal) j.readBy = 'form';
+    const ex = useLocal ? local : j.extracted;
     let filled = 0;
     if(ex){
       SITE_FIELD_DEFS.forEach(d => {
@@ -10643,6 +10706,7 @@ async function siteUploadPdf(){
     if(j.fileError) msg += `<div class="warn-box">The PDF could not be saved to Drive (${esc(j.fileError)}). The details below can still be used.</div>`;
     if(j.warning) msg += `<div class="warn-box">${esc(j.warning)}</div>`;
     if(ex) msg += `<div style="margin-top:6px;">${filled} fields filled in. Please check each one against the form, then tick the box at the bottom and save.</div>`;
+    msg += `<div style="margin-top:6px;color:#aaa;font-size:11.5px;">${esc(diagNote)}</div>`;
     status.innerHTML = msg;
     const miss = ex && Array.isArray(ex.missing) ? ex.missing.filter(Boolean) : [];
     document.getElementById('siteMissing').innerHTML = miss.length
@@ -10662,7 +10726,7 @@ async function siteSave(){
     address: b2Val('siteAddress').trim(), postcode: b2Val('sitePostcode').trim(),
     pdf_file_id: SITE_ED.pdfId || '', pdf_link: SITE_ED.pdfLink || '', pdf_name: SITE_ED.pdfName || '',
     logistics_json: JSON.stringify(fields),
-    checked: document.getElementById('siteChecked').checked ? 'yes' : '',
+    checked: (document.getElementById('siteChecked').checked || !SITE_ED.pdfId) ? 'yes' : '',
     updated_by: signedInUser ? signedInUser.name : '', updated_at: new Date().toISOString(),
   };
   try{
