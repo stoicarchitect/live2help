@@ -356,8 +356,8 @@
 
   /* ---- Batch 2: interviews, comms, feedback, templates, forecast, team ---- */
   .tab-btn{margin:0 13px;}
-  #interviewsView,#commsView,#feedbackView,#templatesView,#forecastView,#teamView{display:none;flex:1;flex-direction:column;}
-  #interviewsView.visible,#commsView.visible,#feedbackView.visible,#templatesView.visible,#forecastView.visible,#teamView.visible{display:flex;}
+  #interviewsView,#commsView,#clientCommsView,#feedbackView,#templatesView,#forecastView,#teamView{display:none;flex:1;flex-direction:column;}
+  #interviewsView.visible,#commsView.visible,#clientCommsView.visible,#feedbackView.visible,#templatesView.visible,#forecastView.visible,#teamView.visible{display:flex;}
   .ghost-btn{
     padding:8px 14px;background:var(--white);color:var(--grey);border:1px solid var(--border);border-radius:2px;
     font-size:12.5px;cursor:pointer;font-family:inherit;white-space:nowrap;
@@ -894,6 +894,65 @@
     .card .mob-action{font-size:11px;color:var(--gold);white-space:nowrap;}
     #topbar{padding:14px 16px;}
   }
+  /* ---- Automated submissions ---- */
+  .modal.sub-modal{max-width:880px;}
+  .sub-modal .sub-label{display:block;font-size:11px;color:#999;letter-spacing:.5px;margin:14px 0 4px;}
+  .sub-hint{font-size:11.5px;color:#999;font-weight:normal;letter-spacing:0;}
+  .sub-block-h .sub-hint{text-transform:none;}
+  .sub-hint a{color:var(--gold);}
+  .sub-srcs{margin:14px 0 4px;display:flex;flex-direction:column;gap:6px;align-items:flex-start;}
+  .sub-src{font-size:13px;padding:8px 12px;border-left:3px solid var(--border);background:var(--lightbg);width:100%;}
+  .sub-src.ok{border-left-color:var(--success);}
+  .sub-src.bad{border-left-color:var(--danger);}
+  .sub-block{margin:16px 0;}
+  .sub-block-h{font-size:11px;color:#8a7638;letter-spacing:.5px;text-transform:uppercase;font-weight:600;margin-bottom:8px;}
+  .sub-card{border:1px solid var(--border);padding:10px;margin-bottom:10px;background:#fff;}
+  .sub-pair{display:grid;grid-template-columns:1fr 2fr 30px;gap:8px;margin-bottom:8px;align-items:center;}
+  .sub-pair.top{align-items:start;grid-template-columns:1fr 1.6fr 30px;}
+  .sub-card .sub-pair{grid-template-columns:1fr 30px;margin-bottom:8px;}
+  .sub-trio{display:grid;grid-template-columns:1fr 2fr 1fr 30px;gap:8px;margin-bottom:8px;align-items:start;}
+  .sub-x{border:1px solid var(--border);background:#fff;color:#999;width:30px;height:30px;border-radius:2px;cursor:pointer;font-size:16px;line-height:1;}
+  .sub-x:hover{color:var(--danger);border-color:var(--danger);}
+  .sub-btn{padding:9px 14px;border:1px solid var(--dark);background:#fff;color:var(--dark);border-radius:2px;font-family:inherit;font-size:12.5px;cursor:pointer;}
+  .sub-btn:hover{background:var(--lightbg);}
+  .sub-btn.gold{background:var(--gold);border-color:var(--gold);color:var(--white);font-weight:600;}
+  .sub-btn.gold:hover{background:#b8963f;}
+  .sub-btn.small{padding:6px 10px;font-size:11.5px;border-color:var(--border);color:var(--grey);}
+  .sub-btn[disabled]{opacity:.6;cursor:default;}
+  .sub-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px;}
+  .sub-actions.sticky{position:sticky;bottom:-24px;background:#fff;padding:12px 0 14px;border-top:1px solid var(--border);margin-top:20px;}
+  .sub-tabs{display:flex;gap:0;margin:16px 0 4px;border-bottom:1px solid var(--border);}
+  .sub-tabs button{padding:9px 16px;border:none;background:none;font-family:inherit;font-size:13px;color:#999;cursor:pointer;border-bottom:2px solid transparent;}
+  .sub-tabs button.on{color:var(--dark);border-bottom-color:var(--gold);font-weight:600;}
+  .sub-gaps{background:#FBF6EA;border-left:3px solid var(--gold);padding:12px 14px;margin:14px 0;font-size:13px;}
+  .sub-gaps ul{margin:6px 0 0 18px;}
+  .sub-gaps li{margin-bottom:3px;}
+  .sub-note{font-size:12.5px;background:var(--lightbg);border-left:3px solid var(--border);padding:9px 12px;margin:10px 0;}
+  .sub-note.warn{border-left-color:var(--danger);}
+  .sub-pill{display:inline-block;font-size:11px;padding:2px 9px;border-radius:9px;margin-left:8px;vertical-align:middle;font-weight:600;}
+  .sub-pill.ok{background:#E3F1E6;color:var(--success);}
+  .sub-pill.review{background:#FBF1D6;color:#8a6a12;}
+  .sub-check{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid #eee;cursor:pointer;font-size:13.5px;}
+  .sub-check input{width:auto;margin-top:3px;}
+  .sub-att{font-size:12.5px;padding:6px 10px;background:var(--lightbg);margin-bottom:4px;border-left:3px solid var(--gold);}
+  .sub-loading{text-align:center;padding:60px 20px;font-size:13.5px;}
+  .sub-spin{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--gold);border-radius:50%;margin:0 auto 16px;animation:subspin 1s linear infinite;}
+  @keyframes subspin{to{transform:rotate(360deg);}}
+  .back-row{display:flex;gap:8px;width:100%;align-items:center;margin-top:2px;padding-top:10px;border-top:1px dashed var(--border);}
+  .back-row label{font-size:11px;color:#999;letter-spacing:.5px;white-space:nowrap;}
+  .back-row select{flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12.5px;background:#fff;min-width:0;}
+  .back-row button{flex:0 0 auto !important;min-width:0 !important;padding:8px 14px !important;}
+  .sub-flag{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:9px;margin-top:4px;font-weight:600;}
+  .sub-flag.new{background:#EEE;color:#666;}
+  .sub-flag.review{background:#FBF1D6;color:#8a6a12;}
+  .sub-flag.ok{background:#E3F1E6;color:var(--success);}
+  .sub-flag.warn{background:#F6DEDE;color:var(--danger);}
+  #subPendingBar{align-items:center;justify-content:space-between;gap:14px;background:#F6DEDE;border-left:4px solid var(--danger);color:var(--dark);padding:10px 16px;margin:0 0 10px;font-size:13px;}
+  #subPendingBar button{padding:8px 14px;background:var(--danger);color:#fff;border:none;border-radius:2px;font-family:inherit;font-size:12.5px;cursor:pointer;white-space:nowrap;}
+  @media (max-width:700px){
+    .sub-pair,.sub-pair.top,.sub-trio{grid-template-columns:1fr 30px;}
+    .sub-pair input:nth-child(2),.sub-pair textarea:nth-child(2){grid-column:1;}
+  }
 </style>
 </head>
 <body>
@@ -942,7 +1001,7 @@
       <button class="tab-btn" data-tab="roles" onclick="switchTab('roles')">Roles</button>
       <button class="tab-btn" data-tab="placements" onclick="switchTab('placements')">Placements</button>
       <button class="tab-btn" data-tab="interviews" onclick="switchTab('interviews')">Interviews</button>
-      <button class="tab-btn" data-tab="comms" onclick="switchTab('comms')">Comms Log</button>
+      <button class="tab-btn" data-tab="comms" onclick="switchTab('comms')">Candidate Comms Log</button>
       <button class="tab-btn" data-tab="feedback" onclick="switchTab('feedback')">Client Feedback</button>
       <button class="tab-btn" data-tab="templates" onclick="switchTab('templates')">Templates</button>
       <button class="tab-btn" data-tab="forecast" onclick="switchTab('forecast')">Forecast</button>
@@ -956,6 +1015,7 @@
       <button class="tab-btn" data-tab="tasks" onclick="switchTab('tasks')">Tasks</button>
       <button class="tab-btn" data-tab="kpi" onclick="switchTab('kpi')">KPI Reporting</button>
       <button class="tab-btn" data-tab="clientHealth" onclick="switchTab('clientHealth')">Client Health</button>
+      <button class="tab-btn" data-tab="clientComms" onclick="switchTab('clientComms')">Client Comms Log</button>
       <button class="tab-btn" data-tab="coldCalls" onclick="switchTab('coldCalls')">Cold Call Tracker</button>
       <button class="tab-btn" data-tab="referrals" onclick="switchTab('referrals')">Referrals</button>
     </div>
@@ -978,7 +1038,9 @@
       </select>
       <div class="sync-status" id="syncStatus"><span class="sync-dot"></span><span id="syncTime">Last synced: never</span></div>
       <button id="addCandBtn" onclick="openAddCandidate()" style="display:none;padding:10px 16px;background:var(--dark);color:var(--white);border:none;border-radius:2px;font-family:inherit;font-size:12.5px;cursor:pointer;">+ Add candidate</button>
+      <button id="subSendBtn" onclick="subOpenSendForCurrentRole()" style="display:none;padding:10px 16px;background:var(--gold);color:var(--white);border:none;border-radius:2px;font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;">Send submissions</button>
     </div>
+    <div id="subPendingBar" style="display:none;"></div>
     <div id="board"></div>
     <button class="board-scroll-btn left" id="boardLeft" onclick="scrollBoard(-1)" title="Scroll left" aria-label="Scroll left">&lsaquo;</button>
     <button class="board-scroll-btn right" id="boardRight" onclick="scrollBoard(1)" title="Scroll right" aria-label="Scroll right">&rsaquo;</button>
@@ -1353,18 +1415,15 @@
 
     <div id="commsView">
       <div class="view-head">
-        <div><h2>Communications Log</h2><div class="sub" id="cmSummary"></div></div>
-        <button class="gold-btn" onclick="openCommModal()">+ Log Contact</button>
+        <div><h2>Candidate Communications Log</h2><div class="sub" id="cmSummary"></div></div>
+        <button class="gold-btn" onclick="openCommModal({type:'candidate'})">+ Log Contact</button>
       </div>
       <div class="view-body">
         <div class="filter-bar">
-          <input id="cmSearch" placeholder="Search name, company or summary" oninput="renderComms()">
+          <input id="cmSearch" placeholder="Search name, company, role or summary" oninput="renderComms()">
           <select id="cmChannelFilter" onchange="renderComms()">
             <option value="">All channels</option><option value="call">Call</option><option value="email">Email</option>
             <option value="text">Text</option><option value="whatsapp">WhatsApp</option><option value="meeting">Meeting</option><option value="note">Note</option>
-          </select>
-          <select id="cmTypeFilter" onchange="renderComms()">
-            <option value="">Candidates and clients</option><option value="candidate">Candidates</option><option value="client">Clients</option>
           </select>
           <select id="cmFollowFilter" onchange="renderComms()">
             <option value="">All entries</option><option value="due">Follow-ups outstanding</option>
@@ -1374,6 +1433,32 @@
           <table class="ops-table">
             <thead><tr><th>When</th><th>Who</th><th>Company / role</th><th>Channel</th><th>Summary</th><th>Follow-up</th><th>By</th><th style="text-align:right;">Actions</th></tr></thead>
             <tbody id="cmBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="clientCommsView">
+      <div class="view-head">
+        <div><h2>Client Communications Log</h2><div class="sub" id="ccSummary"></div></div>
+        <button class="gold-btn" onclick="openCommModal({type:'client'})">+ Log Contact</button>
+      </div>
+      <div class="view-body">
+        <div class="filter-bar">
+          <input id="ccSearch" placeholder="Search contact, company or summary" oninput="renderComms()">
+          <select id="ccChannelFilter" onchange="renderComms()">
+            <option value="">All channels</option><option value="call">Call</option><option value="email">Email</option>
+            <option value="text">Text</option><option value="whatsapp">WhatsApp</option><option value="meeting">Meeting</option><option value="note">Note</option>
+          </select>
+          <select id="ccCompanyFilter" onchange="renderComms()"><option value="">All clients</option></select>
+          <select id="ccFollowFilter" onchange="renderComms()">
+            <option value="">All entries</option><option value="due">Follow-ups outstanding</option>
+          </select>
+        </div>
+        <div class="ops-table-wrap">
+          <table class="ops-table">
+            <thead><tr><th>When</th><th>Contact</th><th>Company</th><th>Channel</th><th>Summary</th><th>Follow-up</th><th>By</th><th style="text-align:right;">Actions</th></tr></thead>
+            <tbody id="ccBody"></tbody>
           </table>
         </div>
       </div>
@@ -1694,17 +1779,19 @@
       <div class="simple-form">
         <div class="two-col">
           <div><label>About</label>
-            <select id="cmType" onchange="cmRefreshNames()" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;">
+            <select id="cmType" onchange="b2Set('cmName','');cmRefreshNames()" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;">
               <option value="candidate">Candidate</option><option value="client">Client</option></select></div>
           <div><label>Channel</label>
             <select id="cmChannel" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;">
               <option value="call">Call</option><option value="email">Email</option><option value="text">Text</option>
               <option value="whatsapp">WhatsApp</option><option value="meeting">Meeting</option><option value="note">Note</option></select></div>
         </div>
-        <label id="cmNameLabel">Candidate</label><input id="cmName" list="cmNameList" oninput="cmAutofill()" onchange="cmAutofill()" placeholder="Start typing a name">
+        <label id="cmNameLabel">Candidate</label>
+        <select id="cmContactSel" onchange="cmPickContact()" style="display:none;width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;margin-bottom:6px;"></select>
+        <input id="cmName" list="cmNameList" oninput="cmAutofill()" onchange="cmAutofill()" placeholder="Start typing a name">
         <datalist id="cmNameList"></datalist>
         <div class="two-col">
-          <div><label>Company</label><input id="cmCompany"></div>
+          <div><label>Company</label><input id="cmCompany" list="cmCompanyList" oninput="cmCompanyChanged()" onchange="cmCompanyChanged()"><datalist id="cmCompanyList"></datalist></div>
           <div><label>Role</label><input id="cmRole"></div>
         </div>
         <label>Direction</label>
@@ -1891,6 +1978,8 @@
         </div>
         <label>Positions available (how many people this role will place)</label>
         <input type="number" min="1" id="rmPositions" value="1">
+        <label>Role requirements <span style="color:#999;">(used to match candidates in submissions - one per line)</span></label>
+        <textarea id="rmRequirements" placeholder="e.g. Highly analytical&#10;Comfortable challenging suppliers&#10;Confident with senior stakeholders" style="width:100%;min-height:90px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></textarea>
         <label>Notes</label>
         <textarea id="rmNotes" style="width:100%;min-height:70px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></textarea>
         <div class="actions">
@@ -1937,6 +2026,15 @@
     <div class="modal-inner">
       <button class="modal-close" onclick="closeModal('candModalOverlay')">&times;</button>
       <div id="candModalBody"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="subOverlay">
+  <div class="modal sub-modal">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="subClose()">&times;</button>
+      <div id="subBody"></div>
     </div>
   </div>
 </div>
@@ -2163,6 +2261,7 @@
 <script>
 const STAGES = [
   {key:"applied", label:"Applied"},
+  {key:"ready_to_submit", label:"Ready to Submit"},
   {key:"submitted", label:"Submitted"},
   {key:"interview_requested", label:"Interview Requested"},
   {key:"interview_scheduled", label:"Interview Scheduled"},
@@ -2177,6 +2276,7 @@ const STAGES = [
 
 const PROMPTS = {
   applied: "New application from the careers site. Assign a company and contact below to move this candidate into that client's pipeline.",
+  ready_to_submit: "Open the submission draft, check it, and approve it. Then build the client email. The card moves to Submitted once you confirm the email was sent.",
   submitted: "Candidate submitted to client. Awaiting response - if no reply by 4pm the day after submission, call the client and send a follow-up email.",
   interview_requested: "Call candidate for availability.",
   interview_scheduled: "Confirm interview date and time with the client. Send Interview Confirmation email pack and site onboarding pack. Send calendar invite to client and candidate.",
@@ -2246,7 +2346,7 @@ let currentRole = null;
 let openCandidateId = null;
 const BOARD_GROUPS = {
   all:{label:'All candidates', stages:null},
-  applications:{label:'New applications', stages:['applied']},
+  applications:{label:'New applications', stages:['applied','ready_to_submit']},
   submitted:{label:'Awaiting client feedback', stages:['submitted']},
   interviews:{label:'In interview stages', stages:['interview_requested','interview_scheduled','interviewed']},
   offers:{label:'Offers out', stages:['offer']},
@@ -2379,6 +2479,7 @@ function renderBoard(){
           <div class="cbody">
             <div class="cname">${formatCandidateName(c.name)}</div>
             <div class="cdays">${d} day${d===1?'':'s'} in stage</div>
+            ${subFlagHtml(c, currentRole)}
             ${c.salary ? `<div class="csal">£${c.salary}</div>` : ''}
             <div class="mob-action">View &rsaquo;</div>
           </div>
@@ -2438,6 +2539,7 @@ function renderAggregateBoard(){
             <div class="cname">${formatCandidateName(c.name)}</div>
             <div class="csub">${where.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>
             <div class="cdays">${d} day${d===1?'':'s'} in stage</div>
+            ${subFlagHtml(c, x.role)}
             ${c.salary ? `<div class="csal">\u00A3${c.salary}</div>` : ''}
             <div class="mob-action">View &rsaquo;</div>
           </div>`;
@@ -2564,7 +2666,7 @@ function openCandidateModal(id){
     </div>
   `;
 
-  if(c.stage === 'applied' && currentCompany !== UNASSIGNED_LABEL){
+  if((c.stage === 'applied' || c.stage === 'ready_to_submit') && currentCompany !== UNASSIGNED_LABEL){
     html += `
       <div class="cv-section">
         <label>CV & Screening Answers</label>
@@ -2582,7 +2684,7 @@ function openCandidateModal(id){
 
   document.getElementById('candModalBody').innerHTML = html;
   document.getElementById('candModalOverlay').classList.add('visible');
-  if(c.stage === 'applied' && currentCompany !== UNASSIGNED_LABEL){
+  if((c.stage === 'applied' || c.stage === 'ready_to_submit') && currentCompany !== UNASSIGNED_LABEL){
     setTimeout(refreshCVStatus, 100);
   }
 }
@@ -2602,7 +2704,12 @@ function buildStageButtons(c){
   const stageObj = STAGES.find(s => s.key === nextKey);
 
   let html = '<div class="stage-buttons">';
-  if(nextKey){
+  if(c.stage === 'ready_to_submit'){
+    const r = subRecFor(c.name, currentRole);
+    const label = !r ? 'Start the submission draft' : (r.status === 'email_built' ? 'Confirm the email was sent' : (r.status === 'approved' ? 'Build the client email' : 'Review the submission draft'));
+    html += `<button class="primary" onclick="subOpenFromCard()">${label}</button>`;
+    html += `<button onclick="subSkipToSubmitted()">Mark as Submitted (skip automation)</button>`;
+  } else if(nextKey){
     html += `<button class="primary" onclick="advanceStage('${nextKey}')">Move to ${stageObj.label}</button>`;
   }
   if(c.stage !== 'rejected' && c.stage !== 'month1'){
@@ -2611,6 +2718,7 @@ function buildStageButtons(c){
   if(c.stage === 'interview_requested' || c.stage === 'interview_scheduled'){
     html += `<button onclick="scheduleFromCandidate()">Schedule interview</button>`;
   }
+  html += backStageControl(c);
   html += `<button onclick="logContactFromCandidate()">Log contact</button>`;
   html += `<button onclick="saveNotesOnly()">Save notes</button>`;
   html += `<button class="reject" onclick="openDeleteConfirm()" style="margin-top:8px;width:100%;">Delete from pipeline</button>`;
@@ -2790,23 +2898,13 @@ async function confirmDelete(){
 }
 
 async function syncSubmissions(){
+  // Submissions are now created by the Ready to Submit automation, so the old Drive
+  // folder scan is no longer needed. This just refreshes the board every minute.
   try{
-    console.log('Starting sync at', new Date().toLocaleTimeString());
-    const res = await fetch(`${API_BASE}/api/sync-submissions`, {method: 'POST'});
-    if(res.ok){
-      const data = await res.json();
-      console.log('Sync successful:', data);
-      await new Promise(r => setTimeout(r, 500));
-      await loadCandidates();
-      updateSyncTime();
-      if(data.newlySubmitted && data.newlySubmitted.length && currentUserRole){
-        remindCvIfMissing(data.newlySubmitted.map(n => ({name:n.name, role:n.role, company:n.company, stage:'submitted'})));
-      }
-    } else {
-      console.error('Sync failed - status', res.status);
-    }
+    await loadCandidates();
+    updateSyncTime();
   }catch(e){
-    console.log('Auto-sync failed:', e.message);
+    console.log('Refresh failed:', e.message);
   }
 }
 
@@ -2836,7 +2934,7 @@ function updateSyncDisplay(){
 window._autoSyncInterval = null;
 function startAutoSync(){
   if(window._autoSyncInterval) return;
-  console.log('Starting auto-sync - initial sync now, then every 1 minute');
+  console.log('Starting board refresh - now, then every 1 minute');
   syncSubmissions();
   window._autoSyncInterval = setInterval(syncSubmissions, 1 * 60 * 1000);
   setInterval(updateSyncDisplay, 1000);
@@ -2975,21 +3073,12 @@ async function uploadCV(){
   input.onchange = async (e) => {
     const file = e.target.files[0];
     if(!file) return;
-    if(!/\.(pdf|docx?)$/i.test(file.name)){
-      showToast('Please choose a PDF, DOC or DOCX file');
-      return;
-    }
-    if(file.size > 5 * 1024 * 1024){
-      showToast('That file is over 5 MB - please use a smaller CV');
-      return;
-    }
     const reader = new FileReader();
     reader.onload = async (ev) => {
       const c = findCandidate(openCandidateId);
       try{
-        showToast('Uploading CV...');
         const base64 = ev.target.result.split(',')[1];
-        const res = await fetch(`${API_BASE}/api/candidates/${encodeURIComponent(c.id)}/cv`, {
+        const res = await fetch(`${API_BASE}/api/candidates/${c.id}/cv`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({
@@ -3000,13 +3089,9 @@ async function uploadCV(){
             fileName: file.name
           })
         });
-        if(!res.ok){
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || ('Server returned ' + res.status));
-        }
+        if(!res.ok) throw new Error('Upload failed');
         showToast('CV uploaded successfully');
         refreshCVStatus();
-        if(typeof loadPool === 'function'){ try{ loadPool(); }catch(_){} }
       }catch(e){
         showToast('Could not upload CV: ' + e.message);
       }
@@ -4948,8 +5033,8 @@ function poolUploadCv(id){
   input.onchange = e => {
     const file = e.target.files[0];
     if(!file) return;
-    if(file.size > 5 * 1024 * 1024){
-      showToast('That file is over 5 MB - please use a smaller CV');
+    if(file.size > 10 * 1024 * 1024){
+      showToast('That file is over 10 MB - please use a smaller CV');
       return;
     }
     const reader = new FileReader();
@@ -5327,7 +5412,7 @@ function mergedRoles(){
       const dates = DATA[co][role].map(c => opsDateOnly(c.date)).filter(Boolean).sort();
       list.push({
         id: opsRoleKey(co, role), company: co, role, contact: '', salary_band: '', fee_percent: '',
-        status: 'open', date_opened: dates[0] || '', date_closed: '', notes: '', positions: '1', stored: false,
+        status: 'open', date_opened: dates[0] || '', date_closed: '', notes: '', requirements: '', positions: '1', stored: false,
       });
     });
   });
@@ -5630,6 +5715,7 @@ function openRoleModal(id){
   document.getElementById('rmStatus').value = r ? r.status : 'open';
   document.getElementById('rmOpened').value = r ? opsDateOnly(r.date_opened) : opsToday();
   document.getElementById('rmNotes').value = r ? r.notes : '';
+  document.getElementById('rmRequirements').value = r && r.requirements ? r.requirements : '';
   document.getElementById('rmPositions').value = r && r.positions ? r.positions : 1;
   document.getElementById('rmDeleteRow').style.display = r && r.stored ? 'flex' : 'none';
   rmRefreshContacts();
@@ -5654,6 +5740,7 @@ async function saveRole(){
     date_opened: document.getElementById('rmOpened').value || opsToday(),
     date_closed: closed,
     notes: document.getElementById('rmNotes').value,
+    requirements: document.getElementById('rmRequirements').value,
     positions: String(Math.max(1, parseInt(document.getElementById('rmPositions').value, 10) || 1)),
   };
   try{
@@ -5909,7 +5996,7 @@ async function loadB2Core(force){
       const d = opsDateOnly(c.follow_up_date);
       if(!d) return;
       const diff = opsDaysBetween(d, today);
-      const act = {type:'tab', tab:'comms'};
+      const act = {type:'tab', tab: c.entity_type === 'client' ? 'clientComms' : 'comms'};
       if(diff > 0) out.push({sev:'high', title:'Overdue follow-up: ' + c.entity_name, detail: diff + ' day' + (diff === 1 ? '' : 's') + ' overdue - ' + opsTrunc(c.summary, 80), act});
       else if(diff === 0) out.push({sev:'med', title:'Follow-up due today: ' + c.entity_name, detail: opsTrunc(c.summary, 80), act});
     });
@@ -5929,16 +6016,18 @@ async function loadB2Core(force){
     const today = opsToday();
     const weekEnd = opsAddDays(today, 7);
     const ivWeek = B2.interviews.filter(i => (!i.status || i.status === 'scheduled') && opsDateOnly(i.date) >= today && opsDateOnly(i.date) <= weekEnd).length;
-    const fuDue = B2.comms.filter(c => c.follow_up_date && c.follow_up_done !== 'yes' && opsDateOnly(c.follow_up_date) <= today).length;
+    const fuList = B2.comms.filter(c => c.follow_up_date && c.follow_up_done !== 'yes' && opsDateOnly(c.follow_up_date) <= today);
+    const fuDue = fuList.length;
+    const fuTab = fuList.some(c => c.entity_type !== 'client') || !fuList.length ? 'comms' : 'clientComms';
     document.getElementById('homeTiles').insertAdjacentHTML('beforeend',
       `<div class="tile" onclick="switchTab('interviews')"><div class="n">${ivWeek}</div><div class="l">Interviews in next 7 days</div></div>` +
-      `<div class="tile ${fuDue ? 'warn' : ''}" onclick="switchTab('comms')"><div class="n">${fuDue}</div><div class="l">Contact follow-ups due</div></div>`);
+      `<div class="tile ${fuDue ? 'warn' : ''}" onclick="switchTab('${fuTab}')"><div class="n">${fuDue}</div><div class="l">Contact follow-ups due</div></div>`);
   };
 })();
 
 function onB2Tab(tab){
   if(tab === 'interviews') loadInterviews();
-  if(tab === 'comms') loadComms();
+  if(tab === 'comms' || tab === 'clientComms') loadComms();
   if(tab === 'feedback') loadFeedback();
   if(tab === 'templates') loadTemplates();
   if(tab === 'forecast') renderForecast();
@@ -6067,25 +6156,8 @@ async function loadComms(){
   renderComms();
 }
 
-function renderComms(){
-  const q = b2Val('cmSearch').trim().toLowerCase();
-  const ch = b2Val('cmChannelFilter'), ty = b2Val('cmTypeFilter'), fu = b2Val('cmFollowFilter');
-  const today = opsToday();
-  const list = B2.comms.filter(c => {
-    if(ch && c.channel !== ch) return false;
-    if(ty && c.entity_type !== ty) return false;
-    if(fu === 'due' && !(c.follow_up_date && c.follow_up_done !== 'yes')) return false;
-    if(q && !(`${c.entity_name} ${c.company} ${c.role} ${c.summary}`.toLowerCase().includes(q))) return false;
-    return true;
-  }).sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
-  const pending = B2.comms.filter(c => c.follow_up_date && c.follow_up_done !== 'yes').length;
-  document.getElementById('cmSummary').textContent = B2.comms.length + ' entries, ' + pending + ' follow-up' + (pending === 1 ? '' : 's') + ' outstanding';
-  const body = document.getElementById('cmBody');
-  if(!list.length){
-    body.innerHTML = '<tr><td colspan="8" class="empty-row">' + (B2.comms.length ? 'No entries match these filters.' : 'Nothing logged yet. Use Log Contact after each call, email or meeting.') + '</td></tr>';
-    return;
-  }
-  body.innerHTML = list.map(c => {
+function commRowsHtml(list, today){
+  return list.map(c => {
     const fuDate = opsDateOnly(c.follow_up_date);
     let fuHtml = '<span style="color:#bbb;">None</span>';
     if(fuDate){
@@ -6097,7 +6169,7 @@ function renderComms(){
     }
     return `<tr>
       <td>${esc(opsFmt(c.timestamp))}<div class="pool-muted">${esc(String(c.timestamp).slice(11, 16))}</div></td>
-      <td class="strong">${esc(c.entity_name)}<div class="pool-muted">${esc(c.entity_type === 'client' ? 'Client' : 'Candidate')}</div></td>
+      <td class="strong">${esc(c.entity_name)}</td>
       <td>${esc(c.company)}${c.role ? '<div class="pool-muted">' + esc(c.role) + '</div>' : ''}</td>
       <td>${esc(CM_CHANNELS[c.channel] || c.channel)}<div class="pool-muted">${c.direction === 'inbound' ? 'Inbound' : 'Outbound'}</div></td>
       <td style="max-width:320px;white-space:pre-wrap;">${esc(c.summary)}</td>
@@ -6108,7 +6180,43 @@ function renderComms(){
   }).join('');
 }
 
+/* Recruitment shows candidate contacts only; the Clients group shows client contacts only */
+function renderCommsScope(scope, ids){
+  const bodyEl = document.getElementById(ids.body);
+  if(!bodyEl) return;
+  const q = b2Val(ids.search).trim().toLowerCase(), ch = b2Val(ids.channel), fu = b2Val(ids.follow);
+  const co = ids.company ? b2Val(ids.company) : '';
+  const today = opsToday();
+  const mine = B2.comms.filter(c => (scope === 'client' ? c.entity_type === 'client' : c.entity_type !== 'client'));
+  if(ids.company){
+    const sel = document.getElementById(ids.company);
+    const names = [...new Set(mine.map(c => c.company).filter(Boolean))].sort();
+    if(sel && sel.dataset.count !== String(names.length) + '|' + names.join(',')){
+      sel.innerHTML = '<option value="">All clients</option>' + names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+      sel.dataset.count = String(names.length) + '|' + names.join(',');
+      sel.value = names.includes(co) ? co : '';
+    }
+  }
+  const list = mine.filter(c => {
+    if(ch && c.channel !== ch) return false;
+    if(co && !b2Same(c.company, co)) return false;
+    if(fu === 'due' && !(c.follow_up_date && c.follow_up_done !== 'yes')) return false;
+    if(q && !(`${c.entity_name} ${c.company} ${c.role} ${c.summary}`.toLowerCase().includes(q))) return false;
+    return true;
+  }).sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
+  const pending = mine.filter(c => c.follow_up_date && c.follow_up_done !== 'yes').length;
+  document.getElementById(ids.summary).textContent = mine.length + ' entries, ' + pending + ' follow-up' + (pending === 1 ? '' : 's') + ' outstanding';
+  if(!list.length){
+    bodyEl.innerHTML = '<tr><td colspan="8" class="empty-row">' + (mine.length ? 'No entries match these filters.' : (scope === 'client' ? 'No client contact logged yet. Use Log Contact after each call, email or meeting with a client.' : 'Nothing logged yet. Use Log Contact after each call, email or meeting with a candidate.')) + '</td></tr>';
+    return;
+  }
+  bodyEl.innerHTML = commRowsHtml(list, today);
+}
 
+function renderComms(){
+  renderCommsScope('candidate', {search:'cmSearch', channel:'cmChannelFilter', follow:'cmFollowFilter', summary:'cmSummary', body:'cmBody'});
+  renderCommsScope('client', {search:'ccSearch', channel:'ccChannelFilter', follow:'ccFollowFilter', company:'ccCompanyFilter', summary:'ccSummary', body:'ccBody'});
+}
 
 async function commDone(id){
   try{
@@ -6344,6 +6452,7 @@ const ACTIVITY_LABELS = {
   interview_scheduled:'Interview scheduled', interviewed:'Interview completed', offer:'Offer made', placed:'Placement started',
   rejected:'Candidate rejected', cold_call:'Logged a cold call', contact_logged:'Logged a contact',
   interview_booked:'Booked an interview', feedback_logged:'Logged client feedback', task_completed:'Completed a task',
+  ready_to_submit:'Moved to Ready to Submit', moved_back:'Moved a candidate back a stage', submission_drafted:'Generated a submission draft', submission_approved:'Approved a submission',
 };
 
 function teamSince(period){
@@ -6908,12 +7017,70 @@ function ivDownloadIcs(id){
    Communications log (round 2): lists follow the type, auto fill, notes
    ============================================================ */
 
+function cmClientCompanies(){
+  const set = new Set();
+  (APPLICANT_CLIENT_LIST || []).forEach(c => { if(c.company) set.add(c.company); });
+  return [...set].sort();
+}
+
+/* Client contacts: a proper list of everyone at the chosen company, not a type-ahead that hides names */
+function cmRefreshContactSelect(keepName){
+  const sel = document.getElementById('cmContactSel'), input = document.getElementById('cmName');
+  if(!sel || !input) return;
+  const company = b2Val('cmCompany').trim();
+  const all = (APPLICANT_CLIENT_LIST || []).filter(c => c.contactName);
+  const mine = company ? all.filter(c => b2Same(c.company, company)) : [];
+  const pool = mine.length ? mine : all;
+  const seen = new Set();
+  const opts = ['<option value="">' + (mine.length ? 'Choose a contact at ' + esc(company) + '...' : (company ? 'No saved contacts for this company - choose from all...' : 'Choose a contact...')) + '</option>'];
+  pool.forEach(c => {
+    const key = (c.company + '|' + c.contactName).toLowerCase();
+    if(seen.has(key)) return;
+    seen.add(key);
+    opts.push('<option value="' + esc(c.contactName) + '" data-company="' + esc(c.company) + '">' + esc(c.contactName) + (c.jobTitle ? ' - ' + esc(c.jobTitle) : '') + (mine.length ? '' : ' (' + esc(c.company) + ')') + '</option>');
+  });
+  opts.push('<option value="__other">Someone else (type a name)</option>');
+  sel.innerHTML = opts.join('');
+  let name = (keepName != null ? keepName : input.value).trim();
+  if(!name && mine.length === 1 && window._cmAutoPick) name = mine[0].contactName;
+  const match = pool.find(c => b2Same(c.contactName, name));
+  if(match){ sel.value = match.contactName; input.style.display = 'none'; input.value = match.contactName; }
+  else if(name){ sel.value = '__other'; input.style.display = ''; }
+  else{ sel.value = ''; input.style.display = 'none'; }
+}
+
+function cmPickContact(){
+  const sel = document.getElementById('cmContactSel'), input = document.getElementById('cmName');
+  if(sel.value === '__other'){ input.style.display = ''; input.value = ''; input.focus(); return; }
+  if(!sel.value){ input.value = ''; input.style.display = 'none'; return; }
+  input.value = sel.value;
+  input.style.display = 'none';
+  const opt = sel.selectedOptions[0];
+  if(opt && opt.dataset.company) b2Set('cmCompany', opt.dataset.company);
+}
+
+function cmCompanyChanged(){
+  if(b2Val('cmType') !== 'client') return;
+  const current = b2Val('cmName').trim();
+  const company = b2Val('cmCompany').trim();
+  if(company === window._cmLastCompany) return;
+  window._cmLastCompany = company;
+  const still = (APPLICANT_CLIENT_LIST || []).some(c => b2Same(c.company, company) && b2Same(c.contactName, current));
+  cmRefreshContactSelect(still ? current : '');
+}
+
 function cmRefreshNames(){
   const type = b2Val('cmType');
+  const sel = document.getElementById('cmContactSel'), input = document.getElementById('cmName');
   let names = [];
   if(type === 'client'){
-    names = (APPLICANT_CLIENT_LIST || []).map(c => c.contactName).filter(Boolean);
+    document.getElementById('cmCompanyList').innerHTML = cmClientCompanies().map(n => `<option value="${esc(n)}">`).join('');
+    if(sel) sel.style.display = '';
+    cmRefreshContactSelect();
   }else{
+    if(sel) sel.style.display = 'none';
+    if(input) input.style.display = '';
+    document.getElementById('cmCompanyList').innerHTML = '';
     flatCandidates().forEach(x => names.push(x.c.name));
     (typeof POOL !== 'undefined' ? POOL : []).forEach(p => { if(p.name && !p.erased) names.push(p.name); });
   }
@@ -6925,8 +7092,9 @@ function cmAutofill(){
   const name = b2Val('cmName').trim();
   if(!name) return;
   if(b2Val('cmType') === 'client'){
-    const rec = (APPLICANT_CLIENT_LIST || []).find(c => b2Same(c.contactName, name));
-    if(rec){ b2Set('cmCompany', rec.company); }
+    const rec = (APPLICANT_CLIENT_LIST || []).find(c => b2Same(c.contactName, name) && (!b2Val('cmCompany').trim() || b2Same(c.company, b2Val('cmCompany').trim())))
+      || (APPLICANT_CLIENT_LIST || []).find(c => b2Same(c.contactName, name));
+    if(rec && !b2Val('cmCompany').trim()){ b2Set('cmCompany', rec.company); }
   }else{
     const hit = flatCandidates().find(x => b2Same(x.c.name, name));
     if(hit){ b2Set('cmCompany', hit.company === UNASSIGNED_LABEL ? '' : hit.company); b2Set('cmRole', hit.role); }
@@ -6940,8 +7108,11 @@ function cmAutofill(){
 function openCommModal(preset){
   preset = preset || {};
   b2Set('cmType', preset.type || 'candidate'); b2Set('cmChannel', 'call'); b2Set('cmDirection', 'outbound');
-  cmRefreshNames();
   b2Set('cmName', preset.name || ''); b2Set('cmCompany', preset.company || ''); b2Set('cmRole', preset.role || '');
+  window._cmLastCompany = b2Val('cmCompany').trim();
+  window._cmAutoPick = true;
+  cmRefreshNames();
+  window._cmAutoPick = false;
   b2Set('cmSummaryInput', ''); b2Set('cmFollow', '');
   document.getElementById('cmModal').classList.add('visible');
 }
@@ -7564,12 +7735,12 @@ tryUnlock = async function(){
 const TAB_GROUPS = [
   {key:'overview', label:'Overview', tabs:['home','notifications','tasks']},
   {key:'recruitment', label:'Recruitment', tabs:['candidates','candidatePool','roles','interviews','placements','comms','feedback','templates']},
-  {key:'clients', label:'Clients', tabs:['leadClients','clients','clientHealth','coldCalls','referrals']},
+  {key:'clients', label:'Clients', tabs:['leadClients','clients','clientHealth','clientComms','coldCalls','referrals']},
   {key:'money', label:'Money and reporting', tabs:['invoices','forecast','kpi','sourcing','team']},
   {key:'admin', label:'Admin', tabs:['gdpr','audit'], adminOnly:true},
 ];
 const ADMIN_TABS = ['invoices','forecast','team','sourcing','gdpr','audit'];
-const B3_VIEWS = ['clientHealth','referrals','sourcing','gdpr','audit'];
+const B3_VIEWS = ['clientHealth','clientComms','referrals','sourcing','gdpr','audit'];
 
 function renderGroupBar(){
   const host = document.getElementById('groupBtns');
@@ -7829,7 +8000,7 @@ function renderClientHealth(){
       <td>${r.last ? esc(opsFmt(r.last)) + '<div class="pool-muted">' + r.sinceContact + ' days ago</div>' : '<span style="color:#bbb;">Never</span>'}</td>
       <td>${r.openRoles}</td><td>${r.waiting}</td>
       <td style="max-width:280px;">${r.reasons.length ? esc(r.reasons.join('. ')) : '<span style="color:#2D6A3E;">All good</span>'}</td>
-      <td><div class="row-actions"><button onclick="openCommModal({type:'client',name:'${esc(contact ? contact.contactName : '')}',company:'${esc(r.company).replace(/'/g, '')}'})">Log contact</button><button onclick="openSiteModal('${esc(r.company).replace(/'/g, '')}')">Site details</button></div></td></tr>`;
+      <td><div class="row-actions"><button onclick="openCommModal({type:'client',name:'',company:'${esc(r.company).replace(/'/g, '')}'})">Log contact</button><button onclick="openSiteModal('${esc(r.company).replace(/'/g, '')}')">Site details</button></div></td></tr>`;
   }).join('') : '<tr><td colspan="7" class="empty-row">No clients in this band.</td></tr>';
 }
 
@@ -8851,6 +9022,895 @@ function downloadEml(to, subject, body){
   };
 })();
 
+</script>
+
+<script>
+/* ============================================================
+   Move a candidate back to an earlier stage
+   ============================================================ */
+function backStageOptions(c){
+  const keys = STAGES.map(s => s.key).filter(k => k !== 'rejected');
+  if(c.stage === 'rejected') return keys;
+  const idx = keys.indexOf(c.stage);
+  return idx > 0 ? keys.slice(0, idx) : [];
+}
+
+function backStageControl(c){
+  const opts = backStageOptions(c);
+  if(!opts.length) return '';
+  const rejected = c.stage === 'rejected';
+  const def = rejected ? opts[0] : opts[opts.length - 1];
+  const label = rejected ? 'Restore to' : 'Move back to';
+  return '<div class="back-row"><label>' + label + '</label><select id="backStageSel">' +
+    opts.map(k => '<option value="' + k + '"' + (k === def ? ' selected' : '') + '>' + STAGES.find(s => s.key === k).label + '</option>').join('') +
+    '</select><button onclick="moveBackStage()">' + (rejected ? 'Restore' : 'Move back') + '</button></div>';
+}
+
+async function moveBackStage(){
+  const sel = document.getElementById('backStageSel');
+  const c = findCandidate(openCandidateId);
+  if(!sel || !c) return;
+  const target = sel.value, from = c.stage;
+  const fromLabel = STAGES.find(s => s.key === from).label, toLabel = STAGES.find(s => s.key === target).label;
+  let msg = (from === 'rejected' ? 'Restore ' : 'Move ') + c.name + (from === 'rejected' ? ' to ' : ' back from ' + fromLabel + ' to ') + toLabel + '?';
+  if(c.invoiceNumber) msg += '\n\nAn invoice (' + c.invoiceNumber + ') has already been generated for this candidate. Moving them back does not cancel it.';
+  else if(['start_date','day1','week1','month1'].indexOf(from) !== -1) msg += '\n\nThey will no longer count as a placement, and the invoice reminder for their start date will stop.';
+  if(!confirm(msg)) return;
+  captureFieldsFromModal(c);
+  const snap = {name: c.name, role: currentRole, company: currentCompany};
+  c.stage = target;
+  c.date = new Date().toISOString().slice(0,10);
+  renderBoard();
+  closeModal('candModalOverlay');
+  showToast(from === 'rejected' ? 'Restored to ' + toLabel : 'Moved back to ' + toLabel);
+  await saveCandidate(c);
+  try{ logActivity('moved_back', {candidate: snap.name, role: snap.role, company: snap.company, detail: 'from ' + from + ' to ' + target}); }catch(e){}
+  // Keep any submission draft in step so nothing shows as emailed or sent when it is not
+  try{
+    const rec = subRecFor(snap.name, snap.role);
+    if(rec && (rec.status === 'email_built' || (rec.status === 'sent' && target === 'ready_to_submit'))){
+      const json = await b2Post('/api/submission-drafts', {id: rec.id, status: 'draft', batch_id: '', sent_at: ''});
+      subMergeLight(json.data);
+      subRenderPendingBar();
+      renderBoard();
+    }
+  }catch(e){}
+}
+</script>
+<script>
+/* ============================================================
+   Automated candidate submissions
+
+   Applied -> Ready to Submit -> AI draft -> review and approve
+   -> client email (.eml with attachments) -> "did you send it?"
+   -> Submitted. Nothing is ever sent automatically.
+   ============================================================ */
+
+let SUBS = [];   // light draft records: status only, no document text
+const SUB = {
+  ctx: null, rec: null, sub: null, cv: null, view: 'prepare', tab: 'sub',
+  sources: null, callNotes: '', requirements: '', warnings: [], errors: {},
+  sel: {}, full: {}, contactName: '', to: '', subject: '', body: '', emailEdited: false,
+  batchIds: [], busy: false, loadingMsg: '',
+};
+
+const SUB_FALLBACK_TEMPLATE = {
+  id: 'tpl-client-submission',
+  subject: '{{role}} - {{candidate_names}} for your review',
+  body: 'Hi {{contact_first_name}},\n\nI have {{submission_intro}} for your {{role}} vacancy, attached for your review.\n\n{{candidate_summaries}}\n\nEach attachment includes the full submission and an anonymised CV.\n\nCould you let me know whether you would like to interview {{interview_target}}? If so, I will confirm availability straight away.\n\nKind regards,\n\n{{signature}}',
+};
+
+/* ---------- small helpers ---------- */
+
+function subClean(s){
+  return String(s == null ? '' : s)
+    .replace(/[ \t]*\u2014[ \t]*/g, ' - ')
+    .replace(/[ \t]*\u2015[ \t]*/g, ' - ')
+    .replace(/[ \t]*\u2013[ \t]*/g, m => (/[ \t]/.test(m) ? ' - ' : '-'));
+}
+function subCleanDeep(v){ return JSON.parse(JSON.stringify(v), (k, x) => typeof x === 'string' ? subClean(x) : x); }
+function subKeyOf(name, role){ return String(name || '').trim().toLowerCase() + '|' + String(role || '').trim().toLowerCase(); }
+function subSlug(name, role){ return 'sd-' + (String(name || '') + '|' + String(role || '')).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); }
+function subRecFor(name, role){ return SUBS.find(r => subKeyOf(r.candidate_name, r.role) === subKeyOf(name, role)) || null; }
+function subRef(name){
+  const p = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if(p.length < 2) return p[0] || 'Candidate';
+  return p[0] + ' ' + p[p.length - 1][0].toUpperCase();
+}
+function subJoin(list){
+  if(list.length <= 1) return list[0] || '';
+  return list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1];
+}
+function subRows(text, min, max){ return Math.min(max || 16, Math.max(min || 3, String(text || '').split('\n').length + 1)); }
+function subBody(html){ document.getElementById('subBody').innerHTML = html; }
+function subCandidate(ctx){ return ((DATA[ctx.company] || {})[ctx.role] || []).find(x => x.id === ctx.id) || null; }
+function subRoleRec(company, role){ return mergedRoles().find(r => b2Same(r.company, company) && b2Same(r.role, role)) || null; }
+
+function subMergeLight(rec){
+  const keys = ['id','candidate_id','candidate_name','role','company','status','contact_name','contact_email','batch_id','created_by','created_at','approved_at','sent_at'];
+  const light = {};
+  keys.forEach(k => { light[k] = rec[k] || ''; });
+  const i = SUBS.findIndex(r => r.id === light.id);
+  if(i >= 0) SUBS[i] = light; else SUBS.push(light);
+}
+
+/* ---------- loading and card flags ---------- */
+
+async function subLoadDrafts(){
+  if(!signedInUser) return;
+  try{ SUBS = b2List(await b2Api('/api/submission-drafts')); }catch(e){ return; }
+  subUpdateSendButton();
+  subRenderPendingBar();
+}
+
+function subFlagHtml(c, role){
+  if(!c || c.stage !== 'ready_to_submit') return '';
+  const r = subRecFor(c.name, role);
+  if(!r) return '<div class="sub-flag new">Draft not started</div>';
+  if(r.status === 'draft') return '<div class="sub-flag review">Draft awaiting review</div>';
+  if(r.status === 'approved') return '<div class="sub-flag ok">Approved - ready to email</div>';
+  if(r.status === 'email_built') return '<div class="sub-flag warn">Email not confirmed sent</div>';
+  return '';
+}
+
+function subApprovedForRole(company, role){
+  const list = ((DATA[company] || {})[role] || []).filter(c => c.stage === 'ready_to_submit');
+  return list.map(c => ({c, rec: subRecFor(c.name, role)})).filter(x => x.rec && (x.rec.status === 'approved' || x.rec.status === 'email_built'));
+}
+
+function subUpdateSendButton(){
+  const btn = document.getElementById('subSendBtn');
+  if(!btn) return;
+  if(boardScope.all || !currentRole || !currentCompany || !DATA[currentCompany]){ btn.style.display = 'none'; return; }
+  const n = subApprovedForRole(currentCompany, currentRole).length;
+  btn.style.display = n ? 'inline-block' : 'none';
+  btn.textContent = 'Send submissions (' + n + ')';
+}
+
+function subRenderPendingBar(){
+  const bar = document.getElementById('subPendingBar');
+  if(!bar) return;
+  const pending = SUBS.filter(r => r.status === 'email_built');
+  if(!pending.length){ bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  const batch = pending[0].batch_id || '';
+  const names = pending.map(r => subRef(r.candidate_name) + ' (' + r.role + ')');
+  bar.style.display = 'flex';
+  bar.innerHTML = '<div><strong>' + pending.length + ' submission' + (pending.length === 1 ? '' : 's') +
+    ' emailed but not confirmed as sent.</strong> ' + esc(names.join(', ')) + '</div>' +
+    '<button onclick="subOpenConfirm(\'' + esc(batch) + '\')">Confirm now</button>';
+}
+
+/* ---------- opening the workflow ---------- */
+
+function subSkipToSubmitted(){
+  if(!confirm('Mark this candidate as Submitted without the automation? Use this only if the submission has already gone to the client another way.')) return;
+  advanceStage('submitted');
+}
+
+
+function subOpenFromCard(){
+  const c = findCandidate(openCandidateId);
+  if(!c) return;
+  const company = currentCompany, role = currentRole, id = c.id;
+  closeModal('candModalOverlay');
+  subOpen(company, role, id);
+}
+
+function subOpenSendForCurrentRole(){
+  const list = subApprovedForRole(currentCompany, currentRole);
+  if(!list.length){ showToast('No approved submissions for this role yet'); return; }
+  SUB.ctx = {company: currentCompany, role: currentRole, id: list[0].c.id, name: list[0].c.name};
+  document.getElementById('subOverlay').classList.add('visible');
+  subOpenEmail(null);
+}
+
+async function subOpen(company, role, id){
+  const c = ((DATA[company] || {})[role] || []).find(x => x.id === id);
+  if(!c){ showToast('Candidate not found'); return; }
+  Object.assign(SUB, {ctx: {company, role, id, name: c.name}, rec: null, sub: null, cv: null, tab: 'sub', warnings: [], errors: {}, callNotes: '', busy: false});
+  document.getElementById('subOverlay').classList.add('visible');
+  const rec = subRecFor(c.name, role);
+  if(rec){
+    SUB.view = 'loading'; SUB.loadingMsg = 'Loading the saved draft...'; subRender();
+    try{
+      const json = await b2Api('/api/submission-drafts/' + encodeURIComponent(rec.id));
+      const full = json.data;
+      SUB.rec = full;
+      SUB.sub = full.submission_json ? JSON.parse(full.submission_json) : null;
+      SUB.cv = full.cv_json ? JSON.parse(full.cv_json) : null;
+      SUB.callNotes = full.call_notes || '';
+      if(full.status === 'email_built'){ subOpenConfirm(full.batch_id); return; }
+      if(SUB.sub){ SUB.view = 'review'; subRender(); return; }
+    }catch(e){ /* fall through to a fresh draft */ }
+  }
+  subShowPrepare();
+}
+
+function subClose(){
+  document.getElementById('subOverlay').classList.remove('visible');
+  SUB.busy = false;
+  renderBoard();
+  subRenderPendingBar();
+}
+
+/* ---------- step 1: prepare ---------- */
+
+async function subShowPrepare(){
+  const ctx = SUB.ctx;
+  const role = subRoleRec(ctx.company, ctx.role);
+  SUB.requirements = role && role.requirements ? role.requirements : '';
+  SUB.sources = null;
+  SUB.view = 'prepare';
+  subRender();
+  try{
+    SUB.sources = await b2Api('/api/submissions/sources?name=' + encodeURIComponent(ctx.name) + '&role=' + encodeURIComponent(ctx.role) + '&company=' + encodeURIComponent(ctx.company));
+  }catch(e){
+    SUB.sources = {error: e.message};
+  }
+  if(SUB.view === 'prepare') subRender();
+}
+
+function subPrepareHtml(){
+  const ctx = SUB.ctx, s = SUB.sources;
+  let src = '';
+  if(!s){
+    src = '<div class="sub-src">Checking for the CV and application answers...</div>';
+  }else if(s.error){
+    src = '<div class="sub-src bad">Could not check the files: ' + esc(s.error) + '</div>';
+  }else{
+    if(s.cv && s.cv.found && s.cv.readable) src += '<div class="sub-src ok">CV found: ' + esc(s.cv.fileName) + '</div>';
+    else if(s.cv && s.cv.found) src += '<div class="sub-src bad">A CV is on file (' + esc(s.cv.fileName) + ') but it cannot be read. Upload a PDF or DOCX version.</div>';
+    else src += '<div class="sub-src bad">No CV on file for this candidate.</div>';
+    if(s.screener && s.screener.found) src += '<div class="sub-src ok">Application answers found (' + s.screener.answers + ' answers)</div>';
+    else src += '<div class="sub-src bad">No application answers found' + (s.screener && s.screener.reason ? ': ' + esc(s.screener.reason) : '') + '</div>';
+    if(!(s.cv && s.cv.found && s.cv.readable)) src += '<button class="sub-btn" onclick="subUploadCv()">Upload CV</button>';
+  }
+  return '<h2>Prepare submission</h2>' +
+    '<div class="role-sub">' + esc(ctx.name) + ' &middot; ' + esc(ctx.role) + ' &middot; ' + esc(ctx.company) + '</div>' +
+    '<div class="sub-srcs">' + src + '</div>' +
+    '<label class="sub-label">Role requirements <span class="sub-hint">The fit table is built from these. Saved to the role for next time.</span></label>' +
+    '<textarea id="subReq" rows="' + subRows(SUB.requirements, 4, 10) + '" placeholder="One requirement per line, e.g. Highly analytical&#10;Comfortable challenging suppliers">' + esc(SUB.requirements) + '</textarea>' +
+    '<label class="sub-label">Call notes <span class="sub-hint">Optional. Paste your notes or the call transcript.</span></label>' +
+    '<textarea id="subNotes" rows="' + subRows(SUB.callNotes, 5, 12) + '" placeholder="What the candidate told you on the call: motivation, notice, salary, availability, examples...">' + esc(SUB.callNotes) + '</textarea>' +
+    '<div class="sub-actions"><button class="sub-btn gold" onclick="subGenerate()">Generate draft</button>' +
+    '<button class="sub-btn" onclick="subClose()">Close</button></div>' +
+    '<div class="sub-hint" style="margin-top:10px;">Nothing is sent to the client. The draft is for you to review and edit first.</div>';
+}
+
+function subUploadCv(){
+  const ctx = SUB.ctx;
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.pdf,.doc,.docx';
+  input.onchange = e => {
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = async ev => {
+      try{
+        const c = subCandidate(ctx);
+        const res = await fetch(API_BASE + '/api/candidates/' + encodeURIComponent(ctx.id) + '/cv', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({company: ctx.company, role: ctx.role, name: c ? c.name : ctx.name, fileData: ev.target.result.split(',')[1], fileName: file.name}),
+        });
+        if(!res.ok){ const err = await res.json().catch(() => ({})); throw new Error(err.error || 'Upload failed'); }
+        showToast('CV uploaded');
+        subCollectPrepare();
+        subShowPrepare();
+      }catch(err){ showToast('Could not upload CV: ' + err.message); }
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+}
+
+function subCollectPrepare(){
+  const r = document.getElementById('subReq'), n = document.getElementById('subNotes');
+  if(r) SUB.requirements = r.value;
+  if(n) SUB.callNotes = n.value;
+}
+
+async function subSaveRequirements(text){
+  const ctx = SUB.ctx;
+  const r = subRoleRec(ctx.company, ctx.role);
+  if(r && String(r.requirements || '') === String(text || '')) return;
+  const body = {
+    id: r ? r.id : opsRoleKey(ctx.company, ctx.role), company: ctx.company, role: ctx.role,
+    contact: r ? (r.contact || '') : '', salary_band: r ? (r.salary_band || '') : '', fee_percent: r ? (r.fee_percent || '') : '',
+    status: r ? (r.status || 'open') : 'open', date_opened: r ? (opsDateOnly(r.date_opened) || opsToday()) : opsToday(),
+    date_closed: r ? (opsDateOnly(r.date_closed) || '') : '', notes: r ? (r.notes || '') : '',
+    positions: String(r && r.positions ? r.positions : 1), requirements: text || '',
+  };
+  try{
+    const json = await b2Post('/api/roles', body);
+    const i = OPS.roles.findIndex(x => x.id === body.id);
+    if(i >= 0) OPS.roles[i] = json.data; else OPS.roles.push(json.data);
+  }catch(e){ /* the draft still works without saving the requirements */ }
+}
+
+/* ---------- step 2: generate ---------- */
+
+async function subGenerate(){
+  subCollectPrepare();
+  const ctx = SUB.ctx, c = subCandidate(ctx);
+  if(!c) return;
+  SUB.view = 'loading';
+  SUB.loadingMsg = 'Reading the CV and application answers and writing the submission and anonymised CV. This usually takes 30 to 60 seconds.';
+  subRender();
+  await subSaveRequirements(SUB.requirements);
+  try{
+    const res = await fetch(API_BASE + '/api/submissions/generate', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: c.name, role: ctx.role, company: ctx.company, callNotes: SUB.callNotes, requirements: SUB.requirements, cardNotes: c.notes || ''}),
+    });
+    const json = await res.json().catch(() => ({}));
+    if(!res.ok) throw new Error(json.error || ('Server returned ' + res.status));
+    if(!json.submission) throw new Error((json.errors && json.errors.submission) || 'No draft came back');
+    SUB.sub = json.submission; SUB.cv = json.cv || null;
+    SUB.warnings = json.warnings || []; SUB.errors = json.errors || {};
+    SUB.tab = 'sub';
+    await subPersist('draft');
+    logActivity('submission_drafted', {candidate: c.name, role: ctx.role, company: ctx.company});
+    SUB.view = 'review';
+    subRender();
+  }catch(e){
+    SUB.view = 'prepare';
+    subRender();
+    showToast('Could not generate the draft: ' + e.message);
+  }
+}
+
+async function subPersist(status){
+  const ctx = SUB.ctx, c = subCandidate(ctx);
+  const now = new Date().toISOString();
+  const id = SUB.rec ? SUB.rec.id : subSlug(c ? c.name : ctx.name, ctx.role);
+  const body = {
+    id, candidate_id: ctx.id, candidate_name: c ? c.name : ctx.name, role: ctx.role, company: ctx.company,
+    status: status || (SUB.rec && SUB.rec.status) || 'draft',
+    call_notes: SUB.callNotes || '',
+    submission_json: JSON.stringify(subCleanDeep(SUB.sub)),
+    cv_json: SUB.cv ? JSON.stringify(subCleanDeep(SUB.cv)) : '',
+    created_by: SUB.rec && SUB.rec.created_by ? SUB.rec.created_by : (signedInUser ? signedInUser.key : ''),
+    created_at: SUB.rec && SUB.rec.created_at ? SUB.rec.created_at : now,
+  };
+  if(status === 'approved') body.approved_at = now;
+  if(status === 'draft') body.approved_at = '';
+  const json = await b2Post('/api/submission-drafts', body);
+  SUB.rec = json.data;
+  subMergeLight(json.data);
+}
+
+/* ---------- step 3: review and edit ---------- */
+
+function subCollect(){
+  if(SUB.view !== 'review' || !SUB.sub) return;
+  const q = (sel, root) => Array.from((root || document.getElementById('subBody')).querySelectorAll(sel));
+  const val = (root, sel) => { const el = root.querySelector(sel); return el ? el.value : ''; };
+  if(SUB.tab === 'sub'){
+    const s = SUB.sub;
+    s.details = q('.sd-row').map(r => ({label: val(r, '.sd-l').trim(), value: val(r, '.sd-v').trim()})).filter(x => x.label || x.value);
+    s.email_summary = val(document.getElementById('subBody'), '#subEmailSum');
+    s.profile = val(document.getElementById('subBody'), '#subProfile');
+    s.sections = q('.ss-row').map(r => ({heading: val(r, '.ss-h').trim(), body: val(r, '.ss-b')}));
+    s.fit = q('.sf-row').map(r => ({requirement: val(r, '.sf-r').trim(), evidence: val(r, '.sf-e').trim()})).filter(x => x.requirement || x.evidence);
+    s.motivation = val(document.getElementById('subBody'), '#subMotivation');
+    s.employment = q('.se-row').map(r => ({employer: val(r, '.se-e').trim(), role: val(r, '.se-r').trim(), dates: val(r, '.se-d').trim()})).filter(x => x.employer || x.role);
+  }else if(SUB.cv){
+    SUB.cv.sections = q('.cs-row').map(r => ({heading: val(r, '.cs-h').trim(), body: val(r, '.cs-b')}));
+  }
+}
+
+function subTab(t){ subCollect(); SUB.tab = t; subRender(); }
+function subAddRow(kind){
+  subCollect();
+  const s = SUB.sub;
+  if(kind === 'detail') s.details.push({label: '', value: ''});
+  if(kind === 'section') s.sections.push({heading: '', body: ''});
+  if(kind === 'fit') s.fit.push({requirement: '', evidence: ''});
+  if(kind === 'job') s.employment.push({employer: '', role: '', dates: ''});
+  if(kind === 'cvsec' && SUB.cv) SUB.cv.sections.push({heading: '', body: ''});
+  subRender();
+}
+function subDelRow(kind, i){
+  subCollect();
+  const s = SUB.sub;
+  if(kind === 'detail') s.details.splice(i, 1);
+  if(kind === 'section') s.sections.splice(i, 1);
+  if(kind === 'fit') s.fit.splice(i, 1);
+  if(kind === 'job') s.employment.splice(i, 1);
+  if(kind === 'cvsec' && SUB.cv) SUB.cv.sections.splice(i, 1);
+  subRender();
+}
+
+function subSubmissionEditor(){
+  const s = SUB.sub;
+  const hint = 'Plain line = paragraph. Start a line with "- " for a bullet, "## " for a sub-heading. **Bold** with double asterisks.';
+  let h = '<div class="sub-block"><div class="sub-block-h">Candidate details</div>';
+  (s.details || []).forEach((r, i) => {
+    h += '<div class="sd-row sub-pair"><input class="sd-l" value="' + esc(r.label) + '" placeholder="Label"><input class="sd-v" value="' + esc(r.value) + '" placeholder="Value">' +
+      '<button class="sub-x" title="Remove" onclick="subDelRow(\'detail\',' + i + ')">&times;</button></div>';
+  });
+  h += '<button class="sub-btn small" onclick="subAddRow(\'detail\')">+ Add row</button></div>';
+
+  h += '<div class="sub-block"><div class="sub-block-h">Line for the client email <span class="sub-hint">One or two sentences naming the strongest evidence against the role.</span></div>' +
+    '<textarea id="subEmailSum" rows="3">' + esc(s.email_summary) + '</textarea></div>';
+
+  h += '<div class="sub-block"><div class="sub-block-h">Profile overview</div><textarea id="subProfile" rows="' + subRows(s.profile, 5, 14) + '">' + esc(s.profile) + '</textarea><div class="sub-hint">' + hint + '</div></div>';
+
+  h += '<div class="sub-block"><div class="sub-block-h">Background sections</div>';
+  (s.sections || []).forEach((r, i) => {
+    h += '<div class="ss-row sub-card"><div class="sub-pair"><input class="ss-h" value="' + esc(r.heading) + '" placeholder="Section heading">' +
+      '<button class="sub-x" title="Remove section" onclick="subDelRow(\'section\',' + i + ')">&times;</button></div>' +
+      '<textarea class="ss-b" rows="' + subRows(r.body, 5, 18) + '">' + esc(r.body) + '</textarea></div>';
+  });
+  h += '<button class="sub-btn small" onclick="subAddRow(\'section\')">+ Add section</button></div>';
+
+  h += '<div class="sub-block"><div class="sub-block-h">Fit for the role</div>';
+  (s.fit || []).forEach((r, i) => {
+    h += '<div class="sf-row sub-pair top"><textarea class="sf-r" rows="2" placeholder="Role requirement">' + esc(r.requirement) + '</textarea>' +
+      '<textarea class="sf-e" rows="' + subRows(r.evidence, 2, 6) + '" placeholder="Candidate evidence">' + esc(r.evidence) + '</textarea>' +
+      '<button class="sub-x" title="Remove" onclick="subDelRow(\'fit\',' + i + ')">&times;</button></div>';
+  });
+  h += '<button class="sub-btn small" onclick="subAddRow(\'fit\')">+ Add row</button></div>';
+
+  h += '<div class="sub-block"><div class="sub-block-h">Motivation and role fit</div><textarea id="subMotivation" rows="' + subRows(s.motivation, 4, 12) + '">' + esc(s.motivation) + '</textarea></div>';
+
+  h += '<div class="sub-block"><div class="sub-block-h">Employment history</div>';
+  (s.employment || []).forEach((r, i) => {
+    h += '<div class="se-row sub-trio"><input class="se-e" value="' + esc(r.employer) + '" placeholder="Employer"><textarea class="se-r" rows="2" placeholder="Role and responsibilities">' + esc(r.role) + '</textarea>' +
+      '<input class="se-d" value="' + esc(r.dates) + '" placeholder="Dates"><button class="sub-x" title="Remove" onclick="subDelRow(\'job\',' + i + ')">&times;</button></div>';
+  });
+  h += '<button class="sub-btn small" onclick="subAddRow(\'job\')">+ Add job</button></div>';
+  return h;
+}
+
+function subCvEditor(){
+  if(!SUB.cv){
+    return '<div class="sub-src bad">' + esc((SUB.errors && SUB.errors.cv) || 'No anonymised CV was produced.') + ' Only the submission will be attached. Upload a CV and regenerate to add one.</div>';
+  }
+  const hint = 'Start a job with "## Employer | Job title | Dates" then "- " bullets. **Bold** with double asterisks.';
+  let h = '';
+  if(SUB.cv.removed && SUB.cv.removed.length) h += '<div class="sub-note">Removed from the CV: ' + esc(SUB.cv.removed.join(', ')) + '.</div>';
+  h += '<div class="sub-note">Read this through before approving. Employer names and dates are kept; the candidate\'s name, contact details and address are removed.</div>';
+  (SUB.cv.sections || []).forEach((r, i) => {
+    h += '<div class="cs-row sub-card"><div class="sub-pair"><input class="cs-h" value="' + esc(r.heading) + '" placeholder="Section heading">' +
+      '<button class="sub-x" title="Remove section" onclick="subDelRow(\'cvsec\',' + i + ')">&times;</button></div>' +
+      '<textarea class="cs-b" rows="' + subRows(r.body, 4, 22) + '">' + esc(r.body) + '</textarea></div>';
+  });
+  h += '<button class="sub-btn small" onclick="subAddRow(\'cvsec\')">+ Add section</button><div class="sub-hint">' + hint + '</div>';
+  return h;
+}
+
+function subReviewHtml(){
+  const ctx = SUB.ctx, s = SUB.sub;
+  const status = SUB.rec ? SUB.rec.status : 'draft';
+  const pill = status === 'approved' ? '<span class="sub-pill ok">Approved</span>' : '<span class="sub-pill review">Draft - awaiting review</span>';
+  const gaps = (s.gaps || []).filter(Boolean);
+  let h = '<h2>Review submission ' + pill + '</h2>' +
+    '<div class="role-sub">' + esc(ctx.name) + ' &middot; ' + esc(ctx.role) + ' &middot; ' + esc(ctx.company) + '</div>';
+  if(gaps.length){
+    h += '<div class="sub-gaps"><strong>Check before approving</strong><ul>' + gaps.map(g => '<li>' + esc(g) + '</li>').join('') + '</ul></div>';
+  }
+  (SUB.warnings || []).forEach(w => { h += '<div class="sub-note warn">' + esc(w) + '</div>'; });
+  if(SUB.errors && SUB.errors.cv && SUB.tab === 'sub') h += '<div class="sub-note warn">Anonymised CV: ' + esc(SUB.errors.cv) + '</div>';
+  h += '<div class="sub-tabs"><button class="' + (SUB.tab === 'sub' ? 'on' : '') + '" onclick="subTab(\'sub\')">Submission</button>' +
+    '<button class="' + (SUB.tab === 'cv' ? 'on' : '') + '" onclick="subTab(\'cv\')">Anonymised CV' + (SUB.cv ? '' : ' (none)') + '</button></div>';
+  h += SUB.tab === 'sub' ? subSubmissionEditor() : subCvEditor();
+  h += '<div class="sub-actions sticky">' +
+    '<button class="sub-btn" onclick="subPreviewWord()">Preview as Word</button>' +
+    '<button class="sub-btn" onclick="subSaveDraft()">Save draft</button>' +
+    '<button class="sub-btn" onclick="subRegenerate()">Regenerate</button>' +
+    '<button class="sub-btn gold" onclick="subApprove()">Approve and build email</button></div>';
+  return h;
+}
+
+async function subSaveDraft(quiet){
+  subCollect();
+  try{
+    await subPersist('draft');
+    if(!quiet) showToast('Draft saved');
+    subRender();
+  }catch(e){ showToast('Could not save: ' + e.message); }
+}
+
+function subRegenerate(){
+  subCollect();
+  if(!confirm('Regenerate the draft? Your edits to this draft will be replaced.')) return;
+  subShowPrepare();
+}
+
+function subDownloadBase64(fileName, b64){
+  const bin = atob(b64), bytes = new Uint8Array(bin.length);
+  for(let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const blob = new Blob([bytes], {type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = fileName;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+async function subFetchDocx(kind, data, name, role){
+  const json = await b2Post('/api/submissions/docx', {kind, data: subCleanDeep(data), name, role});
+  return json;
+}
+
+async function subPreviewWord(){
+  subCollect();
+  const ctx = SUB.ctx;
+  const kind = SUB.tab === 'cv' ? 'cv' : 'submission';
+  const data = kind === 'cv' ? SUB.cv : SUB.sub;
+  if(!data){ showToast('Nothing to preview on this tab'); return; }
+  try{
+    showToast('Building the Word preview...');
+    const f = await subFetchDocx(kind, data, ctx.name, ctx.role);
+    subDownloadBase64(f.fileName, f.base64);
+  }catch(e){ showToast('Could not build the preview: ' + e.message); }
+}
+
+async function subApprove(){
+  subCollect();
+  const s = SUB.sub;
+  const text = JSON.stringify([s, SUB.cv]);
+  const open = (text.match(/to be confirmed/gi) || []).length;
+  if(open && !confirm(open + ' item' + (open === 1 ? '' : 's') + ' still say "To be confirmed". Approve anyway?')) return;
+  if(!SUB.cv && !confirm('There is no anonymised CV, so only the submission will be attached. Continue?')) return;
+  try{
+    await subPersist('approved');
+    const c = subCandidate(SUB.ctx);
+    logActivity('submission_approved', {candidate: c ? c.name : SUB.ctx.name, role: SUB.ctx.role, company: SUB.ctx.company});
+    showToast('Submission approved');
+    subOpenEmail([SUB.ctx.id]);
+  }catch(e){ showToast('Could not approve: ' + e.message); }
+}
+
+/* ---------- step 4: client email (single or batch) ---------- */
+
+async function subFullDraft(rec){
+  if(SUB.full[rec.id] && SUB.full[rec.id]._rev === rec.approved_at + rec.status) return SUB.full[rec.id];
+  const json = await b2Api('/api/submission-drafts/' + encodeURIComponent(rec.id));
+  const d = json.data;
+  d._sub = d.submission_json ? JSON.parse(d.submission_json) : null;
+  d._cv = d.cv_json ? JSON.parse(d.cv_json) : null;
+  d._rev = rec.approved_at + rec.status;
+  SUB.full[rec.id] = d;
+  return d;
+}
+
+async function subOpenEmail(preselect){
+  const ctx = SUB.ctx;
+  SUB.view = 'loading'; SUB.loadingMsg = 'Getting the approved submissions ready...'; subRender();
+  const elig = subApprovedForRole(ctx.company, ctx.role);
+  if(!elig.length){ SUB.view = 'review'; subRender(); showToast('No approved submissions to send'); return; }
+  try{ await Promise.all(elig.map(x => subFullDraft(x.rec))); }
+  catch(e){ showToast('Could not load the drafts: ' + e.message); subClose(); return; }
+  SUB.sel = {};
+  elig.forEach(x => { SUB.sel[x.c.id] = true; });
+  // default contact: the one chosen when the candidate was assigned to the client
+  const first = elig.find(x => !preselect || preselect.includes(x.c.id)) || elig[0];
+  const contact = resolveClientContact(ctx.company, ctx.role, first.c);
+  SUB.contactName = contact ? contact.name : '';
+  SUB.to = contact ? (contact.email || '') : '';
+  SUB.emailEdited = false;
+  await subComposeEmail(true);
+  SUB.view = 'email';
+  subRender();
+}
+
+function subChosen(){
+  const ctx = SUB.ctx;
+  return subApprovedForRole(ctx.company, ctx.role)
+    .filter(x => SUB.sel[x.c.id])
+    .map(x => ({c: x.c, rec: x.rec, full: SUB.full[x.rec.id]}))
+    .filter(x => x.full && x.full._sub);
+}
+
+async function subGetTemplate(){
+  if(!B2.templates.some(t => t.id === 'tpl-client-submission')){
+    try{ B2.templates = b2List(await b2Api('/api/templates')); }catch(e){ /* fall back below */ }
+  }
+  return B2.templates.find(t => t.id === 'tpl-client-submission') || SUB_FALLBACK_TEMPLATE;
+}
+
+async function subComposeEmail(force){
+  if(SUB.emailEdited && !force) return;
+  const ctx = SUB.ctx, chosen = subChosen(), n = chosen.length;
+  const tpl = await subGetTemplate();
+  const me = senderProfile();
+  const refs = chosen.map(x => subRef(x.c.name));
+  const summaries = chosen.map(x => {
+    const line = (x.full._sub.email_summary || '').trim() || 'Full submission attached.';
+    return n === 1 ? refs[0] + ': ' + line : '- ' + subRef(x.c.name) + ': ' + line;
+  }).join('\n');
+  const vars = {
+    role: ctx.role, company: ctx.company,
+    contact_name: SUB.contactName, contact_first_name: SUB.contactName ? SUB.contactName.split(' ')[0] : 'there',
+    candidate_names: subJoin(refs), candidate_summaries: summaries,
+    submission_intro: n === 1 ? 'a suitable submission' : n + ' suitable submissions',
+    interview_target: n === 1 ? 'the candidate' : 'any of the candidates',
+    sender_name: me.name, sender_email: me.email, sender_phone: me.phone, signature: me.signature, my_name: me.name,
+  };
+  SUB.subject = subClean(tplMerge(tpl.subject, vars).text);
+  SUB.body = subClean(tplMerge(tpl.body, vars).text);
+}
+
+function subCollectEmail(){
+  const to = document.getElementById('subTo'), su = document.getElementById('subSubject'), bo = document.getElementById('subEmailBody');
+  if(to) SUB.to = to.value.trim();
+  if(su) SUB.subject = su.value;
+  if(bo) SUB.body = bo.value;
+}
+
+function subEmailHtml(){
+  const ctx = SUB.ctx, contacts = clientContactsFor(ctx.company);
+  const all = subApprovedForRole(ctx.company, ctx.role);
+  const waiting = ((DATA[ctx.company] || {})[ctx.role] || []).filter(c => c.stage === 'ready_to_submit' && !all.some(x => x.c.id === c.id));
+  let h = '<h2>Email to the client</h2><div class="role-sub">' + esc(ctx.role) + ' &middot; ' + esc(ctx.company) + '</div>';
+
+  h += '<div class="sub-block"><div class="sub-block-h">Candidates in this email <span class="sub-hint">Tick the ones to send together.</span></div>';
+  all.forEach(x => {
+    const full = SUB.full[x.rec.id];
+    const hasCv = full && full._cv;
+    h += '<label class="sub-check"><input type="checkbox" ' + (SUB.sel[x.c.id] ? 'checked' : '') + ' onchange="subToggle(\'' + esc(x.c.id) + '\', this.checked)">' +
+      '<span><strong>' + esc(subRef(x.c.name)) + '</strong> <span class="sub-hint">' + (hasCv ? 'Submission + anonymised CV' : 'Submission only (no anonymised CV)') +
+      (x.rec.status === 'email_built' ? ' - email built earlier, not confirmed' : '') + '</span></span></label>';
+  });
+  if(waiting.length){
+    h += '<div class="sub-hint" style="margin-top:8px;">Not ready yet: ' + waiting.map(c => esc(subRef(c.name)) + ' (' + (subRecFor(c.name, ctx.role) ? 'awaiting review' : 'no draft') + ')').join(', ') +
+      '. Open their card, approve the draft, then come back to add them.</div>';
+  }
+  h += '</div>';
+
+  h += '<div class="sub-block"><div class="sub-block-h">Client contact</div>';
+  if(contacts.length){
+    h += '<select id="subContact" onchange="subPickContact(this.value)"><option value="">Choose a contact...</option>' +
+      contacts.map(c => '<option value="' + esc(c.contactName) + '" ' + (b2Same(c.contactName, SUB.contactName) ? 'selected' : '') + '>' + esc(c.contactName) + (c.jobTitle ? ' - ' + esc(c.jobTitle) : '') + '</option>').join('') + '</select>';
+  }else{
+    h += '<input id="subContactName" placeholder="Contact name" value="' + esc(SUB.contactName) + '" onchange="SUB.contactName=this.value.trim();subRefreshEmail()">';
+  }
+  h += '</div>';
+
+  h += '<div class="sub-block"><div class="sub-block-h">Email <span class="sub-hint">Edit anything here before it opens in Outlook.</span></div>' +
+    '<label class="sub-label">To</label><input id="subTo" value="' + esc(SUB.to) + '" placeholder="client@company.co.uk">' +
+    '<label class="sub-label">Subject</label><input id="subSubject" value="' + esc(SUB.subject) + '" oninput="SUB.emailEdited=true">' +
+    '<label class="sub-label">Message</label><textarea id="subEmailBody" rows="' + subRows(SUB.body, 10, 20) + '" oninput="SUB.emailEdited=true">' + esc(SUB.body) + '</textarea>' +
+    '<div class="sub-hint">Wording comes from the "Client submission" template in the Templates tab. ' +
+    '<a href="#" onclick="subEditTemplate();return false;">Edit the template</a> &middot; <a href="#" onclick="subResetEmail();return false;">Reset this email from the template</a></div></div>';
+
+  const chosen = subChosen();
+  h += '<div class="sub-block"><div class="sub-block-h">Attachments</div>';
+  if(!chosen.length) h += '<div class="sub-hint">Tick at least one candidate.</div>';
+  chosen.forEach(x => {
+    const nm = subFileNames(x.c.name, ctx.role);
+    h += '<div class="sub-att">' + esc(nm.submission) + '</div>' + (x.full._cv ? '<div class="sub-att">' + esc(nm.cv) + '</div>' : '');
+  });
+  h += '</div>';
+
+  h += '<div class="sub-actions sticky"><button class="sub-btn" onclick="subCopyEmail()">Copy text</button>' +
+    '<button class="sub-btn gold" ' + (SUB.busy ? 'disabled' : '') + ' onclick="subBuildEml()">' + (SUB.busy ? 'Building...' : 'Open in Outlook (.eml with attachments)') + '</button>' +
+    '<button class="sub-btn" onclick="subClose()">Close</button></div>' +
+    '<div class="sub-hint">A file downloads. Open it and Outlook shows a ready-to-send email with the attachments already in place. Nothing is sent until you press Send.</div>';
+  return h;
+}
+
+function subFileNames(name, role){
+  const ref = subRef(name), r = String(role || '').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return {submission: ('Candidate Submission ' + ref + ' ' + r).replace(/\s+/g, ' ').trim() + '.docx', cv: ('Anonymised CV ' + ref + ' ' + r).replace(/\s+/g, ' ').trim() + '.docx'};
+}
+
+async function subToggle(id, on){
+  subCollectEmail();
+  SUB.sel[id] = on;
+  await subComposeEmail(false);
+  subRender();
+}
+async function subPickContact(name){
+  subCollectEmail();
+  SUB.contactName = name;
+  const rec = clientContactsFor(SUB.ctx.company).find(c => b2Same(c.contactName, name));
+  SUB.to = rec && rec.email ? rec.email : '';
+  await subComposeEmail(false);
+  subRender();
+}
+async function subRefreshEmail(){ subCollectEmail(); await subComposeEmail(false); subRender(); }
+async function subResetEmail(){ SUB.emailEdited = false; subCollectEmail(); await subComposeEmail(true); subRender(); }
+
+function subEditTemplate(){
+  subClose();
+  tplSelectedId = 'tpl-client-submission';
+  switchTab('templates');
+}
+
+async function subCopyEmail(){
+  subCollectEmail();
+  showToast((await copyToClipboard(SUB.subject + '\n\n' + SUB.body)) ? 'Email text copied' : 'Could not copy - select the text and copy it manually');
+}
+
+function emlBuildMulti(to, subject, body, atts){
+  const boundary = '----=_L2H_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const wrap = b64 => (b64.match(/.{1,76}/g) || []).join('\r\n');
+  const text = String(body || '').replace(/\r?\n/g, '\r\n');
+  const parts = [['--' + boundary, 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', wrap(b64utf8(text))].join('\r\n')];
+  atts.forEach(a => {
+    const fn = String(a.fileName).replace(/[^\x20-\x7e]/g, '').replace(/"/g, '');
+    parts.push(['--' + boundary, 'Content-Type: ' + a.mime + '; name="' + fn + '"', 'Content-Transfer-Encoding: base64',
+      'Content-Disposition: attachment; filename="' + fn + '"', '', wrap(a.base64)].join('\r\n'));
+  });
+  return ['X-Unsent: 1', 'To: ' + (to || ''), 'Subject: ' + emlSubject(subject), 'MIME-Version: 1.0',
+    'Content-Type: multipart/mixed; boundary="' + boundary + '"', '', parts.join('\r\n'), '--' + boundary + '--', ''].join('\r\n');
+}
+
+async function subBuildEml(){
+  subCollectEmail();
+  const ctx = SUB.ctx, chosen = subChosen();
+  if(!chosen.length){ showToast('Tick at least one candidate'); return; }
+  if(!SUB.to || SUB.to.indexOf('@') < 1){ showToast('Enter the client contact email address'); return; }
+  const mime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  SUB.busy = true; subRender();
+  try{
+    const atts = [];
+    for(const x of chosen){
+      const a = await subFetchDocx('submission', x.full._sub, x.c.name, ctx.role);
+      atts.push({fileName: a.fileName, mime, base64: a.base64});
+      if(x.full._cv){
+        const b = await subFetchDocx('cv', x.full._cv, x.c.name, ctx.role);
+        atts.push({fileName: b.fileName, mime, base64: b.base64});
+      }
+    }
+    const eml = emlBuildMulti(SUB.to, SUB.subject, SUB.body, atts);
+    const fname = 'Draft ' + String(SUB.subject || 'submission').replace(/[^A-Za-z0-9 \-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 70) + '.eml';
+    downloadText(fname, eml, 'message/rfc822');
+    const batch = 'b-' + Date.now().toString(36);
+    for(const x of chosen){
+      const json = await b2Post('/api/submission-drafts', {id: x.rec.id, status: 'email_built', batch_id: batch, contact_name: SUB.contactName, contact_email: SUB.to});
+      subMergeLight(json.data);
+    }
+    SUB.batchIds = chosen.map(x => x.rec.id);
+    SUB.busy = false;
+    showToast('Email file downloaded. Open it in Outlook, check it, then send.');
+    subOpenConfirm(batch);
+  }catch(e){
+    SUB.busy = false;
+    subRender();
+    showToast('Could not build the email: ' + e.message);
+  }
+}
+
+/* ---------- step 5: confirm it was sent ---------- */
+
+function subOpenConfirm(batchId){
+  const list = SUBS.filter(r => r.status === 'email_built' && (!batchId || r.batch_id === batchId));
+  if(!list.length){ subClose(); return; }
+  SUB.batchIds = list.map(r => r.id);
+  const first = list[0];
+  if(!SUB.ctx || SUB.ctx.company !== first.company || SUB.ctx.role !== first.role) SUB.ctx = {company: first.company, role: first.role, id: first.candidate_id, name: first.candidate_name};
+  SUB.view = 'confirm';
+  document.getElementById('subOverlay').classList.add('visible');
+  subRender();
+}
+
+function subConfirmHtml(){
+  const list = SUBS.filter(r => SUB.batchIds.includes(r.id));
+  const first = list[0] || {};
+  return '<h2>Did you send it?</h2>' +
+    '<div class="role-sub">' + esc(first.role || '') + ' &middot; ' + esc(first.company || '') + '</div>' +
+    '<div class="sub-block"><p style="font-size:13.5px;line-height:1.55;margin-bottom:10px;">The email for ' + esc(subJoin(list.map(r => subRef(r.candidate_name)))) +
+    ' was prepared for ' + esc(first.contact_name || first.contact_email || 'the client') + '. The dashboard cannot see Outlook, so please confirm once you have pressed Send.</p>' +
+    '<p class="sub-hint">Confirming moves ' + (list.length === 1 ? 'the candidate' : 'each candidate') + ' to Submitted and files the documents in Drive.</p></div>' +
+    '<div class="sub-actions"><button class="sub-btn gold" ' + (SUB.busy ? 'disabled' : '') + ' onclick="subConfirmSent()">' + (SUB.busy ? 'Updating...' : 'Yes, I sent it') + '</button>' +
+    '<button class="sub-btn" onclick="subNotYet()">Not yet</button>' +
+    '<button class="sub-btn" onclick="subCancelEmail()">Cancel this email</button></div>' +
+    '<div class="sub-hint" style="margin-top:10px;">"Not yet" keeps the candidates on Ready to Submit with a reminder until you confirm.</div>';
+}
+
+function subNotYet(){
+  showToast('Saved. The card stays on Ready to Submit until you confirm it was sent.');
+  subClose();
+}
+
+async function subCancelEmail(){
+  if(!confirm('Cancel this email? The submissions go back to Approved so you can build it again.')) return;
+  try{
+    for(const id of SUB.batchIds){
+      const json = await b2Post('/api/submission-drafts', {id, status: 'approved', batch_id: ''});
+      subMergeLight(json.data);
+    }
+  }catch(e){ showToast('Could not cancel: ' + e.message); return; }
+  subClose();
+  subRenderPendingBar();
+}
+
+async function subConfirmSent(){
+  SUB.busy = true; subRender();
+  const list = SUBS.filter(r => SUB.batchIds.includes(r.id));
+  const sentAt = new Date().toISOString();
+  let moved = 0, archiveFailed = 0;
+  for(const rec of list){
+    try{
+      const c = ((DATA[rec.company] || {})[rec.role] || []).find(x => b2Same(x.name, rec.candidate_name));
+      if(c){
+        c.stage = 'submitted';
+        c.date = opsToday();
+        await saveCandidate(c);
+        moved++;
+        logActivity('submitted', {candidate: c.name, role: rec.role, company: rec.company, detail: 'from ready_to_submit'});
+        remindCvIfMissing([Object.assign({}, c, {role: rec.role, company: rec.company, stage: 'submitted'})]);
+      }
+      const json = await b2Post('/api/submission-drafts', {id: rec.id, status: 'sent', sent_at: sentAt});
+      subMergeLight(json.data);
+      try{
+        const full = await subFullDraft(Object.assign({}, rec, {status: 'email_built'}));
+        await b2Post('/api/submissions/archive', {name: rec.candidate_name, role: rec.role, company: rec.company, submission: full._sub, cv: full._cv});
+      }catch(err){ archiveFailed++; }
+    }catch(e){
+      showToast('Could not update ' + rec.candidate_name + ': ' + e.message);
+    }
+  }
+  SUB.busy = false;
+  document.getElementById('subOverlay').classList.remove('visible');
+  renderSidebar();
+  renderBoard();
+  subRenderPendingBar();
+  showToast(moved + ' candidate' + (moved === 1 ? '' : 's') + ' moved to Submitted' + (archiveFailed ? '. The Drive copy could not be saved for ' + archiveFailed + ' - download the Word files from the draft if you need them.' : '.'));
+}
+
+/* ---------- rendering ---------- */
+
+function subRender(){
+  if(SUB.view === 'loading') subBody('<div class="sub-loading"><div class="sub-spin"></div><p>' + esc(SUB.loadingMsg) + '</p></div>');
+  else if(SUB.view === 'prepare') subBody(subPrepareHtml());
+  else if(SUB.view === 'review') subBody(subReviewHtml());
+  else if(SUB.view === 'email') subBody(subEmailHtml());
+  else if(SUB.view === 'confirm') subBody(subConfirmHtml());
+}
+
+/* ---------- hooks into the existing dashboard ---------- */
+
+(function(){
+  // Keep draft records in step with every board refresh
+  const _lc = loadCandidates;
+  loadCandidates = async function(){
+    await _lc();
+    if(signedInUser){ await subLoadDrafts(); renderBoard(); }
+  };
+
+  // Moving a candidate to Ready to Submit starts the automation
+  const _adv = advanceStage;
+  advanceStage = async function(newStage){
+    const snap = {id: openCandidateId, company: currentCompany, role: currentRole};
+    await _adv(newStage);
+    if(newStage !== 'ready_to_submit') return;
+    const c = ((DATA[snap.company] || {})[snap.role] || []).find(x => x.id === snap.id);
+    if(c && c.stage === 'ready_to_submit') subOpen(snap.company, snap.role, snap.id);
+  };
+
+  // Keep the "Send submissions" button correct after every board draw
+  const _rb = renderBoard;
+  renderBoard = function(){ _rb(); subUpdateSendButton(); };
+
+  // Load drafts soon after sign in
+  const _si = signIn;
+  signIn = function(){
+    const r = _si.apply(this, arguments);
+    setTimeout(subLoadDrafts, 1500);
+    return r;
+  };
+
+  // Notifications for anything waiting on a person
+  const _bn = buildNotifications;
+  buildNotifications = function(){
+    const out = _bn();
+    try{
+      SUBS.forEach(r => {
+        const act = {type: 'candidate', company: r.company, role: r.role, id: r.candidate_id};
+        if(r.status === 'email_built') out.unshift({sev: 'high', title: 'Confirm submission sent: ' + r.candidate_name, detail: r.role + ' at ' + r.company + ' - email prepared but not confirmed as sent', act});
+        else if(r.status === 'draft') out.push({sev: 'med', title: 'Submission draft to review: ' + r.candidate_name, detail: r.role + ' at ' + r.company, act});
+        else if(r.status === 'approved') out.push({sev: 'med', title: 'Approved submission not emailed: ' + r.candidate_name, detail: r.role + ' at ' + r.company + ' - same-day submission is the goal', act});
+      });
+    }catch(e){}
+    return out;
+  };
+
+  // Merge fields for the new client submission template
+  ['candidate_names', 'candidate_summaries', 'submission_intro', 'interview_target'].forEach(f => { if(TPL_FIELDS.indexOf(f) === -1) TPL_FIELDS.push(f); });
+})();
 </script>
 
 </body>
