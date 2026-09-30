@@ -10090,6 +10090,8 @@ function subRender(){
   .modal.xwide{max-width:880px;}
   .cl-sites{margin:12px 0 6px;border-top:1px solid var(--border);padding-top:10px;}
   .cl-sites-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:#8a7638;font-weight:600;}
+  .site-add-btns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;text-transform:none;letter-spacing:0;}
+  .cl-sites-head button.site-add{border-color:var(--gold);color:#8a6a12;font-weight:600;}
   .cl-sites-head button,.site-row button{padding:4px 10px;border:1px solid var(--border);background:#fff;color:var(--grey);border-radius:2px;font-size:11.5px;cursor:pointer;font-family:inherit;}
   .cl-sites-head button:hover,.site-row button:hover{border-color:var(--dark);color:var(--dark);}
   .site-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #f0efe9;}
@@ -10404,11 +10406,36 @@ function sitesBlockHtml(company, contacts){
     const sid = escapeAttr(s.id || '');
     return `<div class="site-row"><div class="site-main"><strong>${esc(s.site_name || 'Site')}</strong><span>${esc(siteAddressLine(s)) || 'No address yet'}</span></div>
       <span class="chip ${st.cls}">${st.text}</span>
-      <button onclick="siteQuickUpload('${co}','${sid}')">${siteHasData(s) ? 'Replace PDF' : 'Upload PDF'}</button>
+      <button onclick="siteQuickUpload('${co}','${sid}')">${s.pdf_file_id || siteHasData(s) ? 'Replace PDF' : 'Upload PDF'}</button>
+      ${s.pdf_file_id ? `<button onclick="siteRemovePdf('${sid}')">Remove PDF</button>` : ''}
       <button onclick="openSiteModal('${co}','${sid}')">${s.virtual ? 'Add manually' : 'Edit'}</button></div>`;
   }).join('');
-  const addAnother = sitesFor(company).length ? `<button onclick="siteQuickUpload('${co}','','new')">+ Upload PDF for another site</button>` : '';
-  return `<div class="cl-sites"><div class="cl-sites-head"><span>Sites</span>${addAnother}</div>${rows}</div>`;
+  const saved = sitesFor(company).length;
+  const addBtns = `<span class="site-add-btns"><button class="site-add" onclick="siteQuickUpload('${co}','','new')">+ Add ${saved ? 'another ' : 'a '}site from PDF</button><button class="site-add" onclick="openSiteModal('${co}','',true)">+ Add ${saved ? 'another ' : 'a '}site manually</button></span>`;
+  return `<div class="cl-sites"><div class="cl-sites-head"><span>Sites</span>${addBtns}</div>${rows}</div>`;
+}
+
+
+async function siteRemovePdf(id, fromModal){
+  const site = SITES.find(s => s.id === id);
+  const fileId = fromModal ? (SITE_ED && SITE_ED.pdfId) : (site && site.pdf_file_id);
+  if(!fileId && !(site && site.pdf_link)){ showToast('There is no PDF to remove'); return; }
+  if(!confirm('Remove this PDF? It moves to the bin in Google Drive. The site details stay as they are.')) return;
+  try{
+    const q = fileId ? '?fileId=' + encodeURIComponent(fileId) : '';
+    const j = await b2Api('/api/client-sites/' + encodeURIComponent(id) + '/pdf' + q, {method:'DELETE'});
+    if(site){
+      const i = SITES.findIndex(s => s.id === id);
+      if(j.data && i >= 0) SITES[i] = j.data; else { site.pdf_file_id = ''; site.pdf_link = ''; site.pdf_name = ''; }
+    }
+    if(fromModal && SITE_ED){
+      SITE_ED.pdfId = ''; SITE_ED.pdfLink = ''; SITE_ED.pdfName = '';
+      const st = document.getElementById('siteUploadStatus'); if(st) st.innerHTML = 'PDF removed.';
+      const rw = document.getElementById('siteRmWrap'); if(rw) rw.style.display = 'none';
+    }
+    showToast(j.driveNote ? 'PDF removed from the site, but Drive said: ' + j.driveNote : 'PDF removed');
+    loadClients();
+  }catch(e){ showToast('Could not remove the PDF: ' + e.message); }
 }
 
 /* Upload the client's completed site onboarding PDF straight from the client card.
@@ -10456,7 +10483,8 @@ async function siteProcessUpload(company, existing, file, forceNew){
     const miss = ex && Array.isArray(ex.missing) ? ex.missing.filter(Boolean) : [];
     box.innerHTML = `
       <h2>${esc(company)} - ${esc(body.site_name)}</h2>
-      ${ex ? `<div class="upload-box"><strong>${found} details added from the form.</strong><br>${esc(siteAddressLine(body)) || 'No address found on the form.'}<br>They are marked "Needs checking" until you review them.</div>` : ''}
+      ${ex && found > 0 ? `<div class="upload-box"><strong>${found} details added from the form.</strong><br>${esc(siteAddressLine(body)) || 'No address found on the form.'}<br>They are marked "Needs checking" until you review them.</div>` : ''}
+      ${!ex || found === 0 ? `<div class="warn-box"><strong>Nothing could be read from this form.</strong> The PDF has been saved, but no details were added. Check the form has been filled in and saved as a PDF (not printed or scanned), or use Review and edit to type them in.</div>` : ''}
       ${j.file ? `<div class="note-line" style="margin:6px 0;">Saved to Drive: <a href="${esc(j.file.link)}" target="_blank" rel="noopener">${esc(j.file.name)}</a></div>` : ''}
       ${j.fileError ? `<div class="warn-box">The PDF could not be saved to Drive (${esc(j.fileError)}). The details were still saved.</div>` : ''}
       ${j.warning ? `<div class="warn-box">${esc(j.warning)}</div>` : ''}
@@ -10521,6 +10549,7 @@ function openSiteModal(company, id, forceNew){
       Upload the client's completed form. It is saved in their Site Info folder in Drive and the details below are filled in for you to check.
       <div style="margin-top:8px;"><input type="file" id="sitePdf" accept="application/pdf,.pdf" onchange="siteUploadPdf()"></div>
       <div id="siteUploadStatus" style="margin-top:8px;">${SITE_ED.pdfLink ? `Saved: <a href="${esc(SITE_ED.pdfLink)}" target="_blank" rel="noopener">${esc(SITE_ED.pdfName || 'Open the PDF')}</a>` : ''}</div>
+      <div id="siteRmWrap" style="margin-top:8px;${SITE_ED.pdfId || SITE_ED.pdfLink ? '' : 'display:none;'}"><button class="ghost-btn" onclick="siteRemovePdf(SITE_ED.id, true)">Remove this PDF</button></div>
     </div>
     <div id="siteMissing"></div>
     ${fieldsHtml}
@@ -10561,6 +10590,7 @@ async function siteUploadPdf(){
       document.getElementById('siteChecked').checked = false;
     }
     if(j.file){ SITE_ED.pdfId = j.file.id; SITE_ED.pdfLink = j.file.link; SITE_ED.pdfName = j.file.name; }
+    const rmw = document.getElementById('siteRmWrap'); if(rmw && j.file) rmw.style.display = '';
     let msg = j.file ? `Saved to Drive: <a href="${esc(j.file.link)}" target="_blank" rel="noopener">${esc(j.file.name)}</a>` : '';
     if(j.fileError) msg += `<div class="warn-box">The PDF could not be saved to Drive (${esc(j.fileError)}). The details below can still be used.</div>`;
     if(j.warning) msg += `<div class="warn-box">${esc(j.warning)}</div>`;
@@ -10831,7 +10861,7 @@ async function ipDraft(){
     const me = signedInUser || {};
     const siteSnap = ipSiteSnapshot();
     const hasSite = !!(siteSnap && (siteSnap.address || Object.values(siteSnap.fields).some(v => String(v || '').trim())));
-    const location = siteSnap ? [siteSnap.site_name, siteSnap.address, siteSnap.postcode].filter(Boolean).join(', ') : (iv.location || '');
+    const location = siteSnap ? [/^main site$/i.test(String(siteSnap.site_name || '').trim()) ? '' : siteSnap.site_name, siteSnap.address, siteSnap.postcode].filter(Boolean).join(', ') : (iv.location || '');
     const consName = me.fullName || me.name || '';
     IP.pack = {
       candidate_name: name, candidate_ref: refOfName(name), first_name: firstWord(name),
