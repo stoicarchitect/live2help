@@ -12,6 +12,16 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Retry Google API calls that hit per-minute quota limits (429) or brief server errors
+google.options({
+  retry: true,
+  retryConfig: {
+    retry: 5,
+    retryDelay: 2000,
+    statusCodesToRetry: [[429, 429], [500, 599]],
+  },
+});
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '15mb' }));
@@ -235,6 +245,36 @@ function getDriveClient() {
   const auth = getAuthClient();
   driveClientCache = google.drive({ version: 'v3', auth });
   return driveClientCache;
+}
+
+// Drive client used for creating folders and saving CV files.
+// Service accounts have no Drive storage, so uploads must be made as a real Google
+// user (Dan) via OAuth. Set GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET and
+// GOOGLE_OAUTH_REFRESH_TOKEN on Render. Without them it falls back to the service
+// account, which Google rejects for file uploads.
+let uploadDriveCache = null;
+function oauthUploadsConfigured() {
+  return !!(process.env.GOOGLE_OAUTH_CLIENT_ID && process.env.GOOGLE_OAUTH_CLIENT_SECRET && process.env.GOOGLE_OAUTH_REFRESH_TOKEN);
+}
+function getUploadDriveClient() {
+  if (uploadDriveCache) return uploadDriveCache;
+  if (oauthUploadsConfigured()) {
+    const oauth = new google.auth.OAuth2(process.env.GOOGLE_OAUTH_CLIENT_ID, process.env.GOOGLE_OAUTH_CLIENT_SECRET);
+    oauth.setCredentials({ refresh_token: process.env.GOOGLE_OAUTH_REFRESH_TOKEN });
+    uploadDriveCache = google.drive({ version: 'v3', auth: oauth });
+  } else {
+    uploadDriveCache = getDriveClient();
+  }
+  return uploadDriveCache;
+}
+function friendlyDriveError(e) {
+  const msg = String((e && e.message) || e);
+  if (/storage quota/i.test(msg) || /invalid_grant/i.test(msg) || /unauthorized_client/i.test(msg)) {
+    return oauthUploadsConfigured()
+      ? 'Google sign-in for uploads has expired or been revoked - the refresh token needs regenerating'
+      : 'Google sign-in for uploads is not set up on the server yet';
+  }
+  return msg;
 }
 
 async function readAllRows() {
@@ -660,21 +700,17 @@ app.post('/api/applications/:role', async (req, res) => {
     const roleName = role.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
     const poolConsent = (consentPool === true || consentPool === 'Yes') ? 'Yes' : 'No';
 
-    // Save the CV first so the application row can carry the link
+    // Save the CV first so the application row can carry the link.
+    // If Drive rejects the file the application is still recorded (without a CV link)
+    // so no candidate is ever lost; the failure is logged for follow-up.
     const cleanName = String(name).trim().replace(/\s+/g, ' ').replace(/['"\\]/g, '');
-    const unassignedFolderId = await getOrCreateCandidateFolder(SUBMISSIONS_FOLDER_ID, UNASSIGNED_LABEL);
-    const candidateFolderId = unassignedFolderId ? await getOrCreateCandidateFolder(unassignedFolderId, cleanName) : null;
-    if (!candidateFolderId) {
-      return res.status(500).json({ error: 'Failed to save application' });
+    let saved = null;
+    try {
+      saved = await saveCandidateCv({ company: '', name, fileName: cvFileName, fileData: cvData });
+    } catch (cvErr) {
+      console.error(`CV could not be saved for application from ${cleanName}:`, cvErr.message);
     }
-    const ext = (String(cvFileName).match(/\.[A-Za-z0-9]+$/) || ['.pdf'])[0].toLowerCase();
-    const driveName = `${cleanName} - CV${ext}`;
-    const drive = google.drive({ version: 'v3', auth: getAuthClient() });
-    const file = await drive.files.create({
-      resource: { name: driveName, parents: [candidateFolderId] },
-      media: { mimeType: mimeFromName(cvFileName), body: Readable.from([Buffer.from(cvData, 'base64')]) },
-      fields: 'id, name, webViewLink',
-    });
+    const driveName = saved ? saved.fileName : '';
 
     // Tab name format: "Applications - Transport Coordinator"
     const tabName = `Applications - ${roleName}`;
@@ -706,7 +742,7 @@ app.post('/api/applications/:role', async (req, res) => {
       dateApplied,                  // W: consent date and time
       APPLICATION_WORDING_VERSION,  // X: wording version shown
       poolConsent,                  // Y: agreed to be kept for future roles
-      file.data.webViewLink || ''   // Z: CV link
+      saved ? saved.link : ''       // Z: CV link
     ];
 
     await sheets.spreadsheets.values.append({
@@ -725,7 +761,7 @@ app.post('/api/applications/:role', async (req, res) => {
         consentDate: dateApplied.slice(0, 10),
         consentBasis: poolConsent === 'Yes' ? 'Application form - talent pool' : 'Application form - this role only',
       }, true, { createOnly: true });
-      await attachCvToPool(poolId, { fileId: file.data.id, fileName: driveName, link: file.data.webViewLink || '' });
+      if (saved) await attachCvToPool(poolId, saved);
     } catch (poolErr) {
       console.error('Could not create pool record for application:', poolErr.message);
     }
@@ -1893,7 +1929,7 @@ async function findApplicationRow(candidateName, role) {
 
 // Helper: find or create a candidate folder in a company Drive folder
 async function getOrCreateCandidateFolder(companyFolderId, candidateName) {
-  const drive = google.drive({ version: 'v3', auth: getAuthClient() });
+  const drive = getUploadDriveClient();
   try {
     // Look for existing folder
     const query = `'${companyFolderId}' in parents and name='${escDriveQuery(candidateName)}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
@@ -1989,7 +2025,7 @@ function validateCvUpload(fileName, fileData) {
 }
 
 async function resolveCandidateCvFolder(company, name) {
-  const drive = getDriveClient();
+  const drive = getUploadDriveClient();
   const isFolder = f => f.mimeType === 'application/vnd.google-apps.folder';
   const cleanName = cleanCandidateName(name);
   const top = await listFolderContents(SUBMISSIONS_FOLDER_ID);
@@ -2020,12 +2056,17 @@ async function saveCandidateCv({ company, name, fileName, fileData }) {
   const folderId = await resolveCandidateCvFolder(company, name);
   const ext = (String(fileName).match(/\.[A-Za-z0-9]+$/) || ['.pdf'])[0].toLowerCase();
   const driveName = `${cleanCandidateName(name)} - CV${ext}`;
-  const drive = getDriveClient();
-  const file = await drive.files.create({
-    resource: { name: driveName, parents: [folderId] },
-    media: { mimeType: mimeFromName(fileName), body: Readable.from([Buffer.from(fileData, 'base64')]) },
-    fields: 'id, name, webViewLink',
-  });
+  const drive = getUploadDriveClient();
+  let file;
+  try {
+    file = await drive.files.create({
+      resource: { name: driveName, parents: [folderId] },
+      media: { mimeType: mimeFromName(fileName), body: Readable.from([Buffer.from(fileData, 'base64')]) },
+      fields: 'id, name, webViewLink',
+    });
+  } catch (e) {
+    throw new Error(friendlyDriveError(e));
+  }
   return { fileId: file.data.id, fileName: driveName, link: file.data.webViewLink || '' };
 }
 
@@ -2730,21 +2771,33 @@ async function ensurePoolTab() {
   poolTabReady = true;
 }
 
+// Short-lived cache so busy screens do not exhaust Google's per-minute read quota.
+// Cleared after every locked pool write, so edits are always visible straight away.
+let poolRowsCache = null;
+let poolRowsCacheAt = 0;
+const POOL_CACHE_MS = 10000;
+
 async function readPoolRows() {
+  if (poolRowsCache && Date.now() - poolRowsCacheAt < POOL_CACHE_MS) return poolRowsCache;
   await ensurePoolTab();
   const sheets = getSheetsClient();
   const result = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
     range: `'${POOL_TAB}'!A2:${POOL_LAST_COL}`,
   });
-  return result.data.values || [];
+  poolRowsCache = result.data.values || [];
+  poolRowsCacheAt = Date.now();
+  return poolRowsCache;
 }
 
 // ---- Serialised access so concurrent saves never create duplicate rows --
 
 let poolChain = Promise.resolve();
 function withPoolLock(fn) {
-  const run = poolChain.then(fn);
+  const run = poolChain.then(async () => {
+    try { return await fn(); }
+    finally { poolRowsCache = null; }
+  });
   poolChain = run.catch(() => {});
   return run;
 }
