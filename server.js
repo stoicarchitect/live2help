@@ -1896,7 +1896,7 @@ async function getOrCreateCandidateFolder(companyFolderId, candidateName) {
   const drive = google.drive({ version: 'v3', auth: getAuthClient() });
   try {
     // Look for existing folder
-    const query = `'${companyFolderId}' in parents and name='${candidateName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const query = `'${companyFolderId}' in parents and name='${escDriveQuery(candidateName)}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
     const list = await drive.files.list({
       q: query,
       spaces: 'drive',
@@ -1972,53 +1972,85 @@ app.get('/api/candidates/:id/screening-answers', async (req, res) => {
   }
 });
 
-// POST CV file upload for a candidate
+// ---- Shared CV save (pipeline card upload AND Candidate Pool upload) ----
+// Same folder logic as the application form: reuse the candidate's existing
+// folder (company folder first, then Unassigned - New Applications), otherwise
+// create Unassigned - New Applications / [Candidate Name]. File is named
+// "[Candidate Name] - CV.ext" so every route finds it the same way.
+function cleanCandidateName(name) {
+  return String(name || '').trim().replace(/\s+/g, ' ').replace(/['"\\]/g, '');
+}
+
+function validateCvUpload(fileName, fileData) {
+  if (!fileName || !fileData) return 'A CV file is required';
+  if (!/\.(pdf|docx?)$/i.test(String(fileName))) return 'CV must be a PDF, DOC or DOCX file';
+  if (String(fileData).length > MAX_CV_BASE64_LENGTH) return 'CV is larger than 5MB';
+  return null;
+}
+
+async function resolveCandidateCvFolder(company, name) {
+  const drive = getDriveClient();
+  const isFolder = f => f.mimeType === 'application/vnd.google-apps.folder';
+  const cleanName = cleanCandidateName(name);
+  const top = await listFolderContents(SUBMISSIONS_FOLDER_ID);
+  const parents = [company, UNASSIGNED_LABEL]
+    .filter((v, i, a) => v && a.indexOf(v) === i)
+    .map(n => top.find(f => f.name === n && isFolder(f)))
+    .filter(Boolean);
+  const variants = [cleanName, String(name || '').trim()].filter((v, i, a) => v && a.indexOf(v) === i);
+  for (const parent of parents) {
+    for (const v of variants) {
+      const list = await drive.files.list({
+        q: `'${parent.id}' in parents and name='${escDriveQuery(v)}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+        spaces: 'drive',
+        pageSize: 1,
+        fields: 'files(id)',
+      });
+      if (list.data.files && list.data.files.length) return list.data.files[0].id;
+    }
+  }
+  const unassignedId = await getOrCreateCandidateFolder(SUBMISSIONS_FOLDER_ID, UNASSIGNED_LABEL);
+  if (!unassignedId) throw new Error('Could not open the "Unassigned - New Applications" folder in Drive');
+  const candidateFolderId = await getOrCreateCandidateFolder(unassignedId, cleanName);
+  if (!candidateFolderId) throw new Error('Could not create the candidate folder in Drive');
+  return candidateFolderId;
+}
+
+async function saveCandidateCv({ company, name, fileName, fileData }) {
+  const folderId = await resolveCandidateCvFolder(company, name);
+  const ext = (String(fileName).match(/\.[A-Za-z0-9]+$/) || ['.pdf'])[0].toLowerCase();
+  const driveName = `${cleanCandidateName(name)} - CV${ext}`;
+  const drive = getDriveClient();
+  const file = await drive.files.create({
+    resource: { name: driveName, parents: [folderId] },
+    media: { mimeType: mimeFromName(fileName), body: Readable.from([Buffer.from(fileData, 'base64')]) },
+    fields: 'id, name, webViewLink',
+  });
+  return { fileId: file.data.id, fileName: driveName, link: file.data.webViewLink || '' };
+}
+
+// POST CV file upload for a candidate (pipeline card)
 app.post('/api/candidates/:id/cv', async (req, res) => {
   try {
-    const { id } = req.params;
-    const { company, name, fileData, fileName, role } = req.body;
-    if (!company || !name || !fileData || !fileName) {
-      return res.status(400).json({ error: 'company, name, fileData, fileName required' });
-    }
-    const companyFolders = await listFolderContents(SUBMISSIONS_FOLDER_ID);
-    const companyFolder = companyFolders.find(f => f.name === company && f.mimeType === 'application/vnd.google-apps.folder');
-    if (!companyFolder) {
-      return res.status(404).json({ error: `Company folder not found: ${company}` });
-    }
-    const candidateFolderId = await getOrCreateCandidateFolder(companyFolder.id, name);
-    if (!candidateFolderId) {
-      return res.status(500).json({ error: 'Could not create candidate folder' });
-    }
-    const drive = google.drive({ version: 'v3', auth: getAuthClient() });
-    const buffer = Buffer.from(fileData, 'base64');
-    const file = await drive.files.create({
-      resource: {
-        name: fileName,
-        parents: [candidateFolderId],
-      },
-      media: {
-        mimeType: mimeFromName(fileName),
-        body: Readable.from([buffer]),
-      },
-      fields: 'id, webViewLink',
-    });
+    const { company, name, fileData, fileName, role } = req.body || {};
+    if (!name) return res.status(400).json({ error: 'Candidate name is required' });
+    const problem = validateCvUpload(fileName, fileData);
+    if (problem) return res.status(400).json({ error: problem });
+
+    const saved = await saveCandidateCv({ company, name, fileName, fileData });
+
     if (role) {
       try {
         await upsertPoolEntry({ name, role, company, stage: 'applied', source: 'application' }, true, { createOnly: true });
-        await attachCvToPool(poolIdFor(name, role), { fileId: file.data.id, fileName, link: file.data.webViewLink || '' });
+        await attachCvToPool(poolIdFor(name, role), saved);
       } catch (poolErr) {
         console.error('Could not link uploaded CV to pool:', poolErr.message);
       }
     }
-    res.json({ 
-      ok: true, 
-      fileId: file.data.id,
-      fileName: fileName,
-      link: file.data.webViewLink 
-    });
+    res.json({ ok: true, fileId: saved.fileId, fileName: saved.fileName, link: saved.link });
   } catch (e) {
     console.error('POST /api/candidates/:id/cv error:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: 'Drive upload failed: ' + e.message });
   }
 });
 
@@ -2931,31 +2963,38 @@ async function findLegacyCv(company, name, companyFoldersCache) {
   if (!company || !name) return null;
   const drive = getDriveClient();
   const companyFolders = companyFoldersCache || await listFolderContents(SUBMISSIONS_FOLDER_ID);
-  const cf = companyFolders.find(f => f.name === company && f.mimeType === 'application/vnd.google-apps.folder');
-  if (!cf) return null;
+  const isFolder = f => f.mimeType === 'application/vnd.google-apps.folder';
+  const parents = [company, UNASSIGNED_LABEL]
+    .filter((v, i, a) => v && a.indexOf(v) === i)
+    .map(n => companyFolders.find(f => f.name === n && isFolder(f)))
+    .filter(Boolean);
+  if (!parents.length) return null;
 
   const parts = String(name).trim().split(/\s+/);
-  const variants = [String(name).trim()];
+  const variants = [String(name).trim(), cleanCandidateName(name)];
   if (parts.length >= 2) variants.push(`${parts[0]} ${parts[parts.length - 1][0]}`);
+  const uniqueVariants = variants.filter((v, i, a) => v && a.indexOf(v) === i);
 
-  for (const v of variants) {
-    const list = await drive.files.list({
-      q: `'${cf.id}' in parents and name='${escDriveQuery(v)}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-      spaces: 'drive',
-      pageSize: 1,
-      fields: 'files(id)',
-    });
-    if (!list.data.files || list.data.files.length === 0) continue;
-    const inside = await drive.files.list({
-      q: `'${list.data.files[0].id}' in parents and mimeType!='application/vnd.google-apps.folder' and trashed=false`,
-      spaces: 'drive',
-      pageSize: 20,
-      fields: 'files(id, name, webViewLink, mimeType)',
-    });
-    const files = inside.data.files || [];
-    if (!files.length) continue;
-    const pick = files.find(f => /cv/i.test(f.name)) || files.find(f => f.mimeType === 'application/pdf') || files[0];
-    return { fileId: pick.id, fileName: pick.name, link: pick.webViewLink || '' };
+  for (const cf of parents) {
+    for (const v of uniqueVariants) {
+      const list = await drive.files.list({
+        q: `'${cf.id}' in parents and name='${escDriveQuery(v)}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+        spaces: 'drive',
+        pageSize: 1,
+        fields: 'files(id)',
+      });
+      if (!list.data.files || list.data.files.length === 0) continue;
+      const inside = await drive.files.list({
+        q: `'${list.data.files[0].id}' in parents and mimeType!='application/vnd.google-apps.folder' and trashed=false`,
+        spaces: 'drive',
+        pageSize: 20,
+        fields: 'files(id, name, webViewLink, mimeType)',
+      });
+      const files = inside.data.files || [];
+      if (!files.length) continue;
+      const pick = files.find(f => /cv/i.test(f.name)) || files.find(f => f.mimeType === 'application/pdf') || files[0];
+      return { fileId: pick.id, fileName: pick.name, link: pick.webViewLink || '' };
+    }
   }
   return null;
 }
@@ -3059,36 +3098,27 @@ app.put('/api/candidate-pool/:id/notes', async (req, res) => {
   }
 });
 
-// Upload (or replace) the CV for a pool record
+// Upload (or replace) the CV for a pool record - same save route as the pipeline card
 app.post('/api/candidate-pool/:id/cv', async (req, res) => {
   try {
     const { fileData, fileName } = req.body || {};
-    if (!fileData || !fileName) return res.status(400).json({ error: 'fileData and fileName required' });
+    const problem = validateCvUpload(fileName, fileData);
+    if (problem) return res.status(400).json({ error: problem });
     const found = await findPoolRowById(req.params.id);
     if (!found) return res.status(404).json({ error: 'Pool record not found' });
 
-    const folderId = await getOrCreateCandidateFolder(SUBMISSIONS_FOLDER_ID, POOL_CV_FOLDER_NAME);
-    if (!folderId) return res.status(500).json({ error: 'Could not create the Candidate Pool CVs folder in Drive' });
-
-    const ext = (String(fileName).match(/\.[A-Za-z0-9]+$/) || ['.pdf'])[0].toLowerCase();
-    const driveName = `${found.row[1]} - ${found.row[5]} - CV${ext}`;
-    const drive = getDriveClient();
-    const file = await drive.files.create({
-      resource: { name: driveName, parents: [folderId] },
-      media: { mimeType: mimeFromName(fileName), body: Readable.from([Buffer.from(fileData, 'base64')]) },
-      fields: 'id, name, webViewLink',
+    const saved = await saveCandidateCv({
+      company: found.row[4],
+      name: found.row[1],
+      fileName,
+      fileData,
     });
-
-    const row = await attachCvToPool(req.params.id, {
-      fileId: file.data.id,
-      fileName: driveName,
-      link: file.data.webViewLink || '',
-    });
-    auditLog(actorOf(req), 'cv_uploaded', 'pool', `${found.row[1]} - ${found.row[5]}`, driveName);
+    const row = await attachCvToPool(req.params.id, saved);
+    auditLog(actorOf(req), 'cv_uploaded', 'pool', `${found.row[1]} - ${found.row[5]}`, saved.fileName);
     res.json({ ok: true, data: rowToPoolEntry(row) });
   } catch (e) {
     console.error('POST /api/candidate-pool/:id/cv error:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: 'Drive upload failed: ' + e.message });
   }
 });
 
