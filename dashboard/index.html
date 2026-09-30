@@ -10506,10 +10506,12 @@ function mapSiteFormLocal(v){
   return out;
 }
 function countSiteDetailsLocal(ex){ return SITE_FIELD_DEFS.filter(d => String((ex && ex[d.key]) || '').trim()).length; }
+const DASH_VERSION = 'r9';
+const SITE_DIAG = {};
 function siteFormDiag(form, serverRead){
   const filled = form.ok ? Object.values(form.values).filter(x => x === true || (typeof x === 'string' && x.trim())).length : 0;
   const reader = form.ok ? form.count + ' form fields found, ' + filled + ' filled in' : 'could not read (' + form.error + ')';
-  return 'Form reader: ' + reader + '. Server result: ' + (serverRead || 'none') + '.';
+  return 'Dashboard ' + DASH_VERSION + '. Form reader: ' + reader + '. Server result: ' + (serverRead || 'none') + '.';
 }
 
 /* ---------- Deleting sites completely ---------- */
@@ -10565,6 +10567,7 @@ async function siteProcessUpload(company, existing, file, forceNew){
     const local = form.ok && form.hasValues ? mapSiteFormLocal(form.values) : null;
     const useLocal = !!(local && (countSiteDetailsLocal(local) > 0 || local.address));
     j._formNote = siteFormDiag(form, j.readBy);
+    SITE_DIAG[id] = j._formNote;
     if(useLocal) j.readBy = 'form';
     const ex = useLocal ? local : j.extracted;
     const fields = {};
@@ -10614,6 +10617,12 @@ async function siteProcessUpload(company, existing, file, forceNew){
   const _lc = loadClients;
   loadClients = async function(){
     await loadSites();
+    const hd = document.querySelector('#clientsHeader h2');
+    if(hd && !document.getElementById('dashVer')){
+      const sp = document.createElement('span');
+      sp.id = 'dashVer'; sp.textContent = 'version ' + DASH_VERSION; sp.style.cssText = 'font-size:11px;color:#bbb;margin-left:12px;font-weight:normal;';
+      hd.appendChild(sp);
+    }
     return _lc();
   };
   const _cm = companyAddress;
@@ -10644,6 +10653,7 @@ function openSiteModal(company, id, forceNew){
       <textarea class="sf" id="sf_${d.key}">${esc(f[d.key] || '')}</textarea>`).join('')}`).join('');
   document.getElementById('siteBody').innerHTML = `
     <h2>${esc(company)} - ${existing ? 'Edit site' : 'Add site'}</h2>
+    ${existing && existing.pdf_file_id && !siteHasData(existing) ? `<div class="warn-box"><strong>This site has a PDF but no details were read from it.</strong> Use Replace PDF on the client card to try again, or type the details in below.${SITE_DIAG[existing.id] ? '<br><span style="font-size:11.5px;">' + esc(SITE_DIAG[existing.id]) + '</span>' : ''}</div>` : ''}
     <div class="two-col" style="margin-top:10px;">
       <div><label class="sfl">Site name</label><input id="siteName" value="${esc(name)}" placeholder="For example Trentham site"></div>
       <div><label class="sfl">Postcode</label><input id="sitePostcode" value="${esc(postcode)}"></div>
