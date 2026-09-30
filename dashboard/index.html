@@ -942,6 +942,8 @@
   .back-row label{font-size:11px;color:#999;letter-spacing:.5px;white-space:nowrap;}
   .back-row select{flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12.5px;background:#fff;min-width:0;}
   .back-row button{flex:0 0 auto !important;min-width:0 !important;padding:8px 14px !important;}
+  .rej-toggle{padding:10px 12px;border:1px dashed var(--border);background:#fff;text-align:center;font-size:13px;color:var(--grey);cursor:pointer;border-radius:2px;margin-bottom:8px;}
+  .rej-toggle:hover{border-color:var(--gold);color:var(--dark);}
   .sub-flag{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:9px;margin-top:4px;font-weight:600;}
   .sub-flag.new{background:#EEE;color:#666;}
   .sub-flag.review{background:#FBF1D6;color:#8a6a12;}
@@ -9166,6 +9168,35 @@ async function subLoadDrafts(){
   subRenderPendingBar();
 }
 
+/* Rejected column: collapsed to a count with a + until opened, so it never runs the board off the page */
+let REJ_OPEN = false;
+function rejectedCollapse(){
+  const board = document.getElementById('board');
+  if(!board) return;
+  // In the dedicated "Rejected" view the person has asked to see them, so leave it open
+  const forced = boardScope.all && boardScope.group === 'rejected';
+  board.querySelectorAll('.stage-col').forEach(col => {
+    const t = col.querySelector('.stage-head .t');
+    if(!t || t.textContent.trim() !== 'Rejected') return;
+    const body = col.querySelector('.stage-body');
+    if(!body) return;
+    const old = body.querySelector('.rej-toggle');
+    if(old) old.remove();
+    const cards = body.querySelectorAll('.card');
+    if(!cards.length || forced){ cards.forEach(c => { c.style.display = ''; }); return; }
+    cards.forEach(c => { c.style.display = REJ_OPEN ? '' : 'none'; });
+    const n = cards.length;
+    const tog = document.createElement('div');
+    tog.className = 'rej-toggle';
+    tog.textContent = REJ_OPEN ? '\u2212 Hide rejected' : '+ ' + n + ' rejected';
+    tog.title = REJ_OPEN ? 'Hide the rejected candidates' : 'Show the rejected candidates';
+    tog.onclick = () => { REJ_OPEN = !REJ_OPEN; rejectedCollapse(); if(typeof updateBoardArrows === 'function') updateBoardArrows(); };
+    body.insertBefore(tog, body.firstChild);
+    const empty = body.querySelector('.stage-empty');
+    if(empty) empty.style.display = 'none';
+  });
+}
+
 function subFlagHtml(c, role){
   if(!c || c.stage !== 'ready_to_submit') return '';
   const r = subRecFor(c.name, role);
@@ -9971,7 +10002,7 @@ function subRender(){
 
   // Keep the "Send submissions" button correct after every board draw
   const _rb = renderBoard;
-  renderBoard = function(){ _rb(); subUpdateSendButton(); briefUpdateButton(); };
+  renderBoard = function(){ _rb(); subUpdateSendButton(); briefUpdateButton(); rejectedCollapse(); };
 
   // Load drafts soon after sign in
   const _si = signIn;
