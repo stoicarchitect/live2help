@@ -5387,12 +5387,16 @@ app.post('/api/client-sites/:id/pdf', async (req, res) => {
       catch (e) { warning = `The form could not be read (${e.message}). Enter the details by hand.`; }
     }
 
+    let finalName = String(siteName || '').trim();
+    if (!finalName && extracted && extracted.address) finalName = String(extracted.address).split(',')[0].trim().slice(0, 40);
+    if (!finalName) finalName = 'Main site';
+
     let file = null;
     let fileError = '';
     try {
       const folders = await ensureClientFolders(company);
       const drive = getUploadDriveClient();
-      const driveName = safeFileName(`Site Info ${company} ${siteName || 'Main site'}`) + '.pdf';
+      const driveName = safeFileName(`Site Info ${company} ${finalName}`) + '.pdf';
       const existing = await drive.files.list({
         q: `'${folders.siteInfoId}' in parents and name='${escDriveQuery(driveName)}' and trashed=false`,
         spaces: 'drive', pageSize: 1, fields: 'files(id)',
@@ -5412,7 +5416,7 @@ app.post('/api/client-sites/:id/pdf', async (req, res) => {
       fileError = e.message;
     }
     auditLog(actorOf(req), 'site_pdf_uploaded', 'client_site', `${company} - ${siteName || 'Main site'}`, fileError ? 'not saved to Drive' : '');
-    res.json({ ok: true, file, fileError, extracted, warning });
+    res.json({ ok: true, file, fileError, extracted, warning, siteName: finalName });
   } catch (e) {
     console.error('POST /api/client-sites/:id/pdf error:', e.message);
     res.status(500).json({ error: e.message });
