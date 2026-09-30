@@ -5492,7 +5492,21 @@ app.post('/api/client-sites/:id/pdf', async (req, res) => {
     let extracted = null;
     let warning = '';
     let readBy = '';
-    const form = await readPdfFormValues(buf);
+    // The dashboard reads the form's fields in the browser and sends them along. If they are not
+    // there (or empty), try reading them here on the server.
+    let form = null;
+    const sent = req.body && req.body.formValues;
+    if (sent && typeof sent === 'object' && !Array.isArray(sent)) {
+      const vals = {};
+      Object.keys(sent).slice(0, 300).forEach(k => {
+        const v = sent[k];
+        if (typeof v === 'boolean') vals[String(k).slice(0, 80)] = v;
+        else if (typeof v === 'string') vals[String(k).slice(0, 80)] = v.slice(0, 2000);
+      });
+      const has = Object.values(vals).some(v => v === true || (typeof v === 'string' && v.trim()));
+      if (has) form = { available: true, hasValues: true, values: vals, source: 'browser', count: Object.keys(vals).length };
+    }
+    if (!form) { form = await readPdfFormValues(buf); form.source = form.hasValues ? 'server' : 'none'; }
     if (form.hasValues) {
       const mapped = mapSiteForm(form.values);
       if (countSiteDetails(mapped) > 0 || mapped.address) { extracted = mapped; readBy = 'form'; }
@@ -5508,7 +5522,7 @@ app.post('/api/client-sites/:id/pdf', async (req, res) => {
         try {
           extracted = await extractSiteInfo(buf, company, siteName);
           readBy = 'ai';
-          if (!form.available) warning = (warning ? warning + ' ' : '') + 'The server cannot read the form fields yet (the pdf-lib package is not installed), so the AI read the pages instead. Add pdf-lib to package.json for exact results.';
+          warning = (warning ? warning + ' ' : '') + 'The typed-in answers could not be read from this PDF, so the AI read the pages instead and may have missed things. Check the details carefully.';
         } catch (e) {
           warning = `The form could not be read (${e.message}). Enter the details by hand.`;
         }
@@ -5545,7 +5559,7 @@ app.post('/api/client-sites/:id/pdf', async (req, res) => {
       fileError = e.message;
     }
     auditLog(actorOf(req), 'site_pdf_uploaded', 'client_site', `${company} - ${siteName || 'Main site'}`, fileError ? 'not saved to Drive' : '');
-    res.json({ ok: true, file, fileError, extracted, warning, siteName: finalName, readBy });
+    res.json({ ok: true, file, fileError, extracted, warning, siteName: finalName, readBy, diag: { source: form.source, fields: form.count || 0, hasValues: !!form.hasValues, serverLib: !!form.available, error: form.error || '' } });
   } catch (e) {
     console.error('POST /api/client-sites/:id/pdf error:', e.message);
     res.status(500).json({ error: e.message });
@@ -5577,6 +5591,60 @@ app.delete('/api/client-sites/:id/pdf', async (req, res) => {
     res.json({ ok: true, trashed, driveNote, data: saved });
   } catch (e) {
     console.error('DELETE /api/client-sites/:id/pdf error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+// Delete a site completely: its record and its PDF (the PDF goes to the Drive bin)
+async function deleteSiteCompletely(site) {
+  let trashed = false;
+  let note = '';
+  if (site.pdf_file_id) {
+    try {
+      await getUploadDriveClient().files.update({ fileId: site.pdf_file_id, requestBody: { trashed: true }, fields: 'id' });
+      trashed = true;
+    } catch (e) {
+      if (/404|not found/i.test(String((e && (e.code || e.message)) || ''))) trashed = true;
+      else note = friendlyDriveError(e);
+    }
+  }
+  await clientSitesTable.remove(site.id);
+  return { trashed, note };
+}
+
+app.post('/api/client-sites/delete-all', async (req, res) => {
+  try {
+    const company = String((req.body && req.body.company) || '').trim().toLowerCase();
+    if (!company) return res.status(400).json({ error: 'The company is required' });
+    const all = (await clientSitesTable.list()).filter(o => String(o.company || '').trim().toLowerCase() === company);
+    const notes = [];
+    for (const site of all) {
+      const r = await deleteSiteCompletely(site);
+      if (r.note) notes.push(r.note);
+    }
+    const left = (await clientSitesTable.list()).filter(o => String(o.company || '').trim().toLowerCase() === company).length;
+    auditLog(actorOf(req), 'sites_deleted', 'client_site', String((req.body && req.body.company) || ''), `${all.length} sites`);
+    if (left) return res.status(500).json({ error: `${left} site(s) could not be removed from the sheet. Try again.` });
+    res.json({ ok: true, deleted: all.length, driveNote: notes[0] || '' });
+  } catch (e) {
+    console.error('POST /api/client-sites/delete-all error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/client-sites/:id/delete', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const site = (await clientSitesTable.list()).find(o => o.id === id);
+    if (!site) return res.json({ ok: true, deleted: 0 });
+    const r = await deleteSiteCompletely(site);
+    const still = (await clientSitesTable.list()).some(o => o.id === id);
+    auditLog(actorOf(req), 'site_deleted', 'client_site', `${site.company} - ${site.site_name}`, r.note);
+    if (still) return res.status(500).json({ error: 'The site could not be removed from the sheet. Try again.' });
+    res.json({ ok: true, deleted: 1, trashed: r.trashed, driveNote: r.note });
+  } catch (e) {
+    console.error('POST /api/client-sites/:id/delete error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
