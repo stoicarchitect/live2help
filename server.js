@@ -308,7 +308,7 @@ async function readApplicationsRows(strict = false) {
 
       const result = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: `'${tabName}'!A2:U`,
+        range: `'${tabName}'!A2:Z`,
       });
 
       const rows = result.data.values || [];
@@ -326,6 +326,10 @@ async function readApplicationsRows(strict = false) {
           salary: row[15] || '', // Salary Expectation is column P
           email: row[3] || '', // Email is column D
           phone: row[4] || '', // Phone is column E
+          consentApp: row[21] || '', // Consent to process application is column V
+          consentDate: (row[22] || '').slice(0, 10), // Consent date is column W
+          consentPool: row[24] || '', // Talent pool consent is column Y
+          cvLink: row[25] || '', // CV link is column Z
           sourceTab: 'application'
         });
       });
@@ -603,6 +607,10 @@ app.post('/api/sync-submissions', async (req, res) => {
 
 
 // Applications intake - form submissions from screening forms
+// Requires a CV (pdf, doc, docx, 5MB max) and the privacy notice tick box.
+const APPLICATION_WORDING_VERSION = 'v1 - 30 Sep 2026';
+const MAX_CV_BASE64_LENGTH = 7 * 1024 * 1024; // roughly 5MB of file once decoded
+
 app.post('/api/applications/:role', async (req, res) => {
   res.on('finish', () => { if (res.statusCode < 400) scheduleReconcile(); });
   try {
@@ -623,20 +631,54 @@ app.post('/api/applications/:role', async (req, res) => {
       location,
       commute,
       salaryExpectation,
-      additionalInfo
+      additionalInfo,
+      cvData,
+      cvFileName,
+      consentApplication,
+      consentPool
     } = req.body;
 
     if (!name || !email || !phone) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+    if (consentApplication !== true && consentApplication !== 'Yes') {
+      return res.status(400).json({ error: 'Privacy notice must be accepted' });
+    }
+    if (!cvData || !cvFileName) {
+      return res.status(400).json({ error: 'CV is required' });
+    }
+    if (!/\.(pdf|docx?)$/i.test(String(cvFileName))) {
+      return res.status(400).json({ error: 'CV must be a PDF, DOC or DOCX file' });
+    }
+    if (String(cvData).length > MAX_CV_BASE64_LENGTH) {
+      return res.status(400).json({ error: 'CV is larger than 5MB' });
+    }
 
     const sheets = getSheetsClient();
     const applicationId = `${role}-${Date.now()}`;
     const dateApplied = new Date().toISOString();
-    
+    const roleName = role.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    const poolConsent = (consentPool === true || consentPool === 'Yes') ? 'Yes' : 'No';
+
+    // Save the CV first so the application row can carry the link
+    const cleanName = String(name).trim().replace(/\s+/g, ' ').replace(/['"\\]/g, '');
+    const unassignedFolderId = await getOrCreateCandidateFolder(SUBMISSIONS_FOLDER_ID, UNASSIGNED_LABEL);
+    const candidateFolderId = unassignedFolderId ? await getOrCreateCandidateFolder(unassignedFolderId, cleanName) : null;
+    if (!candidateFolderId) {
+      return res.status(500).json({ error: 'Failed to save application' });
+    }
+    const ext = (String(cvFileName).match(/\.[A-Za-z0-9]+$/) || ['.pdf'])[0].toLowerCase();
+    const driveName = `${cleanName} - CV${ext}`;
+    const drive = google.drive({ version: 'v3', auth: getAuthClient() });
+    const file = await drive.files.create({
+      resource: { name: driveName, parents: [candidateFolderId] },
+      media: { mimeType: mimeFromName(cvFileName), body: Readable.from([Buffer.from(cvData, 'base64')]) },
+      fields: 'id, name, webViewLink',
+    });
+
     // Tab name format: "Applications - Transport Coordinator"
-    const tabName = `Applications - ${role.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}`;
-    const range = `'${tabName}'!A:T`;
+    const tabName = `Applications - ${roleName}`;
+    const range = `'${tabName}'!A:Z`;
 
     const row = [
       applicationId,
@@ -658,7 +700,13 @@ app.post('/api/applications/:role', async (req, res) => {
       additionalInfo || '',
       '',        // Company - assigned by Ella
       '',        // Contact - assigned by Ella
-      'applied'  // Status
+      'applied', // Status
+      '',        // Notes (column U)
+      'Yes',                        // V: privacy notice accepted
+      dateApplied,                  // W: consent date and time
+      APPLICATION_WORDING_VERSION,  // X: wording version shown
+      poolConsent,                  // Y: agreed to be kept for future roles
+      file.data.webViewLink || ''   // Z: CV link
     ];
 
     await sheets.spreadsheets.values.append({
@@ -667,6 +715,20 @@ app.post('/api/applications/:role', async (req, res) => {
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [row] }
     });
+
+    // Create the pool record straight away with the CV and consent attached
+    try {
+      const poolId = poolIdFor(name, roleName);
+      await upsertPoolEntry({
+        name, role: roleName, company: '', stage: 'applied', source: 'application',
+        email, phone, dateAdded: dateApplied,
+        consentDate: dateApplied.slice(0, 10),
+        consentBasis: poolConsent === 'Yes' ? 'Application form - talent pool' : 'Application form - this role only',
+      }, true, { createOnly: true });
+      await attachCvToPool(poolId, { fileId: file.data.id, fileName: driveName, link: file.data.webViewLink || '' });
+    } catch (poolErr) {
+      console.error('Could not create pool record for application:', poolErr.message);
+    }
 
     res.json({ success: true, applicationId });
 
@@ -1970,40 +2032,38 @@ app.get('/api/candidates/:id/cv', async (req, res) => {
     }
     const drive = google.drive({ version: 'v3', auth: getAuthClient() });
     const companyFolders = await listFolderContents(SUBMISSIONS_FOLDER_ID);
-    const companyFolder = companyFolders.find(f => f.name === company && f.mimeType === 'application/vnd.google-apps.folder');
-    if (!companyFolder) {
+    const isFolder = f => f.mimeType === 'application/vnd.google-apps.folder';
+    // Look in the assigned company folder first, then where form applicants land
+    const tryFolders = [company, UNASSIGNED_LABEL]
+      .filter((v, i, a) => a.indexOf(v) === i)
+      .map(n => companyFolders.find(f => f.name === n && isFolder(f)))
+      .filter(Boolean);
+    if (!tryFolders.length) {
       return res.status(404).json({ error: `Company folder not found: ${company}` });
     }
-    const query = `'${companyFolder.id}' in parents and name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-    const list = await drive.files.list({
-      q: query,
-      spaces: 'drive',
-      pageSize: 1,
-      fields: 'files(id)',
-    });
-    if (list.data.files.length === 0) {
-      return res.status(404).json({ error: 'Candidate folder not found' });
+    const cleanedName = String(name).trim().replace(/\s+/g, ' ').replace(/['"\\]/g, '');
+    for (const folder of tryFolders) {
+      const folderName = folder.name === UNASSIGNED_LABEL ? cleanedName : name;
+      const list = await drive.files.list({
+        q: `'${folder.id}' in parents and name='${escDriveQuery(folderName)}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+        spaces: 'drive',
+        pageSize: 1,
+        fields: 'files(id)',
+      });
+      if (list.data.files.length === 0) continue;
+      const cvList = await drive.files.list({
+        q: `'${list.data.files[0].id}' in parents and (mimeType='application/pdf' or name contains 'CV' or name contains 'cv') and trashed=false`,
+        spaces: 'drive',
+        pageSize: 1,
+        fields: 'files(id, name, webViewLink, mimeType)',
+      });
+      if (cvList.data.files.length === 0) continue;
+      const cvFile = cvList.data.files[0];
+      return res.json({
+        data: { fileId: cvFile.id, fileName: cvFile.name, link: cvFile.webViewLink, mimeType: cvFile.mimeType }
+      });
     }
-    const candidateFolderId = list.data.files[0].id;
-    const cvQuery = `'${candidateFolderId}' in parents and (mimeType='application/pdf' or name contains 'CV' or name contains 'cv') and trashed=false`;
-    const cvList = await drive.files.list({
-      q: cvQuery,
-      spaces: 'drive',
-      pageSize: 1,
-      fields: 'files(id, name, webViewLink, mimeType)',
-    });
-    if (cvList.data.files.length === 0) {
-      return res.status(404).json({ error: 'No CV found for this candidate' });
-    }
-    const cvFile = cvList.data.files[0];
-    res.json({ 
-      data: {
-        fileId: cvFile.id,
-        fileName: cvFile.name,
-        link: cvFile.webViewLink,
-        mimeType: cvFile.mimeType
-      }
-    });
+    return res.status(404).json({ error: 'No CV found for this candidate' });
   } catch (e) {
     console.error('GET /api/candidates/:id/cv error:', e.message);
     res.status(500).json({ error: e.message });
@@ -2677,7 +2737,8 @@ function mergeLiveIntoPoolRow(existingRow, live, inPipeline, opts = {}) {
     row[8] = /^\d{4}-\d{2}-\d{2}/.test(live.dateAdded || '') ? live.dateAdded.slice(0, 10) : today;
     row[10] = live.notes || '';
     row[14] = inPipeline ? 'Yes' : 'No';
-    if (opts.autoConsent && live.source === 'application') { row[17] = row[8]; row[18] = 'Application form'; }
+    if (live.consentDate) { row[17] = live.consentDate; row[18] = live.consentBasis || 'Application form'; }
+    else if (opts.autoConsent && live.source === 'application') { row[17] = row[8]; row[18] = 'Application form'; }
   } else if (!opts.createOnly) {
     if (liveRank > stageRank(row[6])) row[6] = stage;
     row[7] = stage;
@@ -2685,6 +2746,7 @@ function mergeLiveIntoPoolRow(existingRow, live, inPipeline, opts = {}) {
     row[14] = inPipeline ? 'Yes' : 'No';
   }
 
+  if (!isNew && !row[17] && live.consentDate) { row[17] = live.consentDate; row[18] = live.consentBasis || 'Application form'; }
   if (!row[2] && live.email) row[2] = live.email;
   if (!row[3] && live.phone) row[3] = live.phone;
   if (!opts.createOnly || !row[4]) {
@@ -2707,6 +2769,10 @@ async function collectLiveCandidates() {
     map.set(poolIdFor(a.name, a.role), {
       name: a.name, role: a.role, company: a.company, stage: a.stage, notes: a.notes,
       email: a.email, phone: a.phone, dateAdded: a.date, source: 'application',
+      consentDate: a.consentApp === 'Yes' ? (a.consentDate || String(a.date).slice(0, 10)) : '',
+      consentBasis: a.consentApp === 'Yes'
+        ? (a.consentPool === 'Yes' ? 'Application form - talent pool' : 'Application form - this role only')
+        : '',
     });
   }
 
@@ -2721,7 +2787,9 @@ async function collectLiveCandidates() {
       email: c.email || (prev && prev.email) || '',
       phone: c.phone || (prev && prev.phone) || '',
       dateAdded: (prev && prev.dateAdded) || c.date,
-      source: 'dashboard',
+      source: (prev && prev.source === 'application') ? 'application' : 'dashboard',
+      consentDate: (prev && prev.consentDate) || '',
+      consentBasis: (prev && prev.consentBasis) || '',
     });
   }
   return map;
