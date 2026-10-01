@@ -4,19 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Live 2 Help - Pipeline</title>
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="Live 2 Help Recruitment">
-<meta property="og:title" content="Live 2 Help - Pipeline">
-<meta property="og:description" content="Live 2 Help Recruitment team dashboard.">
-<meta property="og:image" content="https://careers.live2helprecruitment.co.uk/assets/og-image.png">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Live 2 Help Recruitment logo">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Live 2 Help - Pipeline">
-<meta name="twitter:description" content="Live 2 Help Recruitment team dashboard.">
-<meta name="twitter:image" content="https://careers.live2helprecruitment.co.uk/assets/og-image.png">
-<meta name="robots" content="noindex, nofollow">
 <style>
   :root{
     --gold:#C9A84C;
@@ -1009,6 +996,7 @@
   <div id="main">
     <div id="groupBar"><div id="groupBtns"></div><div id="userChip"><span class="who">Signed in as <span id="userChipName"></span></span><button onclick="signOut()">Log out</button></div></div>
     <div id="tabs">
+      <button class="tab-btn" onclick="gsOpen()" title="Search everything (press /)" style="color:var(--gold);">Search</button>
       <button class="tab-btn" data-tab="home" onclick="switchTab('home')">Home</button>
       <button class="tab-btn" data-tab="notifications" onclick="switchTab('notifications')">Notifications<span class="tab-badge" id="notifBadge"></span></button>
       <button class="tab-btn active" data-tab="candidates" onclick="switchTab('candidates')">Candidates</button>
@@ -1159,6 +1147,12 @@
         <div id="businessHealthSection" style="display:none;">
           <h3 style="font-size:16px;color:var(--dark);margin-bottom:14px;font-weight:500;">Business Health</h3>
           
+          <!-- Backup status -->
+          <div id="backupBar" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 16px;margin-bottom:18px;background:#fff;border:1px solid var(--border);border-left:3px solid var(--gold);border-radius:2px;">
+            <div id="backupStatusText" style="font-size:13px;color:var(--grey);">Checking backups...</div>
+            <button id="backupNowBtn" onclick="runBackupNow()" style="padding:8px 16px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:12.5px;font-weight:600;white-space:nowrap;">Back up now</button>
+          </div>
+
           <!-- Controls -->
           <div style="display:flex;gap:16px;margin-bottom:20px;align-items:flex-end;flex-wrap:wrap;">
             <div style="flex:1;min-width:200px;">
@@ -1262,6 +1256,9 @@
             <div id="clientPerformanceBody"></div>
           </div>
           <div id="clientPerformanceEmpty" style="text-align:center;padding:20px;color:#999;font-size:13px;display:none;">No client data yet</div>
+          <h3 style="font-size:16px;color:var(--dark);margin:28px 0 6px;font-weight:500;">Previous Quarters - Target vs Actual</h3>
+          <div style="font-size:12px;color:#999;margin-bottom:12px;">Team targets against what actually happened, so you can set the next quarter from real numbers. Fill speed counts days from role opened to offer.</div>
+          <div id="quarterHistoryBody" style="background:#fff;border:1px solid var(--border);border-radius:2px;overflow-x:auto;"><div style="padding:16px;font-size:13px;color:#999;">Loading...</div></div>
         </div>
 
         <!-- Weekly Cold Call Report (Dan Only) -->
@@ -2725,8 +2722,11 @@ function openCandidateModal(id){
     <div class="field-row">
       <label>Notes</label>
       <textarea id="notesInput" placeholder="Add notes for this candidate">${c.notes || ''}</textarea>
+      <label style="display:flex;gap:8px;align-items:center;font-size:12px;color:#999;margin-top:8px;cursor:pointer;"><input type="checkbox" id="testCandidateToggle" ${/\[test\]/i.test(c.notes || '') ? 'checked' : ''} onchange="toggleTestCandidate(this.checked)"> Test candidate (left out of reports, forecasts and automatic tasks)</label>
     </div>
   `;
+
+  html += offerDocsPanel(c);
 
   if((c.stage === 'applied' || c.stage === 'ready_to_submit') && currentCompany !== UNASSIGNED_LABEL){
     html += `
@@ -4112,13 +4112,16 @@ async function loadProgressMetrics(targets){
 async function loadBusinessHealth(){
   try{
     const year = document.getElementById('healthYearSelector')?.value || '2026';
+    await finLoad();
+    loadBackupStatus();
+    loadQuarterHistory();
     
-    const savedBankBalance = localStorage.getItem('l2h-bank-balance');
+    const savedBankBalance = finGet('l2h-bank-balance');
     if(savedBankBalance){
       document.getElementById('bankBalanceInput').value = savedBankBalance;
     }
     
-    const savedAdvertisingCost = localStorage.getItem('l2h-advertising-cost');
+    const savedAdvertisingCost = finGet('l2h-advertising-cost');
     const advertisingCost = savedAdvertisingCost ? parseInt(savedAdvertisingCost) : 0;
     document.getElementById('advertisingCostInput').value = advertisingCost;
     
@@ -4137,7 +4140,7 @@ async function loadBusinessHealth(){
     document.getElementById('ytdRevenueDetail').textContent = `${metrics.invoiceCount || 0} invoices processed`;
     
     // Calculate total YTD salary from all employees
-    const employees = JSON.parse(localStorage.getItem('l2h-employees') || '[]');
+    const employees = JSON.parse(finGet('l2h-employees') || '[]');
     let totalYTDSalary = 0;
     employees.forEach(emp => {
       totalYTDSalary += calculateEmployeeYTDSalary(emp);
@@ -4220,7 +4223,7 @@ function calculateEmployeeYTDSalary(employee){
 }
 
 async function loadEmployeeList(){
-  const employees = JSON.parse(localStorage.getItem('l2h-employees') || '[]');
+  const employees = JSON.parse(finGet('l2h-employees') || '[]');
   const list = document.getElementById('employeeList');
   
   if(employees.length === 0){
@@ -4267,9 +4270,9 @@ function addEmployee(){
     return;
   }
   
-  const employees = JSON.parse(localStorage.getItem('l2h-employees') || '[]');
+  const employees = JSON.parse(finGet('l2h-employees') || '[]');
   employees.push({ name, salary, startDate });
-  localStorage.setItem('l2h-employees', JSON.stringify(employees));
+  finSet('l2h-employees', JSON.stringify(employees));
   
   document.getElementById('employeeName').value = '';
   document.getElementById('employeeSalary').value = '';
@@ -4280,7 +4283,7 @@ function addEmployee(){
 }
 
 function editEmployee(idx){
-  const employees = JSON.parse(localStorage.getItem('l2h-employees') || '[]');
+  const employees = JSON.parse(finGet('l2h-employees') || '[]');
   const emp = employees[idx];
   
   const newName = prompt('Name:', emp.name);
@@ -4293,7 +4296,7 @@ function editEmployee(idx){
   if(newStartDate === null) return;
   
   employees[idx] = { name: newName, salary: parseInt(newSalary) || emp.salary, startDate: newStartDate };
-  localStorage.setItem('l2h-employees', JSON.stringify(employees));
+  finSet('l2h-employees', JSON.stringify(employees));
   
   showToast('Team member updated');
   loadBusinessHealth();
@@ -4302,9 +4305,9 @@ function editEmployee(idx){
 function deleteEmployee(idx){
   if(!confirm('Remove this team member?')) return;
   
-  const employees = JSON.parse(localStorage.getItem('l2h-employees') || '[]');
+  const employees = JSON.parse(finGet('l2h-employees') || '[]');
   employees.splice(idx, 1);
-  localStorage.setItem('l2h-employees', JSON.stringify(employees));
+  finSet('l2h-employees', JSON.stringify(employees));
   
   showToast('Team member removed');
   loadBusinessHealth();
@@ -4326,7 +4329,7 @@ function saveBankBalance(){
     return;
   }
   
-  localStorage.setItem('l2h-bank-balance', numValue.toString());
+  finSet('l2h-bank-balance', numValue.toString());
   showToast('Bank balance saved');
   loadBusinessHealth();
 }
@@ -4346,7 +4349,7 @@ function saveAdvertisingCost(){
     return;
   }
   
-  localStorage.setItem('l2h-advertising-cost', numValue.toString());
+  finSet('l2h-advertising-cost', numValue.toString());
   showToast('Advertising cost saved');
   loadBusinessHealth();
 }
@@ -5697,7 +5700,7 @@ function renderNotifications(){
 function renderHome(){
   if(!signedInUser) return;
   const cands = flatCandidates();
-  const count = stages => cands.filter(x => stages.includes(x.c.stage)).length;
+  const count = stages => cands.filter(x => stages.includes(x.c.stage) && !isTestCand(x.c)).length;
   const roles = mergedRoles();
   const today = opsToday();
   const myTasks = OPS.tasks.filter(t => t.status !== 'Complete' && !t.archived);
@@ -5800,6 +5803,7 @@ function renderRoles(){
         <button ${hasBoard ? '' : 'disabled'} onclick="rolesOpenBoard('${esc(r.id)}')">Pipeline</button>
         <button onclick="openRoleModal('${esc(r.id)}')">Edit</button>
         <button onclick="duplicateRole('${esc(r.id)}')">Duplicate</button>
+        <button onclick="poolMatchOpen('${esc(r.id)}')">Find matches</button>
       </div></td>
     </tr>`;
   }).join('');
@@ -7547,6 +7551,7 @@ function renderForecast(){
       if(!b2Same(co, r.company)) return;
       Object.keys(DATA[co]).forEach(role => { if(b2Same(role, r.role)) cands = cands.concat(DATA[co][role]); });
     });
+    cands = cands.filter(c => !isTestCand(c));
     const positions = rolePositions(r);
     const placed = cands.filter(c => PLACED_STAGES.includes(c.stage)).length;
     const openPos = Math.max(0, positions - placed);
@@ -11419,6 +11424,417 @@ async function rmGenerateCareers(silent){
   }finally{
     if(btn){ btn.disabled = false; btn.textContent = 'Generate from job description'; }
   }
+}
+</script>
+
+<script>
+/* ---------- Automation batch A: server-backed finance figures, backups, quarter history, test candidates ---------- */
+var FIN_CACHE = {};
+var FIN_LOADED = false;
+var FIN_KEYS = ['l2h-bank-balance', 'l2h-advertising-cost', 'l2h-employees'];
+async function finLoad(force){
+  if(FIN_LOADED && !force) return;
+  try{
+    const rows = b2List(await b2Api('/api/settings'));
+    FIN_KEYS.forEach(function(k){
+      const r = rows.find(function(x){ return x.id === 'fin:' + k; });
+      if(r){ FIN_CACHE[k] = r.value; return; }
+      let local = null;
+      try{ local = localStorage.getItem(k); }catch(e){}
+      if(local !== null){
+        FIN_CACHE[k] = local;
+        b2Post('/api/settings', {id: 'fin:' + k, value: local, updated_by: (signedInUser && signedInUser.name) || 'Dan'}).catch(function(){});
+      }
+    });
+    FIN_LOADED = true;
+  }catch(e){ console.error('Could not load finance settings:', e); }
+}
+function finGet(k){ return Object.prototype.hasOwnProperty.call(FIN_CACHE, k) ? FIN_CACHE[k] : null; }
+function finSet(k, v){
+  FIN_CACHE[k] = String(v);
+  b2Post('/api/settings', {id: 'fin:' + k, value: String(v), updated_by: (signedInUser && signedInUser.name) || 'Dan'})
+    .catch(function(e){ showToast('Could not save to the server: ' + e.message); });
+}
+
+function isTestCand(c){
+  return !!c && (/^\s*test\b/i.test(c.name || '') || /\[test\]/i.test(c.notes || ''));
+}
+function toggleTestCandidate(on){
+  const ta = document.getElementById('notesInput');
+  if(!ta) return;
+  let v = ta.value.replace(/\[TEST\]\s*/ig, '');
+  ta.value = on ? '[TEST] ' + v : v;
+}
+
+async function loadBackupStatus(){
+  const el = document.getElementById('backupStatusText');
+  if(!el) return;
+  try{
+    const s = await b2Api('/api/backup/status');
+    if(s.ok === true) el.innerHTML = 'Last backup: <strong>' + new Date(s.at).toLocaleString('en-GB') + '</strong>. Both sheets are copied to the L2H Backups folder in Drive each night, and the last 14 are kept.';
+    else if(s.ok === false) el.innerHTML = '<strong style="color:var(--danger);">Last backup failed</strong> (' + new Date(s.at).toLocaleString('en-GB') + '): ' + esc(s.error || 'unknown error');
+    else el.textContent = 'No backup has run yet. The nightly job will do it, or press Back up now.';
+  }catch(e){ el.textContent = 'Could not read backup status.'; }
+}
+async function runBackupNow(){
+  const btn = document.getElementById('backupNowBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Backing up...'; }
+  try{ await b2Post('/api/backup/run', {}); showToast('Backup complete'); }
+  catch(e){ showToast('Backup failed: ' + e.message); }
+  if(btn){ btn.disabled = false; btn.textContent = 'Back up now'; }
+  loadBackupStatus();
+}
+
+async function loadQuarterHistory(){
+  const box = document.getElementById('quarterHistoryBody');
+  if(!box) return;
+  try{
+    const rows = b2List(await b2Api('/api/metrics/quarters?count=6'));
+    const cell = 'padding:11px 16px;font-size:13px;';
+    const mark = function(actual, target, lowerBetter){
+      if(!target) return '<span style="color:#999;">no target</span>';
+      const met = lowerBetter ? (actual > 0 && actual <= target) : actual >= target;
+      return '<span style="color:' + (met ? 'var(--success)' : 'var(--danger)') + ';font-weight:600;">' + (met ? 'Met' : 'Missed') + '</span>';
+    };
+    let h = '<div style="display:grid;grid-template-columns:1fr 1.4fr 1.4fr 1.4fr;min-width:620px;background:var(--cream,#faf7f0);border-bottom:1px solid var(--border);">' +
+      ['Quarter', 'Roles filled', 'New clients', 'Avg fill speed (days)'].map(function(t){ return '<div style="' + cell + 'font-weight:500;color:var(--dark);font-size:12px;">' + t + '</div>'; }).join('') + '</div>';
+    rows.forEach(function(r){
+      const t = r.target, a = r.actual;
+      h += '<div style="display:grid;grid-template-columns:1fr 1.4fr 1.4fr 1.4fr;min-width:620px;border-bottom:1px solid var(--border);align-items:center;">' +
+        '<div style="' + cell + 'font-weight:600;color:var(--dark);">' + esc(r.quarter) + (r.current ? ' <span style="font-size:10px;color:var(--gold);">NOW</span>' : '') + '</div>' +
+        '<div style="' + cell + '">' + a.rolesFilled + (t ? ' / ' + t.targetRoles : '') + ' ' + mark(a.rolesFilled, t && t.targetRoles, false) + '</div>' +
+        '<div style="' + cell + '">' + a.newClients + (t ? ' / ' + t.targetNewClients : '') + ' ' + mark(a.newClients, t && t.targetNewClients, false) + '</div>' +
+        '<div style="' + cell + '">' + (a.avgFillSpeedDays || '-') + (t ? ' / ' + t.targetAvgFillSpeedDays : '') + ' ' + mark(a.avgFillSpeedDays, t && t.targetAvgFillSpeedDays, true) + '</div>' +
+        '</div>';
+    });
+    box.innerHTML = h;
+  }catch(e){ box.innerHTML = '<div style="padding:16px;font-size:13px;color:var(--danger);">Could not load quarter history: ' + esc(e.message) + '</div>'; }
+}
+</script>
+
+<script>
+/* ---------- Automation batch B: offer path documents ---------- */
+var OD = {kind:'', cand:null, extra:{}, res:null, busy:false};
+var OD_SETS = {
+  offer:       {label:'Offer letter and cover email', hint:'Offer letter attached, to the candidate'},
+  info_request:{label:'Information request email', hint:'Asks for details, right to work and references'},
+  placement:   {label:'Client handover pack and placement email', hint:'Handover pack attached, to the client contact'},
+  prestart:    {label:'Pre-start pack and email', hint:'Onboarding pack attached, to the candidate'},
+  rejection:   {label:'Rejection email', hint:'Warm template, to the candidate'},
+  feedback_week1:  {label:'Week 1 client check-in', hint:'Short check-in email to the client contact'},
+  feedback_month1: {label:'Month 1 client feedback request', hint:'Feedback, new vacancies, guarantee reminder and review link'}
+};
+var OD_BY_STAGE = {
+  offer:['offer','info_request','placement'],
+  start_date:['prestart','placement'], day1:['feedback_week1','placement'], week1:['feedback_week1','feedback_month1','placement'], month1:['feedback_month1','placement'],
+  rejected:['rejection']
+};
+var OD_PICKS = {
+  dob:'date', offer_reply_by:'date'
+};
+var OD_LONG = ['special_requirements','evidence','specific_example','close_match_detail','impact_area'];
+
+function offerDocsPanel(c){
+  const kinds = OD_BY_STAGE[c.stage];
+  if(!kinds) return '';
+  const comp = ['offer','start_date','day1','week1','month1'].indexOf(c.stage) >= 0
+    ? '<div class="cv-section" id="compBox"><label>Compliance</label><div style="font-size:12px;color:#999;">Loading...</div></div>' : '';
+  return comp + '<div class="cv-section"><label>Documents and emails</label>' +
+    kinds.map(function(k){
+      return '<button onclick="odOpen(\'' + k + '\')" style="width:100%;margin-bottom:8px;padding:10px;background:#fff;border:1px solid var(--gold);color:var(--dark);border-radius:2px;cursor:pointer;font-size:13px;font-weight:600;text-align:left;">' +
+        esc(OD_SETS[k].label) + '<span style="display:block;font-weight:400;font-size:11px;color:#999;margin-top:2px;">' + esc(OD_SETS[k].hint) + '</span></button>';
+    }).join('') + '</div>';
+}
+
+function odSnapshot(){
+  const c = findCandidate(openCandidateId);
+  const v = function(id, fallback){ const el = document.getElementById(id); return el && el.value !== '' ? el.value : (fallback || ''); };
+  return {name:c.name, company:c.company, role:c.role, stage:c.stage, notes:v('notesInput', c.notes),
+    email:v('emailInput', c.email), phone:v('phoneInput', c.phone), salary:v('salaryInput', c.salary), startDate:v('startDateInput', c.startDate)};
+}
+
+function odShell(){
+  let el = document.getElementById('odOverlay');
+  if(!el){
+    el = document.createElement('div'); el.id = 'odOverlay';
+    el.style.cssText = 'position:fixed;inset:0;background:rgba(10,15,30,.55);z-index:5000;display:flex;align-items:center;justify-content:center;padding:16px;';
+    el.innerHTML = '<div id="odBox" style="background:#fff;border-top:3px solid var(--gold);max-width:640px;width:100%;max-height:92vh;overflow:auto;border-radius:3px;padding:22px 24px;"></div>';
+    document.body.appendChild(el);
+  }
+  el.style.display = 'flex';
+  return document.getElementById('odBox');
+}
+function odClose(){ const el = document.getElementById('odOverlay'); if(el) el.style.display = 'none'; }
+
+async function odOpen(kind){
+  OD = {kind:kind, cand:odSnapshot(), extra:{}, res:null, busy:true, error:''};
+  odRender();
+  await odBuild();
+}
+async function odBuild(){
+  OD.busy = true; OD.error = ''; odRender();
+  try{
+    OD.res = await b2Post('/api/offer-docs/build', {kind:OD.kind, candidate:OD.cand, extra:OD.extra});
+    OD.subject = OD.res.subject; OD.body = OD.res.body;
+  }catch(e){ OD.error = e.message; }
+  OD.busy = false; odRender();
+}
+
+function odField(key, label, val){
+  const t = OD_PICKS[key] || 'text';
+  const long = OD_LONG.indexOf(key) >= 0;
+  const base = 'width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13px;';
+  const input = long
+    ? '<textarea data-od="' + key + '" style="' + base + 'min-height:54px;">' + esc(val || '') + '</textarea>'
+    : '<input data-od="' + key + '" type="' + t + '" value="' + esc(val || '') + '" style="' + base + '">';
+  return '<div style="margin-bottom:10px;"><label style="display:block;font-size:11px;color:#999;margin-bottom:4px;letter-spacing:.4px;">' + esc(label) + '</label>' + input + '</div>';
+}
+
+function odRender(){
+  const box = odShell();
+  const set = OD_SETS[OD.kind];
+  let h = '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;"><div><div style="font-size:11px;color:var(--gold);letter-spacing:.8px;font-weight:600;">DOCUMENTS</div><h3 style="margin:2px 0 0;font-size:17px;color:var(--dark);">' + esc(set.label) + '</h3><div style="font-size:12px;color:#999;margin-top:2px;">' + esc(OD.cand.name) + ' - ' + esc(OD.cand.role) + ' at ' + esc(OD.cand.company) + '</div></div><button onclick="odClose()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;">&times;</button></div>';
+  if(OD.busy){ box.innerHTML = h + '<div style="padding:24px 0;color:#999;font-size:13px;">Working...</div>'; return; }
+  if(OD.error){ box.innerHTML = h + '<div style="padding:12px;background:#fdf1ef;border-left:3px solid var(--danger);font-size:13px;">' + esc(OD.error) + '</div>'; return; }
+  const r = OD.res, saved = r.saved || {};
+  const missing = r.missing || [];
+  if(OD.kind === 'placement' || OD.kind === 'rejection'){
+    h += '<div style="margin-bottom:12px;"><button onclick="odAiDraft()" style="padding:8px 14px;background:var(--dark);color:#fff;border:none;border-radius:2px;cursor:pointer;font-size:12.5px;">Draft the wording with AI from the notes</button> <span style="font-size:11px;color:#999;">Review before sending</span></div>';
+  }
+  if(OD.kind === 'placement'){
+    const p = OD.extra.pronouns || saved.pronouns || 'they';
+    h += '<div style="margin-bottom:10px;"><label style="display:block;font-size:11px;color:#999;margin-bottom:4px;">PRONOUNS FOR THE EMAIL</label><select data-od="pronouns" style="padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:13px;">' +
+      ['they','he','she'].map(function(x){ return '<option value="' + x + '"' + (x === p ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select></div>';
+  }
+  (r.warnings || []).forEach(function(w){
+    h += '<div style="padding:10px 12px;background:#fdf1ef;border-left:3px solid var(--danger);font-size:12.5px;margin-bottom:10px;">' + esc(w) + ' Update it under Compliance on the candidate card, or send anyway if you have checked it another way.</div>';
+  });
+  if(missing.length || r.missingTo){
+    h += '<div style="padding:10px 12px;background:#fffaf0;border-left:3px solid var(--gold);font-size:12.5px;margin-bottom:12px;">Fill in what is missing. It is saved once and reused for every document for this candidate.' + (r.missingTo ? '<br><strong>No ' + esc(r.missingTo) + ' on file.</strong>' : '') + '</div>';
+    if(r.missingTo && /client/.test(r.missingTo)) h += odField('client_email', 'CLIENT CONTACT EMAIL', OD.extra.client_email || '');
+    if(r.missingTo && /candidate/.test(r.missingTo)) h += odField('candidate_email', 'CANDIDATE EMAIL', OD.extra.candidate_email || '');
+    missing.forEach(function(m){ h += odField(m.key, m.label, OD.extra[m.key] || ''); });
+    h += '<div style="margin:6px 0 14px;"><button onclick="odApply()" style="padding:9px 18px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:13px;font-weight:600;">Save and refresh the documents</button></div>';
+  } else {
+    h += '<div style="padding:10px 12px;background:#f1f8f1;border-left:3px solid var(--success);font-size:12.5px;margin-bottom:12px;">Everything is filled in. Check the email below, then open it in Outlook.</div>';
+  }
+  h += '<label style="display:block;font-size:11px;color:#999;margin-bottom:4px;">TO</label><div style="font-size:13px;margin-bottom:10px;">' + esc(r.to || '(none yet)') + '</div>' +
+    '<label style="display:block;font-size:11px;color:#999;margin-bottom:4px;">SUBJECT</label><input id="odSubject" value="' + esc(OD.subject) + '" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:13px;margin-bottom:10px;">' +
+    '<label style="display:block;font-size:11px;color:#999;margin-bottom:4px;">EMAIL</label><textarea id="odBody" style="width:100%;min-height:220px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13px;">' + esc(OD.body) + '</textarea>';
+  if(r.attachments.length) h += '<div style="font-size:12px;color:var(--grey);margin:10px 0;">Attached: ' + r.attachments.map(function(a){ return esc(a.fileName); }).join(', ') + '</div>';
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;"><button onclick="odSend()" style="padding:10px 20px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:13px;font-weight:600;">Open in Outlook</button>' +
+    r.attachments.map(function(a, i){ return '<button onclick="odDownload(' + i + ')" style="padding:10px 16px;background:#fff;border:1px solid var(--border);border-radius:2px;cursor:pointer;font-size:13px;">Download ' + (i ? 'file ' + (i + 1) : 'Word file') + '</button>'; }).join('') +
+    '</div>';
+  box.innerHTML = h;
+}
+
+function odCollect(){
+  document.querySelectorAll('#odBox [data-od]').forEach(function(el){
+    const k = el.getAttribute('data-od');
+    if(el.value !== '') OD.extra[k] = el.value;
+  });
+  const s = document.getElementById('odSubject'), b = document.getElementById('odBody');
+  if(s) OD.subject = s.value;
+  if(b) OD.body = b.value;
+}
+async function odApply(){
+  odCollect();
+  const r = OD.res || {};
+  const merged = Object.assign({}, r.saved || {}, OD.extra);
+  try{
+    await b2Post('/api/offer-details', {id:r.id, candidate_name:OD.cand.name, role:OD.cand.role, company:OD.cand.company,
+      details_json:JSON.stringify(merged), updated_by:(signedInUser && signedInUser.name) || '', updated_at:new Date().toISOString()});
+  }catch(e){ showToast('Could not save the details: ' + e.message); }
+  await odBuild();
+}
+async function odAiDraft(){
+  odCollect();
+  OD.busy = true; odRender();
+  try{
+    const out = await b2Post('/api/offer-docs/draft-text', {kind:OD.kind, candidate:OD.cand, notes:OD.cand.notes});
+    Object.assign(OD.extra, out.fields || {});
+    await odApply();
+    showToast('Wording drafted. Please read it before sending.');
+    return;
+  }catch(e){ OD.error = e.message; }
+  OD.busy = false; odRender();
+}
+function odDownload(i){
+  const a = OD.res.attachments[i];
+  const bin = atob(a.base64), bytes = new Uint8Array(bin.length);
+  for(let x = 0; x < bin.length; x++) bytes[x] = bin.charCodeAt(x);
+  const url = URL.createObjectURL(new Blob([bytes], {type:a.mime}));
+  const link = document.createElement('a'); link.href = url; link.download = a.fileName; document.body.appendChild(link); link.click(); link.remove();
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+}
+async function odSend(){
+  odCollect();
+  const r = OD.res;
+  if(!r.to){ showToast('Add the email address first'); return; }
+  if((r.missing || []).length && !confirm('Some fields are still blank and show in [BRACKETS] in the document. Open in Outlook anyway?')) return;
+  const eml = emlBuildMulti(r.to, OD.subject, OD.body, r.attachments);
+  const name = 'Draft ' + String(OD.subject).replace(/[^A-Za-z0-9 \-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) + '.eml';
+  downloadText(name, eml, 'message/rfc822');
+  showToast('Draft downloaded. Open it and it opens in Outlook ready to send.');
+  try{
+    await b2Post('/api/comms', {id:'cm-' + Date.now(), timestamp:new Date().toISOString(), user:(signedInUser && signedInUser.key) || '', entity_type:'candidate',
+      entity_name:OD.cand.name, company:OD.cand.company, role:OD.cand.role, channel:'Email', direction:'Out', summary:OD.subject, follow_up_date:'', follow_up_done:''});
+  }catch(e){ /* log is best effort */ }
+}
+</script>
+
+<script>
+/* ---------- Automation batch C: compliance, talent pool matches, global search ---------- */
+function compKey(c){ return (c.company + '|' + c.name + '|' + c.role).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); }
+var COMP = {rec:null, cand:null};
+
+(function(){
+  const _ocm = openCandidateModal;
+  openCandidateModal = function(id){ _ocm(id); try{ compLoad(); }catch(e){} };
+})();
+
+async function compLoad(){
+  const box = document.getElementById('compBox');
+  if(!box) return;
+  const c = findCandidate(openCandidateId);
+  COMP.cand = c;
+  try{
+    const rows = b2List(await b2Api('/api/compliance'));
+    COMP.rec = rows.find(function(o){ return o.id === compKey(c); }) || {};
+  }catch(e){ COMP.rec = {}; }
+  compRender();
+}
+function compSel(id, val, opts){
+  return '<select id="' + id + '" style="padding:7px 8px;border:1px solid var(--border);border-radius:2px;font-size:12.5px;background:#fff;">' +
+    opts.map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === (val || opts[0][0]) ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>';
+}
+function compRender(){
+  const box = document.getElementById('compBox');
+  if(!box) return;
+  const r = COMP.rec || {};
+  const st = [['not_requested','Not requested'],['requested','Requested'],['received','Received'],['verified','Verified']];
+  const rf = [['not_requested','Not requested'],['requested','Requested'],['received','Received'],['checked','Checked']];
+  const docs = [['',' Choose...'],['Passport','Passport'],['Birth certificate and NI proof','Birth certificate and NI proof'],['BRP','BRP'],['EUSS share code','EUSS share code']];
+  const row = function(label, inner){ return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;"><div style="width:120px;font-size:12px;color:var(--grey);">' + label + '</div>' + inner + '</div>'; };
+  const ok = r.rtw_status === 'verified' && ['received','checked'].indexOf(r.ref1_status) >= 0 && ['received','checked'].indexOf(r.ref2_status) >= 0;
+  box.innerHTML = '<label>Compliance ' + (ok ? '<span style="color:var(--success);font-weight:600;">complete</span>' : '<span style="color:#c9703f;font-weight:600;">outstanding</span>') + '</label>' +
+    row('Right to work', compSel('cpRtw', r.rtw_status, st)) +
+    row('Document type', compSel('cpDoc', r.rtw_doc, docs)) +
+    row('Checked on', '<input type="date" id="cpDate" value="' + esc(r.rtw_date || '') + '" style="padding:7px 8px;border:1px solid var(--border);border-radius:2px;font-size:12.5px;">') +
+    row('Original seen Day 1', '<input type="checkbox" id="cpOrig"' + (String(r.rtw_original_seen).toLowerCase() === 'yes' ? ' checked' : '') + '>') +
+    row('Reference 1', compSel('cpRef1', r.ref1_status, rf)) +
+    row('Reference 2', compSel('cpRef2', r.ref2_status, rf)) +
+    '<button onclick="compSave()" style="padding:8px 16px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:12.5px;font-weight:600;">Save compliance</button>';
+}
+async function compSave(){
+  const c = COMP.cand; if(!c) return;
+  const v = function(id){ const el = document.getElementById(id); return el ? el.value : ''; };
+  const rec = {id:compKey(c), candidate_name:c.name, role:c.role, company:c.company,
+    rtw_status:v('cpRtw'), rtw_doc:v('cpDoc'), rtw_date:v('cpDate'), rtw_original_seen:document.getElementById('cpOrig').checked ? 'yes' : 'no',
+    ref1_status:v('cpRef1'), ref2_status:v('cpRef2'), notes:(COMP.rec && COMP.rec.notes) || '',
+    updated_by:(signedInUser && signedInUser.name) || '', updated_at:new Date().toISOString()};
+  if(rec.rtw_status === 'verified' && !rec.rtw_date) rec.rtw_date = new Date().toISOString().slice(0, 10);
+  try{ await b2Post('/api/compliance', rec); COMP.rec = rec; compRender(); showToast('Compliance saved'); }
+  catch(e){ showToast('Could not save: ' + e.message); }
+}
+
+/* Talent pool matches for a role */
+var PM = {role:null, res:null};
+async function poolMatchOpen(roleId){
+  const r = mergedRoles().find(function(x){ return x.id === roleId; });
+  if(!r) return;
+  PM = {role:r, res:null, busy:true};
+  pmRender();
+  try{ PM.res = await b2Api('/api/pool-matches?company=' + encodeURIComponent(r.company) + '&role=' + encodeURIComponent(r.role)); }
+  catch(e){ PM.error = e.message; }
+  PM.busy = false; pmRender();
+}
+function pmShell(){
+  let el = document.getElementById('pmOverlay');
+  if(!el){
+    el = document.createElement('div'); el.id = 'pmOverlay';
+    el.style.cssText = 'position:fixed;inset:0;background:rgba(10,15,30,.55);z-index:5000;display:flex;align-items:center;justify-content:center;padding:16px;';
+    el.innerHTML = '<div id="pmBox" style="background:#fff;border-top:3px solid var(--gold);max-width:720px;width:100%;max-height:92vh;overflow:auto;border-radius:3px;padding:22px 24px;"></div>';
+    document.body.appendChild(el);
+  }
+  el.style.display = 'flex';
+  return document.getElementById('pmBox');
+}
+function pmClose(){ const el = document.getElementById('pmOverlay'); if(el) el.style.display = 'none'; }
+function pmRender(){
+  const box = pmShell(), r = PM.role;
+  let h = '<div style="display:flex;justify-content:space-between;gap:12px;margin-bottom:12px;"><div><div style="font-size:11px;color:var(--gold);letter-spacing:.8px;font-weight:600;">TALENT POOL MATCHES</div><h3 style="margin:2px 0 0;font-size:17px;">' + esc(r.role) + '</h3><div style="font-size:12px;color:#999;">' + esc(r.company) + '</div></div><button onclick="pmClose()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;">&times;</button></div>';
+  if(PM.busy){ box.innerHTML = h + '<div style="padding:20px 0;color:#999;font-size:13px;">Searching the pool...</div>'; return; }
+  if(PM.error){ box.innerHTML = h + '<div style="padding:12px;background:#fdf1ef;border-left:3px solid var(--danger);font-size:13px;">' + esc(PM.error) + '</div>'; return; }
+  const m = PM.res.matches || [];
+  h += '<div style="font-size:12px;color:var(--grey);margin-bottom:12px;">Checked ' + PM.res.considered + ' people in the pool. Only people who agreed to be kept for future roles are shown' + (PM.res.excludedConsent ? ' (' + PM.res.excludedConsent + ' left out because they only agreed to the original role)' : '') + '. Matching uses job titles, tags, notes and location, so tag people well in the pool.</div>';
+  if(!m.length) h += '<div style="padding:16px;background:#faf7f0;font-size:13px;">No strong matches yet. Add requirements to the role and tags in the pool to improve this.</div>';
+  m.forEach(function(p, i){
+    h += '<div style="border:1px solid var(--border);border-left:3px solid var(--gold);padding:12px 14px;margin-bottom:10px;"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;"><div><strong>' + esc(p.name) + '</strong> <span style="color:#999;font-size:12px;">previously ' + esc(p.previousRole) + (p.previousCompany ? ' (' + esc(p.previousCompany) + ')' : '') + '</span></div><div style="font-size:11px;color:#999;">Consent ' + esc(p.consentDate || 'on file') + '</div></div>' +
+      '<div style="font-size:12px;color:var(--grey);margin:6px 0;">' + p.why.map(esc).join(' - ') + '</div>' +
+      '<div style="font-size:12px;margin-bottom:8px;">' + esc(p.email || 'no email') + (p.phone ? ' - ' + esc(p.phone) : '') + (p.hasCv ? ' - CV on file' : '') + '</div>' +
+      '<button onclick="pmEmail(' + i + ')" style="padding:7px 14px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:12.5px;font-weight:600;"' + (p.email ? '' : ' disabled') + '>Draft outreach in Outlook</button></div>';
+  });
+  box.innerHTML = h;
+}
+function pmEmail(i){
+  const p = PM.res.matches[i], role = PM.res.role;
+  const title = role.public_title || role.role;
+  const first = String(p.name || '').split(/\s+/)[0] || 'there';
+  const body = 'Hi ' + first + ',\n\nWe spoke before about ' + p.previousRole + ' and you kindly agreed we could keep in touch about future roles.\n\nI have a new vacancy that looks like a good fit for your background:\n\n' +
+    '- Role: ' + title + '\n' + (role.location ? '- Location: ' + role.location + '\n' : '') + (role.salary_band ? '- Salary: ' + role.salary_band + '\n' : '') +
+    '\nIf you would like to hear more, reply or give me a call and I will talk you through it. If now is not the right time, just say and I will leave it with you.\n\nKind regards,\n\n' + OD_SIG;
+  downloadText('Draft ' + title.replace(/[^A-Za-z0-9 \-]+/g, ' ').trim().slice(0, 50) + ' outreach.eml', emlBuild(p.email, 'A new ' + title + ' opportunity', body), 'message/rfc822');
+  showToast('Draft downloaded. Open it to send from Outlook.');
+}
+var OD_SIG = 'Ella Pietrzak\nTalent Acquisition & Business Development Consultant\nLive 2 Help Recruitment\nella@live2helprecruitment.co.uk\n07434 351996\nwww.live2helprecruitment.co.uk';
+
+/* Global search */
+var GS = {pool:null, poolAt:0};
+function gsShell(){
+  let el = document.getElementById('gsOverlay');
+  if(!el){
+    el = document.createElement('div'); el.id = 'gsOverlay';
+    el.style.cssText = 'position:fixed;inset:0;background:rgba(10,15,30,.55);z-index:6000;display:flex;align-items:flex-start;justify-content:center;padding:8vh 16px 16px;';
+    el.innerHTML = '<div style="background:#fff;border-top:3px solid var(--gold);max-width:640px;width:100%;max-height:80vh;overflow:auto;border-radius:3px;padding:16px 18px;"><input id="gsInput" placeholder="Search candidates, roles, clients, the pool..." oninput="gsRun()" style="width:100%;padding:12px 14px;border:1px solid var(--border);border-radius:2px;font-size:15px;font-family:inherit;"><div id="gsOut" style="margin-top:12px;font-size:13px;"></div></div>';
+    el.addEventListener('click', function(e){ if(e.target === el) gsClose(); });
+    document.body.appendChild(el);
+  }
+  return el;
+}
+function gsOpen(){
+  const el = gsShell(); el.style.display = 'flex';
+  const i = document.getElementById('gsInput'); i.value = ''; document.getElementById('gsOut').innerHTML = '<div style="color:#999;">Type at least two letters. Press Esc to close.</div>'; i.focus();
+  if(!GS.pool || Date.now() - GS.poolAt > 180000){
+    b2Api('/api/candidate-pool').then(function(j){ GS.pool = b2List(j); GS.poolAt = Date.now(); }).catch(function(){ GS.pool = GS.pool || []; });
+  }
+}
+function gsClose(){ const el = document.getElementById('gsOverlay'); if(el) el.style.display = 'none'; }
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape') gsClose();
+  if(e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || '') && signedInUser){ e.preventDefault(); gsOpen(); }
+});
+function gsRun(){
+  const q = document.getElementById('gsInput').value.trim().toLowerCase();
+  const out = document.getElementById('gsOut');
+  if(q.length < 2){ out.innerHTML = '<div style="color:#999;">Type at least two letters.</div>'; return; }
+  const has = function(){ for(let i = 0; i < arguments.length; i++){ if(String(arguments[i] || '').toLowerCase().indexOf(q) >= 0) return true; } return false; };
+  const sec = function(t, items){ return items.length ? '<div style="font-size:11px;color:var(--gold);letter-spacing:.8px;font-weight:600;margin:12px 0 6px;">' + t + ' (' + items.length + ')</div>' + items.slice(0, 8).join('') : ''; };
+  const line = function(main, sub, js){ return '<div onclick="' + js + '" style="padding:8px 10px;border:1px solid var(--border);margin-bottom:5px;cursor:pointer;"><div style="font-weight:600;">' + main + '</div><div style="font-size:12px;color:#999;">' + sub + '</div></div>'; };
+  const cands = flatCandidates().filter(function(x){ return has(x.c.name, x.c.email, x.c.phone, x.c.notes, x.role, x.company); })
+    .map(function(x){ return line(esc(x.c.name), esc(x.role + ' at ' + x.company + ' - ' + String(x.c.stage).replace(/_/g, ' ')), "gsGoCand('" + esc(x.company).replace(/'/g, "\\'") + "','" + esc(x.role).replace(/'/g, "\\'") + "','" + esc(x.c.id).replace(/'/g, "\\'") + "')"); });
+  const roles = mergedRoles().filter(function(r){ return has(r.role, r.company, r.public_title, r.location); })
+    .map(function(r){ return line(esc(r.role), esc(r.company + ' - ' + (r.status || '')), "gsClose();rolesOpenBoard('" + esc(r.id).replace(/'/g, "\\'") + "')"); });
+  const clients = (clientsData || []).filter(function(c){ return has(c.company, c.contactName, c.email, c.phone); })
+    .map(function(c){ return line(esc(c.company), esc((c.contactName || '') + (c.email ? ' - ' + c.email : '')), "gsClose();switchTab('clients')"); });
+  const pool = (GS.pool || []).filter(function(p){ return String(p.erased).toLowerCase() !== 'yes' && has(p.name, p.email, p.phone, p.role, p.tags, p.notes); })
+    .map(function(p){ return line(esc(p.name), esc((p.role || '') + (p.tags ? ' - ' + p.tags : '') + ' - reached ' + String(p.furthestStage || '').replace(/_/g, ' ')), "gsClose();switchTab('candidatePool')"); });
+  const html = sec('CANDIDATES', cands) + sec('ROLES', roles) + sec('CLIENTS', clients) + sec('TALENT POOL', pool);
+  out.innerHTML = html || '<div style="color:#999;">Nothing found.</div>';
+}
+function gsGoCand(co, role, id){
+  gsClose(); switchTab('candidates'); selectRole(co, role);
+  setTimeout(function(){ try{ openCandidateModal(id); }catch(e){} }, 120);
 }
 </script>
 </body>
