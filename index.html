@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-GB">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Live Roles — Live 2 Help Recruitment</title>
+<title>Live Roles - Live 2 Help Recruitment</title>
+<meta name="description" content="Current opportunities from Live 2 Help Recruitment. View the role, then apply in a few minutes.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -23,6 +24,7 @@
   --radius: 10px;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
 body {
   font-family: 'DM Sans', sans-serif;
   background:
@@ -31,189 +33,290 @@ body {
   color: var(--tx);
   min-height: 100vh;
   font-size: 14px;
+  line-height: 1.55;
 }
-h1, h2, .serif { font-family: 'Cormorant Garamond', Georgia, serif; }
+h1, h2, h3, .serif { font-family: 'Cormorant Garamond', Georgia, serif; }
+a { color: var(--gold-l); }
 
-header {
-  text-align: center;
-  padding: 50px 20px 34px;
-  border-bottom: 1px solid var(--bdr);
-}
-.brand-logo {
-  height: 56px;
-  width: auto;
-  margin: 0 auto 26px;
-  display: block;
-}
-header h1 { font-size: 32px; font-weight: 700; color: var(--tx); letter-spacing: 0.01em; }
+header { text-align: center; padding: 50px 20px 34px; border-bottom: 1px solid var(--bdr); }
+.brand-logo { height: 56px; width: auto; margin: 0 auto 26px; display: block; }
+header h1 { font-size: 32px; font-weight: 700; letter-spacing: 0.01em; }
 header p { color: var(--tx2); margin-top: 8px; font-size: 14px; letter-spacing: 0.02em; }
 
-main {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 40px 20px 80px;
-}
+main { max-width: 760px; margin: 0 auto; padding: 32px 20px 90px; }
+#status { color: var(--tx3); font-size: 13px; margin-bottom: 18px; text-align: center; }
 
-#status { color: var(--tx3); font-size: 13px; margin-bottom: 20px; text-align: center; }
+.filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+.filters input, .filters select {
+  flex: 1 1 200px; background: var(--card); color: var(--tx); border: 1px solid var(--bdr);
+  border-radius: 6px; padding: 10px 12px; font: inherit;
+}
+.filters input:focus, .filters select:focus { outline: none; border-color: var(--bdr-h); }
 
 .job-card {
-  background: var(--card);
-  border: 1px solid var(--bdr);
-  border-radius: var(--radius);
-  padding: 20px 22px;
-  margin-bottom: 14px;
-  box-shadow: 0 4px 18px rgba(0,0,0,0.25);
-  transition: border-color 0.15s, transform 0.15s;
+  background: var(--card); border: 1px solid var(--bdr); border-radius: var(--radius);
+  padding: 20px 22px; margin-bottom: 14px; box-shadow: 0 4px 18px rgba(0,0,0,0.25);
+  transition: border-color 0.15s, transform 0.15s; cursor: pointer;
 }
 .job-card:hover { border-color: var(--bdr-h); transform: translateY(-1px); }
-.job-title { font-size: 18px; font-weight: 600; color: var(--tx); margin-bottom: 6px; }
-.job-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
-}
+.job-title { font-size: 20px; font-weight: 600; margin-bottom: 8px; font-family: 'Cormorant Garamond', Georgia, serif; }
+.job-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .job-tag {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--gold-l);
-  background: var(--gold-dim);
-  border: 1px solid var(--bdr);
-  padding: 3px 9px;
-  border-radius: 20px;
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--gold-l);
+  background: var(--gold-dim); border: 1px solid var(--bdr); padding: 3px 9px; border-radius: 20px;
 }
-.job-apply {
-  display: inline-block;
-  font-size: 13px;
-  color: var(--dark);
-  background: var(--gold);
-  padding: 8px 16px;
-  border-radius: 6px;
-  text-decoration: none;
-  font-weight: 500;
-}
-.job-apply:hover { background: var(--gold-l); }
+.job-summary { color: var(--tx2); margin-bottom: 14px; }
 .job-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.job-share {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--tx2);
-  background: transparent;
-  border: 1px solid var(--bdr);
-  padding: 8px 14px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-family: inherit;
+.btn {
+  display: inline-block; font: inherit; font-size: 13px; padding: 9px 16px; border-radius: 6px;
+  text-decoration: none; font-weight: 500; cursor: pointer; border: 1px solid transparent;
 }
-.job-share:hover { border-color: var(--bdr-h); color: var(--tx); }
-.job-share.copied { color: var(--gold-l); border-color: var(--bdr-h); }
+.btn-gold { color: var(--dark); background: var(--gold); }
+.btn-gold:hover { background: var(--gold-l); }
+.btn-ghost { color: var(--tx2); background: transparent; border-color: var(--bdr); }
+.btn-ghost:hover { border-color: var(--bdr-h); color: var(--tx); }
+.btn-ghost.copied { color: var(--gold-l); border-color: var(--bdr-h); }
 
-.empty-state {
-  text-align: center;
-  color: var(--tx2);
-  padding: 60px 20px;
-  border: 1px dashed var(--bdr);
-  border-radius: var(--radius);
+.back { display: inline-block; color: var(--tx2); text-decoration: none; margin-bottom: 18px; font-size: 13px; }
+.back:hover { color: var(--gold-l); }
+.role-head h2 { font-size: 36px; line-height: 1.15; margin-bottom: 12px; }
+.role-lead { color: var(--tx2); font-size: 15px; margin: 6px 0 22px; }
+.role-section {
+  background: var(--card); border: 1px solid var(--bdr); border-radius: var(--radius);
+  padding: 20px 22px; margin-bottom: 14px;
 }
-.empty-state h2 { color: var(--tx); font-size: 22px; margin-bottom: 8px; }
+.role-section h3 { font-size: 22px; color: var(--gold-l); margin-bottom: 10px; }
+.role-section p { margin-bottom: 10px; color: var(--tx); }
+.role-section ul { list-style: none; }
+.role-section li { position: relative; padding-left: 20px; margin-bottom: 8px; }
+.role-section li::before { content: ""; position: absolute; left: 0; top: 9px; width: 7px; height: 7px; background: var(--gold); border-radius: 50%; }
+.apply-bar {
+  position: sticky; bottom: 0; margin-top: 22px; padding: 14px 16px;
+  background: rgba(12,12,12,0.94); border: 1px solid var(--bdr-h); border-radius: var(--radius);
+  display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap;
+  backdrop-filter: blur(6px);
+}
+.apply-bar p { color: var(--tx2); font-size: 13px; }
+.apply-bar .btn-gold { padding: 12px 26px; font-size: 15px; }
 
-footer {
-  text-align: center;
-  padding: 30px 20px;
-  color: var(--tx3);
-  font-size: 12px;
-  border-top: 1px solid var(--bdr);
-}
+.empty-state { text-align: center; color: var(--tx2); padding: 60px 20px; border: 1px dashed var(--bdr); border-radius: var(--radius); }
+.empty-state h2 { color: var(--tx); font-size: 24px; margin-bottom: 8px; }
+footer { text-align: center; padding: 30px 20px; color: var(--tx3); font-size: 12px; border-top: 1px solid var(--bdr); }
 </style>
 </head>
 <body>
 
 <header>
   <img class="brand-logo" src="assets/logo.png" alt="Live 2 Help Recruitment">
-  <h1 class="serif">Live Roles</h1>
-  <p>Current opportunities from Live 2 Help Recruitment</p>
+  <h1 class="serif" id="pageTitle">Live Roles</h1>
+  <p id="pageSub">Current opportunities from Live 2 Help Recruitment</p>
 </header>
 
 <main>
-  <div id="status">Loading current roles…</div>
-  <div id="job-list"></div>
+  <div id="status">Loading current roles...</div>
+  <div id="view"></div>
 </main>
 
-<footer>
-  Live 2 Help Recruitment &middot; Anyone &middot; Anywhere &middot; Anytime
-</footer>
+<footer>Live 2 Help Recruitment &middot; Anyone &middot; Anywhere &middot; Anytime</footer>
 
 <script>
-async function loadJobs() {
-  const status = document.getElementById('status');
-  const list = document.getElementById('job-list');
+const API = 'https://l2h-api.onrender.com';
+const CACHE_KEY = 'l2h-careers-roles-v1';
+const statusEl = document.getElementById('status');
+const viewEl = document.getElementById('view');
+let ROLES = [];
+let loaded = false;
+
+function esc(str) {
+  return String(str == null ? '' : str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function roleSlugFromUrl() {
+  return new URLSearchParams(location.search).get('role') || '';
+}
+function roleUrl(slug) {
+  return location.pathname + '?role=' + encodeURIComponent(slug);
+}
+
+function readCache() {
+  try { const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); return c && Array.isArray(c.roles) ? c : null; } catch (e) { return null; }
+}
+function writeCache(roles) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ roles, at: Date.now() })); } catch (e) { /* storage may be blocked */ }
+}
+
+async function loadRoles() {
+  const cached = readCache();
+  if (cached) { ROLES = cached.roles; loaded = true; render(); }
+  const slow = setTimeout(() => {
+    if (!loaded) statusEl.textContent = 'Just waking things up, nearly there...';
+  }, 6000);
   try {
-    const res = await fetch('jobs.json', { cache: 'no-store' });
-    if (!res.ok) throw new Error('jobs.json not found');
+    const res = await fetch(API + '/api/public/roles', { cache: 'no-store' });
+    if (!res.ok) throw new Error('Server returned ' + res.status);
     const data = await res.json();
-    const jobs = data.jobs || [];
-
-    if (jobs.length === 0) {
-      status.style.display = 'none';
-      list.innerHTML = `
-        <div class="empty-state">
-          <h2>No open roles right now</h2>
-          <p>Check back soon, or get in touch directly — new opportunities go live regularly.</p>
-        </div>`;
-      return;
-    }
-
-    const updated = data.updated_at ? new Date(data.updated_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : null;
-    status.textContent = updated ? `${jobs.length} live role(s) · updated ${updated}` : `${jobs.length} live role(s)`;
-
-    list.innerHTML = jobs.map(job => `
-      <div class="job-card">
-        <div class="job-title">${escapeHtml(job.title)}</div>
-        <div class="job-meta">
-          ${job.department ? `<span class="job-tag">${escapeHtml(job.department)}</span>` : ''}
-          <span class="job-tag">${escapeHtml(job.location)}</span>
-          ${job.remote ? `<span class="job-tag">Remote</span>` : ''}
-          ${job.employment_type ? `<span class="job-tag">${escapeHtml(job.employment_type)}</span>` : ''}
-        </div>
-        ${job.url ? `
-        <div class="job-actions">
-          <a class="job-apply" href="${escapeAttr(job.url)}" target="_blank" rel="noopener">View & Apply</a>
-          <button class="job-share" onclick="shareJob('${escapeAttr(job.url)}', this)" type="button">🔗 Copy Link</button>
-        </div>` : ''}
-      </div>
-    `).join('');
+    ROLES = data.roles || [];
+    writeCache(ROLES);
+    loaded = true;
   } catch (err) {
-    status.textContent = 'Unable to load current roles right now — please check back shortly.';
     console.error(err);
+    if (!loaded) { statusEl.textContent = 'Unable to load current roles right now. Please check back shortly.'; clearTimeout(slow); return; }
   }
+  clearTimeout(slow);
+  render();
 }
 
-function escapeHtml(str) {
-  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-function escapeAttr(str) { return escapeHtml(str); }
-
-async function shareJob(url, btn) {
-  const originalText = btn.textContent;
+async function loadRoleDetail(slug) {
   try {
-    if (navigator.share) {
-      await navigator.share({ title: 'Live 2 Help Recruitment - Live Role', url });
-      return;
-    }
-    await navigator.clipboard.writeText(url);
-    btn.textContent = '✓ Link copied';
-    btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = originalText; btn.classList.remove('copied'); }, 2000);
-  } catch (err) {
-    console.error('Share/copy failed:', err);
-  }
+    const res = await fetch(API + '/api/public/roles/' + encodeURIComponent(slug), { cache: 'no-store' });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error('Server returned ' + res.status);
+    return (await res.json()).role;
+  } catch (e) { console.error(e); return undefined; }
 }
 
-loadJobs();
-</script>
+function render() {
+  const slug = roleSlugFromUrl();
+  if (slug) renderRole(slug); else renderList();
+}
 
+function renderList() {
+  document.title = 'Live Roles - Live 2 Help Recruitment';
+  document.getElementById('pageTitle').textContent = 'Live Roles';
+  document.getElementById('pageSub').textContent = 'Current opportunities from Live 2 Help Recruitment';
+  setJsonLd(null);
+  if (!ROLES.length) {
+    statusEl.style.display = 'none';
+    viewEl.innerHTML = `<div class="empty-state"><h2>No open roles right now</h2><p>Check back soon. New opportunities go live regularly.</p></div>`;
+    return;
+  }
+  const locations = [...new Set(ROLES.map(r => r.location).filter(Boolean))].sort();
+  statusEl.textContent = ROLES.length + (ROLES.length === 1 ? ' live role' : ' live roles');
+  statusEl.style.display = 'block';
+  viewEl.innerHTML = `
+    <div class="filters">
+      <input id="q" type="search" placeholder="Search roles" aria-label="Search roles">
+      ${locations.length > 1 ? `<select id="loc" aria-label="Filter by location"><option value="">All locations</option>${locations.map(l => `<option>${esc(l)}</option>`).join('')}</select>` : ''}
+    </div>
+    <div id="cards"></div>`;
+  const draw = () => {
+    const q = (document.getElementById('q').value || '').trim().toLowerCase();
+    const locEl = document.getElementById('loc');
+    const loc = locEl ? locEl.value : '';
+    const shown = ROLES.filter(r => (!loc || r.location === loc) && (!q || (r.title + ' ' + r.location + ' ' + r.summary).toLowerCase().includes(q)));
+    document.getElementById('cards').innerHTML = shown.length ? shown.map(cardHtml).join('') :
+      `<div class="empty-state"><h2>No roles match</h2><p>Try a different search.</p></div>`;
+  };
+  document.getElementById('q').addEventListener('input', draw);
+  if (document.getElementById('loc')) document.getElementById('loc').addEventListener('change', draw);
+  draw();
+}
+
+function cardHtml(r) {
+  return `
+  <div class="job-card" onclick="openRole('${esc(r.slug)}')">
+    <div class="job-title">${esc(r.title)}</div>
+    <div class="job-meta">
+      ${r.location ? `<span class="job-tag">${esc(r.location)}</span>` : ''}
+      ${r.salary ? `<span class="job-tag">${esc(r.salary)}</span>` : ''}
+    </div>
+    ${r.summary ? `<p class="job-summary">${esc(r.summary)}</p>` : ''}
+    <div class="job-actions">
+      <a class="btn btn-gold" href="${esc(roleUrl(r.slug))}" onclick="event.stopPropagation(); openRole('${esc(r.slug)}'); return false;">View role</a>
+      ${r.applyUrl ? `<a class="btn btn-ghost" href="${esc(r.applyUrl)}" onclick="event.stopPropagation();">Apply now</a>` : ''}
+      <button class="btn btn-ghost" type="button" onclick="event.stopPropagation(); shareRole('${esc(r.slug)}', this)">Copy link</button>
+    </div>
+  </div>`;
+}
+
+function openRole(slug) {
+  history.pushState({}, '', roleUrl(slug));
+  window.scrollTo(0, 0);
+  render();
+}
+function backToList() {
+  history.pushState({}, '', location.pathname);
+  window.scrollTo(0, 0);
+  render();
+}
+window.addEventListener('popstate', render);
+
+async function renderRole(slug) {
+  statusEl.style.display = 'none';
+  let role = ROLES.find(r => r.slug === slug);
+  if (!role || !role.sections) {
+    viewEl.innerHTML = '<div class="loading-role" style="text-align:center;color:var(--tx3);padding:40px 0;">Loading role...</div>';
+    const fetched = await loadRoleDetail(slug);
+    if (fetched) role = fetched;
+    else if (fetched === null && !role) role = null;
+  }
+  if (!role) {
+    document.title = 'Role not found - Live 2 Help Recruitment';
+    viewEl.innerHTML = `<a class="back" href="${esc(location.pathname)}" onclick="backToList(); return false;">&larr; All roles</a>
+      <div class="empty-state"><h2>This role is no longer open</h2><p>Thank you for your interest. Have a look at our other live roles.</p></div>`;
+    return;
+  }
+  document.title = role.title + ' - Live 2 Help Recruitment';
+  document.getElementById('pageTitle').textContent = 'Live Roles';
+  document.getElementById('pageSub').textContent = 'Current opportunities from Live 2 Help Recruitment';
+  const sections = (role.sections || []).map(s => `
+    <div class="role-section">
+      ${s.heading ? `<h3>${esc(s.heading)}</h3>` : ''}
+      ${(s.paragraphs || []).map(p => `<p>${esc(p)}</p>`).join('')}
+      ${(s.bullets || []).length ? `<ul>${s.bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul>` : ''}
+    </div>`).join('');
+  viewEl.innerHTML = `
+    <a class="back" href="${esc(location.pathname)}" onclick="backToList(); return false;">&larr; All roles</a>
+    <div class="role-head">
+      <h2 class="serif">${esc(role.title)}</h2>
+      <div class="job-meta">
+        ${role.location ? `<span class="job-tag">${esc(role.location)}</span>` : ''}
+        ${role.salary ? `<span class="job-tag">${esc(role.salary)}</span>` : ''}
+      </div>
+    </div>
+    ${role.summary ? `<p class="role-lead">${esc(role.summary)}</p>` : ''}
+    ${sections}
+    <div class="apply-bar">
+      ${role.applyUrl
+        ? `<p>Ready to apply? It takes around 10 minutes.</p><a class="btn btn-gold" href="${esc(role.applyUrl)}">Apply now</a>`
+        : `<p>Applications for this role are being set up. Please check back shortly or visit <a href="https://live2helprecruitment.co.uk">live2helprecruitment.co.uk</a>.</p>`}
+      <button class="btn btn-ghost" type="button" onclick="shareRole('${esc(role.slug)}', this)">Copy link</button>
+    </div>`;
+  setJsonLd(role);
+}
+
+function setJsonLd(role) {
+  const old = document.getElementById('jobposting');
+  if (old) old.remove();
+  if (!role) return;
+  const desc = [role.summary].concat((role.sections || []).map(s =>
+    (s.heading ? s.heading + ': ' : '') + (s.paragraphs || []).concat(s.bullets || []).join(' '))).filter(Boolean).join(' ');
+  const ld = {
+    '@context': 'https://schema.org', '@type': 'JobPosting',
+    title: role.title, description: desc,
+    datePosted: role.posted || undefined,
+    hiringOrganization: { '@type': 'Organization', name: 'Live 2 Help Recruitment', sameAs: 'https://live2helprecruitment.co.uk' },
+    jobLocation: role.location ? { '@type': 'Place', address: { '@type': 'PostalAddress', addressRegion: role.location, addressCountry: 'GB' } } : undefined,
+    directApply: !!role.applyUrl,
+  };
+  const el = document.createElement('script');
+  el.type = 'application/ld+json'; el.id = 'jobposting';
+  el.textContent = JSON.stringify(ld);
+  document.head.appendChild(el);
+}
+
+async function shareRole(slug, btn) {
+  const url = location.origin + roleUrl(slug);
+  const original = btn.textContent;
+  try {
+    if (navigator.share) { await navigator.share({ title: 'Live 2 Help Recruitment - Live Role', url }); return; }
+    await navigator.clipboard.writeText(url);
+    btn.textContent = 'Link copied';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = original; btn.classList.remove('copied'); }, 2000);
+  } catch (err) { console.error('Share/copy failed:', err); }
+}
+
+loadRoles();
+</script>
 </body>
 </html>
