@@ -653,10 +653,168 @@ app.post('/api/sync-submissions', async (req, res) => {
 const APPLICATION_WORDING_VERSION = 'v1 - 30 Sep 2026';
 const MAX_CV_BASE64_LENGTH = 7 * 1024 * 1024; // roughly 5MB of file once decoded
 
+// ---- Sales Manager forms (Ceasefire) - self-creating tabs, longer question set ----
+// Columns A-Z keep the standard layout the dashboard reads. The 8 slots H-O hold the
+// first eight role questions, P is salary, Q is additional info, and the remaining
+// role questions overflow into AA onward.
+const SALES_MANAGER_FORMS = {
+  'sales-manager-midlands': { roleName: 'Sales Manager Midlands', region: 'Midlands' },
+  'sales-manager-south': { roleName: 'Sales Manager South', region: 'South' },
+};
+const SALES_MANAGER_ROLE_NAMES = new Set(Object.values(SALES_MANAGER_FORMS).map(f => f.roleName));
+const SM_ARRAY_FIELDS = new Set(['fireSectors', 'tradeRelationships']);
+const SM_SLOT_FIELDS = [
+  { key: 'fireYears', col: 7, label: 'Years in the fire safety, fire protection or life safety industry' },
+  { key: 'fireSectors', col: 8, label: 'Parts of the fire industry sold into' },
+  { key: 'currentRoleEmployer', col: 9, label: 'Current or most recent job title and employer' },
+  { key: 'tradeRelationships', col: 10, label: 'Existing trade partner relationships' },
+  { key: 'namedPartners', col: 11, label: 'Trade partners, distributors or installers they could approach in the first 90 days' },
+  { key: 'dayOneDoors', col: 12, label: 'Relationships they could open doors with from day one' },
+  { key: 'newPartnerExample', col: 13, label: 'Example of signing up a new trade partner or distributor from scratch' },
+  { key: 'distributionExperience', col: 14, label: 'Experience building or growing a distribution network' },
+  { key: 'salaryExpectation', col: 15, label: 'Salary Expectation' },
+  { key: 'additionalInfo', col: 16, label: 'Additional Info' },
+  { key: 'targetAchieved', col: 26, label: 'Annual sales target carried and achieved in last role' },
+  { key: 'targetConsistency', col: 27, label: 'Consistency in hitting or beating target over the last three years' },
+  { key: 'totalPackage', col: 28, label: 'Total package last year including bonus or commission' },
+  { key: 'managesPeople', col: 29, label: 'Currently manages or leads people' },
+  { key: 'trainingAttitude', col: 30, label: 'View on a structured 6 month training and onboarding programme' },
+  { key: 'crmConfidence', col: 31, label: 'Confidence with CRM systems and sales reporting' },
+  { key: 'drivingLicence', col: 32, label: 'Full UK driving licence' },
+  { key: 'travelComfort', col: 33, label: 'Comfort with regular travel and overnight stays' },
+  { key: 'territoryLocation', col: 34, label: 'Home location (postcode area)' },
+  { key: 'territoryCoverage', col: 35, label: 'Comfortable covering the territory' },
+];
+const SM_REQUIRED = ['fireYears', 'fireSectors', 'currentRoleEmployer', 'tradeRelationships', 'namedPartners', 'dayOneDoors',
+  'newPartnerExample', 'distributionExperience', 'targetAchieved', 'targetConsistency', 'totalPackage', 'managesPeople',
+  'trainingAttitude', 'crmConfidence', 'drivingLicence', 'travelComfort', 'territoryLocation', 'territoryCoverage',
+  'employmentStatus', 'noticePeriod', 'salaryExpectation'];
+
+function smHeaderRow(region) {
+  const h = new Array(36).fill('');
+  h[0] = 'Application ID'; h[1] = 'Date Applied'; h[2] = 'Name'; h[3] = 'Email'; h[4] = 'Phone';
+  h[5] = 'Current Employment Status'; h[6] = 'Notice Period';
+  SM_SLOT_FIELDS.forEach(f => { h[f.col] = f.label; });
+  h[34] = `Home location in the ${region} (postcode area)`;
+  h[35] = `Comfortable covering the ${region}, including regular travel`;
+  h[17] = 'Company'; h[18] = 'Contact'; h[19] = 'Status'; h[20] = 'Notes';
+  h[21] = 'Privacy Notice Accepted'; h[22] = 'Consent Date'; h[23] = 'Wording Version';
+  h[24] = 'Talent Pool Consent'; h[25] = 'CV Link';
+  return h;
+}
+
+const smTabLocks = new Map();
+async function ensureSalesManagerTab(tabName, region) {
+  if (smTabLocks.has(tabName)) return smTabLocks.get(tabName);
+  const p = (async () => {
+    const sheets = getSheetsClient();
+    const ss = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties.title' });
+    if (!(ss.data.sheets || []).some(t => t.properties.title === tabName)) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SHEET_ID,
+        requestBody: { requests: [{ addSheet: { properties: { title: tabName, gridProperties: { frozenRowCount: 1 } } } }] },
+      });
+    }
+    const head = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tabName}'!A1:AJ1` });
+    const first = head.data.values && head.data.values[0];
+    if (!first || first[0] !== 'Application ID') {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID, range: `'${tabName}'!A1:AJ1`,
+        valueInputOption: 'RAW', requestBody: { values: [smHeaderRow(region)] },
+      });
+    }
+  })();
+  smTabLocks.set(tabName, p);
+  p.catch(() => smTabLocks.delete(tabName));
+  return p;
+}
+
+async function handleSalesManagerApplication(req, res, form) {
+  try {
+    const b = req.body || {};
+    const { name, email, phone, cvData, cvFileName, consentApplication, consentPool } = b;
+    if (!name || !email || !phone) return res.status(400).json({ error: 'Missing required fields' });
+    if (consentApplication !== true && consentApplication !== 'Yes') {
+      return res.status(400).json({ error: 'Privacy notice must be accepted' });
+    }
+    if (!cvData || !cvFileName) return res.status(400).json({ error: 'CV is required' });
+    if (!/\.(pdf|docx?)$/i.test(String(cvFileName))) return res.status(400).json({ error: 'CV must be a PDF, DOC or DOCX file' });
+    if (String(cvData).length > MAX_CV_BASE64_LENGTH) return res.status(400).json({ error: 'CV is larger than 5MB' });
+    const missing = SM_REQUIRED.filter(k => {
+      const v = b[k];
+      return Array.isArray(v) ? v.length === 0 : !String(v || '').trim();
+    });
+    if (missing.length) return res.status(400).json({ error: 'Please answer every required question' });
+
+    const roleName = form.roleName;
+    const tabName = `Applications - ${roleName}`;
+    await ensureSalesManagerTab(tabName, form.region);
+
+    const sheets = getSheetsClient();
+    const slug = roleName.toLowerCase().replace(/\s+/g, '-');
+    const applicationId = `${slug}-${Date.now()}`;
+    const dateApplied = new Date().toISOString();
+    const poolConsent = (consentPool === true || consentPool === 'Yes') ? 'Yes' : 'No';
+
+    const cleanName = String(name).trim().replace(/\s+/g, ' ').replace(/['"\\]/g, '');
+    let saved = null;
+    try {
+      saved = await saveCandidateCv({ company: '', name, fileName: cvFileName, fileData: cvData });
+    } catch (cvErr) {
+      console.error(`CV could not be saved for application from ${cleanName}:`, cvErr.message);
+    }
+
+    const row = new Array(36).fill('');
+    row[0] = applicationId; row[1] = dateApplied; row[2] = name; row[3] = email; row[4] = phone;
+    row[5] = b.employmentStatus || ''; row[6] = b.noticePeriod || '';
+    SM_SLOT_FIELDS.forEach(f => {
+      const v = b[f.key];
+      row[f.col] = Array.isArray(v) ? v.join(', ') : String(v == null ? '' : v);
+    });
+    row[19] = 'applied';
+    row[21] = 'Yes'; row[22] = dateApplied; row[23] = APPLICATION_WORDING_VERSION;
+    row[24] = poolConsent; row[25] = saved ? saved.link : '';
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID, range: `'${tabName}'!A:AJ`,
+      valueInputOption: 'USER_ENTERED', requestBody: { values: [row] },
+    });
+
+    try {
+      const poolId = poolIdFor(name, roleName);
+      await upsertPoolEntry({
+        name, role: roleName, company: '', stage: 'applied', source: 'application',
+        email, phone, dateAdded: dateApplied, consentDate: dateApplied.slice(0, 10),
+        consentBasis: poolConsent === 'Yes' ? 'Application form - talent pool' : 'Application form - this role only',
+      }, true, { createOnly: true });
+      if (saved) await attachCvToPool(poolId, saved);
+    } catch (poolErr) {
+      console.error('Could not create pool record for application:', poolErr.message);
+    }
+
+    res.json({ success: true, applicationId });
+  } catch (err) {
+    console.error('POST /api/applications (sales manager) error:', err);
+    res.status(500).json({ error: 'Failed to save application' });
+  }
+}
+
+// Header-driven screening fields for tabs that do not use the Transport Coordinator layout
+async function getScreeningFieldsForRole(role) {
+  if (!SALES_MANAGER_ROLE_NAMES.has(role)) return null;
+  const sheets = getSheetsClient();
+  const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'Applications - ${role}'!A1:AJ1` });
+  const header = (r.data.values && r.data.values[0]) || [];
+  const cols = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35];
+  const labels = { 2: 'Candidate Name', 3: 'Email', 4: 'Phone' };
+  return cols.map(c => ({ key: `col${c}`, label: String(labels[c] || header[c] || `Question ${c}`).trim(), col: c }));
+}
+
 app.post('/api/applications/:role', async (req, res) => {
   res.on('finish', () => { if (res.statusCode < 400) scheduleReconcile(); });
   try {
     const { role } = req.params;
+    if (SALES_MANAGER_FORMS[role]) return await handleSalesManagerApplication(req, res, SALES_MANAGER_FORMS[role]);
     const {
       name,
       email,
@@ -1960,7 +2118,7 @@ async function findApplicationRow(candidateName, role) {
   try {
     const result = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
-      range: `'${tabName}'!A2:T`,
+      range: `'${tabName}'!A2:AJ`,
     });
     const rows = result.data.values || [];
     
@@ -2060,7 +2218,8 @@ app.get('/api/candidates/:id/screening-answers', async (req, res) => {
     
     const row = result.row;
     const answers = {};
-    SCREENING_FORM_FIELDS.forEach(field => {
+    const smFields = await getScreeningFieldsForRole(role);
+    (smFields || SCREENING_FORM_FIELDS).forEach(field => {
       answers[field.key] = {
         label: field.label,
         value: row[field.col] || ''
@@ -4016,11 +4175,12 @@ app.get('/api/gdpr/export/:id', requireAdmin, async (req, res) => {
     let application = null;
     try {
       const sheets = getSheetsClient();
-      const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'Applications - ${row[5]}'!A2:U` });
+      const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'Applications - ${row[5]}'!A2:AJ` });
       const ar = (r.data.values || []).find(x => match(x[2]));
       if (ar) {
         application = {};
-        SCREENING_FORM_FIELDS.forEach(f => { application[f.label] = ar[f.col] || ''; });
+        const smFields = await getScreeningFieldsForRole(row[5]);
+        (smFields || SCREENING_FORM_FIELDS).forEach(f => { application[f.label] = ar[f.col] || ''; });
         application['Company'] = ar[17] || '';
         application['Status'] = ar[19] || '';
         application['Notes'] = ar[20] || '';
@@ -4436,7 +4596,7 @@ async function loadScreening(name, role) {
   const tabName = `Applications - ${role}`;
   let all;
   try {
-    const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tabName}'!A1:Z` });
+    const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tabName}'!A1:AJ` });
     all = r.data.values || [];
   } catch (e) {
     return { found: false, qa: [], reason: `No application form tab for ${role}` };
@@ -4458,7 +4618,10 @@ async function loadScreening(name, role) {
   }
   if (!row) return { found: false, qa: [], reason: 'No matching application form answers' };
   const qa = [];
-  for (let i = 5; i <= 16; i++) {
+  const qaCols = [];
+  for (let i = 5; i <= 16; i++) qaCols.push(i);
+  for (let i = 26; i < header.length; i++) qaCols.push(i); // overflow questions (Sales Manager forms)
+  for (const i of qaCols) {
     const a = String(row[i] || '').trim();
     if (!a) continue;
     qa.push({ question: String(header[i] || `Question ${i - 4}`).trim(), answer: a });
