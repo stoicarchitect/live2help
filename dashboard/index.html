@@ -1368,7 +1368,7 @@
           <table class="ops-table">
             <thead><tr>
               <th>Role</th><th>Company</th><th>Hiring manager</th><th>Salary band</th><th>Fee</th>
-              <th>Status</th><th>Opened</th><th>Days open</th><th>Positions</th><th>Candidates</th><th style="text-align:right;">Actions</th>
+              <th>Status</th><th>Opened</th><th>Days open</th><th>Filled / positions</th><th>Candidates</th><th style="text-align:right;">Actions</th>
             </tr></thead>
             <tbody id="rolesBody"></tbody>
           </table>
@@ -1985,6 +1985,23 @@
         <textarea id="rmRequirements" maxlength="20000" placeholder="e.g. Highly analytical&#10;Comfortable challenging suppliers&#10;Confident with senior stakeholders" style="width:100%;min-height:90px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></textarea>
         <label>Job description <span style="color:#999;">(paste the full text)</span></label>
         <textarea id="rmJobDescription" maxlength="40000" placeholder="Paste the client's job description here" style="width:100%;min-height:110px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></textarea>
+        <div id="rmCareersBox" style="border:1px solid var(--border);border-left:3px solid var(--gold);padding:10px 12px;margin:12px 0;background:#fbfaf6;">
+          <div style="font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:#8a7638;font-weight:600;margin-bottom:6px;">Careers page</div>
+          <label style="display:flex;align-items:center;gap:8px;font-weight:600;"><input type="checkbox" id="rmShowCareers" style="width:auto;margin:0;"> Show on the careers page (only while the role is Open)</label>
+          <label>Public title <span style="color:#999;">(what applicants see; leave blank to use the role name)</span></label>
+          <input id="rmPublicTitle" placeholder="e.g. Sales Manager South" oninput="rmCheckForm()">
+          <div class="two-col">
+            <div><label>Location shown</label><input id="rmLocation" placeholder="e.g. South of England"></div>
+            <div><label>Application form <span style="color:#999;">(blank = automatic)</span></label><input id="rmFormSlug" placeholder="e.g. sales-manager-south" oninput="rmCheckForm()"></div>
+          </div>
+          <div id="rmFormStatus" style="font-size:12px;margin:2px 0 8px;color:#777;"></div>
+          <label>Careers page text <span style="color:#999;">(you can edit this before it goes live)</span></label>
+          <textarea id="rmPublicContent" maxlength="20000" placeholder="Click Generate to draft this from the job description" style="width:100%;min-height:150px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13px;"></textarea>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:6px;">
+            <button type="button" class="cancel" id="rmGenBtn" onclick="rmGenerateCareers()">Generate from job description</button>
+            <span style="font-size:11.5px;color:#999;">Lines starting with - are bullets, ## makes a heading.</span>
+          </div>
+        </div>
         <label>Notes</label>
         <textarea id="rmNotes" style="width:100%;min-height:70px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></textarea>
         <div class="actions">
@@ -2649,6 +2666,10 @@ function openCandidateModal(id){
             </select>
           </div>
         </div>
+        <div class="field-row">
+          <label>Role (vacancy)</label>
+          <select id="roleInput">${assignRoleOptionsHtml(c, c.company || '')}</select>
+        </div>
       </div>
     `;
   }
@@ -2717,7 +2738,48 @@ function openCandidateModal(id){
   }
 }
 
+function formSlugOfCandidate(c){ return slugOf(c.formRole || c.role); }
+function roleFormSlug(r){ return slugOf(r.form_slug || r.public_title || r.role); }
+
+// Open vacancies at this company that use the form the candidate applied through
+function assignRoleOptions(c, company){
+  const formSlug = formSlugOfCandidate(c);
+  const names = [];
+  if(company){
+    mergedRoles().forEach(r => {
+      if(String(r.company || '').trim().toLowerCase() !== String(company).trim().toLowerCase()) return;
+      if(r.status !== 'open') return;
+      if(roleFormSlug(r) !== formSlug && slugOf(r.role) !== formSlug) return;
+      if(names.indexOf(r.role) === -1) names.push(r.role);
+    });
+  }
+  if(!names.length && c.role) names.push(c.role);
+  else if(c.role && c.formRole && c.role !== c.formRole && names.indexOf(c.role) === -1) names.unshift(c.role);
+  return names;
+}
+
+function assignRoleOptionsHtml(c, company){
+  const names = assignRoleOptions(c, company);
+  // A brand new applicant has no vacancy yet: when there is more than one choice, make the person pick
+  const untouched = !c.company && (!c.formRole || c.role === c.formRole);
+  let selected = (names.indexOf(c.role) !== -1 && !(untouched && names.length > 1)) ? c.role : '';
+  if(names.length === 1) selected = names[0];
+  const esc2 = v => String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  return (names.length > 1 || !selected ? '<option value="">Select role...</option>' : '') +
+    names.map(n => `<option value="${esc2(n)}" ${n === selected ? 'selected' : ''}>${esc2(n)}</option>`).join('');
+}
+
+function roleChoiceMissing(c){
+  const el = document.getElementById('roleInput');
+  return !!(el && c.stage === 'applied' && assignRoleOptions(c, (document.getElementById('companyInput') || {}).value || c.company || '').length > 1 && !el.value);
+}
+
 function onApplicationCompanyChange(){
+  const c0 = findCandidate(openCandidateId);
+  const roleSel = document.getElementById('roleInput');
+  if(c0 && roleSel){
+    roleSel.innerHTML = assignRoleOptionsHtml(Object.assign({}, c0, {role: c0.formRole || c0.role, company: ''}), document.getElementById('companyInput').value);
+  }
   const companyVal = document.getElementById('companyInput').value;
   const contactSel = document.getElementById('contactInput');
   const contactsForCompany = APPLICANT_CLIENT_LIST.filter(cl => cl.company === companyVal);
@@ -2770,23 +2832,45 @@ function captureFieldsFromModal(c){
   if(companyEl) c.company = companyEl.value;
   const contactEl = document.getElementById('contactInput');
   if(contactEl) c.contact = contactEl.value;
+  const roleEl = document.getElementById('roleInput');
+  if(roleEl && roleEl.value) c.role = roleEl.value;
+}
+
+async function reloadIfMoved(c, prevCompany, prevRole){
+  const nowCompany = c.company || UNASSIGNED_LABEL;
+  if(c.role === prevRole && nowCompany === prevCompany) return;
+  await loadCandidates();
+  if(!(DATA[currentCompany] && DATA[currentCompany][currentRole])){
+    currentCompany = null; currentRole = null;
+    boardScope = {all:true, group:(boardScope && boardScope.group) || 'all'};
+    renderSidebar();
+    renderBoard();
+  }
 }
 
 async function saveNotesOnly(){
   const c = findCandidate(openCandidateId);
+  const prevCompany = currentCompany, prevRole = currentRole;
   captureFieldsFromModal(c);
   showToast('Saved');
   renderBoard();
   closeModal('candModalOverlay');
   await saveCandidate(c);
+  await reloadIfMoved(c, prevCompany, prevRole);
 }
 
 async function advanceStage(newStage){
   const c = findCandidate(openCandidateId);
+  const prevCompany = currentCompany, prevRole = currentRole;
   captureFieldsFromModal(c);
 
   if(c.stage === 'applied' && !c.company){
     showToast('Assign a company before moving this candidate forward');
+    openCandidateModal(c.id);
+    return;
+  }
+  if(c.stage === 'applied' && roleChoiceMissing(c)){
+    showToast('Choose which role this candidate is for before moving them forward');
     openCandidateModal(c.id);
     return;
   }
@@ -2803,6 +2887,7 @@ async function advanceStage(newStage){
   renderBoard();
   closeModal('candModalOverlay');
   await saveCandidate(c);
+  await reloadIfMoved(c, prevCompany, prevRole);
 
   if(newStage === 'submitted'){
     remindCvIfMissing([c]);
@@ -5455,6 +5540,7 @@ function mergedRoles(){
     });
     r.total = cands.length;
     r.active = cands.filter(c => c.stage !== 'rejected' && c.stage !== 'applied').length;
+    r.filled = cands.filter(c => ['offer','start_date','day1','week1','month1'].indexOf(c.stage) !== -1).length;
   });
   return list;
 }
@@ -5695,7 +5781,7 @@ function renderRoles(){
       <td><span class="status-pill ${esc(r.status)}">${esc(roleStatusLabel(r.status))}</span></td>
       <td>${esc(opsFmt(opened))}</td>
       <td>${days === '' ? '' : esc(days)}</td>
-      <td>${rolePositions(r)}</td>
+      <td>${r.filled || 0} of ${rolePositions(r)}${(r.status === 'open' && (r.filled || 0) >= rolePositions(r)) ? '<div style="font-size:11px;color:#8a6a12;font-weight:600;">All filled - mark as Filled</div>' : ''}</td>
       <td>${r.active} active / ${r.total} total</td>
       <td><div class="row-actions">
         <button ${hasBoard ? '' : 'disabled'} onclick="rolesOpenBoard('${esc(r.id)}')">Pipeline</button>
@@ -5750,9 +5836,15 @@ function openRoleModal(id){
   document.getElementById('rmRequirements').value = '';
   document.getElementById('rmJobDescription').value = '';
   document.getElementById('rmPositions').value = r && r.positions ? r.positions : 1;
+  document.getElementById('rmShowCareers').checked = !!(r && ['yes','true','1'].indexOf(String(r.show_on_careers || '').toLowerCase()) !== -1);
+  document.getElementById('rmPublicTitle').value = r ? (r.public_title || '') : '';
+  document.getElementById('rmLocation').value = r ? (r.location || '') : '';
+  document.getElementById('rmFormSlug').value = r ? (r.form_slug || '') : '';
+  document.getElementById('rmPublicContent').value = r ? (r.public_content || '') : '';
   document.getElementById('rmDeleteRow').style.display = r && r.stored ? 'flex' : 'none';
   rmRefreshContacts();
   document.getElementById('roleModal').classList.add('visible');
+  rmCheckForm();
 }
 
 async function saveRole(){
@@ -5774,6 +5866,11 @@ async function saveRole(){
     date_closed: closed,
     notes: document.getElementById('rmNotes').value,
     positions: String(Math.max(1, parseInt(document.getElementById('rmPositions').value, 10) || 1)),
+    public_title: document.getElementById('rmPublicTitle').value.trim(),
+    form_slug: document.getElementById('rmFormSlug').value.trim(),
+    show_on_careers: document.getElementById('rmShowCareers').checked ? 'Yes' : 'No',
+    location: document.getElementById('rmLocation').value.trim(),
+    public_content: document.getElementById('rmPublicContent').value,
   };
   try{
     const res = await fetch(API_BASE + '/api/roles', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
@@ -11245,10 +11342,71 @@ function duplicateRole(id){
         return;
       }
     }
+    if(document.getElementById('rmShowCareers').checked && !document.getElementById('rmPublicContent').value.trim()){
+      await rmGenerateCareers(true);
+    }
     await _save();
     if(!document.getElementById('roleModal').classList.contains('visible')) duplicatingFromId = null;
   };
 })();
+
+/* ---------- Careers page fields on the role form ---------- */
+let rmCheckTimer = null, rmCheckSeq = 0;
+function rmEffectiveSlug(){
+  const v = document.getElementById('rmFormSlug').value.trim() || document.getElementById('rmPublicTitle').value.trim() || document.getElementById('rmRole').value.trim();
+  return slugOf(v);
+}
+function rmCheckForm(){
+  clearTimeout(rmCheckTimer);
+  const el = document.getElementById('rmFormStatus');
+  if(!el) return;
+  const slug = rmEffectiveSlug();
+  if(!slug){ el.textContent = ''; return; }
+  el.style.color = '#777';
+  el.textContent = 'Checking for the form at /apply/' + slug + ' ...';
+  const seq = ++rmCheckSeq;
+  rmCheckTimer = setTimeout(async () => {
+    try{
+      const res = await fetch(API_BASE + '/api/forms/check?slug=' + encodeURIComponent(slug));
+      const j = await res.json();
+      if(seq !== rmCheckSeq) return;
+      if(j.exists){
+        el.style.color = 'var(--success)';
+        el.textContent = 'Form found at /apply/' + slug + '. The Apply button will show on the careers page.';
+      }else{
+        el.style.color = '#a06a12';
+        el.textContent = 'No form found at /apply/' + slug + '. The role will show without an Apply button until a form exists.';
+      }
+    }catch(e){ el.textContent = ''; }
+  }, 500);
+}
+document.getElementById('rmRole').addEventListener('input', rmCheckForm);
+
+async function rmGenerateCareers(silent){
+  const btn = document.getElementById('rmGenBtn');
+  const title = document.getElementById('rmPublicTitle').value.trim() || document.getElementById('rmRole').value.trim();
+  const body = {
+    title,
+    location: document.getElementById('rmLocation').value.trim(),
+    salary_band: document.getElementById('rmSalary').value.trim(),
+    requirements: document.getElementById('rmRequirements').value,
+    job_description: document.getElementById('rmJobDescription').value,
+  };
+  if(btn){ btn.disabled = true; btn.textContent = 'Generating...'; }
+  try{
+    const res = await fetch(API_BASE + '/api/careers/generate', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const j = await res.json().catch(() => ({}));
+    if(!res.ok) throw new Error(j.error || ('Server returned ' + res.status));
+    document.getElementById('rmPublicContent').value = j.text || '';
+    showToast(silent ? 'Careers page text drafted from the job description' : 'Careers page text drafted - review and edit it, then save the role');
+    return true;
+  }catch(e){
+    showToast('Could not draft the careers page text: ' + e.message);
+    return false;
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = 'Generate from job description'; }
+  }
+}
 </script>
 </body>
 </html>
