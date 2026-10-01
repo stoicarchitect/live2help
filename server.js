@@ -144,6 +144,7 @@ const PUBLIC_API = [
   { method: 'POST', re: /^\/api\/login$/ },
   { method: 'POST', re: /^\/api\/applications\/[^/]+$/ },
   { method: 'POST', re: /^\/api\/claude$/ },
+  { method: 'GET', re: /^\/api\/public\/roles(\/[a-z0-9-]+)?$/ },
 ];
 let cronWarned = false;
 
@@ -336,6 +337,100 @@ async function listFolderContents(folderId) {
 // Pseudo-company bucket for form applications not yet assigned to a client
 const UNASSIGNED_LABEL = 'Unassigned - New Applications';
 
+// ---- Shared forms: one application form can feed several vacancies ----------
+// The Applications tab is named after the FORM (e.g. "Sales Manager South"). An
+// applicant can be assigned to a different vacancy (e.g. "Sales Manager South 2").
+// This table remembers that assignment so the pipeline uses the vacancy while every
+// lookup of the original answers still finds the form tab.
+const applicantRolesTable = makeSimpleTable({
+  tab: 'Applicant Roles',
+  header: ['id', 'assigned_role', 'form_role', 'name'],
+  path: null,
+  label: 'Applicant role',
+});
+let applicantRolesCache = { at: 0, list: null };
+async function getApplicantRoles() {
+  if (applicantRolesCache.list && Date.now() - applicantRolesCache.at < 15000) return applicantRolesCache.list;
+  const list = await applicantRolesTable.list();
+  applicantRolesCache = { at: Date.now(), list };
+  return list;
+}
+function dropApplicantRolesCache() { applicantRolesCache = { at: 0, list: null }; }
+
+function normPersonName(n) { return String(n || '').trim().toLowerCase().replace(/\s+/g, ' '); }
+function personNameMatches(a, b) {
+  const x = normPersonName(a), y = normPersonName(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const px = x.split(' '), py = y.split(' ');
+  if (px.length >= 2 && py.length >= 2 && px[0] === py[0]) {
+    const lx = px[px.length - 1], ly = py[py.length - 1];
+    return lx.charAt(0) === ly.charAt(0) && (lx.length === 1 || ly.length === 1 || lx === ly);
+  }
+  return false;
+}
+
+// Which Applications tab holds this person's form answers for this vacancy?
+async function formRoleFor(name, role) {
+  try {
+    const want = String(role || '').trim().toLowerCase();
+    const hit = (await getApplicantRoles()).find(a =>
+      String(a.assigned_role || '').trim().toLowerCase() === want && personNameMatches(a.name, name));
+    if (hit && hit.form_role) return hit.form_role;
+  } catch (e) { /* fall back to the role itself */ }
+  return role;
+}
+
+async function migratePoolRole(name, fromRole, toRole) {
+  if (!name || !fromRole || !toRole || fromRole === toRole) return;
+  try {
+    await withPoolLock(async () => {
+      const sheets = getSheetsClient();
+      const rows = await readPoolRows();
+      const fromId = poolIdFor(name, fromRole), toId = poolIdFor(name, toRole);
+      const idx = rows.findIndex(r => r && r[0] === fromId);
+      if (idx === -1 || rows.some(r => r && r[0] === toId)) return;
+      const row = padPoolRow(rows[idx]);
+      row[0] = toId; row[5] = toRole;
+      const n = idx + 2;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID, range: `'${POOL_TAB}'!A${n}:${POOL_LAST_COL}${n}`,
+        valueInputOption: 'RAW', requestBody: { values: [row] },
+      });
+    });
+  } catch (e) { console.error('Could not move the pool record to the new role:', e.message); }
+}
+
+// Called when the dashboard saves a form-sourced candidate: remember (or clear) the vacancy assignment
+async function syncApplicantRole(c) {
+  try {
+    if (!c || c.sourceTab !== 'application' || !c.formRole || !c.id) return;
+    const list = await getApplicantRoles();
+    const existing = list.find(a => a.id === c.id);
+    if (c.role && c.role !== c.formRole) {
+      if (existing && existing.assigned_role === c.role) return;
+      const previous = existing ? existing.assigned_role : c.formRole;
+      await applicantRolesTable.upsert({ id: c.id, assigned_role: c.role, form_role: c.formRole, name: c.name });
+      dropApplicantRolesCache();
+      await migratePoolRole(c.name, previous, c.role);
+    } else if (existing) {
+      await applicantRolesTable.remove(c.id);
+      dropApplicantRolesCache();
+      await migratePoolRole(c.name, existing.assigned_role, c.formRole);
+    }
+  } catch (e) { console.error('Could not save the vacancy assignment:', e.message); }
+}
+
+async function purgeApplicantRoles(variants) {
+  try {
+    const list = await applicantRolesTable.listAll();
+    for (const a of list) {
+      if ([...variants].some(v => personNameMatches(a.name, v))) await applicantRolesTable.remove(a.id);
+    }
+    dropApplicantRolesCache();
+  } catch (e) { console.error('Erase: applicant roles:', e.message); }
+}
+
 // Helper: read from Applications tabs and convert to candidates with 'applied' stage
 async function readApplicationsRows(strict = false) {
   const sheets = getSheetsClient();
@@ -343,6 +438,8 @@ async function readApplicationsRows(strict = false) {
   try {
     const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
     const tabs = spreadsheet.data.sheets;
+    let assigns = new Map();
+    try { assigns = new Map((await getApplicantRoles()).map(a => [a.id, a])); } catch (e) { /* no assignments yet */ }
 
     for (const tab of tabs) {
       const tabName = tab.properties.title;
@@ -360,7 +457,8 @@ async function readApplicationsRows(strict = false) {
           id: row[0] || '',
           company: row[17] || '', // Company is column R
           contact: row[18] || '', // Contact is column S
-          role: tabName.replace('Applications - ', ''),
+          role: (assigns.get(row[0]) && assigns.get(row[0]).assigned_role) || tabName.replace('Applications - ', ''),
+          formRole: tabName.replace('Applications - ', ''),
           name: row[2] || '', // Candidate name is column C
           stage: row[19] || 'applied', // Status is column T
           date: row[1] || '', // Date Applied is column B
@@ -429,6 +527,7 @@ app.post('/api/candidates', async (req, res) => {
       return res.status(400).json({ error: 'id, role and name are required' });
     }
     const sheets = getSheetsClient();
+    await syncApplicantRole(c);
 
     // Graduate to Dashboard: once a form-sourced candidate reaches offer stage
     // or later, they need fields (start date, invoice tracking) that the
@@ -448,7 +547,7 @@ app.post('/api/candidates', async (req, res) => {
     }
 
     if (c.sourceTab === 'application') {
-      const tabName = `Applications - ${c.role}`;
+      const tabName = `Applications - ${c.formRole || c.role}`;
       const allRows = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
         range: `'${tabName}'!A2:T`,
@@ -518,7 +617,7 @@ app.post('/api/candidates', async (req, res) => {
 // letting the code below create a separate, duplicate Dashboard row.
 async function tryMarkApplicationSubmitted(companyName, role, candidateName) {
   const sheets = getSheetsClient();
-  const tabName = `Applications - ${role}`;
+  const tabName = `Applications - ${await formRoleFor(candidateName, role)}`;
   try {
     const allRows = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
@@ -2114,7 +2213,7 @@ const SCREENING_FORM_FIELDS = [
 // Tries full name first, then first-name-initial fallback
 async function findApplicationRow(candidateName, role) {
   const sheets = getSheetsClient();
-  const tabName = `Applications - ${role}`;
+  const tabName = `Applications - ${await formRoleFor(candidateName, role)}`;
   try {
     const result = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
@@ -2218,7 +2317,7 @@ app.get('/api/candidates/:id/screening-answers', async (req, res) => {
     
     const row = result.row;
     const answers = {};
-    const smFields = await getScreeningFieldsForRole(role);
+    const smFields = await getScreeningFieldsForRole(await formRoleFor(name, role));
     (smFields || SCREENING_FORM_FIELDS).forEach(field => {
       answers[field.key] = {
         label: field.label,
@@ -3600,6 +3699,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
         header.forEach(h => { if (b[h] !== undefined) clean[h] = b[h]; });
         const existing = (await list()).find(o => o.id === b.id);
         const saved = await upsert({ ...(existing || {}), ...clean });
+        if (path === '/api/roles') { publicRolesCache = { at: 0, list: null }; }
         if (auditType) auditLog(actorOf(req), existing ? 'updated' : 'created', auditType, auditName ? auditName(saved) : saved.id, '');
         res.json({ ok: true, data: saved });
       } catch (e) { console.error(`POST ${path} error:`, e.message); res.status(500).json({ error: e.message }); }
@@ -3621,7 +3721,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
 
 const rolesTable = makeSimpleTable({
   tab: 'Roles',
-  header: ['id', 'company', 'role', 'contact', 'salary_band', 'fee_percent', 'status', 'date_opened', 'date_closed', 'notes', 'positions', 'requirements'],
+  header: ['id', 'company', 'role', 'contact', 'salary_band', 'fee_percent', 'status', 'date_opened', 'date_closed', 'notes', 'positions', 'requirements', 'public_title', 'form_slug', 'show_on_careers', 'location', 'public_content'],
   path: '/api/roles',
   label: 'Role',
   auditType: 'role',
@@ -3977,7 +4077,7 @@ async function snapshotCandidate(c) {
     if (!c || !c.name || !c.role) return null;
     if (c.sourceTab === 'application') {
       const sheets = getSheetsClient();
-      const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'Applications - ${c.role}'!A2:U` });
+      const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'Applications - ${c.formRole || c.role}'!A2:U` });
       const row = (r.data.values || []).find(x => String(x[2] || '').trim().toLowerCase() === String(c.name).trim().toLowerCase());
       if (!row) return null;
       return { stage: row[19] || 'applied', notes: row[20] || '', salary: row[15] || '', company: row[17] || '' };
@@ -4175,11 +4275,12 @@ app.get('/api/gdpr/export/:id', requireAdmin, async (req, res) => {
     let application = null;
     try {
       const sheets = getSheetsClient();
-      const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'Applications - ${row[5]}'!A2:AJ` });
+      const formTab = await formRoleFor(name, row[5]);
+      const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'Applications - ${formTab}'!A2:AJ` });
       const ar = (r.data.values || []).find(x => match(x[2]));
       if (ar) {
         application = {};
-        const smFields = await getScreeningFieldsForRole(row[5]);
+        const smFields = await getScreeningFieldsForRole(formTab);
         (smFields || SCREENING_FORM_FIELDS).forEach(f => { application[f.label] = ar[f.col] || ''; });
         application['Company'] = ar[17] || '';
         application['Status'] = ar[19] || '';
@@ -4216,8 +4317,11 @@ app.get('/api/gdpr/export/:id', requireAdmin, async (req, res) => {
 
 async function deleteApplicationRows(role, variants) {
   const sheets = getSheetsClient();
+  let formTab = role;
+  for (const v of variants) { const x = await formRoleFor(v, role); if (x !== role) { formTab = x; break; } }
+  await purgeApplicantRoles(variants);
   const ss = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties(sheetId,title)' });
-  const tab = (ss.data.sheets || []).find(s => s.properties.title === `Applications - ${role}`);
+  const tab = (ss.data.sheets || []).find(s => s.properties.title === `Applications - ${formTab}`);
   if (!tab) return 0;
   const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tab.properties.title}'!A2:U` });
   const idx = [];
@@ -4593,7 +4697,7 @@ async function downloadCv(file) {
 
 async function loadScreening(name, role) {
   const sheets = getSheetsClient();
-  const tabName = `Applications - ${role}`;
+  const tabName = `Applications - ${await formRoleFor(name, role)}`;
   let all;
   try {
     const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tabName}'!A1:AJ` });
@@ -6113,4 +6217,168 @@ app.get('/', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+
+/* ---------- Careers page: public roles, form check, careers text ----------
+   Only roles that are Open AND ticked "Show on careers page" are ever returned, and only
+   safe fields: no client name, fee, contact, notes or internal role name. */
+
+const CAREERS_BASE = (process.env.CAREERS_BASE_URL || 'https://careers.live2helprecruitment.co.uk').replace(/\/+$/, '');
+
+function slugifyRole(s) {
+  return String(s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+const formExistsCache = new Map();
+async function careersFormExists(slug) {
+  slug = String(slug || '').trim().toLowerCase();
+  if (!/^[a-z0-9-]+$/.test(slug)) return false;
+  const hit = formExistsCache.get(slug);
+  if (hit && Date.now() - hit.at < (hit.ok ? 5 * 60 * 1000 : 60 * 1000)) return hit.ok;
+  let ok = false;
+  try {
+    const r = await fetch(`${CAREERS_BASE}/apply/${slug}/`, { redirect: 'follow', signal: AbortSignal.timeout(6000) });
+    if (r.ok) {
+      const body = await r.text();
+      ok = /<form[\s>]/i.test(body);
+    }
+  } catch (e) { ok = false; }
+  formExistsCache.set(slug, { ok, at: Date.now() });
+  return ok;
+}
+
+app.get('/api/forms/check', async (req, res) => {
+  try {
+    const slug = slugifyRole(req.query.slug || '');
+    if (!slug) return res.json({ slug: '', exists: false });
+    res.json({ slug, exists: await careersFormExists(slug) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Careers text is stored as simple markup so it is easy to edit in the dashboard:
+//   SUMMARY: one or two sentences
+//   ## Heading
+//   a paragraph
+//   - a bullet
+function parseCareersText(text) {
+  const out = { summary: '', sections: [] };
+  let cur = null;
+  String(text || '').split(/\r?\n/).forEach(raw => {
+    const line = raw.trim();
+    if (!line) return;
+    const sm = line.match(/^SUMMARY:\s*(.*)$/i);
+    if (sm) { out.summary = sm[1].trim(); return; }
+    if (line.startsWith('## ')) { cur = { heading: line.slice(3).trim(), paragraphs: [], bullets: [] }; out.sections.push(cur); return; }
+    if (!cur) { cur = { heading: '', paragraphs: [], bullets: [] }; out.sections.push(cur); }
+    if (line.startsWith('- ')) cur.bullets.push(line.slice(2).trim());
+    else cur.paragraphs.push(line);
+  });
+  return out;
+}
+
+let publicRolesCache = { at: 0, list: null };
+async function buildPublicRoles() {
+  if (publicRolesCache.list && Date.now() - publicRolesCache.at < 60 * 1000) return publicRolesCache.list;
+  const roles = await rolesTable.list();
+  const seen = new Set();
+  const out = [];
+  for (const r of roles) {
+    const shown = ['yes', 'true', '1'].includes(String(r.show_on_careers || '').trim().toLowerCase());
+    if (!shown || String(r.status || 'open').trim().toLowerCase() !== 'open') continue;
+    const content = parseCareersText(r.public_content);
+    if (!content.summary && !content.sections.length) continue; // not ready to publish
+    const title = String(r.public_title || r.role || '').trim();
+    if (!title) continue;
+    const formSlug = slugifyRole(r.form_slug || title);
+    const key = `${title.toLowerCase()}|${formSlug}`;
+    if (seen.has(key)) continue; // two open vacancies with one public listing: show it once
+    seen.add(key);
+    const hasForm = await careersFormExists(formSlug);
+    out.push({
+      slug: slugifyRole(title),
+      title,
+      location: String(r.location || '').trim(),
+      salary: String(r.salary_band || '').trim(),
+      summary: content.summary,
+      sections: content.sections,
+      posted: String(r.date_opened || '').slice(0, 10),
+      applyUrl: hasForm ? `${CAREERS_BASE}/apply/${formSlug}/` : '',
+    });
+  }
+  out.sort((a, b) => String(b.posted).localeCompare(String(a.posted)));
+  publicRolesCache = { at: Date.now(), list: out };
+  return out;
+}
+
+app.get('/api/public/roles', async (req, res) => {
+  try {
+    const list = await buildPublicRoles();
+    res.set('Cache-Control', 'public, max-age=60');
+    res.json({ updated_at: new Date().toISOString(), roles: list.map(r => ({ ...r, sections: undefined })) });
+  } catch (e) { console.error('GET /api/public/roles error:', e.message); res.status(500).json({ error: 'Could not load roles' }); }
+});
+
+app.get('/api/public/roles/:slug', async (req, res) => {
+  try {
+    const hit = (await buildPublicRoles()).find(r => r.slug === req.params.slug);
+    if (!hit) return res.status(404).json({ error: 'Role not found' });
+    res.set('Cache-Control', 'public, max-age=60');
+    res.json({ role: hit });
+  } catch (e) { console.error('GET /api/public/roles/:slug error:', e.message); res.status(500).json({ error: 'Could not load role' }); }
+});
+
+// Draft the public careers text from the job description and requirements.
+// Staff review and edit it in the dashboard before it goes live.
+const CAREERS_TEXT_TOOL = {
+  name: 'write_careers_page',
+  description: 'Write the public careers page text for a vacancy.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      summary: { type: 'string', description: 'One or two sentence teaser, 220 characters or fewer.' },
+      overview: { type: 'string', description: 'Two to four sentence overview of the role.' },
+      responsibilities: { type: 'array', items: { type: 'string' }, description: 'What the person will do. Short bullet points.' },
+      requirements: { type: 'array', items: { type: 'string' }, description: 'What the employer is looking for. Short bullet points.' },
+      offer: { type: 'array', items: { type: 'string' }, description: 'Package, training and benefits that are stated in the material. Leave empty if none are stated.' },
+    },
+    required: ['summary', 'overview', 'responsibilities', 'requirements', 'offer'],
+  },
+};
+
+const CAREERS_TEXT_SYSTEM = `You write public job advert text for Live 2 Help Recruitment, a UK recruitment agency, for its careers page.
+Rules:
+- Use ONLY facts in the material supplied. Never invent duties, benefits, salary, locations or requirements.
+- Do NOT name the client company, its group, its brands, its parent, or any person at the client. Refer to "our client" or "the business" instead. Remove internal notes, fees and anything confidential.
+- UK English, professional and engaging, confident without overselling. Do not use em dashes; use a hyphen or rewrite the sentence.
+- Do not repeat the salary figure in the text unless it is part of a stated incentive or bonus, as the salary is shown separately.
+- Bullets are short and specific. Merge duplicates. Skip a bullet rather than guess.`;
+
+app.post('/api/careers/generate', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const material = [
+      `PUBLIC JOB TITLE: ${String(b.title || b.role || '').trim()}`,
+      b.location ? `LOCATION: ${String(b.location).trim()}` : '',
+      b.salary_band ? `SALARY (shown separately): ${String(b.salary_band).trim()}` : '',
+      `KEY REQUIREMENTS:\n${String(b.requirements || '').trim() || 'None given.'}`,
+      `JOB DESCRIPTION:\n${String(b.job_description || '').trim() || 'None given.'}`,
+    ].filter(Boolean).join('\n\n').slice(0, 40000);
+    if (!String(b.requirements || '').trim() && !String(b.job_description || '').trim()) {
+      return res.status(400).json({ error: 'Add the job description or key requirements first' });
+    }
+    const out = await callClaudeTool({ system: CAREERS_TEXT_SYSTEM, content: material, tool: CAREERS_TEXT_TOOL, maxTokens: 2000 });
+    const clean = v => String(v || '').replace(/[\u2014\u2013]/g, '-').trim();
+    const list = a => (Array.isArray(a) ? a : []).map(clean).filter(Boolean);
+    const lines = [`SUMMARY: ${clean(out.summary)}`];
+    if (clean(out.overview)) lines.push('## About the role', clean(out.overview));
+    if (list(out.responsibilities).length) lines.push('## What you will do', ...list(out.responsibilities).map(x => `- ${x}`));
+    if (list(out.requirements).length) lines.push('## What we are looking for', ...list(out.requirements).map(x => `- ${x}`));
+    if (list(out.offer).length) lines.push('## What is on offer', ...list(out.offer).map(x => `- ${x}`));
+    res.json({ text: lines.join('\n') });
+  } catch (e) {
+    console.error('POST /api/careers/generate error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
