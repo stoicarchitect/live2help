@@ -1,1 +1,33 @@
+name: L2H Automation
 
+on:
+  schedule:
+    - cron: '0 6 * * *'      # every day at 06:00 UTC (07:00 UK summer time, 06:00 winter)
+    - cron: '30 6 * * 1'     # Mondays at 06:30 UTC for the weekly digest email
+  workflow_dispatch:         # lets you press Run workflow in the Actions tab to test
+
+env:
+  API: https://l2h-api.onrender.com
+
+jobs:
+  daily:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 6 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Daily job (health check, backup, tasks, invoice chasing)
+        run: |
+          curl --fail --silent --show-error --retry 3 --retry-delay 30 --retry-all-errors --max-time 180 \
+            "$API/api/cron/daily?key=${{ secrets.CRON_SECRET }}"
+      - name: Invoice reminder (candidates starting tomorrow)
+        run: |
+          curl --fail --silent --show-error --retry 3 --retry-delay 30 --retry-all-errors --max-time 180 \
+            "$API/api/check-invoice-reminders?key=${{ secrets.CRON_SECRET }}"
+
+  weekly-digest:
+    if: github.event.schedule == '30 6 * * 1'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Monday digest email
+        run: |
+          curl --fail --silent --show-error --retry 3 --retry-delay 30 --retry-all-errors --max-time 180 \
+            "$API/api/cron/weekly-digest?key=${{ secrets.CRON_SECRET }}"
