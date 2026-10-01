@@ -1991,6 +1991,9 @@
           <button class="cancel" onclick="closeModal('roleModal')">Cancel</button>
           <button class="save" onclick="saveRole()">Save role</button>
         </div>
+        <div class="actions" id="rmDuplicateRow" style="margin-top:8px;display:none;">
+          <button class="cancel" style="color:#8a6a12;border-color:var(--gold);" onclick="duplicateRole(editingRoleId)">Duplicate this role</button>
+        </div>
         <div class="actions" id="rmDeleteRow" style="margin-top:8px;">
           <button class="cancel" style="color:var(--danger);border-color:var(--danger);" onclick="deleteRole()">Delete role record</button>
         </div>
@@ -5697,6 +5700,7 @@ function renderRoles(){
       <td><div class="row-actions">
         <button ${hasBoard ? '' : 'disabled'} onclick="rolesOpenBoard('${esc(r.id)}')">Pipeline</button>
         <button onclick="openRoleModal('${esc(r.id)}')">Edit</button>
+        <button onclick="duplicateRole('${esc(r.id)}')">Duplicate</button>
       </div></td>
     </tr>`;
   }).join('');
@@ -11199,355 +11203,52 @@ async function ipMarkSent(){
 /* ---------- entry points ---------- */
 </script>
 
-<style>
-  .tl-box{margin:16px 0 4px;border:1px solid var(--border);border-left:3px solid var(--gold);border-radius:2px;background:var(--white);padding:12px 14px;}
-  .tl-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:4px;}
-  .tl-title{font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--dark);font-weight:700;}
-  .tl-filters{display:flex;gap:4px;}
-  .tl-filters button{border:1px solid var(--border);background:var(--white);color:var(--grey);padding:4px 9px;font-size:11px;border-radius:2px;cursor:pointer;}
-  .tl-filters button.on{background:var(--dark);color:var(--white);border-color:var(--dark);}
-  .tl-sub{font-size:11.5px;color:#999;margin-bottom:8px;}
-  .tl-row{padding:8px 0;border-top:1px solid var(--border);}
-  .tl-row:first-of-type{border-top:none;}
-  .tl-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:11.5px;color:#999;margin-bottom:3px;}
-  .tl-badge{display:inline-block;padding:1px 7px;border-radius:2px;font-size:10.5px;font-weight:700;letter-spacing:.3px;background:var(--dark);color:var(--gold);}
-  .tl-badge.note{background:var(--lightbg);color:var(--dark);border:1px solid var(--border);}
-  .tl-text{font-size:13px;color:var(--dark);white-space:pre-wrap;}
-  .tl-empty{font-size:12.5px;color:#999;padding:8px 0;}
-  .tl-more{border:none;background:none;color:var(--gold);font-size:12px;cursor:pointer;padding:6px 0 0;font-weight:600;}
-  .seq-step{font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--gold);font-weight:700;margin-bottom:4px;}
-</style>
-<div class="modal-overlay" id="ivSeqModal">
-  <div class="modal">
-    <div class="modal-inner">
-      <div id="ivSeqBody"></div>
-    </div>
-  </div>
-</div>
+
 <script>
-/* ============================================================
-   Interview Scheduled sequence
-   Schedule the interview, offer the pack, create both calendar
-   invites, and only then move the candidate on the board.
-   ============================================================ */
+/* ---------- Duplicate role ---------- */
+let duplicatingFromId = null;
 
-function ivSeqFresh(over){
-  return Object.assign({active:false, step:'', company:'', role:'', id:'', name:'', fromStage:'', interviewId:'',
-    saving:false, finishing:false, beganHere:false, packStatus:'skipped', invites:{candidate:false, client:false}}, over || {});
+function duplicateRole(id){
+  const src = id ? mergedRoles().find(x => x.id === id) : null;
+  if(!src){ showToast('Open a saved role to duplicate it'); return; }
+  // Open the form pre-filled from the source role (this also loads its requirements and job description)
+  openRoleModal(id);
+  editingRoleId = null;
+  duplicatingFromId = id;
+  document.getElementById('roleModalTitle').textContent = 'Duplicate role';
+  document.getElementById('rmStatus').value = 'open';
+  document.getElementById('rmOpened').value = opsToday();
+  document.getElementById('rmDeleteRow').style.display = 'none';
+  document.getElementById('rmDuplicateRow').style.display = 'none';
+  const roleInput = document.getElementById('rmRole');
+  roleInput.focus();
+  roleInput.select();
+  showToast('Change the role name, then save');
 }
-let IVSEQ = ivSeqFresh();
-
-function ivSeqStageLabel(key){ try{ return poolStageLabel(key); }catch(e){ return key; } }
-
-function ivSeqStart(company, role, id){
-  const c = ((DATA[company] || {})[role] || []).find(x => x.id === id);
-  if(!c) return;
-  try{ captureFieldsFromModal(c); }catch(e){}
-  IVSEQ = ivSeqFresh({active:true, step:'schedule', company, role, id, name:c.name, fromStage:c.stage});
-  closeModal('candModalOverlay');
-  const existing = (B2.interviews || [])
-    .filter(i => (i.candidate_id === id || b2Same(i.candidate_name, c.name)) && b2Same(i.role, role) && (i.status || 'scheduled') === 'scheduled')
-    .sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
-  if(existing) openInterviewModal(existing.id);
-  else openInterviewModal(null, null, {id:c.id, name:c.name, role, company});
-  showToast('Step 1 of 3: confirm the interview details. ' + c.name + ' moves once all steps are done.');
-}
-
-function ivSeqCancel(msg){
-  const s = IVSEQ;
-  IVSEQ = ivSeqFresh();
-  closeModal('ivSeqModal');
-  closeModal('ivInviteModal');
-  if(s.name) showToast(msg || ('Stopped. ' + s.name + ' has not been moved and stays in ' + ivSeqStageLabel(s.fromStage) + '.'));
-}
-
-function ivSeqShowPackQ(){
-  const s = IVSEQ;
-  const iv = (B2.interviews || []).find(x => x.id === s.interviewId);
-  const when = iv ? (fmtDateLong(iv.date) + (iv.time ? ' at ' + fmtTime12(iv.time) : '')) : '';
-  document.getElementById('ivSeqBody').innerHTML = `
-    <div class="seq-step">Step 2 of 3</div>
-    <h2>Interview pack</h2>
-    <div class="note-line" style="margin:6px 0 12px;">Interview saved for ${esc(s.name)}${when ? ' on ' + esc(when) : ''}. Do you want to create the interview pack and the Interview Confirmation email now?</div>
-    <div class="stage-buttons">
-      <button class="primary" onclick="ivSeqPackYes()">Yes, create the pack</button>
-      <button onclick="ivSeqPackSkip()">Skip the pack</button>
-      <button class="reject" onclick="ivSeqCancel()">Stop here</button>
-    </div>`;
-  document.getElementById('ivSeqModal').classList.add('visible');
-}
-
-function ivSeqPackYes(){
-  if(!IVSEQ.active) return;
-  IVSEQ.step = 'pack';
-  IVSEQ.packStatus = 'started, not completed';
-  closeModal('ivSeqModal');
-  openPackBuilder(IVSEQ.interviewId);
-}
-
-function ivSeqPackSkip(){
-  if(!IVSEQ.active) return;
-  IVSEQ.packStatus = 'skipped';
-  closeModal('ivSeqModal');
-  IP.openInvites(IVSEQ.interviewId, true);
-}
-
-function ivSeqDecorateInvites(){
-  const body = document.getElementById('ivInviteBody');
-  if(!body) return;
-  const h = body.querySelector('h2');
-  if(h) h.textContent = 'Step 3 of 3: Calendar invites';
-  const bars = body.querySelectorAll('.stage-buttons');
-  const bar = bars[bars.length - 1];
-  if(bar){
-    bar.innerHTML = `
-      <button onclick="ivSeqOpenBoth()">Open both invites in Outlook</button>
-      <button class="primary" onclick="ivSeqFinish()">Finish and move to Interview Scheduled</button>
-      <button class="reject" onclick="ivSeqCancel()">Stop here</button>`;
-  }
-  ivSeqRefreshTicks();
-}
-
-function ivSeqRefreshTicks(){
-  const titles = document.querySelectorAll('#ivInviteBody .inv-title');
-  const labels = [['candidate', 'Candidate invite'], ['client', 'Client invite']];
-  labels.forEach((l, i) => {
-    if(titles[i]) titles[i].textContent = l[1] + (IVSEQ.invites[l[0]] ? ' - opened' : '');
-  });
-}
-
-function ivSeqOpenBoth(){
-  ivSendInvite('candidate');
-  ivSendInvite('client');
-  showToast('If only one invite opened, allow pop-ups for this site and press the other button.');
-}
-
-async function ivSeqLogComms(s, iv){
-  if(!iv) return;
-  const when = fmtDateLong(iv.date) + (iv.time ? ' at ' + fmtTime12(iv.time) : '');
-  const base = {timestamp:new Date().toISOString(), user:signedInUser.key, company:s.company, role:s.role, channel:'email', direction:'outbound', follow_up_date:'', follow_up_done:''};
-  const entries = [];
-  entries.push(Object.assign({}, base, {
-    id:b2Id('cm'), entity_type:'candidate', entity_name:s.name,
-    summary:noDashes('Interview confirmed for ' + when + '. Interview pack: ' + s.packStatus + '. Calendar invite ' + (s.invites.candidate ? 'opened in Outlook.' : 'not sent from the dashboard.')),
-  }));
-  if(s.invites.client){
-    entries.push(Object.assign({}, base, {
-      id:b2Id('cm'), entity_type:'client', entity_name:iv.interviewer || s.company,
-      summary:noDashes('Interview booked with ' + s.name + ' for ' + s.role + ' on ' + when + '. Calendar invite opened in Outlook.'),
-    }));
-  }
-  for(const body of entries){
-    try{
-      const json = await b2Post('/api/comms', body);
-      B2.comms.push(json.data || body);
-    }catch(e){ /* the interview is saved either way */ }
-  }
-  try{ renderComms(); }catch(e){}
-}
-
-async function ivSeqFinish(){
-  const s = IVSEQ;
-  if(!s.active || s.finishing) return;
-  if(!(s.invites.candidate && s.invites.client) && !confirm('Both calendar invites have not been opened yet. Move ' + s.name + ' to Interview Scheduled anyway?')) return;
-  s.finishing = true;
-  closeModal('ivInviteModal');
-  const iv = (B2.interviews || []).find(x => x.id === s.interviewId);
-  try{
-    await autoMoveStage(s.company, s.role, s.id, 'interview_scheduled');
-    await ivSeqLogComms(s, iv);
-  }catch(e){
-    showToast('Could not finish the move: ' + e.message);
-  }
-  IVSEQ = ivSeqFresh();
-  try{ renderBoard(); renderInterviews(); recomputeOps(); }catch(e){}
-}
-
-/* Moving a candidate to Interview Scheduled starts the sequence instead of moving them straight away */
-(function(){
-  const _adv = advanceStage;
-  advanceStage = async function(newStage){
-    if(newStage === 'interview_scheduled'){
-      const c = findCandidate(openCandidateId);
-      if(c && c.stage !== 'interview_scheduled'){ ivSeqStart(currentCompany, currentRole, c.id); return; }
-    }
-    return _adv(newStage);
-  };
-
-  /* Booking from the Interviews tab for a pipeline candidate follows the same order */
-  const _si = saveInterview;
-  saveInterview = async function(){
-    if(!IVSEQ.active && b2Val('ivStatus') === 'scheduled'){
-      const picked = b2Val('ivCandidate');
-      const probe = {candidate_id: picked ? picked.split('||')[2] : '', candidate_name: b2Val('ivName').trim(), role: b2Val('ivRole').trim(), company: b2Val('ivCompany').trim()};
-      const hit = probe.candidate_name ? pipelineHitFor(probe) : null;
-      if(hit && ['submitted', 'interview_requested'].includes(hit.c.stage)){
-        IVSEQ = ivSeqFresh({active:true, step:'schedule', beganHere:true, company:hit.company, role:hit.role, id:hit.c.id, name:hit.c.name, fromStage:hit.c.stage});
-      }
-    }
-    const seq = IVSEQ.active ? IVSEQ : null;
-    if(seq) seq.saving = true;
-    try{ await _si(); }
-    finally{ if(seq) seq.saving = false; }
-    if(seq && IVSEQ === seq && seq.active && seq.step === 'schedule'){
-      const stillOpen = document.getElementById('ivModal').classList.contains('visible');
-      if(!stillOpen) ivSeqCancel('Interview saved, but it is not marked as scheduled, so ' + seq.name + ' has not been moved.');
-      else if(seq.beganHere) IVSEQ = ivSeqFresh();
-    }
-  };
-
-  /* The old auto-move ran before the pack and invites; the sequence now owns that move */
-  const _ssi = syncStageFromInterview;
-  syncStageFromInterview = async function(iv){
-    if(IVSEQ.active) return;
-    return _ssi(iv);
-  };
-
-  /* After the interview is saved, ask about the pack before anything else */
-  const _oid = openInviteDialog;
-  openInviteDialog = function(id, justSaved){
-    if(IVSEQ.active && justSaved && IVSEQ.step === 'schedule'){
-      IVSEQ.interviewId = id;
-      IVSEQ.step = 'packq';
-      ivSeqShowPackQ();
-      return;
-    }
-    return _oid(id, justSaved);
-  };
-
-  /* Every route into the invite dialog during the sequence gets the sequence controls */
-  const _oi = IP.openInvites;
-  IP.openInvites = function(id, justSaved){
-    if(IVSEQ.active){ IVSEQ.step = 'invites'; IVSEQ.interviewId = id; }
-    _oi(id, justSaved);
-    if(IVSEQ.active) ivSeqDecorateInvites();
-  };
-
-  const _isi = ivSendInvite;
-  ivSendInvite = function(who){
-    _isi(who);
-    if(IVSEQ.active && IVSEQ.step === 'invites'){ IVSEQ.invites[who] = true; ivSeqRefreshTicks(); }
-  };
-  const _iic = ivInviteIcs;
-  ivInviteIcs = function(who){
-    _iic(who);
-    if(IVSEQ.active && IVSEQ.step === 'invites'){ IVSEQ.invites[who] = true; ivSeqRefreshTicks(); }
-  };
-
-  /* Track what happened with the pack so the comms entry is accurate */
-  const _ibe = ipBuildEml;
-  ipBuildEml = async function(){
-    await _ibe();
-    if(IVSEQ.active && IP.step === 'sent') IVSEQ.packStatus = 'prepared, email file opened in Outlook';
-  };
-  const _ims = ipMarkSent;
-  ipMarkSent = async function(){
-    if(IVSEQ.active) IVSEQ.packStatus = 'sent to the candidate';
-    return _ims();
-  };
-
-  /* Closing a step window without finishing never leaves a half-done sequence behind */
-  function watch(id, fn){
-    const el = document.getElementById(id);
-    if(!el) return;
-    new MutationObserver(() => { if(!el.classList.contains('visible')) fn(); }).observe(el, {attributes:true, attributeFilter:['class']});
-  }
-  watch('ivModal', () => {
-    if(IVSEQ.active && IVSEQ.step === 'schedule' && !IVSEQ.saving) ivSeqCancel();
-  });
-  watch('ipModal', () => {
-    if(IVSEQ.active && IVSEQ.step === 'pack'){ IVSEQ.step = 'invites'; IP.openInvites(IVSEQ.interviewId, true); }
-  });
-  watch('ivInviteModal', () => {
-    if(IVSEQ.active && IVSEQ.step === 'invites' && !IVSEQ.finishing){
-      const s = IVSEQ;
-      IVSEQ = ivSeqFresh();
-      showToast(s.name + ' has not been moved yet. Press Move to Interview Scheduled on their card to pick up where you left off.');
-    }
-  });
-})();
-
-/* ============================================================
-   Candidate activity: ad hoc notes stay in the notes box,
-   every logged call, email and meeting shows underneath it
-   ============================================================ */
-
-let TLF = 'all', TLALL = false;
-
-function tlEntriesFor(c){
-  return (B2.comms || [])
-    .filter(e => e.entity_type !== 'client' && b2Same(e.entity_name, c.name))
-    .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
-}
-
-function tlHtml(c){
-  let list = tlEntriesFor(c);
-  const total = list.length;
-  if(TLF === 'comms') list = list.filter(e => e.channel !== 'note');
-  if(TLF === 'notes') list = list.filter(e => e.channel === 'note');
-  const shown = TLALL ? list : list.slice(0, 8);
-  const today = opsToday();
-  const rows = shown.map(e => {
-    const isNote = e.channel === 'note';
-    const fu = opsDateOnly(e.follow_up_date);
-    const fuHtml = fu && e.follow_up_done !== 'yes' ? `<span class="status-pill ${opsDaysBetween(fu, today) > 0 ? 'lost' : 'hold'}">Follow-up ${esc(opsFmt(fu))}</span>` : '';
-    const roleTag = e.role && !b2Same(e.role, currentRole) ? `<span>${esc(e.role)}</span>` : '';
-    return `<div class="tl-row">
-      <div class="tl-meta">
-        <span class="tl-badge ${isNote ? 'note' : ''}">${esc(CM_CHANNELS[e.channel] || e.channel)}</span>
-        ${isNote ? '' : `<span>${e.direction === 'inbound' ? 'Inbound' : 'Outbound'}</span>`}
-        <span>${esc(opsFmt(e.timestamp))} ${esc(String(e.timestamp).slice(11, 16))}</span>
-        <span>${esc(userLabel(e.user))}</span>${roleTag}${fuHtml}
-      </div>
-      <div class="tl-text">${esc(e.summary)}</div></div>`;
-  }).join('');
-  const empty = total
-    ? 'Nothing matches this filter.'
-    : 'No communications logged for this candidate yet. Use Log contact below after each call, email or meeting.';
-  const more = list.length > shown.length ? `<button class="tl-more" onclick="tlToggleAll()">Show all ${list.length} entries</button>` : (TLALL && list.length > 8 ? `<button class="tl-more" onclick="tlToggleAll()">Show fewer</button>` : '');
-  const f = (k, label) => `<button class="${TLF === k ? 'on' : ''}" onclick="tlSetFilter('${k}')">${label}</button>`;
-  return `<div class="tl-box" id="candTimeline">
-    <div class="tl-head"><span class="tl-title">Activity</span><span class="tl-filters">${f('all', 'All')}${f('comms', 'Comms only')}${f('notes', 'Notes only')}</span></div>
-    <div class="tl-sub">The notes box above is for ad hoc points. Calls, emails, meetings and interview steps logged against this candidate show here, newest first.</div>
-    ${rows || `<div class="tl-empty">${empty}</div>`}${more}</div>`;
-}
-
-function tlRefresh(){
-  const c = findCandidate(openCandidateId);
-  const box = document.getElementById('candTimeline');
-  if(c && box) box.outerHTML = tlHtml(c);
-}
-function tlSetFilter(k){ TLF = k; TLALL = false; tlRefresh(); }
-function tlToggleAll(){ TLALL = !TLALL; tlRefresh(); }
 
 (function(){
-  const _ocm = openCandidateModal;
-  openCandidateModal = function(id){
-    _ocm(id);
-    try{
-      TLF = 'all'; TLALL = false;
-      const c = findCandidate(id);
-      const bar = document.querySelector('#candModalBody .stage-buttons');
-      if(c && bar){
-        const old = document.getElementById('candTimeline');
-        if(old) old.remove();
-        bar.insertAdjacentHTML('beforebegin', tlHtml(c));
-      }
-    }catch(e){ /* the card still opens without the timeline */ }
+  const _open = openRoleModal;
+  openRoleModal = function(id){
+    duplicatingFromId = null;
+    _open(id);
+    const r = id ? mergedRoles().find(x => x.id === id) : null;
+    document.getElementById('rmDuplicateRow').style.display = r && r.stored ? 'flex' : 'none';
   };
-
-  /* Pipeline candidates no longer get a copy of each logged contact in their notes, because it now shows in the activity list */
-  const _acn = appendCommToNotes;
-  appendCommToNotes = async function(entry){
-    if(entry && entry.entity_type === 'candidate'){
-      const hit = flatCandidates().find(x => b2Same(x.c.name, entry.entity_name) && (!entry.role || b2Same(x.role, entry.role)))
-        || flatCandidates().find(x => b2Same(x.c.name, entry.entity_name));
-      if(hit) return;
+  const _save = saveRole;
+  saveRole = async function(){
+    if(duplicatingFromId){
+      const company = document.getElementById('rmCompany').value.trim();
+      const role = document.getElementById('rmRole').value.trim();
+      const key = opsRoleKey(company, role);
+      if(company && role && mergedRoles().some(x => x.id === key)){
+        showToast('A role with that name already exists for this company. Change the role name first.');
+        return;
+      }
     }
-    return _acn(entry);
+    await _save();
+    if(!document.getElementById('roleModal').classList.contains('visible')) duplicatingFromId = null;
   };
 })();
 </script>
-
 </body>
 </html>
