@@ -12581,5 +12581,94 @@ pmEmail = function(id){
 };
 </script>
 
+<script>
+/* ============================================================
+   Client reply pop-up: when a client answers a one-click link,
+   the person who sent the email sees it here straight away.
+   ============================================================ */
+var RP = {seen:null, open:false, timer:null, list:[]};
+function rpSeenKey(){ return 'l2hSeenReplies-' + (signedInUser ? signedInUser.key : 'x'); }
+function rpLoadSeen(){
+  if(RP.seen) return RP.seen;
+  try{ RP.seen = new Set(JSON.parse(localStorage.getItem(rpSeenKey()) || '[]')); }catch(e){ RP.seen = new Set(); }
+  return RP.seen;
+}
+function rpSaveSeen(){ try{ localStorage.setItem(rpSeenKey(), JSON.stringify([...RP.seen].slice(-200))); }catch(e){} }
+
+async function rpCheck(first){
+  if(!signedInUser || RP.open || lgViewAs) return;
+  let rows = [];
+  try{ rows = b2List(await b2Api('/api/reply-activity')); }catch(e){ return; }
+  RP.list = rows;
+  const seen = rpLoadSeen();
+  // the first time this browser ever looks, treat what is already there as seen so old replies do not flood in
+  if(!localStorage.getItem(rpSeenKey() + '-init')){
+    rows.forEach(r => seen.add(r.key)); rpSaveSeen();
+    try{ localStorage.setItem(rpSeenKey() + '-init', '1'); }catch(e){}
+    return;
+  }
+  const fresh = rows.filter(r => !seen.has(r.key));
+  if(fresh.length) rpShow(fresh);
+}
+
+function rpStageName(s){ return String(s || '').replace(/_/g, ' '); }
+function rpCard(r){
+  const label = r.answer === 'interested' ? 'Wants to interview' : r.answer === 'not_interested' ? 'Not taking forward' : 'Asked for more information';
+  const colour = r.answer === 'interested' ? '#2e7d32' : r.answer === 'not_interested' ? 'var(--danger)' : '#a06a12';
+  const detail = r.answer === 'interested'
+    ? (r.slots.length ? 'Suggested: ' + r.slots.map(esc).join(' or ') : 'No times given. Ring the candidate for availability, then confirm with the client.')
+    : r.answer === 'not_interested' ? 'Reasons: ' + (r.reasons.length ? r.reasons.map(esc).join(', ') : 'none given') + (r.note ? '. ' + esc(r.note) : '')
+    : esc(r.message || r.note);
+  let stage;
+  if(r.answer === 'more_info') stage = 'No stage change. The question is saved on the card.';
+  else if(!r.found) stage = '<strong style="color:var(--danger);">The card could not be found, so it has not moved. Please check the candidate.</strong>';
+  else if(r.moved) stage = 'Card moved to <strong>' + esc(rpStageName(r.to)) + '</strong>.';
+  else stage = '<strong style="color:#a06a12;">Card not moved: it is already at ' + esc(rpStageName(r.before)) + '.</strong>';
+  const checks = (r.taskAdded ? 'Task added.' : 'No task added.') + ' ' + (r.emailed ? 'Alert email sent.' : 'No alert email' + (r.emailError ? ' (' + esc(r.emailError) + ')' : '') + '.');
+  return '<div style="border:1px solid var(--border);border-left:4px solid ' + colour + ';padding:12px 14px;margin-bottom:10px;">' +
+    '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;"><strong>' + esc(r.candidate) + '</strong><span style="color:' + colour + ';font-weight:600;font-size:13px;">' + label + '</span></div>' +
+    '<div style="font-size:12px;color:#777;margin:2px 0 6px;">' + esc(r.role) + ' - ' + esc(r.company) + ' - ' + esc(opsFmt(r.at)) + '</div>' +
+    '<div style="font-size:13px;margin-bottom:6px;">' + detail + '</div>' +
+    '<div style="font-size:12.5px;margin-bottom:4px;">' + stage + '</div>' +
+    '<div style="font-size:11.5px;color:#999;margin-bottom:8px;">' + checks + '</div>' +
+    '<button onclick="rpOpenCard(\'' + esc(r.candidate).replace(/'/g, '') + '\',\'' + esc(r.role).replace(/'/g, '') + '\')" style="padding:7px 14px;background:var(--dark);color:#fff;border:none;border-radius:2px;cursor:pointer;font-size:12.5px;">Open the card</button>' +
+    '</div>';
+}
+function rpShow(list){
+  RP.open = true; RP.shown = list;
+  lgOverlay('rpOverlay',
+    '<div style="font-size:11px;letter-spacing:.8px;color:var(--gold);font-weight:600;margin-bottom:4px;">CLIENT REPLY</div>' +
+    '<h3 style="margin:0 0 10px;font-size:18px;">' + (list.length === 1 ? 'A client has answered' : list.length + ' clients have answered') + '</h3>' +
+    '<div style="font-size:12.5px;color:#777;margin-bottom:10px;">Please reply to the client personally. A task has been added for you.</div>' +
+    list.map(rpCard).join('') +
+    '<div style="text-align:right;margin-top:8px;"><button style="' + LG_BTN + '" onclick="rpDismiss()">Got it</button></div>');
+}
+function rpDismiss(){
+  const seen = rpLoadSeen();
+  (RP.shown || []).forEach(r => seen.add(r.key));
+  rpSaveSeen(); RP.open = false; RP.shown = [];
+  lgClose('rpOverlay');
+  try{ if(typeof refreshOps === 'function') refreshOps(true); if(typeof loadCandidates === 'function') loadCandidates(); }catch(e){}
+}
+function rpOpenCard(name, role){
+  rpDismiss();
+  try{
+    const hit = flatCandidates().find(x => b2Same(x.c.name, name) && b2Same(x.role, role));
+    if(hit){ openCandidatesView('all'); setTimeout(() => { try{ openCandidateFromAll(hit.company, hit.role, hit.c.id); }catch(e){} }, 400); }
+    else showToast('Could not find that card on the board yet');
+  }catch(e){ showToast('Could not open the card'); }
+}
+(function(){
+  const _si = signIn;
+  signIn = function(user){
+    _si(user);
+    if(RP.timer) clearInterval(RP.timer);
+    RP.seen = null;
+    setTimeout(() => rpCheck(true), 4000);
+    RP.timer = setInterval(() => rpCheck(false), 60 * 1000);
+  };
+})();
+</script>
+
 </body>
 </html>
