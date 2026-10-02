@@ -65,6 +65,14 @@ main { max-width: 760px; margin: 0 auto; padding: 32px 20px 90px; }
 }
 .filters input:focus, .filters select:focus { outline: none; border-color: var(--bdr-h); }
 
+.loc-group { margin-bottom: 26px; }
+.loc-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  border-bottom: 1px solid var(--bdr); padding-bottom: 8px; margin-bottom: 14px;
+}
+.loc-head h2 { font-size: 24px; font-weight: 600; color: var(--gold-l); }
+.loc-head span { color: var(--tx3); font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
+
 .job-card {
   background: var(--card); border: 1px solid var(--bdr); border-radius: var(--radius);
   padding: 20px 22px; margin-bottom: 14px; box-shadow: 0 4px 18px rgba(0,0,0,0.25);
@@ -133,7 +141,8 @@ footer { text-align: center; padding: 30px 20px; color: var(--tx3); font-size: 1
 
 <script>
 const API = 'https://l2h-api.onrender.com';
-const CACHE_KEY = 'l2h-careers-roles-v1';
+const CACHE_KEY = 'l2h-careers-roles-v2';
+const OTHER_LOC = 'Other locations';
 const statusEl = document.getElementById('status');
 const viewEl = document.getElementById('view');
 let ROLES = [];
@@ -147,6 +156,15 @@ function roleSlugFromUrl() {
 }
 function roleUrl(slug) {
   return location.pathname + '?role=' + encodeURIComponent(slug);
+}
+
+function groupOf(r) { return r.locationGroup || OTHER_LOC; }
+function groupRoles(list) {
+  const map = new Map();
+  list.forEach(r => { const g = groupOf(r); if (!map.has(g)) map.set(g, []); map.get(g).push(r); });
+  return [...map.entries()]
+    .sort((a, b) => (a[0] === OTHER_LOC) - (b[0] === OTHER_LOC) || a[0].localeCompare(b[0]))
+    .map(([location, roles]) => ({ location, roles }));
 }
 
 function readCache() {
@@ -201,22 +219,29 @@ function renderList() {
     viewEl.innerHTML = `<div class="empty-state"><h2>No open roles right now</h2><p>Check back soon. New opportunities go live regularly.</p></div>`;
     return;
   }
-  const locations = [...new Set(ROLES.map(r => r.location).filter(Boolean))].sort();
-  statusEl.textContent = ROLES.length + (ROLES.length === 1 ? ' live role' : ' live roles');
+  const locations = groupRoles(ROLES).map(g => g.location);
+  statusEl.textContent = ROLES.length + (ROLES.length === 1 ? ' live role' : ' live roles') +
+    (locations.length > 1 ? ' across ' + locations.length + ' locations' : '');
   statusEl.style.display = 'block';
   viewEl.innerHTML = `
     <div class="filters">
       <input id="q" type="search" placeholder="Search roles" aria-label="Search roles">
-      ${locations.length > 1 ? `<select id="loc" aria-label="Filter by location"><option value="">All locations</option>${locations.map(l => `<option>${esc(l)}</option>`).join('')}</select>` : ''}
+      ${locations.length > 1 ? `<select id="loc" aria-label="Filter by location"><option value="">All locations</option>${locations.map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join('')}</select>` : ''}
     </div>
     <div id="cards"></div>`;
   const draw = () => {
     const q = (document.getElementById('q').value || '').trim().toLowerCase();
     const locEl = document.getElementById('loc');
     const loc = locEl ? locEl.value : '';
-    const shown = ROLES.filter(r => (!loc || r.location === loc) && (!q || (r.title + ' ' + r.location + ' ' + r.summary).toLowerCase().includes(q)));
-    document.getElementById('cards').innerHTML = shown.length ? shown.map(cardHtml).join('') :
-      `<div class="empty-state"><h2>No roles match</h2><p>Try a different search.</p></div>`;
+    const shown = ROLES.filter(r => (!loc || groupOf(r) === loc) && (!q || (r.title + ' ' + r.location + ' ' + groupOf(r) + ' ' + r.summary).toLowerCase().includes(q)));
+    const groups = groupRoles(shown);
+    document.getElementById('cards').innerHTML = shown.length
+      ? groups.map(g => `
+        <section class="loc-group" aria-label="Roles in ${esc(g.location)}">
+          <div class="loc-head"><h2>${esc(g.location)}</h2><span>${g.roles.length} ${g.roles.length === 1 ? 'role' : 'roles'}</span></div>
+          ${g.roles.map(cardHtml).join('')}
+        </section>`).join('')
+      : `<div class="empty-state"><h2>No roles match</h2><p>Try a different search.</p></div>`;
   };
   document.getElementById('q').addEventListener('input', draw);
   if (document.getElementById('loc')) document.getElementById('loc').addEventListener('change', draw);
@@ -307,7 +332,7 @@ function setJsonLd(role) {
     title: role.title, description: desc,
     datePosted: role.posted || undefined,
     hiringOrganization: { '@type': 'Organization', name: 'Live 2 Help Recruitment', sameAs: 'https://live2helprecruitment.co.uk' },
-    jobLocation: role.location ? { '@type': 'Place', address: { '@type': 'PostalAddress', addressRegion: role.location, addressCountry: 'GB' } } : undefined,
+    jobLocation: role.location ? { '@type': 'Place', address: { '@type': 'PostalAddress', addressLocality: (role.locationGroup && role.locationGroup !== OTHER_LOC) ? role.locationGroup : role.location, addressCountry: 'GB' } } : undefined,
     directApply: !!role.applyUrl,
   };
   const el = document.createElement('script');
