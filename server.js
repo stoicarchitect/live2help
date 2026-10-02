@@ -3823,7 +3823,7 @@ app.put('/api/placements/:id', async (req, res) => {
 
 const interviewsTable = makeSimpleTable({
   tab: 'Interviews',
-  header: ['id', 'candidate_id', 'candidate_name', 'role', 'company', 'date', 'time', 'type', 'location', 'interviewer', 'status', 'notes', 'created_by', 'duration', 'candidate_email', 'interviewer_email'],
+  header: ['id', 'candidate_id', 'candidate_name', 'role', 'company', 'date', 'time', 'type', 'location', 'interviewer', 'status', 'notes', 'created_by', 'duration', 'candidate_email', 'interviewer_email', 'round_no', 'round_label', 'final'],
   path: '/api/interviews',
   label: 'Interview',
   auditType: 'interview',
@@ -5163,7 +5163,7 @@ async function buildDocx(kind, data, meta) {
     const firstName = data.first_name || String(data.candidate_ref || '').split(' ')[0] || 'there';
     const company = data.company || '';
     body.push(new Paragraph({ spacing: { before: 200, after: 40 }, children: [run('Interview Preparation Pack', { bold: true, size: 52, color: DX.dark })] }));
-    body.push(new Paragraph({ spacing: { after: 40 }, children: [run([data.candidate_ref, data.role_title, company].filter(Boolean).join('  \u00b7  '), { size: 21, color: DX.gold })] }));
+    body.push(new Paragraph({ spacing: { after: 40 }, children: [run([data.candidate_ref, data.role_title, company, (parseInt(data.round_no, 10) || 0) > 1 ? data.round_label : ''].filter(Boolean).join('  \u00b7  '), { size: 21, color: DX.gold })] }));
     body.push(new Paragraph({ spacing: { after: 160 }, children: [run('Prepared exclusively by Live 2 Help Recruitment', { italics: true, size: 19 })] }));
 
     const sched = (data.schedule || []).filter(r => r && r.label && String(r.value || '').trim());
@@ -6075,7 +6075,11 @@ STRUCTURE
 3. interview_format: how the interview is likely to run (face to face, phone or video) and what to expect, in one or two short paragraphs. Only claim a competency-based format if the material says so.
 4. questions: six to eight competency questions tailored to the role's stated requirements and this candidate's real background. For each: the question; "points" as three or four bullet lines telling the candidate which of THEIR real examples to use (name the employer, system or project from their CV or answers) and how to structure it, including the result to finish on; and "tip" as one or two sentences of practical coaching. Where the candidate has a genuine gap against a requirement, include an honest question on it and coach them to answer truthfully and confidently, never to overclaim.
 5. questions_to_ask: four or five thoughtful questions the candidate could ask the interviewer, specific to the role.
-6. gaps: anything the recruiter should check or add before sending. Empty array if none.`;
+6. gaps: anything the recruiter should check or add before sending. Empty array if none.
+
+ROUNDS AND FORMAT
+- The material states which interview round this is and its format (face to face, video or phone). Write interview_format for THAT format only: for video include joining and technology tips, for phone include call etiquette and preparing a quiet space, for face to face cover arrival and conduct on the day.
+- For a second or later round, use the notes from earlier rounds (if supplied) to build on what has already happened. Do not repeat the basics the candidate already covered. Never invent what was said in an earlier round.`;
 
 const PACK_TOOL = {
   name: 'submit_interview_pack',
@@ -6143,6 +6147,8 @@ app.post('/api/interview-packs/generate', async (req, res) => {
     const context = [
       `ROLE: ${role}${company ? ` at ${company}` : ''}`,
       `CANDIDATE (address them as "you"; use their first name only in the closing): ${screen.fullName || name}`,
+      `INTERVIEW ROUND: ${String(b.roundLabel || '').trim() || 'Not stated'}`,
+      `NOTES FROM EARLIER INTERVIEW ROUNDS AND CLIENT FEEDBACK:\n${String(b.previousRounds || '').trim().slice(0, 6000) || 'None - this is the first round or nothing has been recorded.'}`,
       `INTERVIEW: ${[b.typeLabel, b.interviewer ? `with ${b.interviewer}${b.interviewerTitle ? `, ${b.interviewerTitle}` : ''}` : ''].filter(Boolean).join(' ') || 'Details to be confirmed'}`,
       `COMPANY NOTES FROM THE RECRUITER:\n${String(b.companyOverview || '').trim() || 'None provided.'}`,
       `ROLE REQUIREMENTS:\n${brief.requirements || 'NONE PROVIDED'}`,
@@ -6168,7 +6174,7 @@ app.post('/api/interview-packs/generate', async (req, res) => {
 function packFileNames(pack) {
   const ref = candidateRef(pack.candidate_name || pack.candidate_ref || '');
   return {
-    interview: safeFileName(`${ref} Interview Prep ${pack.role_title || 'Role'}`) + '.docx',
+    interview: safeFileName(`${ref} Interview Prep ${pack.role_title || 'Role'}${(parseInt(pack.round_no, 10) || 0) > 1 ? ' ' + (pack.round_label || 'Round ' + pack.round_no) : ''}`) + '.docx',
     site: safeFileName(`${ref} Site Pack ${pack.company || 'Client'}`) + '.docx',
   };
 }
@@ -6734,7 +6740,11 @@ async function findInterviewFor(c) {
   try {
     const all = (await interviewsTable.list()).filter(i => lc(i.candidate_name) === lc(c.name) && !/cancel/i.test(i.status || ''));
     const byRole = all.filter(i => lc(i.role) === lc(c.role));
-    const pick = (byRole.length ? byRole : all).sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+    const pool = byRole.length ? byRole : all;
+    const todayStr = todayISO();
+    const upcoming = pool.filter(i => (!i.status || /^scheduled$/i.test(i.status)) && String(i.date || '').slice(0, 10) >= todayStr)
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const pick = upcoming[0] || pool.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
     return pick || null;
   } catch (e) { return null; }
 }
@@ -6760,11 +6770,14 @@ async function buildStageTasks(c, stage) {
       add('ivmissing', `Add the interview date for ${c.name}`, t, `${who} is at Interview Scheduled but no interview is on the Interviews tab, so the reminder calls could not be dated.`, 'High');
     } else {
       const iso = toISODate(d);
-      const when = `${formatDateUK(iso)}${iv.time ? ' at ' + iv.time : ''}`;
-      add('ivday-before', `Confirm attendance call: ${c.name}`, clampFuture(toISODate(new Date(d.getTime() - 86400000))), `Interview ${when} for ${who}. Check they are still good to attend and have the pack and site details.`, 'High');
-      add('iv-3h', `Reassurance call 3 hours before: ${c.name}`, iso, `Interview ${when}. Last minute questions, positive vibes. If no answer, tell the client straight away that contact was lost and keep trying.`, 'High');
-      add('iv-after', `Call ${c.name} for interview feedback`, iso, `Immediately after the interview ${when}. Tell them client feedback is coming.`, 'High');
-      add('iv-clientfb', `Chase ${c.company || 'client'} for interview feedback on ${c.name}`, toISODate(new Date(d.getTime() + 86400000)), `Day after the interview. Call or email the client and take notes. Log it in Client Feedback.`, 'High');
+      const rn = parseInt(iv.round_no, 10) || 0;
+      const rs = rn > 1 ? `-r${rn}` : '';
+      const rl = rn > 1 ? ` (${iv.round_label || 'round ' + rn})` : '';
+      const when = `${formatDateUK(iso)}${iv.time ? ' at ' + iv.time : ''}${rl}`;
+      add('ivday-before' + rs, `Confirm attendance call: ${c.name}`, clampFuture(toISODate(new Date(d.getTime() - 86400000))), `Interview ${when} for ${who}. Check they are still good to attend and have the pack and site details.`, 'High');
+      add('iv-3h' + rs, `Reassurance call 3 hours before: ${c.name}`, iso, `Interview ${when}. Last minute questions, positive vibes. If no answer, tell the client straight away that contact was lost and keep trying.`, 'High');
+      add('iv-after' + rs, `Call ${c.name} for interview feedback`, iso, `Immediately after the interview ${when}. Tell them client feedback is coming.`, 'High');
+      add('iv-clientfb' + rs, `Chase ${c.company || 'client'} for interview feedback on ${c.name}`, toISODate(new Date(d.getTime() + 86400000)), `Day after the interview. Call or email the client and take notes. Log it in Client Feedback.`, 'High');
     }
   } else if (stage === 'interviewed') {
     add('fbchase', `Chase ${c.company || 'client'} for feedback on ${c.name}`, toISODate(addDays(new Date(), 1)), `Interviewed for ${who}. If no feedback by tomorrow, call or email and log the outcome.`, 'High');
@@ -8078,7 +8091,7 @@ app.post('/r/:id', async (req, res) => {
 });
 
 // Lets the dashboard show which server version is live
-const SERVER_BUILD = '2 Oct 2026 - build 5';
+const SERVER_BUILD = '2 Oct 2026 - build 6';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
