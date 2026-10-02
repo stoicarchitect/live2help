@@ -2464,6 +2464,9 @@ app.put('/api/tasks/:id', async (req, res) => {
       status: status || rows[rowIndex][6],
       recurring: recurring || rows[rowIndex][7]
     };
+    if (req.body.user && isAdmin(req) && ['dan', 'ella'].includes(String(req.body.user).toLowerCase())) {
+      task.user = String(req.body.user).toLowerCase();
+    }
     
     const sheets = getSheetsClient();
     await sheets.spreadsheets.values.update({
@@ -7089,5 +7092,249 @@ OFFER_EMAILS.feedback_month1 = {
   to: 'client_email', subject: 'One month in: how is {{candidate_first}} getting on at {{company}}?', attach: [],
   body: `Dear {{client_contact}},\n\n{{candidate_first}} reaches one month at {{company}} this week, so this is our Month 1 check-in.\n\nCould you spare two minutes to tell me:\n\n- How is {{candidate_first}} performing against what you hoped for?\n- How did you find working with Live 2 Help, and is there anything we should do better?\n- Do you have any other vacancies coming up, or know of another business who may need support with hiring?\n\nAs a reminder, your replacement guarantee on this placement runs until {{guarantee_end}}, so please tell me early if you have any concerns.\n\nIf you have been happy with the service, a short review would mean a great deal to a growing business: https://g.page/r/CU5L4ObMovbGEBM/review\n\nThank you for your continued support.\n\nKind regards,\n\n{{sig_consultant}}`,
 };
+
+
+/* ======================================================================
+   AUTOMATION BATCH D - Client reply links
+   Each submission email can carry one short link per candidate. The client
+   clicks it, sees a small branded page and answers in one click, with no
+   login. The answer moves the card, logs feedback and emails the team.
+   Links look like  https://<your api>/r/<code>  and expire after 30 days.
+   ====================================================================== */
+
+const replyLinksTable = makeSimpleTable({
+  tab: 'Reply Links',
+  header: ['id', 'created', 'expires', 'company', 'role', 'candidate_name', 'candidate_id', 'source_tab', 'form_role', 'contact', 'last_answer', 'last_answer_at', 'answers_json'],
+  path: null,
+  label: 'Reply link',
+});
+
+const REPLY_DAYS = 30;
+const REPLY_MOVE_FROM = {
+  interested: ['submitted', 'ready_to_submit'],
+  not_interested: ['submitted', 'interview_requested', 'interview_scheduled', 'interviewed'],
+};
+const REPLY_REASONS = {
+  skills: 'Skills', experience: 'Experience level', salary: 'Salary expectations', culture: 'Culture or personality fit',
+  location: 'Location or commute', availability: 'Availability or notice period', communication: 'Communication',
+  timing: 'Timing or role changed', other: 'Other',
+};
+
+function replyBase(req) {
+  return (process.env.PUBLIC_API_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+}
+function shortName(full) {
+  const p = String(full || '').trim().split(/\s+/);
+  return p.length > 1 ? `${p[0]} ${p[p.length - 1].charAt(0).toUpperCase()}` : (p[0] || 'Candidate');
+}
+const htmlEsc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+// Change a candidate's stage straight in the sheet. Returns { before, changed } or null if not found.
+async function applyStageChange(ref, newStage, allowFrom) {
+  const sheets = getSheetsClient();
+  const today = todayISO();
+  if (ref.sourceTab === 'application') {
+    const tabName = `Applications - ${ref.formRole || ref.role}`;
+    const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tabName}'!A2:U` });
+    const rows = r.data.values || [];
+    const idx = rows.findIndex(x => lc(x[2]) === lc(ref.name));
+    if (idx < 0) return null;
+    const row = rows[idx]; while (row.length < 21) row.push('');
+    const before = normStage(row[19] || 'applied');
+    if (allowFrom && !allowFrom.includes(before)) return { before, changed: false };
+    row[19] = newStage;
+    await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `'${tabName}'!A${idx + 2}:U${idx + 2}`, valueInputOption: 'RAW', requestBody: { values: [row] } });
+    return { before, changed: true };
+  }
+  const rows = await readAllRows();
+  const idx = rows.findIndex(x => x && x[0] === ref.id);
+  if (idx < 0) return null;
+  const row = rows[idx]; while (row.length < 12) row.push('');
+  const before = normStage(row[4] || 'submitted');
+  if (allowFrom && !allowFrom.includes(before)) return { before, changed: false };
+  row[4] = newStage; row[5] = today;
+  await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `${TAB}!A${idx + 2}:L${idx + 2}`, valueInputOption: 'RAW', requestBody: { values: [row] } });
+  return { before, changed: true };
+}
+
+// Create (or reuse) links for the candidates in a submission email
+app.post('/api/reply-links', async (req, res) => {
+  try {
+    const list = Array.isArray((req.body || {}).candidates) ? req.body.candidates : [];
+    if (!list.length) return res.status(400).json({ error: 'candidates are required' });
+    const existing = await replyLinksTable.list();
+    const now = Date.now();
+    const out = [];
+    for (const c of list) {
+      if (!c || !c.id || !c.name || !c.role) continue;
+      let link = existing.find(o => o.candidate_id === c.id && lc(o.role) === lc(c.role) && o.expires && new Date(o.expires).getTime() > now + 5 * 86400000);
+      if (!link) {
+        link = {
+          id: crypto.randomBytes(9).toString('base64url'),
+          created: new Date().toISOString(), expires: new Date(now + REPLY_DAYS * 86400000).toISOString(),
+          company: c.company || '', role: c.role, candidate_name: c.name, candidate_id: c.id,
+          source_tab: c.sourceTab || '', form_role: c.formRole || '', contact: c.contact || '',
+          last_answer: '', last_answer_at: '', answers_json: '[]',
+        };
+        await replyLinksTable.upsert(link);
+        existing.push(link);
+      }
+      out.push({ id: c.id, name: c.name, url: `${replyBase(req)}/r/${link.id}` });
+    }
+    auditLog(actorOf(req), 'reply_links_created', 'candidate', `${out.length} link${out.length === 1 ? '' : 's'}`, '');
+    res.json({ links: out });
+  } catch (e) {
+    console.error('POST /api/reply-links error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+function replyPage(link, state) {
+  const nm = htmlEsc(shortName(link.candidate_name)), role = htmlEsc(link.role);
+  const done = state.done ? `<div class="done">${state.done}</div>` : '';
+  const reasons = Object.entries(REPLY_REASONS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reply: ${nm} - ${role}</title><meta name="robots" content="noindex,nofollow">
+<style>
+:root{--navy:#0B0B18;--gold:#C9A84C;--ink:#1A1A1A;--grey:#555;--line:#DDD;--bg:#F7F6F3}
+*{box-sizing:border-box}body{margin:0;font-family:"Gill Sans MT","Gill Sans",Calibri,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:var(--navy);padding:18px 20px;border-bottom:3px solid var(--gold);color:#fff;letter-spacing:2px;font-size:13px}
+header b{color:var(--gold)}
+main{max-width:560px;margin:0 auto;padding:22px 18px 40px}
+h1{font-size:21px;margin:6px 0 4px}p{line-height:1.5;color:var(--grey);font-size:15px}
+.card{background:#fff;border:1px solid var(--line);border-top:3px solid var(--gold);padding:18px;margin:16px 0}
+button.big{display:block;width:100%;padding:15px;margin:10px 0;border:1px solid var(--ink);background:#fff;font:inherit;font-size:16px;cursor:pointer;border-radius:2px;text-align:left}
+button.big strong{display:block}button.big span{font-size:13px;color:var(--grey)}
+button.gold{background:var(--gold);border-color:var(--gold)}button.gold span{color:#3a2f0b}
+select,textarea{width:100%;padding:11px;border:1px solid var(--line);font:inherit;font-size:16px;margin:6px 0 10px;border-radius:2px;background:#fff}
+textarea{min-height:90px}label{font-size:12px;color:#888;letter-spacing:.5px}
+.done{background:#EAF4EC;border-left:4px solid #2E7D4F;padding:12px 14px;margin:14px 0;font-size:15px}
+.err{background:#FDF1EF;border-left:4px solid #B3372B;padding:12px 14px;margin:14px 0;font-size:14px;display:none}
+.link{background:none;border:none;color:var(--grey);text-decoration:underline;cursor:pointer;font:inherit;font-size:14px;padding:6px 0}
+.sub{display:none}
+footer{text-align:center;color:#999;font-size:12px;padding:16px}
+</style></head><body>
+<header>LIVE <b>2</b> HELP RECRUITMENT</header>
+<main>
+<h1>${nm}</h1><p>${role}${link.company ? ' - ' + htmlEsc(link.company) : ''}</p>
+${done}
+<div class="err" id="err"></div>
+<div class="card" id="choices">
+<p style="margin-top:0">Tell us what you would like to do next. We act on your answer straight away.</p>
+<button class="big gold" onclick="send('interested')"><strong>Interested - arrange an interview</strong><span>We will contact the candidate for their availability</span></button>
+<button class="big" onclick="show('more')"><strong>I need more information first</strong><span>Tell us what you would like to know</span></button>
+<button class="big" onclick="show('no')"><strong>Not for us</strong><span>We will let the candidate know and keep looking</span></button>
+</div>
+<div class="card sub" id="more"><label>WHAT WOULD YOU LIKE TO KNOW?</label><textarea id="msg" placeholder="For example: notice period, salary expectation, reasons for leaving"></textarea>
+<button class="big gold" onclick="send('more_info')"><strong>Send</strong></button><button class="link" onclick="show('choices')">Back</button></div>
+<div class="card sub" id="no"><label>MAIN REASON</label><select id="reason">${reasons}</select>
+<label>ANYTHING ELSE? (OPTIONAL)</label><textarea id="detail" placeholder="This helps us find you a better match"></textarea>
+<button class="big gold" onclick="send('not_interested')"><strong>Send</strong></button><button class="link" onclick="show('choices')">Back</button></div>
+</main><footer>Live 2 Help Recruitment Ltd - Anyone - Anywhere - Anytime</footer>
+<script>
+function show(id){['choices','more','no'].forEach(function(x){var e=document.getElementById(x);e.style.display=(x===id)?'block':'none';});window.scrollTo(0,0);}
+async function send(a){
+  var body={answer:a,message:document.getElementById('msg').value,reason:document.getElementById('reason').value,detail:document.getElementById('detail').value};
+  var err=document.getElementById('err');err.style.display='none';
+  try{
+    var r=await fetch(location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var j=await r.json().catch(function(){return{};});
+    if(!r.ok) throw new Error(j.error||'Something went wrong');
+    document.querySelector('main').innerHTML='<h1>Thank you</h1><div class="done">'+j.message+'</div><p>You can close this page. If you need to change your answer, reply to our email and we will update it.</p>';
+  }catch(e){err.textContent=e.message+' Please reply to the email instead.';err.style.display='block';}
+}
+</script></body></html>`;
+}
+
+async function loadReplyLink(id) {
+  if (!/^[A-Za-z0-9_-]{8,20}$/.test(String(id || ''))) return null;
+  const link = (await replyLinksTable.list()).find(o => o.id === id);
+  return link || null;
+}
+
+app.get('/r/:id', async (req, res) => {
+  try {
+    res.set('Cache-Control', 'no-store');
+    const link = await loadReplyLink(req.params.id);
+    if (!link) return res.status(404).type('html').send('<p style="font-family:sans-serif;padding:30px">This link is not valid. Please reply to our email instead.</p>');
+    if (new Date(link.expires).getTime() < Date.now()) return res.status(410).type('html').send('<p style="font-family:sans-serif;padding:30px">This link has expired. Please reply to our email and we will help.</p>');
+    const prev = link.last_answer ? `Your last reply was recorded on ${htmlEsc(offerPlainDate(String(link.last_answer_at).slice(0, 10)))}. You can change it below.` : '';
+    res.type('html').send(replyPage(link, { done: prev }));
+  } catch (e) {
+    console.error('GET /r/:id error:', e.message);
+    res.status(500).type('html').send('<p style="font-family:sans-serif;padding:30px">Something went wrong. Please reply to our email instead.</p>');
+  }
+});
+
+const replyHits = new Map();
+app.post('/r/:id', async (req, res) => {
+  try {
+    const ip = req.ip || 'x', now = Date.now();
+    const hits = (replyHits.get(ip) || []).filter(t => now - t < 60000);
+    if (hits.length >= 12) return res.status(429).json({ error: 'Too many attempts, please wait a minute.' });
+    hits.push(now); replyHits.set(ip, hits);
+
+    const link = await loadReplyLink(req.params.id);
+    if (!link) return res.status(404).json({ error: 'This link is not valid.' });
+    if (new Date(link.expires).getTime() < now) return res.status(410).json({ error: 'This link has expired.' });
+    const b = req.body || {};
+    const answer = String(b.answer || '');
+    if (!['interested', 'not_interested', 'more_info'].includes(answer)) return res.status(400).json({ error: 'Unknown answer.' });
+
+    const ref = { id: link.candidate_id, sourceTab: link.source_tab, formRole: link.form_role, name: link.candidate_name, role: link.role, company: link.company };
+    const label = shortName(link.candidate_name);
+    const reason = REPLY_REASONS[b.reason] ? b.reason : 'other';
+    const msg = String(b.message || '').slice(0, 800), detail = String(b.detail || '').slice(0, 800);
+
+    let moved = null, newStage = '', summary = '', message = '';
+    if (answer === 'interested') {
+      newStage = 'interview_requested';
+      moved = await applyStageChange(ref, newStage, REPLY_MOVE_FROM.interested);
+      summary = `${link.company} replied: interested in ${label}`;
+      message = `Thank you. We will contact ${htmlEsc(label)} now and come back to you to confirm interview times.`;
+    } else if (answer === 'not_interested') {
+      newStage = 'rejected';
+      moved = await applyStageChange(ref, newStage, REPLY_MOVE_FROM.not_interested);
+      summary = `${link.company} replied: not for them - ${label} (${REPLY_REASONS[reason]})`;
+      message = 'Thank you for letting us know. We will keep searching and send you stronger matches.';
+      try {
+        await feedbackTable.upsert({ id: `fb-${Date.now()}`, date: todayISO(), company: link.company, role: link.role, candidate_name: link.candidate_name,
+          outcome: 'rejected_by_client', reason, detail: detail || 'Replied through the one-click link', logged_by: 'client reply link' });
+      } catch (e) { console.error('reply feedback log failed:', e.message); }
+    } else {
+      summary = `${link.company} asked for more information on ${label}: ${msg || '(no message)'}`;
+      message = 'Thank you. We will come back to you shortly with the answer.';
+      try {
+        await addAutoTasks([{ key: `${slugKey(link.candidate_name + '-' + link.role)}-moreinfo-${Date.now().toString(36)}`, user: 'ella', priority: 'High', dueDate: todayISO(),
+          title: `${link.company} wants more information on ${label}`, context: `Client message: ${msg || '(none)'}. Answer once only, then ask them to decide: interview or reject.` }]);
+      } catch (e) { console.error('reply task failed:', e.message); }
+    }
+
+    if (moved && moved.changed) {
+      stageAutomation({ name: link.candidate_name, role: link.role, company: link.company, notes: '' }, newStage);
+      scheduleReconcile();
+    }
+    try {
+      await commsTable.upsert({ id: `cm-${Date.now()}`, timestamp: new Date().toISOString(), user: 'client', entity_type: 'candidate', entity_name: link.candidate_name,
+        company: link.company, role: link.role, channel: 'Reply link', direction: 'In', summary: summary + (detail ? ` - ${detail}` : ''), follow_up_date: '', follow_up_done: '' });
+    } catch (e) { console.error('reply comms log failed:', e.message); }
+
+    const answers = (() => { try { return JSON.parse(link.answers_json || '[]'); } catch (e) { return []; } })();
+    answers.push({ at: new Date().toISOString(), answer, reason: answer === 'not_interested' ? reason : '', note: (msg || detail).slice(0, 200), moved: !!(moved && moved.changed) });
+    await replyLinksTable.upsert({ ...link, last_answer: answer, last_answer_at: new Date().toISOString(), answers_json: JSON.stringify(answers.slice(-10)) });
+    auditLog('client-link', 'client_reply', 'candidate', `${link.candidate_name} - ${link.role}`, `${answer}${moved && moved.changed ? ' (moved)' : moved ? ' (left as is: ' + moved.before + ')' : ''}`);
+
+    const stageNote = moved && moved.changed ? `The card has moved to ${newStage.replace(/_/g, ' ')}.` : moved ? `The card was not moved because it is already at ${moved.before.replace(/_/g, ' ')}.` : answer === 'more_info' ? 'No stage change.' : 'The candidate could not be found on the board, so please check it.';
+    emailTransporter.sendMail({
+      from: process.env.BREVO_SENDER_EMAIL, to: dansInbox(), cc: process.env.REPLY_NOTIFY_CC || 'ella@live2helprecruitment.co.uk',
+      subject: `Client reply: ${summary}`, text: `${summary}\n\n${detail || msg ? 'Message: ' + (detail || msg) + '\n\n' : ''}${stageNote}\n\nLive 2 Help dashboard`,
+    }).catch(e => console.error('reply notify failed:', e.message));
+
+    res.json({ ok: true, message });
+  } catch (e) {
+    console.error('POST /r/:id error:', e.message);
+    res.status(500).json({ error: 'Something went wrong.' });
+  }
+});
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
