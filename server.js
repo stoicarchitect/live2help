@@ -34,10 +34,15 @@ app.use(express.json({ limit: '15mb' }));
    Turn it on by setting the L2H_USERS environment variable on Render, e.g.
    [{"key":"dan","name":"Dan","admin":true,"password":"..."},
     {"key":"ella","name":"Ella","admin":false,"password":"..."}]
-   A "passwordHash" ("salt:scrypt-hex") can be used instead of "password".
-   Until L2H_USERS is set the server behaves exactly as before, so deploying
-   this is safe. Once set, every /api call except the public application
-   form needs a signed token from POST /api/login.
+   The value here is each person's TEMPORARY password. On first login they are
+   made to choose their own, which is stored as a hash in the "Users" tab of
+   the tracker sheet and takes over from then on. To add a team member, add
+   one more entry to L2H_USERS. A "passwordHash" ("salt:scrypt-hex") can be
+   used instead of "password". Optional per-person fields: fullName, title,
+   email, phone (used for the contact line on submission documents).
+   Until L2H_USERS is set the server behaves exactly as before. Once set,
+   every /api call except the public application form needs a signed token
+   from POST /api/login (username and password).
    ====================================================================== */
 app.set('trust proxy', 1);
 
@@ -53,6 +58,7 @@ const AUTH_USERS = (() => {
       admin: !!u.admin,
       password: u.password,
       passwordHash: u.passwordHash,
+      fullName: u.fullName, title: u.title, email: u.email, phone: u.phone,
     })).filter(u => u.key);
   } catch (e) {
     console.error('L2H_USERS is not valid JSON:', e.message);
@@ -117,24 +123,104 @@ function actorOf(req) {
   return String((req && req.get && req.get('X-User-Role')) || 'unknown').toLowerCase();
 }
 
-const loginAttempts = new Map();
-app.post('/api/login', (req, res) => {
-  if (!AUTH_ENABLED) return res.status(501).json({ error: 'Server login is not configured' });
-  const ip = req.ip || 'unknown';
+// Audit entries made while an admin is using "View as" are recorded as "dan (as ella)"
+function auditActorOf(req) {
+  if (req && req.user && req.user.va && req.user.rk) return `${req.user.rk} (as ${req.user.key})`;
+  return actorOf(req);
+}
+
+/* ---------- Team contact details (used on submission documents) ---------- */
+const TEAM_DEFAULTS = {
+  dan: { fullName: 'Dan Brown', title: 'Director', email: 'dan.brown@live2helprecruitment.co.uk', phone: '07424 087576' },
+  ella: { fullName: 'Ella Pietrzak', title: 'Talent Acquisition and Business Development Consultant', email: 'ella@live2helprecruitment.co.uk', phone: '07434 351996' },
+};
+
+function titleCase(s) { s = String(s || ''); return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+
+function profileOf(keyOrName) {
+  const k = String(keyOrName || '').trim().toLowerCase();
+  const u = (AUTH_USERS || []).find(x => x.key === k || String(x.name || '').toLowerCase() === k) || null;
+  const key = u ? u.key : k;
+  const d = TEAM_DEFAULTS[key] || null;
+  const fb = TEAM_DEFAULTS.dan;
+  return {
+    key,
+    name: (u && u.name) || titleCase(key) || 'Dan',
+    fullName: (u && u.fullName) || (d && d.fullName) || (u && u.name) || fb.fullName,
+    title: (u && u.title) || (d && d.title) || fb.title,
+    email: (u && u.email) || (d && d.email) || fb.email,
+    phone: (u && u.phone) || (d && d.phone) || fb.phone,
+  };
+}
+
+function contactLineFor(keyOrName) {
+  const p = profileOf(keyOrName);
+  return [p.email, p.phone, 'www.live2helprecruitment.co.uk'].filter(Boolean).join('  |  ');
+}
+
+/* ---------- Personal passwords (Users tab) ---------- */
+function hashPassword(pw) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  return salt + ':' + crypto.scryptSync(String(pw), salt, 64).toString('hex');
+}
+
+let usersTable = null; // created once the sheet helpers exist (see below)
+let credCache = { at: 0, map: null };
+function invalidateCreds() { credCache = { at: 0, map: credCache.map }; }
+async function loadCreds() {
+  if (credCache.map && Date.now() - credCache.at < 30000) return credCache.map;
+  try {
+    const rows = await usersTable.list();
+    const m = new Map();
+    rows.forEach(r => { if (r.id) m.set(String(r.id).toLowerCase(), r); });
+    credCache = { at: Date.now(), map: m };
+  } catch (e) {
+    console.error('Users tab read failed:', e.message);
+    if (!credCache.map) throw e;
+  }
+  return credCache.map;
+}
+
+// true when the password is right for this person (own password if set, else the temporary one)
+function verifyUserPassword(user, row, pw) {
+  if (!user || !pw) return { ok: false, mustChange: false };
+  if (row && row.password_hash) {
+    return { ok: checkPassword({ passwordHash: row.password_hash }, pw), mustChange: String(row.must_change).toUpperCase() === 'TRUE' };
+  }
+  return { ok: checkPassword(user, pw), mustChange: true };
+}
+
+function sessionToken(user, extra) {
   const now = Date.now();
-  let rec = loginAttempts.get(ip);
+  return signToken(Object.assign({ key: user.key, name: user.name, admin: user.admin, iat: now, exp: now + TOKEN_TTL_MS }, extra || {}));
+}
+
+const loginAttempts = new Map();
+app.post('/api/login', async (req, res) => {
+  if (!AUTH_ENABLED) return res.status(501).json({ error: 'Server login is not configured' });
+  const body = req.body || {};
+  const username = String(body.username || '').trim().toLowerCase();
+  const pw = String(body.password || '');
+  const ip = req.ip || 'unknown';
+  const lockKey = ip + '|' + username;
+  const now = Date.now();
+  let rec = loginAttempts.get(lockKey);
   if (!rec || rec.reset < now) rec = { count: 0, reset: now + 15 * 60 * 1000 };
   if (rec.count >= 10) return res.status(429).json({ error: 'Too many attempts. Please try again in a few minutes.' });
-  const pw = String((req.body || {}).password || '');
-  const user = pw ? AUTH_USERS.find(u => checkPassword(u, pw)) : null;
-  if (!user) {
-    rec.count++;
-    loginAttempts.set(ip, rec);
-    return res.status(401).json({ error: 'Incorrect password' });
+  let creds;
+  try { creds = await loadCreds(); } catch (e) {
+    return res.status(503).json({ error: 'Sign in is temporarily unavailable. Please try again in a minute.' });
   }
-  loginAttempts.delete(ip);
-  const token = signToken({ key: user.key, name: user.name, admin: user.admin, exp: Date.now() + TOKEN_TTL_MS });
-  res.json({ token, user: { key: user.key, name: user.name, admin: user.admin } });
+  const user = username ? AUTH_USERS.find(u => u.key === username) : null;
+  const check = verifyUserPassword(user, creds.get(username), pw);
+  if (!check.ok) {
+    rec.count++;
+    loginAttempts.set(lockKey, rec);
+    return res.status(401).json({ error: 'Incorrect username or password' });
+  }
+  loginAttempts.delete(lockKey);
+  const token = sessionToken(user, check.mustChange ? { mc: true } : {});
+  res.json({ token, user: { key: user.key, name: user.name, admin: user.admin }, mustChange: check.mustChange });
   auditLog(user.key, 'login', 'session', user.name, '');
 });
 
@@ -149,7 +235,7 @@ const PUBLIC_API = [
 ];
 let cronWarned = false;
 
-app.use('/api', (req, res, next) => {
+app.use('/api', async (req, res, next) => {
   if (req.method === 'OPTIONS' || !AUTH_ENABLED) return next();
   const p = req.originalUrl.split('?')[0].replace(/\/+$/, '');
   if (PUBLIC_API.some(r => r.method === req.method && r.re.test(p))) return next();
@@ -167,9 +253,95 @@ app.use('/api', (req, res, next) => {
   if (!token && req.method === 'GET' && req.query.token) token = String(req.query.token);
   const payload = verifyToken(token);
   if (!payload) return res.status(401).json({ error: 'Please sign in again', code: 'AUTH' });
+  try {
+    // a password reset or change ends every older session for that person
+    const creds = await loadCreds();
+    const row = creds.get(String(payload.rk || payload.key || '').toLowerCase());
+    if (row && row.updated_at && Date.parse(row.updated_at) > (payload.iat || 0) + 50) {
+      return res.status(401).json({ error: 'Please sign in again', code: 'AUTH' });
+    }
+  } catch (e) { /* if the Users tab cannot be read, the signed token still stands */ }
+  if (payload.mc && p !== '/api/change-password') {
+    return res.status(403).json({ error: 'Please choose a new password first', code: 'MUST_CHANGE' });
+  }
   req.user = payload;
   req.headers['x-user-role'] = payload.key;
   next();
+});
+
+
+app.post('/api/change-password', async (req, res) => {
+  try {
+    if (!AUTH_ENABLED || !req.user) return res.status(501).json({ error: 'Server login is not configured' });
+    if (req.user.va) return res.status(403).json({ error: 'Passwords cannot be changed while using View as' });
+    const b = req.body || {};
+    const current = String(b.currentPassword || '');
+    const next = String(b.newPassword || '');
+    if (next.length < 8) return res.status(400).json({ error: 'Choose a password of at least 8 characters' });
+    if (next === current) return res.status(400).json({ error: 'Your new password must be different from the current one' });
+    const user = AUTH_USERS.find(u => u.key === req.user.key);
+    if (!user) return res.status(403).json({ error: 'Unknown user' });
+    const creds = await loadCreds();
+    const check = verifyUserPassword(user, creds.get(user.key), current);
+    if (!check.ok) return res.status(401).json({ error: 'Your current password is not right' });
+    await usersTable.upsert({ id: user.key, password_hash: hashPassword(next), must_change: 'FALSE', updated_at: new Date().toISOString(), updated_by: user.key });
+    invalidateCreds();
+    await new Promise(r => setTimeout(r, 5));
+    const token = sessionToken(user);
+    auditLog(user.key, 'password_changed', 'session', user.name, '');
+    res.json({ ok: true, token, user: { key: user.key, name: user.name, admin: user.admin } });
+  } catch (e) {
+    console.error('POST /api/change-password error:', e.message);
+    res.status(500).json({ error: 'Could not save the new password. Please try again.' });
+  }
+});
+
+// Admin: who has a login, and whether they have set their own password yet
+app.get('/api/admin/users', async (req, res) => {
+  try {
+    if (!isAdmin(req) || (req.user && req.user.va)) return res.status(403).json({ error: 'Only Dan can do this' });
+    if (!AUTH_ENABLED) return res.json({ data: [] });
+    const creds = await loadCreds();
+    res.json({ data: AUTH_USERS.map(u => {
+      const r = creds.get(u.key);
+      const own = !!(r && r.password_hash);
+      return { key: u.key, name: u.name, admin: u.admin, hasOwnPassword: own, mustChange: own ? String(r.must_change).toUpperCase() === 'TRUE' : true, updatedAt: own ? r.updated_at : '' };
+    }) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin: give someone a one-time temporary password (they must choose their own at next login)
+app.post('/api/admin/users/:key/reset-password', async (req, res) => {
+  try {
+    if (!isAdmin(req) || (req.user && req.user.va)) return res.status(403).json({ error: 'Only Dan can do this' });
+    const user = AUTH_USERS.find(u => u.key === String(req.params.key || '').toLowerCase());
+    if (!user) return res.status(404).json({ error: 'Unknown user' });
+    const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
+    let tmp = '';
+    const bytes = crypto.randomBytes(8);
+    for (let i = 0; i < 8; i++) tmp += alphabet[bytes[i] % alphabet.length];
+    tmp = 'l2h-' + tmp;
+    await usersTable.upsert({ id: user.key, password_hash: hashPassword(tmp), must_change: 'TRUE', updated_at: new Date().toISOString(), updated_by: actorOf(req) });
+    invalidateCreds();
+    auditLog(auditActorOf(req), 'password_reset', 'session', user.name, '');
+    res.json({ ok: true, tempPassword: tmp });
+  } catch (e) {
+    console.error('POST reset-password error:', e.message);
+    res.status(500).json({ error: 'Could not reset the password' });
+  }
+});
+
+// Admin: see the dashboard exactly as another person does, without needing their password
+app.post('/api/view-as', async (req, res) => {
+  try {
+    if (!AUTH_ENABLED || !req.user || !req.user.admin || req.user.va) return res.status(403).json({ error: 'Only Dan can do this' });
+    const target = AUTH_USERS.find(u => u.key === String((req.body || {}).key || '').toLowerCase());
+    if (!target) return res.status(404).json({ error: 'Unknown user' });
+    if (target.key === req.user.key) return res.status(400).json({ error: 'You are already signed in as yourself' });
+    const token = sessionToken(target, { va: true, rk: req.user.key, rn: req.user.name });
+    auditLog(req.user.key, 'view_as_started', 'session', target.name, '');
+    res.json({ token, user: { key: target.key, name: target.name, admin: target.admin } });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 
@@ -1095,7 +1267,7 @@ app.delete('/api/candidates/:id', async (req, res) => {
       try {
         const gone = app.candidate;
         if (gone.name && gone.role) {
-          auditLog(actorOf(req), 'candidate_deleted', 'candidate', `${gone.name} - ${gone.role}`, `stage ${gone.stage}`);
+          auditLog(auditActorOf(req), 'candidate_deleted', 'candidate', `${gone.name} - ${gone.role}`, `stage ${gone.stage}`);
           await upsertPoolEntry({ ...gone, dateAdded: gone.date, source: 'application' }, false);
         }
       } catch (snapErr) {
@@ -1111,7 +1283,7 @@ app.delete('/api/candidates/:id', async (req, res) => {
     try {
       const gone = rowToCandidate(rows[rowIndex]);
       if (gone.name && gone.role) {
-        auditLog(actorOf(req), 'candidate_deleted', 'candidate', `${gone.name} - ${gone.role}`, `stage ${gone.stage}`);
+        auditLog(auditActorOf(req), 'candidate_deleted', 'candidate', `${gone.name} - ${gone.role}`, `stage ${gone.stage}`);
         await upsertPoolEntry({ ...gone, dateAdded: gone.date, source: 'dashboard' }, false);
       }
     } catch (snapErr) {
@@ -1865,7 +2037,7 @@ app.post('/api/kpi-targets', requireAdmin, async (req, res) => {
         insertDataOption: 'INSERT_ROWS', requestBody: { values: [kpiTargetToRow(newKPI)] },
       });
     }
-    auditLog(actorOf(req), idx >= 0 ? 'updated' : 'created', 'kpi_target', `${quarter} - ${owner || 'team'}`, `roles ${newKPI.targetRoles}, clients ${newKPI.targetNewClients}, fill ${newKPI.targetAvgFillSpeedDays}`);
+    auditLog(auditActorOf(req), idx >= 0 ? 'updated' : 'created', 'kpi_target', `${quarter} - ${owner || 'team'}`, `roles ${newKPI.targetRoles}, clients ${newKPI.targetNewClients}, fill ${newKPI.targetAvgFillSpeedDays}`);
     res.json({ ok: true, kpiTarget: newKPI });
   } catch (e) {
     console.error('POST /api/kpi-targets error:', e.message);
@@ -1892,7 +2064,7 @@ app.delete('/api/kpi-targets/:quarter', requireAdmin, async (req, res) => {
         sheetId: tab ? tab.properties.sheetId : 0, dimension: 'ROWS', startIndex: idx + 1, endIndex: idx + 2,
       } } }] },
     });
-    auditLog(actorOf(req), 'deleted', 'kpi_target', `${quarter} - ${owner || 'team'}`, '');
+    auditLog(auditActorOf(req), 'deleted', 'kpi_target', `${quarter} - ${owner || 'team'}`, '');
     res.json({ ok: true, message: 'KPI target deleted' });
   } catch (e) {
     console.error('DELETE /api/kpi-targets/:quarter error:', e.message);
@@ -3319,7 +3491,7 @@ app.post('/api/candidate-pool/:id/cv', async (req, res) => {
       fileData,
     });
     const row = await attachCvToPool(req.params.id, saved);
-    auditLog(actorOf(req), 'cv_uploaded', 'pool', `${found.row[1]} - ${found.row[5]}`, saved.fileName);
+    auditLog(auditActorOf(req), 'cv_uploaded', 'pool', `${found.row[1]} - ${found.row[5]}`, saved.fileName);
     res.json({ ok: true, data: rowToPoolEntry(row) });
   } catch (e) {
     console.error('POST /api/candidate-pool/:id/cv error:', e.message);
@@ -3523,7 +3695,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
         const existing = (await list()).find(o => o.id === b.id);
         const saved = await upsert({ ...(existing || {}), ...clean });
         if (path === '/api/roles') { publicRolesCache = { at: 0, list: null }; }
-        if (auditType) auditLog(actorOf(req), existing ? 'updated' : 'created', auditType, auditName ? auditName(saved) : saved.id, '');
+        if (auditType) auditLog(auditActorOf(req), existing ? 'updated' : 'created', auditType, auditName ? auditName(saved) : saved.id, '');
         res.json({ ok: true, data: saved });
       } catch (e) { console.error(`POST ${path} error:`, e.message); res.status(500).json({ error: e.message }); }
     });
@@ -3532,13 +3704,22 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
         const existing = (await listAll()).find(o => o.id === req.params.id);
         const ok = await remove(req.params.id);
         if (!ok) return res.status(404).json({ error: `${label || 'Record'} not found` });
-        if (auditType) auditLog(actorOf(req), 'deleted', auditType, existing && auditName ? auditName(existing) : req.params.id, '');
+        if (auditType) auditLog(auditActorOf(req), 'deleted', auditType, existing && auditName ? auditName(existing) : req.params.id, '');
         res.json({ ok: true });
       } catch (e) { console.error(`DELETE ${path} error:`, e.message); res.status(500).json({ error: e.message }); }
     });
   }
   return { list, listAll, upsert, append, remove, updateWhere, ensure };
 }
+
+/* ---------- Users (personal passwords, stored as hashes only) ---------- */
+
+usersTable = makeSimpleTable({
+  tab: 'Users',
+  header: ['id', 'password_hash', 'must_change', 'updated_at', 'updated_by'],
+  path: null,
+  label: 'User',
+});
 
 /* ---------- Roles / Vacancies ---------- */
 
@@ -3626,7 +3807,7 @@ app.put('/api/placements/:id', async (req, res) => {
       left_reason: status === 'left' ? (b.leftReason || '') : '',
       notes: b.notes || '',
     });
-    auditLog(actorOf(req), 'placement_updated', 'placement', req.params.id, `${status}, ${saved.guarantee_weeks} weeks`);
+    auditLog(auditActorOf(req), 'placement_updated', 'placement', req.params.id, `${status}, ${saved.guarantee_weeks} weeks`);
     res.json({ ok: true, data: saved });
   } catch (e) {
     console.error('PUT /api/placements/:id error:', e.message);
@@ -3890,7 +4071,7 @@ function auditOnFinish(req, res, build) {
     if (res.statusCode >= 400) return;
     try {
       const a = build();
-      if (a) auditLog(actorOf(req), a.action, a.type, a.entity, a.detail || '');
+      if (a) auditLog(auditActorOf(req), a.action, a.type, a.entity, a.detail || '');
     } catch (e) { /* audit is best effort */ }
   });
 }
@@ -4054,8 +4235,8 @@ app.put('/api/candidate-pool/:id/meta', async (req, res) => {
     const row = await patchPoolRow(req.params.id, patch);
     if (!row) return res.status(404).json({ error: 'Pool record not found' });
     const entry = rowToPoolEntry(row);
-    if (b.extendReview) auditLog(actorOf(req), 'retention_extended', 'pool', `${entry.name} - ${entry.role}`, `review ${entry.reviewDate}`);
-    else if (b.consentDate !== undefined || b.consentBasis !== undefined) auditLog(actorOf(req), 'consent_recorded', 'pool', `${entry.name} - ${entry.role}`, entry.consentBasis);
+    if (b.extendReview) auditLog(auditActorOf(req), 'retention_extended', 'pool', `${entry.name} - ${entry.role}`, `review ${entry.reviewDate}`);
+    else if (b.consentDate !== undefined || b.consentBasis !== undefined) auditLog(auditActorOf(req), 'consent_recorded', 'pool', `${entry.name} - ${entry.role}`, entry.consentBasis);
     res.json({ ok: true, data: entry });
   } catch (e) {
     console.error('PUT /api/candidate-pool/:id/meta error:', e.message);
@@ -4077,7 +4258,7 @@ app.post('/api/gdpr/bulk-consent', requireAdmin, async (req, res) => {
       data.push({ range: `'${POOL_TAB}'!A${i + 2}:${POOL_LAST_COL}${i + 2}`, values: [r] });
     });
     if (data.length) await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { valueInputOption: 'RAW', data } });
-    auditLog(actorOf(req), 'bulk_consent_recorded', 'pool', `${data.length} candidates`, basis);
+    auditLog(auditActorOf(req), 'bulk_consent_recorded', 'pool', `${data.length} candidates`, basis);
     res.json({ ok: true, updated: data.length });
   } catch (e) {
     console.error('POST /api/gdpr/bulk-consent error:', e.message);
@@ -4130,7 +4311,7 @@ app.get('/api/gdpr/export/:id', requireAdmin, async (req, res) => {
       candidateDetails: (await candidateDetailsTable.list()).filter(d => match(d.candidate_name)),
       activity: acts.filter(a => match(a.candidate)),
     };
-    auditLog(actorOf(req), 'data_exported', 'pool', `${entry.name} - ${entry.role}`, '');
+    auditLog(auditActorOf(req), 'data_exported', 'pool', `${entry.name} - ${entry.role}`, '');
     res.setHeader('Content-Type', 'application/json');
     res.send(JSON.stringify(bundle, null, 2));
   } catch (e) {
@@ -4213,6 +4394,13 @@ app.post('/api/gdpr/erase/:id', requireAdmin, async (req, res) => {
       o => ({ ...o, entity: ERASED, detail: '' })
     );
 
+    // CV search profile and AI match scores for this person (every pool row under their name)
+    try {
+      const ids = (await readPoolRows()).filter(r => r && r[0] && match(r[1])).map(r => r[0]);
+      ids.push(req.params.id);
+      cleared.matchData = await purgeMatchData([...new Set(ids)]);
+    } catch (e) { console.error('Erase: match data:', e.message); }
+
     // Pool tombstone: keeps role, company, stage and source for statistics only
     const tomb = padPoolRow(row);
     const tombId = `erased-${crypto.randomBytes(5).toString('hex')}`;
@@ -4233,7 +4421,7 @@ app.post('/api/gdpr/erase/:id', requireAdmin, async (req, res) => {
       });
     });
 
-    auditLog(actorOf(req), 'candidate_erased', 'pool', `Erased candidate (ref ${tombId})`, `role ${role}`);
+    auditLog(auditActorOf(req), 'candidate_erased', 'pool', `Erased candidate (ref ${tombId})`, `role ${role}`);
     res.json({
       ok: true, cleared,
       manual: [
@@ -4562,12 +4750,12 @@ async function loadScreening(name, role) {
 
 // ---- Calling the model ---------------------------------------------------
 
-async function callClaudeTool({ system, content, tool, maxTokens }) {
+async function callClaudeTool({ system, content, tool, maxTokens, model }) {
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
-      model: SUBMISSION_MODEL,
+      model: model || SUBMISSION_MODEL,
       max_tokens: maxTokens,
       temperature: 0.2,
       system,
@@ -4794,7 +4982,7 @@ app.post('/api/submissions/generate', async (req, res) => {
     }
 
     if (out.errors.submission && !out.cv) return res.status(502).json({ error: out.errors.submission });
-    auditLog(actorOf(req), 'submission_generated', 'submission', `${name} - ${role}`, out.errors.cv ? 'CV not produced' : '');
+    auditLog(auditActorOf(req), 'submission_generated', 'submission', `${name} - ${role}`, out.errors.cv ? 'CV not produced' : '');
     res.json(out);
   } catch (e) {
     console.error('POST /api/submissions/generate error:', e.message);
@@ -4968,7 +5156,7 @@ async function buildDocx(kind, data, meta) {
     }
 
     body.push(new Paragraph({ spacing: { before: 320, after: 40 }, children: [run(`Submitted by Live 2 Help Recruitment \u00b7 For exclusive consideration for the ${data.role_title || meta.role || ''} role`, { italics: true, size: 18 })] }));
-    body.push(new Paragraph({ spacing: { after: 0 }, children: [run(SUBMISSION_CONTACT_LINE, { size: 18 })] }));
+    body.push(new Paragraph({ spacing: { after: 0 }, children: [run((meta && meta.contactLine) || SUBMISSION_CONTACT_LINE, { size: 18 })] }));
   } else if (kind === 'interview_pack') {
     const cons = data.consultant || {};
     const consFirst = cons.first_name || String(cons.name || 'Your consultant').split(' ')[0];
@@ -5041,7 +5229,7 @@ async function buildDocx(kind, data, meta) {
     }
 
     body.push(new Paragraph({ spacing: { before: 320, after: 60 }, children: [run(`Good luck, ${firstName}. You are well prepared and we are right behind you.`, { bold: true, color: DX.dark })] }));
-    body.push(new Paragraph({ spacing: { after: 0 }, children: [run([cons.name, cons.phone, cons.email].filter(Boolean).join('  |  ') || SUBMISSION_CONTACT_LINE, { size: 18 })] }));
+    body.push(new Paragraph({ spacing: { after: 0 }, children: [run([cons.name, cons.phone, cons.email].filter(Boolean).join('  |  ') || (meta && meta.contactLine) || SUBMISSION_CONTACT_LINE, { size: 18 })] }));
   } else if (kind === 'site_pack') {
     const cons = data.consultant || {};
     const site = data.site || {};
@@ -5085,7 +5273,7 @@ async function buildDocx(kind, data, meta) {
       body.push(...blocksToParas(s.body));
     });
     body.push(new Paragraph({ spacing: { before: 320, after: 40 }, children: [run('Personal details have been removed by Live 2 Help Recruitment. Full details are available on request once you would like to proceed.', { italics: true, size: 18 })] }));
-    body.push(new Paragraph({ spacing: { after: 0 }, children: [run(SUBMISSION_CONTACT_LINE, { size: 18 })] }));
+    body.push(new Paragraph({ spacing: { after: 0 }, children: [run((meta && meta.contactLine) || SUBMISSION_CONTACT_LINE, { size: 18 })] }));
   }
 
   const doc = new Document({
@@ -5108,11 +5296,18 @@ async function buildDocx(kind, data, meta) {
   return Packer.toBuffer(doc);
 }
 
+// Who the document is from: the person who created the draft if sent, otherwise whoever is signed in
+function creatorContactLine(req) {
+  const asked = String(((req.body || {}).createdBy) || '').trim().toLowerCase();
+  const known = asked && ((AUTH_USERS || []).some(u => u.key === asked || String(u.name || '').toLowerCase() === asked) || TEAM_DEFAULTS[asked]);
+  return contactLineFor(known ? asked : actorOf(req));
+}
+
 app.post('/api/submissions/docx', async (req, res) => {
   try {
     const { kind, data, name, role } = req.body || {};
     if (!['submission', 'cv'].includes(kind) || !data) return res.status(400).json({ error: 'kind and data are required' });
-    const buf = await buildDocx(kind, cleanDeep(data), { role });
+    const buf = await buildDocx(kind, cleanDeep(data), { role, contactLine: creatorContactLine(req) });
     const names = submissionFileNames(name, role);
     res.json({ fileName: kind === 'submission' ? names.submission : names.cv, base64: buf.toString('base64') });
   } catch (e) {
@@ -5146,8 +5341,9 @@ app.post('/api/submissions/archive', async (req, res) => {
       } catch (e) { throw new Error(friendlyDriveError(e)); }
       saved.push({ name: fileName, link: file.data.webViewLink || '' });
     };
-    await put(names.submission, await buildDocx('submission', cleanDeep(submission), { role }));
-    if (cv) await put(names.cv, await buildDocx('cv', cleanDeep(cv), { role }));
+    const contactLine = creatorContactLine(req);
+    await put(names.submission, await buildDocx('submission', cleanDeep(submission), { role, contactLine }));
+    if (cv) await put(names.cv, await buildDocx('cv', cleanDeep(cv), { role, contactLine }));
     res.json({ ok: true, files: saved });
   } catch (e) {
     console.error('POST /api/submissions/archive error:', e.message);
@@ -5207,7 +5403,7 @@ app.post('/api/submission-drafts', async (req, res) => {
     });
     const saved = await submissionDraftsTable.upsert({ ...(existing || {}), ...clean });
     if (!existing || (clean.status && existing.status !== clean.status)) {
-      auditLog(actorOf(req), existing ? `submission_${clean.status}` : 'submission_draft_created', 'submission', `${saved.candidate_name} - ${saved.role}`, '');
+      auditLog(auditActorOf(req), existing ? `submission_${clean.status}` : 'submission_draft_created', 'submission', `${saved.candidate_name} - ${saved.role}`, '');
     }
     res.json({ ok: true, data: saved });
   } catch (e) {
@@ -5368,7 +5564,7 @@ app.post('/api/clients/ensure-folders', requireAdmin, async (req, res) => {
         results.push({ company: c, ok: false, error: e.message, plan });
       }
     }
-    if (!body.preview) auditLog(actorOf(req), 'folders_created', 'client', `${results.filter(r => r.ok).length} clients`, '');
+    if (!body.preview) auditLog(auditActorOf(req), 'folders_created', 'client', `${results.filter(r => r.ok).length} clients`, '');
     res.json({ ok: true, preview: !!body.preview, results });
   } catch (e) {
     console.error('POST /api/clients/ensure-folders error:', e.message);
@@ -5649,7 +5845,7 @@ app.post('/api/client-sites/:id/pdf', async (req, res) => {
     } catch (e) {
       fileError = e.message;
     }
-    auditLog(actorOf(req), 'site_pdf_uploaded', 'client_site', `${company} - ${siteName || 'Main site'}`, fileError ? 'not saved to Drive' : '');
+    auditLog(auditActorOf(req), 'site_pdf_uploaded', 'client_site', `${company} - ${siteName || 'Main site'}`, fileError ? 'not saved to Drive' : '');
     res.json({ ok: true, file, fileError, extracted, warning, siteName: finalName, readBy, diag: { source: form.source, fields: form.count || 0, hasValues: !!form.hasValues, serverLib: !!form.available, error: form.error || '' } });
   } catch (e) {
     console.error('POST /api/client-sites/:id/pdf error:', e.message);
@@ -5678,7 +5874,7 @@ app.delete('/api/client-sites/:id/pdf', async (req, res) => {
     }
     let saved = null;
     if (site) saved = await clientSitesTable.upsert({ ...site, pdf_file_id: '', pdf_link: '', pdf_name: '', updated_by: actorOf(req), updated_at: new Date().toISOString() });
-    auditLog(actorOf(req), 'site_pdf_removed', 'client_site', site ? `${site.company} - ${site.site_name}` : fileId, driveNote);
+    auditLog(auditActorOf(req), 'site_pdf_removed', 'client_site', site ? `${site.company} - ${site.site_name}` : fileId, driveNote);
     res.json({ ok: true, trashed, driveNote, data: saved });
   } catch (e) {
     console.error('DELETE /api/client-sites/:id/pdf error:', e.message);
@@ -5715,7 +5911,7 @@ app.post('/api/client-sites/delete-all', async (req, res) => {
       if (r.note) notes.push(r.note);
     }
     const left = (await clientSitesTable.list()).filter(o => String(o.company || '').trim().toLowerCase() === company).length;
-    auditLog(actorOf(req), 'sites_deleted', 'client_site', String((req.body && req.body.company) || ''), `${all.length} sites`);
+    auditLog(auditActorOf(req), 'sites_deleted', 'client_site', String((req.body && req.body.company) || ''), `${all.length} sites`);
     if (left) return res.status(500).json({ error: `${left} site(s) could not be removed from the sheet. Try again.` });
     res.json({ ok: true, deleted: all.length, driveNote: notes[0] || '' });
   } catch (e) {
@@ -5731,7 +5927,7 @@ app.post('/api/client-sites/:id/delete', async (req, res) => {
     if (!site) return res.json({ ok: true, deleted: 0 });
     const r = await deleteSiteCompletely(site);
     const still = (await clientSitesTable.list()).some(o => o.id === id);
-    auditLog(actorOf(req), 'site_deleted', 'client_site', `${site.company} - ${site.site_name}`, r.note);
+    auditLog(auditActorOf(req), 'site_deleted', 'client_site', `${site.company} - ${site.site_name}`, r.note);
     if (still) return res.status(500).json({ error: 'The site could not be removed from the sheet. Try again.' });
     res.json({ ok: true, deleted: 1, trashed: r.trashed, driveNote: r.note });
   } catch (e) {
@@ -5828,7 +6024,7 @@ app.put('/api/signature', async (req, res) => {
     if (html.length > 45000) return res.status(400).json({ error: 'That signature is too large to store (over 45,000 characters). Use a smaller logo image.' });
     if (!/<(table|div|p|span|img|a|br)\b/i.test(html)) return res.status(400).json({ error: 'That does not look like signature HTML' });
     await signaturesTable.upsert({ id: key, html, updated_by: actorOf(req), updated_at: new Date().toISOString() });
-    auditLog(actorOf(req), 'signature_saved', 'signature', key, '');
+    auditLog(auditActorOf(req), 'signature_saved', 'signature', key, '');
     res.json({ ok: true, ...(await loadSignature(key)) });
   } catch (e) {
     console.error('PUT /api/signature error:', e.message);
@@ -5961,7 +6157,7 @@ app.post('/api/interview-packs/generate', async (req, res) => {
     const out = await callClaudeTool({ system: PACK_SYSTEM, content, tool: PACK_TOOL, maxTokens: 7000 });
     const cleaned = scrubIdentifiers(cleanDeep(out), { fullName: '', emails: [screen.email], phones: [screen.phone], keepFirstName: true }).value;
     cleaned.gaps = [...gapsFromSources, ...(Array.isArray(cleaned.gaps) ? cleaned.gaps : [])].filter(Boolean);
-    auditLog(actorOf(req), 'interview_pack_generated', 'interview_pack', `${name} - ${role}`, '');
+    auditLog(auditActorOf(req), 'interview_pack_generated', 'interview_pack', `${name} - ${role}`, '');
     res.json({ pack: cleaned });
   } catch (e) {
     console.error('POST /api/interview-packs/generate error:', e.message);
@@ -6048,6 +6244,15 @@ const PORT = process.env.PORT || 3000;
 
 const CAREERS_BASE = (process.env.CAREERS_BASE_URL || 'https://careers.live2helprecruitment.co.uk').replace(/\/+$/, '');
 
+// Town or city used to group roles on the careers page: "Stoke-on-Trent, Staffordshire ST4" becomes "Stoke-on-Trent"
+function careersLocationGroup(loc) {
+  let t = String(loc || '').replace(/\([^)]*\)/g, ' ').replace(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d?[A-Z]{0,2}\b/g, ' ').trim();
+  t = t.split(/[,\/|-]\s+|\s+-\s+|,/)[0].replace(/\b(uk|united kingdom|england)\b/ig, '').replace(/\s+/g, ' ').trim();
+  if (!t) return '';
+  if (/^(remote|work from home|wfh|home ?based)$/i.test(t)) return 'Remote';
+  return t.split(' ').map(w => (w.includes('-') ? w.split('-').map(x => (['on', 'upon', 'under', 'le', 'de', 'the'].includes(x.toLowerCase()) ? x.toLowerCase() : titleCase(x.toLowerCase()))).join('-') : titleCase(w.toLowerCase()))).join(' ');
+}
+
 function slugifyRole(s) {
   return String(s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
@@ -6121,6 +6326,7 @@ async function buildPublicRoles() {
       slug: slugifyRole(title),
       title,
       location: String(r.location || '').trim(),
+      locationGroup: careersLocationGroup(r.location) || 'Other locations',
       salary: String(r.salary_band || '').trim(),
       summary: content.summary,
       sections: content.sections,
@@ -6137,7 +6343,13 @@ app.get('/api/public/roles', async (req, res) => {
   try {
     const list = await buildPublicRoles();
     res.set('Cache-Control', 'public, max-age=60');
-    res.json({ updated_at: new Date().toISOString(), roles: list.map(r => ({ ...r, sections: undefined })) });
+    const roles = list.map(r => ({ ...r, sections: undefined }));
+    const byLoc = new Map();
+    roles.forEach(r => { if (!byLoc.has(r.locationGroup)) byLoc.set(r.locationGroup, []); byLoc.get(r.locationGroup).push(r); });
+    const groups = [...byLoc.entries()]
+      .sort((a, b) => (a[0] === 'Other locations') - (b[0] === 'Other locations') || a[0].localeCompare(b[0]))
+      .map(([location, rs]) => ({ location, count: rs.length, roles: rs }));
+    res.json({ updated_at: new Date().toISOString(), roles, groups, locations: groups.map(g => g.location) });
   } catch (e) { console.error('GET /api/public/roles error:', e.message); res.status(500).json({ error: 'Could not load roles' }); }
 });
 
@@ -6352,7 +6564,7 @@ async function safeBackup() {
 app.get('/api/cron/backup', cronOnly, async (req, res) => res.json(await safeBackup()));
 app.post('/api/backup/run', requireAdmin, async (req, res) => {
   const s = await safeBackup();
-  auditLog(actorOf(req), 'backup_run', 'backup', s.ok ? 'ok' : 'failed', s.error || '');
+  auditLog(auditActorOf(req), 'backup_run', 'backup', s.ok ? 'ok' : 'failed', s.error || '');
   res.status(s.ok ? 200 : 500).json(s);
 });
 app.get('/api/backup/status', requireAdmin, async (req, res) => {
@@ -6910,7 +7122,7 @@ app.post('/api/offer-docs/build', async (req, res) => {
       if (!cr || !RTW_DONE.includes(lc(cr.rtw_status))) warnings.push('Right to work is not marked as verified on the candidate card, so the handover pack says Pending.');
       if (!cr || !REF_DONE.includes(lc(cr.ref1_status)) || !REF_DONE.includes(lc(cr.ref2_status))) warnings.push('One or both references are not marked as received.');
     }
-    auditLog(actorOf(req), 'offer_docs_built', 'candidate', `${c.name} - ${c.role}`, kind);
+    auditLog(auditActorOf(req), 'offer_docs_built', 'candidate', `${c.name} - ${c.role}`, kind);
     res.json({
       warnings,
       kind, to, subject, body, attachments,
@@ -6996,51 +7208,407 @@ function matchTokens(text) {
 }
 function tokenSet(text) { return new Set(matchTokens(text)); }
 
+/* ======================================================================
+   Talent pool: CV search, 15 mile radius and AI ranking
+
+   - Only people who agreed to be kept for future roles are ever considered.
+   - Each CV is read ONCE by the AI into a short profile (skills, titles, home
+     town or postcode). The profile is saved in a "Pool CV Index" tab and only
+     re-read if the CV file changes.
+   - The home town or postcode is turned into map coordinates with the free
+     postcodes.io service, and compared with the client site (or the role
+     location). Only people within the radius are ranked.
+   - The AI scores each person against the role brief and reads their notes.
+     Clear red flags in the notes (lacks required skills, interviewed badly,
+     withdrew, rejected for capability, etc.) push them to the bottom with the
+     reason shown.
+   - Scores are saved per role and person in "Pool Match Scores" and reused.
+     Only new or changed people are scored. Nothing runs in the background:
+     work only happens when someone presses the button.
+   ====================================================================== */
+
+const MATCH_RADIUS_MILES = parseFloat(process.env.MATCH_RADIUS_MILES) || 15;
+const MATCH_INDEX_MODEL = process.env.MATCH_INDEX_MODEL || 'claude-haiku-4-5-20251001';
+const MATCH_MODEL = process.env.MATCH_MODEL || SUBMISSION_MODEL;
+const MATCH_MAX_SCORED = parseInt(process.env.MATCH_MAX_SCORED, 10) || 120;
+const MATCH_INDEX_BATCH = 4;
+const MATCH_SCORE_BATCH = 8;
+
+const poolCvIndexTable = makeSimpleTable({
+  tab: 'Pool CV Index',
+  header: ['id', 'cv_file_id', 'status', 'town', 'postcode', 'lat', 'lng', 'titles', 'skills', 'profile', 'indexed_at'],
+  path: null,
+  label: 'CV index',
+});
+
+const poolMatchTable = makeSimpleTable({
+  tab: 'Pool Match Scores',
+  header: ['id', 'role_key', 'pool_id', 'score', 'reason', 'negative', 'negative_reason', 'strengths', 'input_hash', 'scored_at', 'shortlisted'],
+  path: null,
+  label: 'Match score',
+});
+
+function matchRoleKey(company, roleName) { return `${lc(company)}|${lc(roleName)}`.replace(/[^a-z0-9|]+/g, '-'); }
+function sha1(s) { return crypto.createHash('sha1').update(String(s)).digest('hex').slice(0, 16); }
+
+// One read, one write: update rows that exist and append the ones that do not
+async function bulkUpsert(tbl, objs) {
+  if (!objs.length) return;
+  const byId = new Map(objs.map(o => [o.id, o]));
+  const existing = new Set((await tbl.listAll()).map(o => o.id));
+  const upd = objs.filter(o => existing.has(o.id));
+  const add = objs.filter(o => !existing.has(o.id));
+  if (upd.length) await tbl.updateWhere(o => byId.has(o.id) && existing.has(o.id), o => ({ ...o, ...byId.get(o.id) }));
+  for (const o of add) await tbl.append(o);
+}
+
+/* ---------- Locations (free postcodes.io lookups, cached) ---------- */
+const geoCache = new Map();
+async function geoGet(url) {
+  const r = await fetch(url, { signal: AbortSignal.timeout(7000) });
+  if (!r.ok) return null;
+  return r.json().catch(() => null);
+}
+async function geocodeUK(postcode, place) {
+  const pc = String(postcode || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const town = String(place || '').split(',')[0].replace(/\b(uk|united kingdom|england)\b/gi, '').trim();
+  const key = `${pc}|${lc(town)}`;
+  if (!pc && !town) return null;
+  const hit = geoCache.get(key);
+  if (hit && Date.now() - hit.at < 24 * 3600 * 1000) return hit.v;
+  let v = null;
+  try {
+    if (/^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/.test(pc)) {
+      const j = await geoGet(`https://api.postcodes.io/postcodes/${pc}`);
+      if (j && j.result) v = { lat: j.result.latitude, lng: j.result.longitude, label: j.result.admin_district || pc };
+    } else if (/^[A-Z]{1,2}\d[A-Z\d]?$/.test(pc)) {
+      const j = await geoGet(`https://api.postcodes.io/outcodes/${pc}`);
+      if (j && j.result) v = { lat: j.result.latitude, lng: j.result.longitude, label: pc };
+    }
+    if (!v && town) {
+      const j = await geoGet(`https://api.postcodes.io/places?q=${encodeURIComponent(town)}&limit=1`);
+      const p0 = j && j.result && j.result[0];
+      if (p0 && p0.latitude != null) v = { lat: p0.latitude, lng: p0.longitude, label: p0.name_1 || town };
+    }
+  } catch (e) { v = null; }
+  if (v && (typeof v.lat !== 'number' || typeof v.lng !== 'number')) v = null;
+  geoCache.set(key, { at: Date.now(), v });
+  return v;
+}
+
+function milesBetween(a, b) {
+  const R = 3958.8, rad = x => x * Math.PI / 180;
+  const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// Where the job is: the client's site postcode if there is one, otherwise the role location
+async function resolveRoleOrigin(company, role) {
+  const loc = String(role.location || '').trim();
+  let sites = [];
+  try { sites = (await clientSitesTable.list()).filter(s => lc(s.company) === lc(company)); } catch (e) { sites = []; }
+  const locTokens = tokenSet(loc);
+  const pick = sites.find(s => s.postcode && locTokens.size && [...tokenSet(`${s.site_name} ${s.address}`)].some(t => locTokens.has(t)))
+    || sites.find(s => s.postcode) || null;
+  if (pick) {
+    const g = await geocodeUK(pick.postcode, '');
+    if (g) return { ok: true, lat: g.lat, lng: g.lng, label: `${pick.site_name || pick.address || company} (${pick.postcode})` };
+  }
+  if (loc) {
+    const g = await geocodeUK('', loc);
+    if (g) return { ok: true, lat: g.lat, lng: g.lng, label: loc };
+  }
+  return { ok: false, label: loc || '' };
+}
+
+/* ---------- Reading a CV into a saved profile ---------- */
+const CVINDEX_SYSTEM = `You read a candidate's CV for a UK recruitment agency and return a short factual profile used for searching and matching.
+- Use ONLY what the CV says. Never invent.
+- town: the candidate's home town or city if shown (for example "Stoke-on-Trent"). postcode: their full home postcode only if it appears on the CV. Leave blank if not shown. Do not use an employer's address.
+- profile: about 250 words of plain factual text covering current and recent job titles, employers, sectors, systems and tools, key responsibilities, measurable achievements, qualifications and seniority. Do NOT include the person's name, email, phone number or street address. No em dashes.`;
+const CVINDEX_TOOL = {
+  name: 'save_cv_profile',
+  description: 'Return the searchable profile of the CV.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      town: { type: 'string' },
+      postcode: { type: 'string' },
+      recent_titles: { type: 'array', items: { type: 'string' } },
+      key_skills: { type: 'array', items: { type: 'string' } },
+      profile: { type: 'string' },
+    },
+    required: ['town', 'postcode', 'recent_titles', 'key_skills', 'profile'],
+  },
+};
+
+async function indexOneCv(p) {
+  const base = { id: p.id, cv_file_id: p.cvFileId, indexed_at: new Date().toISOString() };
+  try {
+    const drive = getDriveClient();
+    const meta = await drive.files.get({ fileId: p.cvFileId, fields: 'name, mimeType, size' });
+    const fileName = meta.data.name || p.cvFileName || 'CV';
+    const kind = cvKind(fileName, meta.data.mimeType || '');
+    if (!['pdf', 'docx', 'gdoc'].includes(kind) || Number(meta.data.size || 0) > 12 * 1024 * 1024) {
+      return { ...base, status: 'unreadable', town: '', postcode: '', lat: '', lng: '', titles: '', skills: '', profile: '' };
+    }
+    const dl = await downloadCv({ fileId: p.cvFileId, kind });
+    const cvDoc = { kind: dl.kind, buffer: dl.buffer, text: dl.kind === 'docx' ? docxToText(dl.buffer) : '' };
+    const content = [{ type: 'text', text: 'Read this CV and return the profile.' }, ...cvBlocks(cvDoc)];
+    const out = await callClaudeTool({ system: CVINDEX_SYSTEM, content, tool: CVINDEX_TOOL, maxTokens: 1500, model: MATCH_INDEX_MODEL });
+    const g = await geocodeUK(out.postcode, out.town);
+    return {
+      ...base, status: 'ok', town: String(out.town || '').slice(0, 80), postcode: String(out.postcode || '').slice(0, 12),
+      lat: g ? String(g.lat) : '', lng: g ? String(g.lng) : '',
+      titles: (out.recent_titles || []).join('; ').slice(0, 400), skills: (out.key_skills || []).join('; ').slice(0, 800),
+      profile: String(out.profile || '').slice(0, 4000),
+    };
+  } catch (e) {
+    console.error('CV index failed for', p.id, e.message);
+    return { ...base, status: 'failed', town: '', postcode: '', lat: '', lng: '', titles: '', skills: '', profile: '' };
+  }
+}
+
+/* ---------- AI ranking ---------- */
+const MATCH_SYSTEM = `You rank candidates from a UK recruitment agency's talent pool against ONE open role. You are the agency's senior researcher: sharp, fair and specific.
+
+For every candidate return:
+- score 0-100 for how well they fit this role: relevant job titles and seniority, the required skills and systems, sector knowledge, and evidence of results. 85+ is a strong, interview-ready match; 60-84 is plausible; below 40 is a weak match.
+- reason: one plain sentence (maximum 28 words) naming the strongest evidence for or against. No em dashes.
+- strengths: up to 3 short phrases.
+- negative: true ONLY if the candidate's notes or history show a clear red flag for this kind of role: they lack a skill or qualification the role requires, interviewed badly or were assessed as weak, were rejected by a client for capability or fit, withdrew or said they are not interested or not available, no-showed, failed checks, or have a salary or travel expectation that cannot be bridged. Neutral notes, or rejections for reasons outside the candidate's control (role filled, hiring freeze, client changed brief), are NOT negative.
+- negative_reason: when negative is true, the specific red flag in plain words (maximum 20 words). Otherwise an empty string.
+
+Use ONLY the information supplied. Never invent experience. Judge by the role requirements and job description first.`;
+const MATCH_TOOL = {
+  name: 'rank_candidates',
+  description: 'Return a score for every candidate supplied.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      results: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            score: { type: 'number' },
+            reason: { type: 'string' },
+            strengths: { type: 'array', items: { type: 'string' } },
+            negative: { type: 'boolean' },
+            negative_reason: { type: 'string' },
+          },
+          required: ['id', 'score', 'reason', 'strengths', 'negative', 'negative_reason'],
+        },
+      },
+    },
+    required: ['results'],
+  },
+};
+
+async function scoreBatch(roleCtx, items) {
+  const cands = items.map(it => [
+    `ID: ${it.p.id}`,
+    `Previously applied for: ${it.p.role}${it.p.company ? ` at ${it.p.company}` : ''}; furthest stage reached: ${String(it.p.furthestStage).replace(/_/g, ' ')}`,
+    it.idx && it.idx.town ? `Based in: ${it.idx.town}` : '',
+    it.p.tags ? `Tags: ${it.p.tags}` : '',
+    it.idx && it.idx.titles ? `Recent titles: ${it.idx.titles}` : '',
+    it.idx && it.idx.profile ? `CV profile: ${it.idx.profile}` : 'CV profile: not available',
+    `Recruiter notes: ${String(it.p.notes || '').trim().slice(0, 1500) || 'None'}`,
+  ].filter(Boolean).join('\n')).join('\n\n----\n\n');
+  const content = `ROLE: ${roleCtx.title}${roleCtx.location ? ` (location: ${roleCtx.location})` : ''}\n\nREQUIREMENTS:\n${roleCtx.requirements || 'None supplied'}\n\nJOB DESCRIPTION:\n${roleCtx.jobDescription || 'None supplied'}\n\nCANDIDATES TO RANK:\n\n${cands}`;
+  const out = await callClaudeTool({ system: MATCH_SYSTEM, content, tool: MATCH_TOOL, maxTokens: 3500, model: MATCH_MODEL });
+  const map = new Map();
+  (out.results || []).forEach(r => { if (r && r.id) map.set(String(r.id), r); });
+  return map;
+}
+
+/* ---------- Building the view ---------- */
+async function loadMatchContext(company, roleName) {
+  const roles = await rolesTable.list().catch(() => []);
+  const role = roles.find(r => lc(r.company) === lc(company) && (lc(r.role) === lc(roleName) || lc(r.public_title) === lc(roleName))) || {};
+  const brief = await loadRoleBrief(role.role || roleName).catch(() => ({ requirements: '', jobDescription: '' }));
+  const requirements = String(brief.requirements || role.requirements || '').trim();
+  const jobDescription = String(brief.jobDescription || role.public_content || '').trim().slice(0, 6000);
+  const roleCtx = { title: role.public_title || roleName, location: role.location || '', requirements: requirements.slice(0, 3000), jobDescription };
+  const roleHash = sha1(JSON.stringify([roleCtx.title, roleCtx.location, roleCtx.requirements, roleCtx.jobDescription]));
+  const origin = await resolveRoleOrigin(company, role);
+  const [poolRaw, idxRows, scoreRows] = await Promise.all([
+    readPoolRows(), poolCvIndexTable.list().catch(() => []), poolMatchTable.list().catch(() => []),
+  ]);
+  return { role, roleCtx, roleHash, origin, poolRaw, idxMap: new Map(idxRows.map(o => [o.id, o])), scoreRows };
+}
+
+function buildMatchView(company, roleName, ctx, opts) {
+  const { role, roleCtx, roleHash, origin, poolRaw, idxMap, scoreRows } = ctx;
+  const key = matchRoleKey(company, roleName);
+  const scoreMap = new Map(scoreRows.filter(r => r.role_key === key).map(r => [r.pool_id, r]));
+  const bodyTokens = tokenSet(`${roleCtx.title} ${roleCtx.requirements} ${roleCtx.jobDescription}`);
+  let excludedConsent = 0, considered = 0;
+  const items = [];
+  for (const row of poolRaw) {
+    if (!row || !row[0]) continue;
+    const p = rowToPoolEntry(row);
+    p.cvFileId = row[11] || '';
+    if (lc(p.erased) === 'yes') continue;
+    if (lc(p.role) === lc(roleName) && lc(p.company || company) === lc(company) && p.inPipeline) continue;
+    considered++;
+    const basis = lc(p.consentBasis);
+    const okConsent = basis.includes('talent pool') || basis.includes('legitimate') || (basis.includes('consent') && !basis.includes('this role only'));
+    if (!okConsent || basis.includes('this role only')) { excludedConsent++; continue; }
+
+    const idx = idxMap.get(p.id) || null;
+    const indexFresh = !!(idx && idx.cv_file_id === p.cvFileId);
+    const needsIndex = !!(p.cvFileId && !indexFresh);
+    const hasLoc = !!(indexFresh && idx.lat !== '' && idx.lng !== '' && !isNaN(parseFloat(idx.lat)));
+    let distance = null;
+    if (hasLoc && origin.ok) distance = Math.round(milesBetween({ lat: origin.lat, lng: origin.lng }, { lat: parseFloat(idx.lat), lng: parseFloat(idx.lng) }) * 10) / 10;
+    let band = 'unknown';
+    if (distance !== null) band = distance <= MATCH_RADIUS_MILES ? 'within' : 'outside';
+
+    const candTokens = tokenSet(`${p.role} ${p.tags || ''} ${p.notes || ''} ${indexFresh ? `${idx.titles} ${idx.skills} ${idx.profile}` : ''}`);
+    let kw = 0; bodyTokens.forEach(t => { if (candTokens.has(t)) kw++; });
+    const inputHash = sha1(JSON.stringify([roleHash, p.notes, p.tags, p.furthestStage, p.currentStage, p.cvFileId, indexFresh ? idx.indexed_at : '']));
+    const sc = scoreMap.get(p.id) || null;
+    const scored = !!(sc && sc.score !== '' && sc.input_hash === inputHash);
+    const stale = !!(sc && sc.score !== '' && !scored);
+    const ai = scored || stale ? parseFloat(sc.score) : null;
+    const prox = distance !== null ? Math.max(0, 100 * (1 - distance / MATCH_RADIUS_MILES)) : null;
+    const combined = ai === null ? null : Math.round(prox === null ? ai : 0.75 * ai + 0.25 * prox);
+    items.push({
+      id: p.id, name: p.name, email: p.email, phone: p.phone, previousRole: p.role, previousCompany: p.company,
+      furthestStage: p.furthestStage, tags: p.tags, hasCv: p.hasCv, consentDate: p.consentDate,
+      indexed: indexFresh && idx.status === 'ok', cvProblem: indexFresh && idx.status !== 'ok',
+      town: indexFresh ? idx.town : '', distance, band, kw,
+      ai, combined, scored, stale,
+      reason: sc ? sc.reason : '', strengths: sc && sc.strengths ? String(sc.strengths).split('; ').filter(Boolean) : [],
+      negative: !!(sc && String(sc.negative).toUpperCase() === 'TRUE'), negativeReason: sc ? sc.negative_reason : '',
+      shortlisted: !!(sc && String(sc.shortlisted).toUpperCase() === 'TRUE'),
+      needsIndex, _p: p, _idx: indexFresh ? idx : null, _hash: inputHash,
+    });
+  }
+  const order = (a, b) => {
+    if (a.negative !== b.negative) return a.negative ? 1 : -1;
+    const as = a.combined !== null, bs = b.combined !== null;
+    if (as !== bs) return as ? -1 : 1;
+    if (as) return b.combined - a.combined;
+    return b.kw - a.kw;
+  };
+  const within = items.filter(i => i.band === 'within').sort(order);
+  const unknown = items.filter(i => i.band === 'unknown').sort(order);
+  const outside = items.filter(i => i.band === 'outside').sort((a, b) => a.distance - b.distance);
+  const needsIndex = items.filter(i => i.needsIndex);
+  const scorable = [...within, ...unknown].filter(i => !i.needsIndex && !i.scored).sort((a, b) => b.kw - a.kw).slice(0, MATCH_MAX_SCORED);
+  return { key, within, unknown, outside, needsIndex, scorable, considered, excludedConsent };
+}
+
+function publicItem(i) { const { _p, _idx, _hash, ...rest } = i; return rest; }
+
 app.get('/api/pool-matches', async (req, res) => {
   try {
     const company = String(req.query.company || ''), roleName = String(req.query.role || '');
     if (!roleName) return res.status(400).json({ error: 'role is required' });
-    const roles = await rolesTable.list().catch(() => []);
-    const role = roles.find(r => lc(r.company) === lc(company) && (lc(r.role) === lc(roleName) || lc(r.public_title) === lc(roleName))) || {};
-    const titleTokens = tokenSet(`${roleName} ${role.public_title || ''}`);
-    const bodyTokens = tokenSet(`${role.requirements || ''} ${role.public_content || ''} ${role.notes || ''}`);
-    const locTokens = tokenSet(role.location || '');
-    const rows = (await readPoolRows()).filter(r => r && r[0]).map(rowToPoolEntry);
-
-    let excludedConsent = 0, considered = 0;
-    const out = [];
-    for (const p of rows) {
-      if (lc(p.erased) === 'yes') continue;
-      if (lc(p.role) === lc(roleName) && lc(p.company || company) === lc(company) && p.inPipeline) continue;
-      considered++;
-      const basis = lc(p.consentBasis);
-      const okConsent = basis.includes('talent pool') || basis.includes('legitimate') || basis.includes('consent') && !basis.includes('this role only');
-      if (!okConsent || basis.includes('this role only')) { excludedConsent++; continue; }
-      const candTitle = tokenSet(p.role), candText = tokenSet(`${p.tags || ''} ${p.notes || ''}`);
-      let score = 0; const why = [];
-      const tHits = [...titleTokens].filter(t => candTitle.has(t));
-      if (tHits.length) { score += 4 * tHits.length; why.push('applied for a similar role: ' + tHits.slice(0, 4).join(', ')); }
-      const tagSet = tokenSet(p.tags);
-      const tagHits = [...titleTokens, ...bodyTokens].filter(t => tagSet.has(t));
-      if (tagHits.length) { score += 3 * Math.min(tagHits.length, 4); why.push('tagged: ' + [...new Set(tagHits)].slice(0, 4).join(', ')); }
-      const nHits = [...bodyTokens].filter(t => candText.has(t) && !tagSet.has(t));
-      if (nHits.length) { score += Math.min(nHits.length, 6); why.push('notes mention: ' + nHits.slice(0, 4).join(', ')); }
-      const lHits = [...locTokens].filter(t => candText.has(t) || tokenSet(p.company).has(t));
-      if (lHits.length) { score += 2; why.push('location: ' + lHits.slice(0, 2).join(', ')); }
-      const rank = stageRank(p.furthestStage);
-      if (score > 0 && rank >= 1) { score += Math.min(rank, 4); why.push('reached ' + String(p.furthestStage).replace(/_/g, ' ') + ' before'); }
-      if (score < 4) continue;
-      out.push({ id: p.id, name: p.name, email: p.email, phone: p.phone, previousRole: p.role, previousCompany: p.company,
-        furthestStage: p.furthestStage, tags: p.tags, hasCv: p.hasCv, consentDate: p.consentDate, consentBasis: p.consentBasis, score, why });
-    }
-    out.sort((a, b) => b.score - a.score);
-    res.json({ role: { company, role: roleName, location: role.location || '', salary_band: role.salary_band || '', public_title: role.public_title || '' },
-      matches: out.slice(0, 15), considered, excludedConsent });
+    const ctx = await loadMatchContext(company, roleName);
+    const v = buildMatchView(company, roleName, ctx);
+    const shortlist = [...v.within, ...v.unknown, ...v.outside].filter(i => i.shortlisted);
+    res.json({
+      role: { company, role: roleName, location: ctx.role.location || '', salary_band: ctx.role.salary_band || '', public_title: ctx.role.public_title || '' },
+      origin: { ok: ctx.origin.ok, label: ctx.origin.label }, radius: MATCH_RADIUS_MILES,
+      shortlist: shortlist.map(publicItem),
+      within: v.within.map(publicItem), unknown: v.unknown.map(publicItem), outside: v.outside.map(publicItem),
+      pending: { needsIndex: v.needsIndex.length, needsScore: v.scorable.length },
+      considered: v.considered, excludedConsent: v.excludedConsent,
+    });
   } catch (e) {
     console.error('GET /api/pool-matches error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
+
+// Does one batch of work (read some CVs, or score some people). The page calls it repeatedly until nothing is left.
+app.post('/api/pool-matches/process', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const company = String(b.company || ''), roleName = String(b.role || '');
+    if (!roleName) return res.status(400).json({ error: 'role is required' });
+    if (!API_KEY) return res.status(500).json({ error: 'The AI key is not set on the server' });
+    const key = matchRoleKey(company, roleName);
+    if (b.force && b.first) {
+      // Re-score: forget the saved scores for this role (shortlist ticks are kept)
+      await poolMatchTable.updateWhere(o => o.role_key === key, o => ({ ...o, input_hash: '' }));
+      // also give any CV that could not be read last time another go
+      await poolCvIndexTable.updateWhere(o => o.status && o.status !== 'ok', o => ({ ...o, cv_file_id: '' }));
+    }
+    const ctx = await loadMatchContext(company, roleName);
+    let v = buildMatchView(company, roleName, ctx);
+    const done = { indexed: 0, scored: 0 };
+
+    if (v.needsIndex.length) {
+      const batch = v.needsIndex.slice(0, MATCH_INDEX_BATCH);
+      const rows = await Promise.all(batch.map(i => indexOneCv(i._p)));
+      await bulkUpsert(poolCvIndexTable, rows);
+      done.indexed = rows.length;
+      ctx.idxMap = new Map([...ctx.idxMap, ...rows.map(r => [r.id, r])]);
+      v = buildMatchView(company, roleName, ctx);
+    } else if (v.scorable.length) {
+      const batch = v.scorable.slice(0, MATCH_SCORE_BATCH);
+      const map = await scoreBatch(ctx.roleCtx, batch.map(i => ({ p: i._p, idx: i._idx })));
+      const now = new Date().toISOString();
+      const existing = new Map(ctx.scoreRows.filter(r => r.role_key === key).map(r => [r.pool_id, r]));
+      const rows = [];
+      batch.forEach(i => {
+        const r = map.get(String(i.id));
+        if (!r) return;
+        const prev = existing.get(i.id);
+        const score = Math.max(0, Math.min(100, Math.round(Number(r.score) || 0)));
+        rows.push({
+          id: `${key}|${i.id}`, role_key: key, pool_id: i.id, score: String(score),
+          reason: String(r.reason || '').slice(0, 300), negative: r.negative ? 'TRUE' : 'FALSE',
+          negative_reason: r.negative ? String(r.negative_reason || '').slice(0, 200) : '',
+          strengths: (r.strengths || []).slice(0, 3).join('; ').slice(0, 300),
+          input_hash: i._hash, scored_at: now, shortlisted: prev ? prev.shortlisted : 'FALSE',
+        });
+      });
+      await bulkUpsert(poolMatchTable, rows);
+      done.scored = rows.length;
+      if (rows.length) auditLog(auditActorOf(req), 'pool_ai_ranked', 'pool', `${roleName}${company ? ` - ${company}` : ''}`, `${rows.length} ranked`);
+      ctx.scoreRows = [...ctx.scoreRows.filter(r => !(r.role_key === key && rows.some(x => x.pool_id === r.pool_id))), ...rows];
+      v = buildMatchView(company, roleName, ctx);
+    }
+    res.json({ ok: true, done, remaining: { needsIndex: v.needsIndex.length, needsScore: v.scorable.length } });
+  } catch (e) {
+    console.error('POST /api/pool-matches/process error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/pool-matches/shortlist', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const company = String(b.company || ''), roleName = String(b.role || ''), poolId = String(b.poolId || '');
+    if (!roleName || !poolId) return res.status(400).json({ error: 'role and poolId are required' });
+    const key = matchRoleKey(company, roleName);
+    const id = `${key}|${poolId}`;
+    const flag = b.shortlisted ? 'TRUE' : 'FALSE';
+    const existing = (await poolMatchTable.list()).find(o => o.id === id);
+    if (existing) await poolMatchTable.updateWhere(o => o.id === id, o => ({ ...o, shortlisted: flag }));
+    else await poolMatchTable.append({ id, role_key: key, pool_id: poolId, score: '', reason: '', negative: 'FALSE', negative_reason: '', strengths: '', input_hash: '', scored_at: '', shortlisted: flag });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('POST /api/pool-matches/shortlist error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Used by the erase tool: remove everything the matching feature holds about one person
+async function purgeMatchData(poolIds) {
+  const ids = new Set(poolIds);
+  let n = 0;
+  for (const o of await poolCvIndexTable.listAll()) if (ids.has(o.id)) { await poolCvIndexTable.remove(o.id); n++; }
+  for (const o of await poolMatchTable.listAll()) if (ids.has(o.pool_id)) { await poolMatchTable.remove(o.id); n++; }
+  return n;
+}
 
 /* ---------- Compliance helpers used by documents and tasks ---------- */
 const RTW_DONE = ['verified'];
@@ -7202,7 +7770,7 @@ app.post('/api/reply-links', async (req, res) => {
       }
       out.push({ id: c.id, name: c.name, url: `${replyBase(req)}/r/${link.id}` });
     }
-    auditLog(actorOf(req), 'reply_links_created', 'candidate', `${out.length} link${out.length === 1 ? '' : 's'}`, '');
+    auditLog(auditActorOf(req), 'reply_links_created', 'candidate', `${out.length} link${out.length === 1 ? '' : 's'}`, '');
     res.json({ links: out });
   } catch (e) {
     console.error('POST /api/reply-links error:', e.message);
