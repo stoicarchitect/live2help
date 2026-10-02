@@ -1851,6 +1851,15 @@
               <option value="cancelled">Cancelled</option><option value="no_show">No show</option>
             </select></div>
         </div>
+        <div class="two-col">
+          <div><label>Round</label>
+            <input id="ivRound" list="ivRoundList" oninput="ivRoundTyped()" placeholder="Filled in automatically">
+            <datalist id="ivRoundList"><option value="1st round"><option value="2nd round"><option value="3rd round"><option value="4th round"><option value="Final round"></datalist></div>
+          <div><label>When this round is completed</label>
+            <select id="ivFinal" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;">
+              <option value="">More rounds to come</option><option value="yes">Final round - process finished</option></select></div>
+        </div>
+        <div class="note-line" style="margin:-2px 0 8px;">The card stays at Interview Scheduled through every round. It moves to Interviewed only when a round marked Final is completed.</div>
         <label>Location or link</label><input id="ivLocation" placeholder="Address, phone number or meeting link">
         <label>Client contact / interviewer</label>
         <input id="ivInterviewer" list="ivContactList" oninput="ivFillContactEmail()" placeholder="Filled in from the candidate">
@@ -2809,6 +2818,7 @@ function openCandidateModal(id){
     </div>
   `;
 
+  html += ivHistoryPanel(c);
   html += offerDocsPanel(c);
 
   if((c.stage === 'applied' || c.stage === 'ready_to_submit') && currentCompany !== UNASSIGNED_LABEL){
@@ -2901,8 +2911,8 @@ function buildStageButtons(c){
   if(c.stage !== 'rejected' && c.stage !== 'month1'){
     html += `<button class="reject" onclick="advanceStage('rejected')">Reject candidate</button>`;
   }
-  if(c.stage === 'interview_requested' || c.stage === 'interview_scheduled'){
-    html += `<button onclick="scheduleFromCandidate()">Schedule interview</button>`;
+  if(c.stage === 'interview_requested' || c.stage === 'interview_scheduled' || c.stage === 'interviewed'){
+    html += `<button onclick="scheduleFromCandidate()">${ivScheduleLabel(c)}</button>`;
     if(c.stage === 'interview_scheduled') html += `<button class="primary" onclick="packFromCandidate()">Interview pack</button>`;
   }
   html += backStageControl(c);
@@ -6321,7 +6331,7 @@ function renderInterviews(){
       .sort((a, b) => String(a.time).localeCompare(String(b.time)));
     cells += `<div class="iv-day ${iso === today ? 'today' : ''}" onclick="openInterviewModal(null,'${iso}')">
       <div class="num">${day}</div>
-      ${items.map(i => `<span class="iv-chip ${esc(i.status || 'scheduled')}" onclick="event.stopPropagation();openInterviewModal('${esc(i.id)}')" title="${esc(i.candidate_name + ' - ' + i.role + ' at ' + i.company)}">${esc((i.time ? i.time + ' ' : '') + i.candidate_name)}</span>`).join('')}
+      ${items.map(i => `<span class="iv-chip ${esc(i.status || 'scheduled')}" onclick="event.stopPropagation();openInterviewModal('${esc(i.id)}')" title="${esc(i.candidate_name + ' - ' + i.role + ' at ' + i.company)}">${esc((i.time ? i.time + ' ' : '') + i.candidate_name + ' (R' + ivRoundNo(i) + ')')}</span>`).join('')}
     </div>`;
   }
   document.getElementById('ivGrid').innerHTML = cells;
@@ -6330,9 +6340,9 @@ function renderInterviews(){
   const past = list.filter(i => !sched.includes(i) || opsDateOnly(i.date) < today).filter(i => !needs.includes(i))
     .sort((a, b) => (opsDateOnly(b.date) + b.time).localeCompare(opsDateOnly(a.date) + a.time)).slice(0, 25);
   const table = (rows, empty) => rows.length ? `<div class="ops-table-wrap"><table class="ops-table"><thead><tr>
-      <th>Date</th><th>Time</th><th>Candidate</th><th>Role</th><th>Company</th><th>Type</th><th>Location</th><th>Status</th><th style="text-align:right;">Actions</th></tr></thead><tbody>
+      <th>Date</th><th>Time</th><th>Candidate</th><th>Role</th><th>Company</th><th>Round</th><th>Type</th><th>Location</th><th>Status</th><th style="text-align:right;">Actions</th></tr></thead><tbody>
       ${rows.map(i => `<tr><td>${esc(opsFmt(i.date))}</td><td>${esc(i.time)}</td><td class="strong">${esc(i.candidate_name)}</td><td>${esc(i.role)}</td><td>${esc(i.company)}</td>
-        <td>${esc(IV_TYPES[i.type] || i.type)}</td><td>${esc(opsTrunc(i.location, 40))}</td>
+        <td>${esc(ivRoundLabel(i))}</td><td>${esc(IV_TYPES[i.type] || i.type)}</td><td>${esc(opsTrunc(i.location, 40))}</td>
         <td><span class="status-pill ${i.status === 'completed' ? 'completed' : (i.status === 'no_show' || i.status === 'cancelled' ? 'lost' : 'active')}">${esc(IV_STATUS[i.status] || 'Scheduled')}</span></td>
         <td><div class="row-actions"><button onclick="openInterviewModal('${esc(i.id)}')">Edit</button><button onclick="openPackBuilder('${esc(i.id)}')">Pack</button><button onclick="openInviteDialog('${esc(i.id)}')">Invites</button></div></td></tr>`).join('')}
       </tbody></table></div>` : `<div class="panel"><div class="panel-empty">${empty}</div></div>`;
@@ -6894,7 +6904,7 @@ function poolExtras(){
     <div class="pool-section-label">Contact history</div>
     ${comms.length ? comms.map(c => `<div class="extras-row">${esc(CM_CHANNELS[c.channel] || c.channel)}: ${esc(opsTrunc(c.summary, 140))}<div class="m">${esc(opsFmt(c.timestamp))} by ${esc(userLabel(c.user))}</div></div>`).join('') : '<div class="pool-muted">No contact logged yet.</div>'}
     <div class="stage-buttons" style="margin-top:8px;"><button onclick="poolLogContact('${esc(p.id)}')">Log contact</button></div>
-    ${ivs.length ? '<div class="pool-section-label">Interviews</div>' + ivs.map(i => `<div class="extras-row">${esc(opsFmt(i.date))}${i.time ? ' at ' + esc(i.time) : ''} - ${esc(IV_TYPES[i.type] || i.type)} - ${esc(IV_STATUS[i.status] || 'Scheduled')}<div class="m">${esc(i.role)} at ${esc(i.company)}</div></div>`).join('') : ''}
+    ${ivs.length ? '<div class="pool-section-label">Interviews</div>' + ivs.map(i => `<div class="extras-row">${esc(opsFmt(i.date))}${i.time ? ' at ' + esc(i.time) : ''} - ${esc(ivRoundLabel(i))}, ${esc(IV_TYPES[i.type] || i.type)} - ${esc(IV_STATUS[i.status] || 'Scheduled')}<div class="m">${esc(i.role)} at ${esc(i.company)}</div></div>`).join('') : ''}
     ${fbs.length ? '<div class="pool-section-label">Client feedback</div>' + fbs.map(f => `<div class="extras-row">${esc(FB_OUTCOMES[f.outcome] || f.outcome)}: ${esc(FB_REASONS[f.reason] || f.reason)}${f.detail ? ' - ' + esc(opsTrunc(f.detail, 140)) : ''}<div class="m">${esc(opsFmt(f.date))}, ${esc(f.company)}</div></div>`).join('') : ''}
   `);
   if(!B2.fetchedAt){
@@ -7092,6 +7102,7 @@ async function saveInterview(){
     duration: b2Val('ivDuration') || '60',
     candidate_email: b2Val('ivCandidateEmail').trim(),
     interviewer_email: b2Val('ivInterviewerEmail').trim(),
+    ...ivRoundFields(existing, name, b2Val('ivRole').trim(), b2Val('ivCompany').trim()),
   };
   try{
     const json = await b2Post('/api/interviews', body);
@@ -7123,10 +7134,11 @@ function ivInviteContent(iv){
   const typeLabel = IV_TYPES[iv.type] || iv.type || '';
   const address = companyAddress(iv.company);
   const place = iv.location || address || '';
-  const candSubject = `Interview scheduled with ${iv.company}${time12 ? ' at ' + time12 : ''}${contact ? ' with ' + contact : ''}`;
+  const candSubject = `Interview scheduled: ${ivRoundLabel(iv)} (${typeLabel || 'format to be confirmed'}) with ${iv.company}${time12 ? ' at ' + time12 : ''}${contact ? ' with ' + contact : ''}`;
   const candBody = [
     candSubject + '.', '',
     iv.role ? 'Role: ' + iv.role : false,
+    'Round: ' + ivRoundLabel(iv),
     dateLong ? 'Date: ' + dateLong : false,
     time12 ? 'Time: ' + time12 : false,
     contact ? 'Meeting with: ' + contact + (cInfo && cInfo.title ? ' - ' + cInfo.title : '') : false,
@@ -7134,8 +7146,8 @@ function ivInviteContent(iv){
     place ? ((iv.type === 'site' || !iv.location ? 'Address: ' : 'Details: ') + place) : false,
     '', 'Please arrive 5-10 minutes early and reply to confirm you can attend.',
   ].filter(l => l !== false).join('\n');
-  const clientSubject = `Interview scheduled with ${subRef(iv.candidate_name)}${time12 ? ' at ' + time12 : ''}${iv.role ? ' for ' + iv.role : ''}`;
-  const clientBody = [clientSubject + '.', '', dateLong ? 'Date: ' + dateLong : false, time12 ? 'Time: ' + time12 : false].filter(l => l !== false).join('\n');
+  const clientSubject = `Interview scheduled: ${ivRoundLabel(iv)} (${typeLabel || 'format to be confirmed'}) with ${subRef(iv.candidate_name)}${time12 ? ' at ' + time12 : ''}${iv.role ? ' for ' + iv.role : ''}`;
+  const clientBody = [clientSubject + '.', '', 'Round: ' + ivRoundLabel(iv), typeLabel ? 'Format: ' + typeLabel : false, dateLong ? 'Date: ' + dateLong : false, time12 ? 'Time: ' + time12 : false].filter(l => l !== false).join('\n');
   return {
     candidate: {to: iv.candidate_email || candidateEmailFor(iv.candidate_name, iv.role, iv.company), subject: candSubject, body: candBody, location: place},
     client: {to: iv.interviewer_email || ((clientContactsFor(iv.company).find(c => b2Same(c.contactName, contact)) || {}).email || ''), subject: clientSubject, body: clientBody, location: place},
@@ -7170,10 +7182,10 @@ function openInviteDialog(id, justSaved){
     </div>`;
   document.getElementById('ivInviteBody').innerHTML = `
     <h2>${justSaved ? 'Interview saved - add to calendar' : 'Calendar invites'}</h2>
-    <div class="note-line" style="margin:6px 0 12px;">${esc(iv.candidate_name)} - ${esc(iv.role)} at ${esc(iv.company)}<br>${esc(fmtDateLong(iv.date))}${iv.time ? ' at ' + esc(fmtTime12(iv.time)) : ''}. Two separate invites: one for the candidate and one for the client.</div>
+    <div class="note-line" style="margin:6px 0 12px;">${esc(iv.candidate_name)} - ${esc(iv.role)} at ${esc(iv.company)}<br>${esc(fmtDateLong(iv.date))}${iv.time ? ' at ' + esc(fmtTime12(iv.time)) : ''}. ${ivNeedsClientInvite(iv) ? 'Two separate invites: one for the candidate and one for the client.' : 'Phone interview: the candidate invite only. No client calendar invite is needed.'}</div>
     ${missingAddr ? '<div class="prompt-box" style="margin-top:0;">No address on file for this company, so the candidate invite has no address. Add it on the Clients tab or type it in the Location box below.</div>' : ''}
     ${block('candidate', 'Candidate invite', c.candidate, 'No candidate email on file. Add one to include them as an attendee.')}
-    ${block('client', 'Client invite', c.client, 'No email on file for the client contact. Add one to include them as an attendee.')}
+    ${ivNeedsClientInvite(iv) ? block('client', 'Client invite', c.client, 'No email on file for the client contact. Add one to include them as an attendee.') : ''}
     <div class="note-line">The Outlook button opens a new event with the details filled in and the person added as an attendee. Check it and press Send in Outlook. The .ics file only adds the event to your own calendar.</div>
     <div class="stage-buttons"><button onclick="closeModal('ivInviteModal')">Done</button></div>`;
   document.getElementById('ivInviteModal').classList.add('visible');
@@ -7186,7 +7198,7 @@ function ivInviteFields(who){
 async function ivSaveInviteEmails(){
   const iv = B2.interviews.find(x => x.id === ivInviteId);
   if(!iv) return;
-  const cand = b2Val('inv_candidate_to').trim(), cli = b2Val('inv_client_to').trim();
+  const cand = b2Val('inv_candidate_to').trim(), cli = document.getElementById('inv_client_to') ? b2Val('inv_client_to').trim() : (iv.interviewer_email || '');
   if(cand === (iv.candidate_email || '') && cli === (iv.interviewer_email || '')) return;
   try{
     const json = await b2Post('/api/interviews', {id: iv.id, candidate_email: cand, interviewer_email: cli});
@@ -8738,10 +8750,20 @@ function pipelineHitFor(iv){
 async function syncStageFromInterview(iv){
   const hit = pipelineHitFor(iv);
   if(!hit) return;
-  if((iv.status || 'scheduled') === 'scheduled' && ['submitted', 'interview_requested'].includes(hit.c.stage)){
+  if((iv.status || 'scheduled') === 'scheduled' && ['submitted', 'interview_requested', 'interviewed'].includes(hit.c.stage)){
     await autoMoveStage(hit.company, hit.role, hit.c.id, 'interview_scheduled');
   } else if(iv.status === 'completed' && hit.c.stage === 'interview_scheduled'){
-    await autoMoveStage(hit.company, hit.role, hit.c.id, 'interviewed');
+    if(String(iv.final || '') === 'yes'){
+      await autoMoveStage(hit.company, hit.role, hit.c.id, 'interviewed');
+    }else{
+      const later = ivCandInterviews(iv.candidate_name, iv.role, iv.company).some(x => (!x.status || x.status === 'scheduled'));
+      if(!later){
+        showToast(ivRoundLabel(iv) + ' completed. The card stays at Interview Scheduled until a Final round is completed.');
+        if(confirm(ivRoundLabel(iv) + ' is complete for ' + iv.candidate_name + '.\n\nBook the next round now?\n\nOK = book the next round\nCancel = no further round booked yet')){
+          openInterviewModal(null, null, {id: hit.c.id, name: hit.c.name, role: hit.role, company: hit.company});
+        }
+      }
+    }
   }
 }
 
@@ -9099,6 +9121,7 @@ async function syncInterviewFromTemplate(){
     location: tplVal('interview_location'), interviewer: contact, status: existing ? (existing.status || 'scheduled') : 'scheduled',
     notes: existing ? existing.notes : '', created_by: existing ? existing.created_by : signedInUser.name,
     duration: existing && existing.duration ? existing.duration : '60',
+    ...ivRoundFieldsForExisting(existing, c.name, sel.role, sel.company),
     candidate_email: String(category).toLowerCase() === 'candidate' && b2Val('tplTo').trim() ? b2Val('tplTo').trim() : (existing && existing.candidate_email) || candidateEmailFor(c.name, sel.role, sel.company),
     interviewer_email: (rec && rec.email) || (existing && existing.interviewer_email) || '',
   };
@@ -11064,8 +11087,7 @@ function ipSkipToInvites(){
 function packFromCandidate(){
   const c = findCandidate(openCandidateId);
   if(!c) return;
-  const iv = B2.interviews.filter(i => b2Same(i.candidate_name, c.name) && b2Same(i.role, currentRole))
-    .sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+  const iv = ivPickForPack(c.name, currentRole, currentCompany);
   closeModal('candModalOverlay');
   if(iv) openPackBuilder(iv.id);
   else { showToast('Book the interview first, then the pack can be built'); switchTab('interviews'); openInterviewModal(null, null, {id:c.id, name:c.name, role:currentRole, company:currentCompany}); }
@@ -11076,11 +11098,11 @@ async function openPackBuilder(interviewId){
   if(!iv){ showToast('Save the interview first'); return; }
   await loadSites();
   const hit = findPipelineCandidate(iv.candidate_name, iv.role, iv.company);
-  IP.iv = iv; IP.cand = hit; IP.pack = null; IP.draftId = ''; IP.created = ''; IP.files = null; IP.step = 'setup'; IP.busy = false;
+  IP.iv = iv; IP.cand = hit; IP.pack = null; IP.draftId = ''; IP.created = ''; IP.files = null; IP.step = 'setup'; IP.busy = false; IP.prev = null;
   const contacts = clientContactsFor(iv.company);
   const rec = contacts.find(c => b2Same(c.contactName, iv.interviewer));
   const sites = sitesFor(iv.company);
-  let site = sites.find(s => iv.location && siteAddressLine(s) === iv.location) || (sites.length === 1 ? sites[0] : null);
+  let site = (iv.type === 'site' || iv.type === 'assessment') ? (sites.find(s => iv.location && siteAddressLine(s) === iv.location) || (sites.length === 1 ? sites[0] : null)) : null;
   IP.site = site;
   const notes = (clientsData || []).find(c => b2Same(c.company, iv.company));
   IP.setup = {
@@ -11098,6 +11120,10 @@ async function openPackBuilder(interviewId){
       if(d.site_id) IP.site = SITES.find(s => s.id === d.site_id) || IP.site;
       IP.step = d.status === 'email_built' || d.status === 'sent' ? 'email' : 'review';
       if(IP.step === 'email') await ipPrepareEmail();
+    }else{
+      const pd = drafts.filter(x => x.interview_id !== iv.id && x.pack_json && b2Same(x.candidate_name, iv.candidate_name) && b2Same(x.role, iv.role) && b2Same(x.company, iv.company))
+        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0];
+      if(pd){ IP.prev = {draft: pd, pack: JSON.parse(pd.pack_json)}; IP.step = 'mode'; }
     }
   }catch(e){ /* start fresh */ }
   ipRender();
@@ -11111,9 +11137,10 @@ function ipSteps(){
 function ipRender(){
   const body = document.getElementById('ipBody');
   const iv = IP.iv;
-  const head = `<h2>Interview pack</h2><div class="note-line" style="margin:4px 0 8px;">${esc(iv.candidate_name)} - ${esc(iv.role)} at ${esc(iv.company)}<br>${esc(fmtDateLong(iv.date))}${iv.time ? ' at ' + esc(fmtTime12(iv.time)) : ''}</div>`;
+  const head = `<h2>Interview pack - ${esc(ivRoundLabel(iv))}</h2><div class="note-line" style="margin:4px 0 8px;">${esc(iv.candidate_name)} - ${esc(iv.role)} at ${esc(iv.company)}<br>${esc(fmtDateLong(iv.date))}${iv.time ? ' at ' + esc(fmtTime12(iv.time)) : ''}</div>`;
   if(IP.busy){ body.innerHTML = head + `<div class="ip-busy">${IP.busy}</div>`; return; }
-  if(IP.step === 'setup') body.innerHTML = head + ipSteps() + ipSetupHtml();
+  if(IP.step === 'mode') body.innerHTML = head + ipModeHtml();
+  else if(IP.step === 'setup') body.innerHTML = head + ipSteps() + ipSetupHtml();
   else if(IP.step === 'review') body.innerHTML = head + ipSteps() + ipReviewHtml();
   else body.innerHTML = head + ipSteps() + ipEmailHtml();
 }
@@ -11133,13 +11160,14 @@ function ipSetupHtml(){
         ${sites.map(x => `<option value="${esc(x.id)}" ${IP.site && IP.site.id === x.id ? 'selected' : ''}>${esc(x.site_name)}${x.address ? ' - ' + esc(siteAddressLine(x)) : ''} (${esc(siteStatus(x).text)})</option>`).join('')}
       </select>`;
   }
+  if(!ipIsSiteFormat(s.format)) siteHtml = `<div class="note-line">${esc(s.format)} interview: no Site Pack is attached. The pack covers the ${esc(s.format.toLowerCase())} details instead.</div>`;
   return `
     <div class="two-col">
       <div><label class="sfl">Meeting with</label><input id="ipInterviewer" value="${esc(s.interviewer)}"></div>
       <div><label class="sfl">Their job title</label><input id="ipTitle" value="${esc(s.title)}"></div>
     </div>
     <label class="sfl">Format</label>
-    <select id="ipFormat" style="${ipSelectStyle()}">${['Face to face','Video call','Phone','Assessment','Other'].map(f => `<option ${f === s.format ? 'selected' : ''}>${f}</option>`).join('')}</select>
+    <select id="ipFormat" onchange="ipFormatChanged()" style="${ipSelectStyle()}">${['Face to face','Video call','Phone','Assessment','Other'].map(f => `<option ${f === s.format ? 'selected' : ''}>${f}</option>`).join('')}</select>
     ${siteHtml}
     <label class="sfl">About the company (optional - anything you know that should go in the pack)</label>
     <textarea id="ipCompanyNotes" placeholder="What they do, size, recent news, culture. The pack only uses what is written here and in the role brief." style="min-height:80px;">${esc(s.companyNotes)}</textarea>
@@ -11178,10 +11206,10 @@ async function ipDraft(){
     const name = (cand && cand.name) || iv.candidate_name;
     const j = await b2Post('/api/interview-packs/generate', {
       name, role: iv.role, company: iv.company, interviewer: st.interviewer, interviewerTitle: st.title,
-      typeLabel: st.format, companyOverview: st.companyNotes, callNotes: st.callNotes, cardNotes: cand && cand.notes ? cand.notes : '',
+      typeLabel: ivRoundLabel(iv) + ' - ' + st.format, roundLabel: ivRoundLabel(iv), previousRounds: ipPrevRoundsText(iv), companyOverview: st.companyNotes, callNotes: st.callNotes, cardNotes: cand && cand.notes ? cand.notes : '',
     });
     const me = signedInUser || {};
-    const siteSnap = ipSiteSnapshot();
+    const siteSnap = ipIsSiteFormat(st.format) ? ipSiteSnapshot() : null;
     const hasSite = !!(siteSnap && (siteSnap.address || Object.values(siteSnap.fields).some(v => String(v || '').trim())));
     const location = siteSnap ? [/^main site$/i.test(String(siteSnap.site_name || '').trim()) ? '' : siteSnap.site_name, siteSnap.address, siteSnap.postcode].filter(Boolean).join(', ') : (iv.location || '');
     const consName = me.fullName || me.name || '';
@@ -11189,22 +11217,16 @@ async function ipDraft(){
       candidate_name: name, candidate_ref: refOfName(name), first_name: firstWord(name),
       role_title: iv.role, company: iv.company,
       consultant: {name: consName, first_name: firstWord(consName), phone: me.phone || '', email: me.email || ''},
-      schedule: [
-        {label:'Interview Date', value: fmtDateLong(iv.date)},
-        {label:'Interview Time', value: iv.time ? fmtTime12(iv.time) : ''},
-        {label:'You will be meeting', value: [st.interviewer, st.title].filter(Boolean).join(' - ')},
-        {label:'Format', value: st.format},
-        {label:'Location', value: location},
-        {label:'Your Consultant', value: consName + ' - Live 2 Help Recruitment'},
-        {label:'Contact Number', value: me.phone || ''},
-        {label:'Email', value: me.email || ''},
-      ],
+      schedule: ipScheduleRows(iv, st, location, me, consName),
+      round_no: ivRoundNo(iv), round_label: ivRoundLabel(iv), info_hash: ipInfoHash(iv), pack_type: iv.type,
       has_site_pack: hasSite, site: siteSnap,
       about_company: j.pack.about_company, meeting_summary: j.pack.meeting_summary, interview_format: j.pack.interview_format,
       questions: j.pack.questions || [], questions_to_ask: j.pack.questions_to_ask || [], gaps: j.pack.gaps || [],
     };
     if(siteSnap && IP.site && IP.site.checked !== 'yes') IP.pack.gaps.push('The site information for ' + IP.site.site_name + ' has not been ticked as checked yet.');
-    if(!siteSnap) IP.pack.gaps.push('No site information is attached, so this email will go without a Site Pack.');
+    if(!siteSnap && ipIsSiteFormat(st.format)) IP.pack.gaps.push('No site information is attached, so this email will go without a Site Pack.');
+    if(/video/i.test(st.format) && !String(iv.location || '').trim()) IP.pack.gaps.push('No video link is on the interview record. Add the meeting link before sending.');
+    if(/phone/i.test(st.format) && !String(iv.location || '').trim()) IP.pack.gaps.push('No call details are on the interview record. Add who will call and on what number before sending.');
     IP.step = 'review';
     IP.busy = false;
     await ipSaveDraft('draft', true);
@@ -11320,7 +11342,7 @@ async function ipPrepareEmail(){
   const vars = {
     first_name: p.first_name, candidate_name: p.candidate_name, role: iv.role, company: iv.company,
     interview_date: fmtDateUK(iv.date), interview_time: iv.time ? fmtTime12(iv.time) : '',
-    interview_location: row('Location'), interview_format: row('Format'), interviewer: row('You will be meeting'),
+    interview_location: row('Location') || row('Video link') || row('Call details'), interview_format: row('Format'), interviewer: row('You will be meeting'),
     sender_name: me.name, sender_email: me.email, sender_phone: me.phone, signature: me.signature, my_name: me.name,
   };
   let subject = tplMerge(tpl.subject, vars).text;
@@ -11329,6 +11351,7 @@ async function ipPrepareEmail(){
     const line = 'I have also attached your Site Pack, with travel, parking and arrival details for the day.';
     body = /\n\nWe are confident/.test(body) ? body.replace(/\n\nWe are confident/, '\n\n' + line + '\n\nWe are confident') : body.replace(/\n\nBest regards/, '\n\n' + line + '\n\nBest regards');
   }
+  const tuned = ipTuneEmail(subject, body, iv, p); subject = tuned.subject; body = tuned.body;
   IP.subject = noDashes(subject); IP.body = noDashes(body);
   IP.to = iv.candidate_email || candidateEmailFor(iv.candidate_name, iv.role, iv.company) || '';
 }
@@ -11341,7 +11364,7 @@ function ipEmailHtml(){
   }
   const names = [];
   const ref = refOfName(p.candidate_name);
-  names.push(`${ref} Interview Prep ${p.role_title}.docx`);
+  names.push(`${ref} Interview Prep ${p.role_title}${(parseInt(p.round_no, 10) || 0) > 1 ? ' ' + p.round_label : ''}.docx`);
   if(p.has_site_pack) names.push(`${ref} Site Pack ${p.company}.docx`);
   return `
     <label class="sfl">To</label><input id="ipTo" value="${esc(IP.to)}" placeholder="Candidate email">
@@ -12697,8 +12720,232 @@ function rpOpenCard(name, role){
 </script>
 
 <script>
+/* ============================================================
+   Multi-round interviews (build 6)
+   Each interview is its own record with a round, a type and an outcome.
+   The card stays at Interview Scheduled until a Final round is completed.
+   ============================================================ */
+
+function ordinalNo(n){
+  n = parseInt(n, 10) || 1;
+  const t = n % 100;
+  if(t >= 11 && t <= 13) return n + 'th';
+  return n + (({1:'st', 2:'nd', 3:'rd'})[n % 10] || 'th');
+}
+
+function ivCandInterviews(name, role, company, withCancelled){
+  return (B2.interviews || []).filter(i =>
+    b2Same(i.candidate_name, name) && (!role || b2Same(i.role, role)) &&
+    (!company || !i.company || b2Same(i.company, company)) &&
+    (withCancelled || String(i.status || '') !== 'cancelled'))
+    .sort((a, b) => (opsDateOnly(a.date) + String(a.time || '')).localeCompare(opsDateOnly(b.date) + String(b.time || '')));
+}
+
+function ivRoundNo(iv){
+  const n = parseInt(iv && iv.round_no, 10);
+  if(n > 0) return n;
+  const list = ivCandInterviews(iv.candidate_name, iv.role, iv.company);
+  const idx = list.findIndex(x => x.id === iv.id);
+  return idx >= 0 ? idx + 1 : list.length + 1;
+}
+function ivRoundLabel(iv){
+  if(!iv) return '';
+  return String(iv.round_label || '').trim() || (ordinalNo(ivRoundNo(iv)) + ' round');
+}
+function nextRoundNo(name, role, company, excludeId){
+  const list = ivCandInterviews(name, role, company).filter(x => x.id !== excludeId);
+  return list.reduce((m, x) => Math.max(m, ivRoundNo(x)), 0) + 1;
+}
+
+function ivRoundFields(existing, name, role, company){
+  let label = b2Val('ivRound').trim();
+  let fin = b2Val('ivFinal');
+  if(/final/i.test(label)) fin = 'yes';
+  let no = 0;
+  const m = label.match(/^(\d+)/);
+  if(m) no = parseInt(m[1], 10);
+  if(!no && existing) no = ivRoundNo(existing);
+  if(!no) no = nextRoundNo(name, role, company, existing && existing.id);
+  if(!label) label = ordinalNo(no) + ' round';
+  return {round_no: String(no), round_label: label, final: fin};
+}
+function ivRoundFieldsForExisting(existing, name, role, company){
+  if(existing) return {round_no: existing.round_no || String(ivRoundNo(existing)), round_label: existing.round_label || '', final: existing.final || ''};
+  const no = nextRoundNo(name, role, company);
+  return {round_no: String(no), round_label: ordinalNo(no) + ' round', final: ''};
+}
+function ivSuggestRound(){
+  const no = nextRoundNo(b2Val('ivName').trim(), b2Val('ivRole').trim(), b2Val('ivCompany').trim(), ivEditingId);
+  b2Set('ivRound', ordinalNo(no) + ' round');
+}
+function ivRoundTyped(){
+  if(/final/i.test(b2Val('ivRound'))) b2Set('ivFinal', 'yes');
+}
+function ivNeedsClientInvite(iv){
+  return iv && (iv.type === 'video' || iv.type === 'site');
+}
+
+(function(){
+  const _oim = openInterviewModal;
+  openInterviewModal = function(id, presetDate, preset){
+    _oim(id, presetDate, preset);
+    const iv = id ? B2.interviews.find(x => x.id === id) : null;
+    if(iv){ b2Set('ivRound', ivRoundLabel(iv)); b2Set('ivFinal', iv.final || ''); }
+    else { b2Set('ivFinal', ''); ivSuggestRound(); }
+  };
+  const _ipc = ivPickCandidate;
+  ivPickCandidate = function(){
+    _ipc();
+    if(!ivEditingId) ivSuggestRound();
+  };
+  const _sfh = subFlagHtml;
+  subFlagHtml = function(c, role){
+    let out = _sfh(c, role);
+    try{
+      if(c && c.stage === 'interview_scheduled'){
+        const list = ivCandInterviews(c.name, role);
+        const iv = list.filter(x => !x.status || x.status === 'scheduled')[0] || list[list.length - 1];
+        if(iv) out += '<div style="display:inline-block;margin-top:4px;padding:2px 8px;border-radius:10px;background:#f6efd8;color:#8a6a12;font-size:10.5px;font-weight:600;">' + esc(ivRoundLabel(iv)) + ' - ' + esc(IV_TYPES[iv.type] || iv.type || '') + '</div>';
+      }
+    }catch(e){ /* badge is optional */ }
+    return out;
+  };
+})();
+
+function ivScheduleLabel(c){
+  const n = ivCandInterviews(c.name, currentRole, currentCompany).length;
+  return n ? 'Schedule ' + ordinalNo(nextRoundNo(c.name, currentRole, currentCompany)) + ' round' : 'Schedule interview';
+}
+
+function ivHistoryPanel(c){
+  const list = ivCandInterviews(c.name, currentRole, currentCompany, true).slice().reverse();
+  if(!list.length) return '';
+  return '<div class="field-row"><label>Interview history</label>' + list.map(i => {
+    const when = (opsFmt(i.date) || '') + (i.time ? ' at ' + i.time : '');
+    const bits = [i.interviewer ? 'With ' + i.interviewer : '', i.location ? opsTrunc(i.location, 60) : ''].filter(Boolean).join(' - ');
+    return '<div class="extras-row"><strong>' + esc(ivRoundLabel(i)) + '</strong>' + (i.final === 'yes' ? ' (final)' : '') + ' - ' + esc(IV_TYPES[i.type] || i.type || '') + ' - ' + esc(when) + ' - ' + esc(IV_STATUS[i.status] || 'Scheduled') +
+      (bits ? '<div class="m">' + esc(bits) + '</div>' : '') +
+      (i.notes ? '<div class="m" style="white-space:pre-wrap;">' + esc(i.notes) + '</div>' : '') +
+      '<div class="m"><a class="tpl-link" onclick="closeModal(\'candModalOverlay\');switchTab(\'interviews\');openInterviewModal(\'' + esc(i.id) + '\')">Open this interview</a></div></div>';
+  }).join('') + '</div>';
+}
+
+function ivPickForPack(name, role, company){
+  const list = ivCandInterviews(name, role, company);
+  const today = opsToday();
+  const sched = list.filter(x => !x.status || x.status === 'scheduled');
+  return sched.find(x => opsDateOnly(x.date) >= today) || sched[0] || list[list.length - 1] || null;
+}
+
+/* ---------- Interview packs per round ---------- */
+
+function ipIsSiteFormat(f){ return /face|assess/i.test(String(f || '')); }
+function ipFormatChanged(){ ipCollectSetup(); ipRender(); }
+
+function ipScheduleRows(iv, st, location, me, consName){
+  const f = String(st.format || '');
+  const label = /video/i.test(f) ? 'Video link' : (/phone/i.test(f) ? 'Call details' : 'Location');
+  const loc = label === 'Location' ? location : (iv.location || '');
+  return [
+    {label:'Round', value: ivRoundLabel(iv)},
+    {label:'Interview Date', value: fmtDateLong(iv.date)},
+    {label:'Interview Time', value: iv.time ? fmtTime12(iv.time) : ''},
+    {label:'You will be meeting', value: [st.interviewer, st.title].filter(Boolean).join(' - ')},
+    {label:'Format', value: st.format},
+    {label: label, value: loc},
+    {label:'Your Consultant', value: consName + ' - Live 2 Help Recruitment'},
+    {label:'Contact Number', value: me.phone || ''},
+    {label:'Email', value: me.email || ''},
+  ];
+}
+
+function ipPriorRoundNotes(iv){
+  return ivCandInterviews(iv.candidate_name, iv.role, iv.company, true)
+    .filter(x => x.id !== iv.id && String(x.notes || '').trim())
+    .map(x => ivRoundLabel(x) + ' (' + (IV_TYPES[x.type] || x.type || '') + ', ' + opsDateOnly(x.date) + ', ' + (IV_STATUS[x.status] || 'Scheduled') + '): ' + String(x.notes).trim());
+}
+function ipFeedbackLines(iv){
+  return (B2.feedback || []).filter(f => b2Same(f.candidate_name, iv.candidate_name) && (!f.role || b2Same(f.role, iv.role)))
+    .map(f => 'Client feedback (' + (f.outcome || 'logged') + '): ' + [f.reason, f.detail].filter(Boolean).join(' - '));
+}
+function ipPrevRoundsText(iv){
+  return ipPriorRoundNotes(iv).concat(ipFeedbackLines(iv)).join('\n');
+}
+function ipInfoHash(iv){
+  const str = [(IP.cand && IP.cand.notes) || '', ipPrevRoundsText(iv)].join('|');
+  let h = 5381;
+  for(let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+  return String(h);
+}
+
+function ipModeHtml(){
+  const iv = IP.iv, prev = IP.prev.pack;
+  const typeChanged = !!(prev.pack_type && prev.pack_type !== iv.type);
+  const newInfo = prev.info_hash ? prev.info_hash !== ipInfoHash(iv) : ipPrevRoundsText(iv).trim().length > 0;
+  const full = typeChanged || newInfo;
+  const reasons = [];
+  if(typeChanged) reasons.push('The format has changed from ' + (IV_TYPES[prev.pack_type] || prev.pack_type) + ' to ' + (IV_TYPES[iv.type] || iv.type) + '.');
+  if(newInfo){
+    const n = ipPriorRoundNotes(iv).length, fb = ipFeedbackLines(iv).length;
+    reasons.push('New information has been recorded since the last pack' + (n || fb ? ' (' + [n ? n + ' interview note' + (n === 1 ? '' : 's') : '', fb ? fb + ' client feedback entr' + (fb === 1 ? 'y' : 'ies') : ''].filter(Boolean).join(', ') + ')' : ' (candidate notes)') + '.');
+  }
+  return `
+    <div class="note-line" style="margin:4px 0 10px;">A pack was already built for ${esc(prev.round_label || 'an earlier round')} (${esc(IV_TYPES[prev.pack_type] || prev.pack_type || 'format not recorded')}).</div>
+    ${full ? `<div class="warn-box"><strong>A full regenerate is suggested</strong><ul>${reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul></div>`
+           : `<div class="prompt-box" style="margin-top:0;">Nothing relevant has changed since the last pack, so a simple update is enough. It refreshes the round, date, time, format, location and interviewer and keeps the rest.</div>`}
+    <div class="stage-buttons">
+      <button onclick="ipSkipToInvites()">Skip the pack</button>
+      <button class="${full ? '' : 'primary'}" onclick="ipSimpleUpdate()">Simple update</button>
+      <button class="${full ? 'primary' : ''}" onclick="ipFullRegenerate()">Full regenerate</button>
+    </div>`;
+}
+function ipFullRegenerate(){ IP.prev = null; IP.step = 'setup'; ipRender(); }
+
+async function ipSimpleUpdate(){
+  const iv = IP.iv, prevPack = IP.prev.pack, st = IP.setup;
+  const pack = JSON.parse(JSON.stringify(prevPack));
+  const me = signedInUser || {};
+  const consName = me.fullName || me.name || '';
+  const siteSnap = ipIsSiteFormat(st.format) ? ipSiteSnapshot() : null;
+  const hasSite = !!(siteSnap && (siteSnap.address || Object.values(siteSnap.fields).some(v => String(v || '').trim())));
+  const location = siteSnap ? [/^main site$/i.test(String(siteSnap.site_name || '').trim()) ? '' : siteSnap.site_name, siteSnap.address, siteSnap.postcode].filter(Boolean).join(', ') : (iv.location || '');
+  pack.schedule = ipScheduleRows(iv, st, location, me, consName);
+  pack.consultant = {name: consName, first_name: firstWord(consName), phone: me.phone || '', email: me.email || ''};
+  pack.has_site_pack = hasSite; pack.site = siteSnap;
+  pack.round_no = ivRoundNo(iv); pack.round_label = ivRoundLabel(iv); pack.pack_type = iv.type; pack.info_hash = ipInfoHash(iv);
+  const gaps = [];
+  if(prevPack.pack_type && prevPack.pack_type !== iv.type) gaps.push('The format changed from ' + (IV_TYPES[prevPack.pack_type] || prevPack.pack_type) + ' to ' + (IV_TYPES[iv.type] || iv.type) + '. Review the Interview format section and the questions before sending.');
+  if(siteSnap && IP.site && IP.site.checked !== 'yes') gaps.push('The site information for ' + IP.site.site_name + ' has not been ticked as checked yet.');
+  if(!siteSnap && ipIsSiteFormat(st.format)) gaps.push('No site information is attached, so this email will go without a Site Pack.');
+  if(/video/i.test(st.format) && !String(iv.location || '').trim()) gaps.push('No video link is on the interview record. Add the meeting link before sending.');
+  if(/phone/i.test(st.format) && !String(iv.location || '').trim()) gaps.push('No call details are on the interview record. Add who will call and on what number before sending.');
+  pack.gaps = gaps;
+  IP.pack = pack; IP.draftId = ''; IP.created = ''; IP.prev = null; IP.step = 'review';
+  await ipSaveDraft('draft', true);
+  ipRender();
+}
+
+function ipTuneEmail(subject, body, iv, p){
+  const rn = parseInt(p.round_no, 10) || ivRoundNo(iv);
+  const label = p.round_label || ivRoundLabel(iv);
+  if(rn > 1 || /final/i.test(label)){
+    subject = subject.replace(/^Your Interview Confirmed/i, 'Your ' + label + ' Interview Confirmed');
+    body = body.replace(/your interview with/i, 'your ' + label.toLowerCase() + ' interview with');
+  }
+  if(iv.type === 'video'){
+    body = body.replace('Please arrive 5-10 minutes early', 'Please join the call 5 minutes early and test your camera, microphone and connection beforehand')
+               .replace(/\nLocation:/, '\nVideo link:');
+  }else if(iv.type === 'phone'){
+    body = body.replace('Please arrive 5-10 minutes early', 'Please be ready 5 minutes before the call, somewhere quiet with good signal')
+               .replace(/\nLocation:/, '\nCall details:');
+  }
+  return {subject: subject, body: body};
+}
+</script>
+
+<script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '2 Oct 2026 - build 5';
+var PAGE_BUILD = '2 Oct 2026 - build 6';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -12709,12 +12956,12 @@ function buildTagApply(){
     tag.style.cssText = 'font-size:10.5px;color:#999;margin-left:10px;white-space:nowrap;';
     chip.appendChild(tag);
   }
-  tag.textContent = 'Page build 5';
+  tag.textContent = 'Page build 6';
   tag.title = 'Page: ' + PAGE_BUILD;
   b2Api('/api/version').then(function(j){
-    tag.textContent = 'Page build 5 | Server ' + (String(j.build || '').indexOf('build 5') > -1 ? 'build 5' : 'older');
+    tag.textContent = 'Page build 6 | Server ' + (String(j.build || '').indexOf('build 6') > -1 ? 'build 6' : 'older');
     tag.title = 'Page: ' + PAGE_BUILD + ' | Server: ' + j.build;
-  }).catch(function(){ tag.textContent = 'Page build 5 | Server older'; });
+  }).catch(function(){ tag.textContent = 'Page build 6 | Server older'; });
 }
 (function(){
   const _si = signIn;
