@@ -7688,8 +7688,8 @@ const TEAM_CONTACTS = (() => {
   return base;
 })();
 const REPLY_MOVE_FROM = {
-  interested: ['submitted', 'ready_to_submit'],
-  not_interested: ['submitted', 'interview_requested', 'interview_scheduled', 'interviewed'],
+  interested: ['applied', 'ready_to_submit', 'submitted'],
+  not_interested: ['applied', 'ready_to_submit', 'submitted', 'interview_requested', 'interview_scheduled', 'interviewed'],
 };
 const REPLY_REASONS = {
   skills: 'Skills', experience: 'Experience level', salary: 'Salary expectations', culture: 'Culture or personality fit',
@@ -7706,37 +7706,68 @@ function shortName(full) {
 }
 const htmlEsc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-// Change a candidate's stage straight in the sheet and/or append a note. Returns { before, changed } or null if not found.
+// Change a candidate's stage straight in the sheet and/or append a note.
+// Looks for the card where the link says it is, then in the other places a card can live, so a
+// stale link can never leave a client answer unapplied. Returns { before, changed, where } or null.
+function sameCandidateName(a, b) {
+  a = lc(a); b = lc(b);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const pa = a.split(/\s+/), pb = b.split(/\s+/);
+  return pa.length > 1 && pb.length > 1 && pa[0] === pb[0] && pa[pa.length - 1].charAt(0) === pb[pb.length - 1].charAt(0);
+}
+
 async function applyStageChange(ref, newStage, allowFrom, noteAppend) {
   const sheets = getSheetsClient();
   const today = todayISO();
   const addNote = old => noteAppend ? ((old ? old + '\n' : '') + noteAppend) : old;
-  if (ref.sourceTab === 'application') {
-    const tabName = `Applications - ${ref.formRole || ref.role}`;
-    const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tabName}'!A2:U` });
-    const rows = r.data.values || [];
-    const idx = rows.findIndex(x => lc(x[2]) === lc(ref.name));
+
+  const tryApplication = async () => {
+    const formRoles = [...new Set([ref.formRole, ref.role].filter(Boolean))];
+    for (const fr of formRoles) {
+      const tabName = `Applications - ${fr}`;
+      let rows;
+      try {
+        const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tabName}'!A2:U` });
+        rows = r.data.values || [];
+      } catch (e) { continue; }
+      let idx = rows.findIndex(x => lc(x[2]) === lc(ref.name));
+      if (idx < 0) idx = rows.findIndex(x => sameCandidateName(x[2], ref.name));
+      if (idx < 0) continue;
+      const row = rows[idx]; while (row.length < 21) row.push('');
+      const before = normStage(row[19] || 'applied');
+      const allowed = !!newStage && !(allowFrom && !allowFrom.includes(before));
+      if (allowed) row[19] = newStage;
+      if (noteAppend) row[20] = addNote(row[20]);
+      if (!allowed && !noteAppend) return { before, changed: false, where: 'application' };
+      await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `'${tabName}'!A${idx + 2}:U${idx + 2}`, valueInputOption: 'RAW', requestBody: { values: [row] } });
+      return { before, changed: allowed, where: 'application' };
+    }
+    return null;
+  };
+
+  const tryDashboard = async () => {
+    const rows = await readAllRows();
+    let idx = ref.id ? rows.findIndex(x => x && x[0] === ref.id) : -1;
+    if (idx < 0) idx = rows.findIndex(x => x && lc(x[3]) === lc(ref.name) && lc(x[2]) === lc(ref.role));
+    if (idx < 0) idx = rows.findIndex(x => x && sameCandidateName(x[3], ref.name) && lc(x[2]) === lc(ref.role));
     if (idx < 0) return null;
-    const row = rows[idx]; while (row.length < 21) row.push('');
-    const before = normStage(row[19] || 'applied');
+    const row = rows[idx]; while (row.length < 12) row.push('');
+    const before = normStage(row[4] || 'submitted');
     const allowed = !!newStage && !(allowFrom && !allowFrom.includes(before));
-    if (allowed) row[19] = newStage;
-    if (noteAppend) row[20] = addNote(row[20]);
-    if (!allowed && !noteAppend) return { before, changed: false };
-    await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `'${tabName}'!A${idx + 2}:U${idx + 2}`, valueInputOption: 'RAW', requestBody: { values: [row] } });
-    return { before, changed: allowed };
+    if (allowed) { row[4] = newStage; row[5] = today; }
+    if (noteAppend) row[6] = addNote(row[6]);
+    if (!allowed && !noteAppend) return { before, changed: false, where: 'dashboard' };
+    await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `${TAB}!A${idx + 2}:L${idx + 2}`, valueInputOption: 'RAW', requestBody: { values: [row] } });
+    return { before, changed: allowed, where: 'dashboard' };
+  };
+
+  const order = ref.sourceTab === 'application' ? [tryApplication, tryDashboard] : [tryDashboard, tryApplication];
+  for (const fn of order) {
+    const r = await fn().catch(e => { console.error('applyStageChange lookup failed:', e.message); return null; });
+    if (r) return r;
   }
-  const rows = await readAllRows();
-  const idx = rows.findIndex(x => x && x[0] === ref.id);
-  if (idx < 0) return null;
-  const row = rows[idx]; while (row.length < 12) row.push('');
-  const before = normStage(row[4] || 'submitted');
-  const allowed = !!newStage && !(allowFrom && !allowFrom.includes(before));
-  if (allowed) { row[4] = newStage; row[5] = today; }
-  if (noteAppend) row[6] = addNote(row[6]);
-  if (!allowed && !noteAppend) return { before, changed: false };
-  await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `${TAB}!A${idx + 2}:L${idx + 2}`, valueInputOption: 'RAW', requestBody: { values: [row] } });
-  return { before, changed: allowed };
+  return null;
 }
 
 // Create (or reuse) links for the candidates in a submission email
@@ -7951,13 +7982,17 @@ app.post('/r/:id', async (req, res) => {
       thanks = 'Thank you. We will come back to you shortly with the answer.';
     }
 
-    // One task for Ella. She writes the reply to the client herself.
+    const who = TEAM_CONTACTS[link.sender_key] ? link.sender_key : 'ella';
+    const outcome = { moved: !!(moved && moved.changed), found: !!moved, before: moved ? moved.before : '', taskAdded: false, emailed: false, emailError: '' };
+
+    // One task for whoever sent the submission. They write the reply to the client themselves.
     try {
       const tTitle = answer === 'interested'
         ? `Confirm interview for ${label} with ${link.company}${slots.length ? ': ' + slots[0].text : ''}`
         : answer === 'not_interested' ? `Reply to ${link.company} about ${label} (not taking forward)` : `${link.company} wants more information on ${label}`;
       const tCtx = note.replace(/^\[|\]$/g, '') + '. ' + (answer === 'interested' ? 'Call the candidate to check the time, then reply to the client yourself.' : answer === 'more_info' ? 'Answer once only, then ask them to decide: interview or reject. Reply to the client yourself.' : 'Reply to the client yourself.');
-      await addAutoTasks([{ key: `${slugKey(link.candidate_name + '-' + link.role)}-clientreply-${Date.now().toString(36)}`, user: 'ella', priority: 'High', dueDate: todayISO(), title: tTitle, context: tCtx, user: TEAM_CONTACTS[link.sender_key] ? link.sender_key : 'ella' }]);
+      const added = await addAutoTasks([{ key: `${slugKey(link.candidate_name + '-' + link.role)}-clientreply-${Date.now().toString(36)}`, priority: 'High', dueDate: todayISO(), title: tTitle, context: tCtx, user: who }]);
+      outcome.taskAdded = added > 0;
     } catch (e) { console.error('reply task failed:', e.message); }
 
     try {
@@ -7965,26 +8000,59 @@ app.post('/r/:id', async (req, res) => {
         company: link.company, role: link.role, channel: 'Reply link', direction: 'In', summary: note.replace(/^\[|\]$/g, ''), follow_up_date: '', follow_up_done: '' });
     } catch (e) { console.error('reply comms log failed:', e.message); }
 
-    const answers = (() => { try { return JSON.parse(link.answers_json || '[]'); } catch (e) { return []; } })();
-    answers.push({ at: new Date().toISOString(), answer, reasons, slots: slots.map(s => s.text), note: (ctx.extra || ctx.detail || message).slice(0, 200), moved: !!(moved && moved.changed) });
-    await replyLinksTable.upsert({ ...link, last_answer: answer, last_answer_at: new Date().toISOString(), answers_json: JSON.stringify(answers.slice(-10)) });
-    auditLog('client-link', 'client_reply', 'candidate', `${link.candidate_name} - ${link.role}`, `${answer}${moved && moved.changed ? ' (moved)' : moved ? ' (left as is: ' + moved.before + ')' : ''}`);
-
     const stageNote = answer === 'more_info' ? 'No stage change. The question is saved in the candidate notes.'
       : !moved ? 'The candidate could not be found on the board, so please check it.'
       : moved.changed ? `The card has moved to ${newStage.replace(/_/g, ' ')} and the reply is saved in the candidate notes.`
       : `The card was not moved because it is already at ${moved.before.replace(/_/g, ' ')}. The reply is saved in the candidate notes.`;
     const notifyTo = link.sender_email || process.env.REPLY_NOTIFY_TO || TEAM_CONTACTS.ella.email;
-    emailTransporter.sendMail({
-      from: process.env.BREVO_SENDER_EMAIL, to: notifyTo,
-      subject: `Client reply: ${summary}`,
-      text: `${summary}\n\n${note.replace(/^\[|\]$/g, '')}\n\n${stageNote}\n\nA task has been added to your Tasks tab. Please reply to the client personally.\n\nLive 2 Help dashboard`,
-    }).catch(e => console.error('reply notify failed:', e.message));
+    try {
+      if (!process.env.BREVO_SMTP_USER || !process.env.BREVO_SMTP_PASS || !process.env.BREVO_SENDER_EMAIL) throw new Error('Brevo email settings are missing on the server');
+      await emailTransporter.sendMail({
+        from: process.env.BREVO_SENDER_EMAIL, to: notifyTo,
+        subject: `Client reply: ${summary}`,
+        text: `${summary}\n\n${note.replace(/^\[|\]$/g, '')}\n\n${stageNote}\n\nA task has been added to your Tasks tab. Please reply to the client personally.\n\nLive 2 Help dashboard`,
+      });
+      outcome.emailed = true;
+    } catch (e) { outcome.emailError = String(e.message || e).slice(0, 160); console.error('reply notify failed:', e.message); }
+
+    const answers = (() => { try { return JSON.parse(link.answers_json || '[]'); } catch (e) { return []; } })();
+    answers.push({ at: new Date().toISOString(), answer, reasons, slots: slots.map(s => s.text), note: (ctx.extra || ctx.detail || message || '').slice(0, 200), message: message.slice(0, 300),
+      moved: outcome.moved, found: outcome.found, before: outcome.before, to: outcome.moved ? newStage : '', taskAdded: outcome.taskAdded, emailed: outcome.emailed, emailError: outcome.emailError });
+    await replyLinksTable.upsert({ ...link, last_answer: answer, last_answer_at: new Date().toISOString(), answers_json: JSON.stringify(answers.slice(-10)) });
+    auditLog('client-link', 'client_reply', 'candidate', `${link.candidate_name} - ${link.role}`, `${answer}${outcome.moved ? ' (moved)' : outcome.found ? ' (left as is: ' + outcome.before + ')' : ' (card not found)'}`);
 
     res.json({ ok: true, message: thanks });
   } catch (e) {
     console.error('POST /r/:id error:', e.message);
     res.status(500).json({ error: 'Something went wrong.' });
+  }
+});
+
+// Recent client answers from the one-click reply links, for the pop-up on the dashboard.
+// Each person sees the replies to the emails they built (anything without a sender is shown to everyone).
+app.get('/api/reply-activity', async (req, res) => {
+  try {
+    const me = actorOf(req);
+    const cutoff = Date.now() - 14 * 86400000;
+    const out = [];
+    (await replyLinksTable.list()).forEach(l => {
+      if (l.sender_key && l.sender_key !== me) return;
+      let arr = [];
+      try { arr = JSON.parse(l.answers_json || '[]'); } catch (e) { arr = []; }
+      arr.forEach(a => {
+        if (!a || !a.at || Date.parse(a.at) < cutoff) return;
+        out.push({
+          key: `${l.id}|${a.at}`, at: a.at, company: l.company, role: l.role, candidate: l.candidate_name, candidateId: l.candidate_id,
+          answer: a.answer, slots: a.slots || [], reasons: (a.reasons || []).map(k => REPLY_REASONS[k] || k), note: a.note || '', message: a.message || '',
+          moved: !!a.moved, found: a.found !== false, before: a.before || '', to: a.to || '', taskAdded: !!a.taskAdded, emailed: !!a.emailed, emailError: a.emailError || '',
+        });
+      });
+    });
+    out.sort((x, y) => String(y.at).localeCompare(String(x.at)));
+    res.json({ data: out.slice(0, 30) });
+  } catch (e) {
+    console.error('GET /api/reply-activity error:', e.message);
+    res.status(500).json({ error: e.message });
   }
 });
 
