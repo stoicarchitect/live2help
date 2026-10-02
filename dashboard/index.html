@@ -1265,9 +1265,9 @@
               <div style="font-size:11px;color:#999;margin-top:4px;" id="ytdRevenueDetail">-</div>
             </div>
             <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;padding:16px;">
-              <div style="font-size:12px;color:#999;margin-bottom:8px;">Ella - ROI</div>
+              <div style="font-size:12px;color:#999;margin-bottom:8px;">Team ROI</div>
               <div style="font-size:28px;color:var(--gold);font-weight:600;" id="ellaROIMetric">-</div>
-              <div style="font-size:11px;color:#999;margin-top:4px;" id="ellaROIDetail">Salary: £25,000 YTD</div>
+              <div style="font-size:11px;color:#999;margin-top:4px;" id="ellaROIDetail">Add team members below</div>
             </div>
             <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;padding:16px;">
               <div style="font-size:12px;color:#999;margin-bottom:8px;">Runway (months)</div>
@@ -1284,12 +1284,17 @@
               <div id="employeeList"></div>
             </div>
             <div id="employeeEmpty" style="padding:20px;text-align:center;color:#999;font-size:13px;display:none;">No team members added yet</div>
+            <div id="payrollTotalRow" style="padding:10px 16px;font-size:12px;color:var(--dark);font-weight:600;border-top:1px solid var(--border);"></div>
+            <div id="roiBreakdown" style="border-top:1px solid var(--border);padding:12px 16px;font-size:12px;"></div>
+            <div id="payrollTools" style="border-top:1px solid var(--border);padding:12px 16px;font-size:12px;"></div>
             
             <!-- Add Employee Form -->
             <div style="border-top:1px solid var(--border);padding:16px;background:var(--lightbg);">
               <div style="font-size:12px;color:#999;margin-bottom:12px;font-weight:500;">Add Team Member</div>
               <div style="display:flex;gap:8px;flex-wrap:wrap;">
                 <input type="text" id="employeeName" placeholder="Name" style="flex:0 1 150px;padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:12px;font-family:inherit;background:#fff;">
+                <input type="text" id="employeeRole" placeholder="Role" style="flex:0 1 140px;padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:12px;font-family:inherit;background:#fff;">
+                <input type="text" id="employeePension" placeholder="Pension %" style="flex:0 1 90px;padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:12px;font-family:inherit;background:#fff;">
                 <input type="text" id="employeeSalary" placeholder="Salary (£)" style="flex:0 1 120px;padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:12px;font-family:inherit;background:#fff;">
                 <input type="date" id="employeeStartDate" style="flex:0 1 140px;padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:12px;font-family:inherit;background:#fff;">
                 <button onclick="addEmployee()" style="padding:8px 16px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap;">Add</button>
@@ -1301,7 +1306,8 @@
           <h4 style="font-size:14px;color:var(--dark);margin:20px 0 12px;font-weight:500;">Costs & Profit</h4>
           <div style="display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap;">
             <div style="flex:1;min-width:220px;background:var(--white);border:1px solid var(--border);border-radius:2px;padding:16px;">
-              <label style="display:block;font-size:12px;color:#999;margin-bottom:8px;letter-spacing:0.5px;">Advertising Spend (YTD)</label>
+              <label style="display:block;font-size:12px;color:#999;margin-bottom:8px;letter-spacing:0.5px;">Other advertising not logged (YTD)</label>
+              <div id="adAutoLine" style="font-size:12px;color:var(--dark);margin-bottom:8px;">Logged in Sourcing: -</div>
               <div style="display:flex;gap:8px;">
                 <input type="text" id="advertisingCostInput" placeholder="e.g. 1500" style="flex:1;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-size:13px;font-family:inherit;background:#fff;">
                 <button onclick="saveAdvertisingCost()" style="padding:9px 14px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap;">Save</button>
@@ -1659,7 +1665,7 @@
         <div class="section-title">By channel</div>
         <div class="ops-table-wrap"><table class="ops-table" style="min-width:720px;"><thead><tr><th>Channel</th><th>Spend</th><th>Applicants</th><th>Submitted</th><th>Placed</th><th>Cost per applicant</th><th>Cost per hire</th></tr></thead><tbody id="spChannels"></tbody></table></div>
         <div class="section-title">Cost by role</div>
-        <div class="ops-table-wrap"><table class="ops-table" style="min-width:820px;"><thead><tr><th>Role</th><th>Company</th><th>Status</th><th>Direct spend</th><th>Share of shared costs</th><th>Total</th><th>Placed</th><th>Cost per placement</th></tr></thead><tbody id="spRoles"></tbody></table></div>
+        <div class="ops-table-wrap"><table class="ops-table" style="min-width:1100px;"><thead><tr><th>Role</th><th>Company</th><th>Status</th><th>Direct spend</th><th>Share of shared costs</th><th>Total</th><th>Applicants</th><th>Live</th><th>Rejected</th><th>Cost per applicant</th><th>Cost per live</th><th>Placed</th><th>Cost per placement</th></tr></thead><tbody id="spRoles"></tbody></table></div>
         <div class="note-line">Direct spend is anything logged against one role. Shared costs, such as a monthly candidate matching fee set to All open roles, are split equally between the roles that were open in each month.</div>
         <div class="note-line">Applicants are counted from the Candidate Pool by the date they were added. Set each candidate's source in their Candidate Pool dialog under Source and data protection.</div>
         <div class="section-title">Spend log</div>
@@ -2626,7 +2632,7 @@ function renderBoard(){
             <div class="cname">${formatCandidateName(c.name)}</div>
             <div class="cdays">${d} day${d===1?'':'s'} in stage</div>
             ${subFlagHtml(c, currentRole)}
-            ${c.salary ? `<div class="csal">£${c.salary}</div>` : ''}
+            ${c.salary ? `<div class="csal">${esc(salaryLabel(c.salary))}</div>` : ''}
             <div class="mob-action">View &rsaquo;</div>
           </div>
         `;
@@ -2687,7 +2693,7 @@ function renderAggregateBoard(){
             <div class="csub">${where.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>
             <div class="cdays">${d} day${d===1?'':'s'} in stage</div>
             ${subFlagHtml(c, x.role)}
-            ${c.salary ? `<div class="csal">\u00A3${c.salary}</div>` : ''}
+            ${c.salary ? `<div class="csal">${esc(salaryLabel(c.salary))}</div>` : ''}
             <div class="mob-action">View &rsaquo;</div>
           </div>`;
         body.appendChild(card);
@@ -2789,11 +2795,13 @@ function openCandidateModal(id){
     </div>
   `;
 
-  if(c.stage === 'offer'){
+  {
+    const atOffer = ['offer', 'start_date', 'day1', 'week1', 'month1'].includes(c.stage);
     html += `
       <div class="field-row">
-        <label>Agreed salary (£)</label>
-        <input type="text" id="salaryInput" value="${c.salary || ''}" placeholder="e.g. 42000">
+        <label>${atOffer ? 'Agreed basic salary (£)' : 'Basic salary (£)'}</label>
+        <input type="text" id="salaryInput" value="${esc(c.salary || '')}" placeholder="e.g. 42000, or a range such as 40000-45000" oninput="salaryHintUpdate()">
+        <div id="salaryHint" class="note-line" style="margin-top:4px;">${esc(salaryHintText(c.salary || ''))}</div>
       </div>`;
   }
 
@@ -2818,6 +2826,8 @@ function openCandidateModal(id){
     </div>
   `;
 
+  html += sourcePanel(c);
+  html += commissionPreview(c);
   html += ivHistoryPanel(c);
   html += offerDocsPanel(c);
 
@@ -2927,7 +2937,7 @@ function captureFieldsFromModal(c){
   const notesEl = document.getElementById('notesInput');
   if(notesEl) c.notes = notesEl.value;
   const salEl = document.getElementById('salaryInput');
-  if(salEl) c.salary = salEl.value;
+  if(salEl) c.salary = tidySalary(salEl.value);
   const startDateEl = document.getElementById('startDateInput');
   if(startDateEl) c.startDate = startDateEl.value;
   const emailEl = document.getElementById('emailInput');
@@ -3612,10 +3622,10 @@ function updateInvoicePreview(){
   const eligible = window._invoiceEligible || [];
   const c = eligible[Number(select.value)];
   if(!c) return;
-  const { rate, fee } = calculateFeePreview(c.salary);
+  const { rate, fee } = calculateFeePreview(parseSalaryNumber(c.salary));
   document.getElementById('pvCompany').textContent = c.company;
   document.getElementById('pvCandidate').textContent = c.name;
-  document.getElementById('pvSalary').textContent = Number(c.salary).toLocaleString();
+  document.getElementById('pvSalary').textContent = parseSalaryNumber(c.salary).toLocaleString();
   document.getElementById('pvRate').textContent = rate * 100;
   document.getElementById('pvFee').textContent = fee.toLocaleString();
   document.getElementById('invoicePreviewBox').style.display = 'block';
@@ -3626,6 +3636,10 @@ async function submitGenerateInvoice(){
   const eligible = window._invoiceEligible || [];
   const c = eligible[Number(select.value)];
   if(!c) return;
+  const singleSalary = singleSalaryOrWarn(c.salary);
+  if(!singleSalary) return;
+  const pickedConsultant = await pickConsultant();
+  if(pickedConsultant === null) return;
 
   try{
     const res = await fetch(`${API_BASE}/api/invoices`, {
@@ -3636,7 +3650,9 @@ async function submitGenerateInvoice(){
         company: c.company,
         role: c.role,
         candidateName: c.name,
-        salary: c.salary
+        salary: String(singleSalary),
+        consultant: pickedConsultant,
+        commissionPct: commissionPctFor(pickedConsultant)
       })
     });
     if(!res.ok) throw new Error('Server returned ' + res.status);
@@ -3659,6 +3675,10 @@ async function submitGenerateInvoice(){
 async function generateInvoiceForCandidate(){
   const c = findCandidate(openCandidateId);
   captureFieldsFromModal(c);
+  const singleSalary = singleSalaryOrWarn(c.salary);
+  if(!singleSalary) return;
+  const pickedConsultant = await pickConsultant();
+  if(pickedConsultant === null) return;
   await saveCandidate(c);
   try{
     const res = await fetch(`${API_BASE}/api/invoices`, {
@@ -3669,7 +3689,9 @@ async function generateInvoiceForCandidate(){
         company: currentCompany,
         role: currentRole,
         candidateName: c.name,
-        salary: c.salary
+        salary: String(singleSalary),
+        consultant: pickedConsultant,
+        commissionPct: commissionPctFor(pickedConsultant)
       })
     });
     if(!res.ok) throw new Error('Server returned ' + res.status);
@@ -4206,6 +4228,7 @@ async function loadBusinessHealth(){
   try{
     const year = document.getElementById('healthYearSelector')?.value || '2026';
     await finLoad();
+    try{ B3.adspend = b2List(await b2Api('/api/ad-spend')); }catch(e){ /* sourcing spend stays as last loaded */ }
     loadBackupStatus();
     loadQuarterHistory();
     
@@ -4232,35 +4255,7 @@ async function loadBusinessHealth(){
     document.getElementById('ytdRevenueMetric').textContent = `£${ytdRevenue.toLocaleString('en-GB', {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
     document.getElementById('ytdRevenueDetail').textContent = `${metrics.invoiceCount || 0} invoices processed`;
     
-    // Calculate total YTD salary from all employees
-    const employees = JSON.parse(finGet('l2h-employees') || '[]');
-    let totalYTDSalary = 0;
-    employees.forEach(emp => {
-      totalYTDSalary += calculateEmployeeYTDSalary(emp);
-    });
-    
-    // Ella ROI (using total team salary)
-    const ellaROI = ytdRevenue > 0 ? (ytdRevenue - totalYTDSalary) / (totalYTDSalary || 25000) : 0;
-    const roiPercent = (ellaROI * 100).toFixed(0);
-    document.getElementById('ellaROIMetric').textContent = roiPercent + '%';
-    document.getElementById('ellaROIDetail').textContent = `Revenue: £${ytdRevenue.toLocaleString('en-GB', {minimumFractionDigits: 0})} / Cost: £${totalYTDSalary.toLocaleString('en-GB')}`;
-    
-    // Runway calculation
-    const monthlyBurn = (totalYTDSalary || 25000) / 12 * 1.03;
-    const currentCash = bankBalance + ytdRevenue;
-    const runway = currentCash > 0 ? currentCash / monthlyBurn : 0;
-    
-    const runwayColor = runway < 1 ? 'var(--danger)' : runway < 3 ? '#c9703f' : 'var(--success)';
-    document.getElementById('runwayMetric').style.color = runwayColor;
-    document.getElementById('runwayMetric').textContent = runway.toFixed(1);
-    document.getElementById('runwayDetail').textContent = `Bank: £${bankBalance.toLocaleString('en-GB')} + revenue`;
-    
-    // YTD Profit
-    const ytdProfit = ytdRevenue - totalYTDSalary - advertisingCost;
-    const profitColor = ytdProfit < 0 ? 'var(--danger)' : ytdProfit < 10000 ? '#c9703f' : 'var(--success)';
-    document.getElementById('ytdProfitMetric').style.color = profitColor;
-    document.getElementById('ytdProfitMetric').textContent = `£${ytdProfit.toLocaleString('en-GB', {minimumFractionDigits: 0})}`;
-    document.getElementById('ytdProfitDetail').textContent = `£${ytdRevenue.toLocaleString('en-GB')} - £${totalYTDSalary.toLocaleString('en-GB')} - £${advertisingCost.toLocaleString('en-GB')}`;
+    kpiRender(metrics, bankBalance, ytdRevenue, advertisingCost, year);
     
     // Invoice Status
     document.getElementById('invoicePaidMetric').textContent = `£${(metrics.invoicePaid || 0).toLocaleString('en-GB', {minimumFractionDigits: 0})}`;
@@ -7572,7 +7567,7 @@ function tplVars(){
     const c = sel.c;
     v.candidate_name = c.name; v.first_name = String(c.name).split(' ')[0]; v.role = sel.role; v.company = sel.company;
     v.company_address = companyAddress(sel.company);
-    if(c.salary) v.salary = opsMoney(String(c.salary).replace(/[^0-9.]/g, ''));
+    if(parseSalaryNumber(c.salary)) v.salary = opsMoney(parseSalaryNumber(c.salary));
     if(c.startDate) v.start_date = fmtDateLong(c.startDate);
     const inv = OPS.invoices.find(i => b2Same(i.candidateName, c.name) && b2Same(i.company, sel.company));
     if(inv){ v.invoice_ref = inv.number; v.fee_amount = opsMoney(inv.amount); }
@@ -7647,6 +7642,7 @@ function renderForecast(){
   const roleRows = [];
   const candRows = [];
   let noSalary = 0;
+  const salaryFlags = [];
   roles.forEach(r => {
     let cands = [];
     Object.keys(DATA).forEach(co => {
@@ -7659,12 +7655,14 @@ function renderForecast(){
     const openPos = Math.max(0, positions - placed);
     const inPlay = [];
     cands.filter(c => FORECAST_STAGES.includes(c.stage)).forEach(c => {
-      let salary = parseSalaryNumber(c.salary), source = 'candidate';
+      const sInfo = salaryInfo(c.salary);
+      let salary = sInfo.value, source = sInfo.isRange ? 'range' : 'candidate';
+      if(c.salary && !salary) salaryFlags.push({name: c.name, role: r.role, company: r.company, text: String(c.salary)});
       if(!salary){ salary = bandMidpoint(r.salary_band); source = 'band'; }
       if(!salary){ noSalary++; return; }
       const rate = parseFloat(r.fee_percent) > 0 ? parseFloat(r.fee_percent) : feeRateFor(salary);
       const fee = salary * rate / 100;
-      inPlay.push({name:c.name, stage:c.stage, salary, rate, fee, weight: weights[c.stage] || 0, source});
+      inPlay.push({name:c.name, stage:c.stage, salary, rate, fee, weight: weights[c.stage] || 0, source, rangeText: sInfo.isRange ? salaryLabel(c.salary) : ''});
     });
     inPlay.sort((a, b) => (b.weight - a.weight) || (b.fee - a.fee));
     inPlay.forEach((c, i) => {
@@ -7698,6 +7696,7 @@ function renderForecast(){
       <div class="tile static"><div class="n">${opsMoney(outstanding)}</div><div class="l">Invoices outstanding</div></div>
       <div class="tile static ${noSalary ? 'warn' : ''}"><div class="n">${noSalary}</div><div class="l">Candidates with no salary data</div></div>
     </div>
+    ${salaryFlags.length ? `<div class="warn-box"><strong>Check these salaries. They could not be read, or look too high, so they were left out of the forecast.</strong><ul>${salaryFlags.map(f => `<li>${esc(f.name)}, ${esc(f.role)} at ${esc(f.company)}: "${esc(f.text)}"</li>`).join('')}</ul></div>` : ''}
     <div class="section-title">By role</div>
     ${roleRows.length ? `<div class="ops-table-wrap"><table class="ops-table" style="min-width:820px;"><thead><tr><th>Role</th><th>Company</th><th>Positions open</th><th>Placed</th><th>Candidates in play</th><th>Counted</th><th>Potential fee</th><th>Weighted</th></tr></thead><tbody>
       ${roleRows.sort((a, b) => b.weighted - a.weighted).map(r => `<tr><td class="strong">${esc(r.role)}</td><td>${esc(r.company)}</td><td>${r.openPos} of ${r.positions}</td><td>${r.placed}</td><td>${r.inPlay}</td><td>${r.counted}</td><td>${opsMoney(r.potential)}</td><td>${opsMoney(r.weighted)}</td></tr>`).join('')}
@@ -7710,7 +7709,7 @@ function renderForecast(){
     <div class="kv-tile-row"><button class="gold-btn" onclick="saveForecastWeights()">Save weights</button><button class="ghost-btn" onclick="resetForecastWeights()">Reset to defaults</button></div>
     <div class="section-title">Candidates counted</div>
     ${candRows.length ? `<div class="ops-table-wrap"><table class="ops-table" style="min-width:820px;"><thead><tr><th>Candidate</th><th>Role</th><th>Company</th><th>Stage</th><th>Fee</th><th>Weighted</th><th>Status</th></tr></thead><tbody>
-      ${candRows.map(c => `<tr><td class="strong">${esc(c.name)}</td><td>${esc(c.role)}</td><td>${esc(c.company)}</td><td>${esc(poolStageLabel(c.stage))}</td><td>${opsMoney(c.fee)}<div class="pool-muted">${c.rate}%${c.source === 'band' ? ', salary band midpoint' : ''}</div></td><td>${opsMoney(c.weighted)}</td>
+      ${candRows.map(c => `<tr><td class="strong">${esc(c.name)}</td><td>${esc(c.role)}</td><td>${esc(c.company)}</td><td>${esc(poolStageLabel(c.stage))}</td><td>${opsMoney(c.fee)}<div class="pool-muted">${c.rate}%${c.source === 'band' ? ', salary band midpoint' : (c.source === 'range' ? ', midpoint of ' + esc(c.rangeText) : '')}</div></td><td>${opsMoney(c.weighted)}</td>
       <td><span class="status-pill ${c.counted ? 'active' : ''}">${c.counted ? 'Counted' : 'Not counted - positions covered'}</span></td></tr>`).join('')}
     </tbody></table></div>` : '<div class="panel"><div class="panel-empty">No candidates with salary data in open roles yet.</div></div>'}
     <div class="by-client-block"><div class="section-title">By client</div>
@@ -8619,14 +8618,17 @@ renderSourcing = function(){
   const pool = (typeof POOL !== 'undefined' ? POOL : []).filter(p => !p.erased && inRange(p.dateAdded));
   const total = occ.reduce((s, o) => s + o.amount, 0);
   const placed = pool.filter(p => stageIdx(p.furthestStage) >= stageIdx('start_date')).length;
-  const untagged = (typeof POOL !== 'undefined' ? POOL : []).filter(p => !p.erased && !p.source).length;
+  const live = pool.filter(p => p.currentStage !== 'rejected');
+  const untagged = pool.filter(p => !p.source).length;
   document.getElementById('spTiles').innerHTML = [
     {n: opsMoney(total), l:'Advertising spend'},
-    {n: pool.length, l:'Applicants'},
+    {n: pool.length, l:'All applicants (incl. rejected)'},
+    {n: live.length, l:'Live applicants'},
     {n: placed, l:'Placed'},
-    {n: pool.length ? opsMoney(total / pool.length) : '-', l:'Cost per applicant'},
+    {n: pool.length ? opsMoney(total / pool.length) : '-', l:'Cost per applicant (all)'},
+    {n: live.length ? opsMoney(total / live.length) : '-', l:'Cost per live applicant'},
     {n: placed ? opsMoney(total / placed) : '-', l:'Cost per hire'},
-    {n: untagged, l:'Candidates with no source', warn: untagged > 0},
+    {n: untagged, l:'No source in this period', warn: untagged > 0},
   ].map(t => `<div class="tile static ${t.warn ? 'warn' : ''}"><div class="n">${esc(t.n)}</div><div class="l">${t.l}</div></div>`).join('');
 
   const channels = [...new Set(SOURCES.concat(occ.map(o => o.e.channel).filter(Boolean)).concat(pool.map(p => p.source).filter(Boolean)))];
@@ -8663,11 +8665,16 @@ renderSourcing = function(){
   const roleRows = Object.values(byRole).sort((a, b) => (b.direct + b.shared) - (a.direct + a.shared));
   document.getElementById('spRoles').innerHTML = (roleRows.length || general) ? roleRows.map(b => {
     const r = b.r, tot = b.direct + b.shared;
-    const placedN = flatCandidates().filter(x => b2Same(x.company, r.company) && b2Same(x.role, r.role) && ['start_date','day1','week1','month1'].includes(x.c.stage)).length;
+    const mine = flatCandidates().filter(x => b2Same(x.company, r.company) && b2Same(x.role, r.role));
+    const placedN = mine.filter(x => ['start_date','day1','week1','month1'].includes(x.c.stage)).length;
+    const rejN = mine.filter(x => x.c.stage === 'rejected').length;
+    const allN = mine.length, liveN = allN - rejN;
     return `<tr><td class="strong">${esc(r.role)}</td><td>${esc(r.company)}</td><td>${esc(roleStatusLabel(r.status))}</td>
-      <td>${opsMoney(b.direct)}</td><td>${opsMoney(b.shared)}</td><td><strong>${opsMoney(tot)}</strong></td><td>${placedN}</td><td>${placedN ? opsMoney(tot / placedN) : '-'}</td></tr>`;
-  }).join('') + (general ? `<tr><td class="strong">Not allocated to a role</td><td></td><td></td><td>${opsMoney(general)}</td><td></td><td>${opsMoney(general)}</td><td></td><td></td></tr>` : '')
-    : '<tr><td colspan="8" class="empty-row">No spend allocated to roles in this period.</td></tr>';
+      <td>${opsMoney(b.direct)}</td><td>${opsMoney(b.shared)}</td><td><strong>${opsMoney(tot)}</strong></td>
+      <td>${allN}</td><td>${liveN}</td><td>${rejN}</td><td>${allN ? opsMoney(tot / allN) : '-'}</td><td>${liveN ? opsMoney(tot / liveN) : '-'}</td>
+      <td>${placedN}</td><td>${placedN ? opsMoney(tot / placedN) : '-'}</td></tr>`;
+  }).join('') + (general ? `<tr><td class="strong">Not allocated to a role</td><td></td><td></td><td>${opsMoney(general)}</td><td></td><td>${opsMoney(general)}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>` : '')
+    : '<tr><td colspan="13" class="empty-row">No spend allocated to roles in this period.</td></tr>';
 
   const entries = B3.adspend.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
   document.getElementById('spEntries').innerHTML = entries.length ? entries.map(s => `<tr>
@@ -9016,7 +9023,7 @@ tplVars = function(){
     const c = sel.c;
     v.candidate_name = c.name; v.first_name = String(c.name).split(' ')[0]; v.role = sel.role; v.company = sel.company;
     v.company_address = companyAddress(sel.company);
-    if(c.salary) v.salary = opsMoney(String(c.salary).replace(/[^0-9.]/g, ''));
+    if(parseSalaryNumber(c.salary)) v.salary = opsMoney(parseSalaryNumber(c.salary));
     const inv = OPS.invoices.find(i => b2Same(i.candidateName, c.name) && b2Same(i.company, sel.company));
     if(inv){ v.invoice_ref = inv.number; v.fee_amount = opsMoney(inv.amount); }
     else{
@@ -11534,7 +11541,7 @@ async function rmGenerateCareers(silent){
 /* ---------- Automation batch A: server-backed finance figures, backups, quarter history, test candidates ---------- */
 var FIN_CACHE = {};
 var FIN_LOADED = false;
-var FIN_KEYS = ['l2h-bank-balance', 'l2h-advertising-cost', 'l2h-employees'];
+var FIN_KEYS = ['l2h-bank-balance', 'l2h-advertising-cost', 'l2h-employees', 'l2h-seed-ella', 'l2h-seed-ella-comm', 'l2h-payroll-cutoff', 'l2h-payday', 'l2h-payroll-email'];
 async function finLoad(force){
   if(FIN_LOADED && !force) return;
   try{
@@ -12950,8 +12957,590 @@ function serverBuildLabel(b){
 }
 </script>
 <script>
+/* ============================================================
+   Build 7: automatic advertising spend, team payroll and ROI,
+   per person ROI, where candidates came from, advert tracking links
+   ============================================================ */
+
+/* ---------- Team payroll ---------- */
+function payPeriod(year){
+  const now = new Date();
+  const y = parseInt(year, 10) || now.getFullYear();
+  const ys = new Date(Date.UTC(y, 0, 1));
+  const isCurrent = y === now.getFullYear();
+  const end = isCurrent ? new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())) : new Date(Date.UTC(y, 11, 31));
+  return {y, ys, end, isCurrent};
+}
+function weekdaysBetween(from, to){
+  // Monday to Friday days from "from" to "to", both included (UTC dates)
+  if(to < from) return 0;
+  const total = Math.round((to - from) / 86400000) + 1;
+  const fullWeeks = Math.floor(total / 7);
+  let n = fullWeeks * 5;
+  const d = new Date(from.getTime() + fullWeeks * 7 * 86400000);
+  for(let i = 0; i < total - fullWeeks * 7; i++){
+    const dow = new Date(d.getTime() + i * 86400000).getUTCDay();
+    if(dow !== 0 && dow !== 6) n++;
+  }
+  return n;
+}
+function round2(n){ return Math.round((n || 0) * 100) / 100; }
+function empCost(emp, year){
+  // Salary is paid weekly for a Monday to Friday week, so it accrues per working day
+  const per = payPeriod(year);
+  const st = new Date((emp.startDate || '') + 'T00:00:00Z');
+  const en = emp.endDate ? new Date(emp.endDate + 'T00:00:00Z') : null;
+  if(isNaN(st.getTime())) return {salary: 0, pension: 0, total: 0, days: 0};
+  const from = st > per.ys ? st : per.ys;
+  const to = (en && !isNaN(en.getTime()) && en < per.end) ? en : per.end;
+  const days = weekdaysBetween(from, to);
+  const annual = parseFloat(emp.salary) || 0;
+  const sal = Math.min(annual, annual / 260 * days);
+  const pen = sal * ((parseFloat(emp.pensionPct) || 0) / 100);
+  return {salary: round2(sal), pension: round2(pen), total: round2(sal + pen), days};
+}
+function calculateEmployeeYTDSalary(emp){ return empCost(emp, new Date().getFullYear()).salary; }
+function payEmployees(){ try{ return JSON.parse(finGet('l2h-employees') || '[]'); }catch(e){ return []; } }
+function gbp(n){ return '£' + Math.round(n || 0).toLocaleString('en-GB'); }
+function gbp2(n){ return '£' + (n || 0).toLocaleString('en-GB', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+function commissionPctFor(name){
+  const e = payEmployees().find(x => String(x.name || '').trim().toLowerCase() === String(name || '').trim().toLowerCase());
+  return e ? (parseFloat(e.commissionPct) || 0) : 0;
+}
+function empMatches(emp, key){
+  const full = String(emp.name || '').trim().toLowerCase();
+  const first = full.split(/\s+/)[0];
+  const kk = String(key || '').trim().toLowerCase();
+  if(!kk || kk === 'unassigned') return false;
+  return kk === full || kk === first || full.startsWith(kk + ' ');
+}
+function sumFor(emp, byName){
+  let sum = 0; const used = [];
+  Object.keys(byName || {}).forEach(k => { if(empMatches(emp, k)){ sum += byName[k]; used.push(k); } });
+  return {sum, used};
+}
+
+function paySettings(){
+  return {cutoff: parseInt(finGet('l2h-payroll-cutoff'), 10) || 0, payday: parseInt(finGet('l2h-payday'), 10) || 5, email: finGet('l2h-payroll-email') || ''};
+}
+
+async function loadEmployeeList(){
+  let employees = payEmployees();
+  if(!finGet('l2h-seed-ella')){
+    if(!employees.some(e => /ella/i.test(e.name || ''))){
+      employees.push({name: 'Ella Pietrzak', role: 'Recruitment Coordinator', salary: 25000, startDate: '2026-09-28', pensionPct: 3});
+    }
+    finSet('l2h-seed-ella', '1');
+  }
+  if(!finGet('l2h-seed-ella-comm')){
+    employees.forEach(e => { if(/ella/i.test(e.name || '') && e.commissionPct === undefined){ e.commissionPct = 15; e.pensionOnComm = true; } });
+    finSet('l2h-seed-ella-comm', '1');
+  }
+  finSet('l2h-employees', JSON.stringify(employees));
+  const list = document.getElementById('employeeList');
+  const year = document.getElementById('healthYearSelector')?.value || new Date().getFullYear();
+  renderPayrollTools();
+  if(!employees.length){
+    document.getElementById('employeeEmpty').style.display = 'block';
+    list.innerHTML = '';
+    return;
+  }
+  document.getElementById('employeeEmpty').style.display = 'none';
+  list.innerHTML = '';
+  employees.forEach((emp, idx) => {
+    const c = empCost(emp, year);
+    const row = document.createElement('div');
+    row.style.cssText = 'display:grid;grid-template-columns:1.4fr 1.1fr 1.3fr auto;gap:0;border-bottom:1px solid var(--border);align-items:center;';
+    row.innerHTML = `
+      <div style="padding:12px 16px;font-size:13px;color:var(--dark);font-weight:500;">${esc(emp.name)}<div style="font-size:11px;color:#999;font-weight:400;">${esc(emp.role || '')}${emp.endDate ? ' - left ' + esc(emp.endDate) : ''}</div></div>
+      <div style="padding:12px 16px;font-size:12px;color:#999;">${gbp(emp.salary)} a year, paid weekly<div style="font-size:11px;">Pension ${parseFloat(emp.pensionPct) || 0}%${parseFloat(emp.commissionPct) ? ' - Commission ' + parseFloat(emp.commissionPct) + '%' + (emp.pensionOnComm === false ? ' (no pension on commission)' : '') : ''}</div></div>
+      <div style="padding:12px 16px;font-size:12px;color:var(--gold);font-weight:600;">${gbp(c.total)} salary and pension YTD<div style="font-size:11px;color:#999;font-weight:400;">${gbp(c.salary)} salary (${c.days} working days) + ${gbp(c.pension)} pension</div></div>
+      <div style="padding:12px 16px;font-size:12px;display:flex;gap:6px;">
+        <button onclick="editEmployee(${idx})" style="padding:4px 8px;background:none;border:1px solid var(--border);border-radius:2px;cursor:pointer;font-size:11px;">Edit</button>
+        <button onclick="deleteEmployee(${idx})" style="padding:4px 8px;background:var(--danger);color:white;border:none;border-radius:2px;cursor:pointer;font-size:11px;">Delete</button>
+      </div>`;
+    list.appendChild(row);
+  });
+}
+
+function addEmployee(){
+  const name = document.getElementById('employeeName').value.trim();
+  const role = document.getElementById('employeeRole').value.trim();
+  const salary = parseInt(document.getElementById('employeeSalary').value) || 0;
+  const pensionPct = parseFloat(document.getElementById('employeePension').value) || 0;
+  const startDate = document.getElementById('employeeStartDate').value;
+  if(!name || !salary || !startDate){ showToast('Name, salary and start date are required'); return; }
+  const employees = payEmployees();
+  employees.push({name, role, salary, startDate, pensionPct, commissionPct: 0, pensionOnComm: true});
+  finSet('l2h-employees', JSON.stringify(employees));
+  ['employeeName', 'employeeRole', 'employeeSalary', 'employeePension', 'employeeStartDate'].forEach(i => { document.getElementById(i).value = ''; });
+  showToast('Team member added. Use Edit to set a commission rate if they earn one.');
+  loadBusinessHealth();
+}
+function editEmployee(idx){
+  const employees = payEmployees();
+  const e = employees[idx];
+  const name = prompt('Name:', e.name); if(name === null) return;
+  const role = prompt('Role:', e.role || ''); if(role === null) return;
+  const salary = prompt('Annual salary (£):', e.salary); if(salary === null) return;
+  const start = prompt('Start date (YYYY-MM-DD):', e.startDate); if(start === null) return;
+  const end = prompt('Leaving date (YYYY-MM-DD), blank if still employed:', e.endDate || ''); if(end === null) return;
+  const pension = prompt('Employer pension % on salary:', e.pensionPct || 0); if(pension === null) return;
+  const comm = prompt('Commission % of the invoice amount (0 for none):', e.commissionPct || 0); if(comm === null) return;
+  let pOnC = e.pensionOnComm !== false;
+  if(parseFloat(comm) > 0){
+    const a = prompt('Does employer pension also apply to commission? Type yes or no:', pOnC ? 'yes' : 'no');
+    if(a === null) return;
+    pOnC = !/^n/i.test(a.trim());
+  }
+  employees[idx] = {name: name.trim() || e.name, role: role.trim(), salary: parseInt(salary) || e.salary, startDate: start.trim() || e.startDate, endDate: end.trim(), pensionPct: parseFloat(pension) || 0, commissionPct: parseFloat(comm) || 0, pensionOnComm: pOnC};
+  finSet('l2h-employees', JSON.stringify(employees));
+  showToast('Team member updated');
+  loadBusinessHealth();
+}
+
+/* ---------- KPI maths: payroll, commission, advertising, ROI, runway, profit ---------- */
+function kpiAdSpend(year){
+  const per = payPeriod(year);
+  const fromISO = per.ys.toISOString().slice(0, 10);
+  const toISO = per.end.toISOString().slice(0, 10);
+  return spendOccurrences(B3.adspend || [], fromISO, toISO).reduce((s, o) => s + o.amount, 0);
+}
+function kpiRender(metrics, bank, ytdRevenue, manualAd, year){
+  const employees = payEmployees();
+  const commBy = metrics.commissionByConsultant || {};
+  const costs = employees.map(e => {
+    const c = empCost(e, year);
+    const cm = sumFor(e, commBy).sum;
+    const cmPension = e.pensionOnComm === false ? 0 : cm * ((parseFloat(e.pensionPct) || 0) / 100);
+    return {e, c, cm: round2(cm), cmPension: round2(cmPension), total: round2(c.total + cm + cmPension)};
+  });
+  const teamCost = costs.reduce((s, x) => s + x.total, 0);
+  const teamSalary = costs.reduce((s, x) => s + x.c.salary, 0);
+  const teamPension = costs.reduce((s, x) => s + x.c.pension + x.cmPension, 0);
+  const teamComm = costs.reduce((s, x) => s + x.cm, 0);
+  const adAuto = kpiAdSpend(year);
+  const adTotal = adAuto + (manualAd || 0);
+
+  const roiEl = document.getElementById('ellaROIMetric'), roiDetail = document.getElementById('ellaROIDetail');
+  if(teamCost > 0){
+    roiEl.textContent = Math.round((ytdRevenue - teamCost) / teamCost * 100) + '%';
+    roiDetail.textContent = `Revenue ${gbp(ytdRevenue)} less team cost ${gbp(teamCost)}, divided by team cost`;
+  }else{
+    roiEl.textContent = '-';
+    roiDetail.textContent = 'Add team members below';
+  }
+
+  const adLine = document.getElementById('adAutoLine');
+  if(adLine) adLine.innerHTML = `Logged in Sourcing: <strong>${gbp(adAuto)}</strong> <a class="tpl-link" onclick="switchTab('sourcing')">view</a>`;
+  document.getElementById('advertisingCostInput').value = manualAd || 0;
+
+  const per = payPeriod(year);
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const runRate = employees.filter(e => (!e.endDate || e.endDate >= todayISO) && e.startDate && e.startDate <= todayISO)
+    .reduce((s, e) => s + (parseFloat(e.salary) || 0) * (1 + (parseFloat(e.pensionPct) || 0) / 100), 0) / 12;
+  const monthsElapsed = per.isCurrent ? Math.max(1, ((per.end - per.ys) / 86400000 + 1) / 30.4) : 12;
+  const burn = runRate + (adTotal + teamComm) / monthsElapsed;
+  const runwayEl = document.getElementById('runwayMetric');
+  if(burn > 0){
+    const runway = (bank + ytdRevenue) / burn;
+    runwayEl.style.color = runway < 1 ? 'var(--danger)' : runway < 3 ? '#c9703f' : 'var(--success)';
+    runwayEl.textContent = runway.toFixed(1);
+    document.getElementById('runwayDetail').textContent = `Bank ${gbp(bank)} + revenue, against ${gbp(burn)} a month`;
+  }else{
+    runwayEl.textContent = '-';
+    document.getElementById('runwayDetail').textContent = 'Add team costs or advertising to calculate';
+  }
+
+  const profit = ytdRevenue - teamCost - adTotal;
+  const pEl = document.getElementById('ytdProfitMetric');
+  pEl.style.color = profit < 0 ? 'var(--danger)' : profit < 10000 ? '#c9703f' : 'var(--success)';
+  pEl.textContent = (profit < 0 ? '-' : '') + gbp(Math.abs(profit));
+  document.getElementById('ytdProfitDetail').textContent = `${gbp(ytdRevenue)} - ${gbp(teamCost)} team - ${gbp(adTotal)} advertising`;
+
+  const cm = metrics.commission || {};
+  const totalEl = document.getElementById('payrollTotalRow');
+  if(totalEl){
+    totalEl.innerHTML = employees.length
+      ? `Team cost YTD: ${gbp(teamCost)} (salary ${gbp(teamSalary)}, commission ${gbp(teamComm)}, employer pension ${gbp(teamPension)})
+         <div style="font-weight:400;color:#777;margin-top:4px;">Commission: ${gbp(cm.recognised)} counted as cost (client has paid) - ${gbp(cm.due)} due to pay - ${gbp(cm.paidOut)} paid out - ${gbp(cm.pending)} still to come (client not yet paid)</div>`
+      : '';
+  }
+  const br = document.getElementById('roiBreakdown');
+  if(br){
+    if(!employees.length){ br.innerHTML = ''; return; }
+    const by = metrics.revenueByConsultant || {};
+    const matched = new Set();
+    const rows = costs.map(x => {
+      const r = sumFor(x.e, by);
+      r.used.forEach(k => matched.add(k));
+      const roi = x.total > 0 ? Math.round((r.sum - x.total) / x.total * 100) + '%' : '-';
+      return `<tr><td class="strong">${esc(x.e.name)}</td><td>${esc(x.e.role || '')}</td><td>${gbp(x.c.total)}</td><td>${gbp(x.cm + x.cmPension)}</td><td>${gbp(x.total)}</td><td>${gbp(r.sum)}</td><td><strong>${roi}</strong></td></tr>`;
+    });
+    const others = Object.keys(by).filter(k => !matched.has(k)).map(k => `<tr><td>${esc(k)}</td><td>${k === 'Unassigned' ? 'No consultant chosen on the invoice' : 'Not on payroll'}</td><td>-</td><td>-</td><td>-</td><td>${gbp(by[k])}</td><td>-</td></tr>`);
+    br.innerHTML = `<div style="font-weight:600;margin-bottom:6px;color:var(--dark);">ROI per person</div>
+      <div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>Name</th><th>Role</th><th>Salary and pension</th><th>Commission and its pension</th><th>Total cost</th><th>Revenue attributed</th><th>ROI</th></tr></thead><tbody>${rows.join('')}${others.join('')}</tbody></table></div>
+      <div class="note-line" style="margin-top:6px;">Revenue is credited by the consultant chosen when each invoice is generated. Commission counts as a cost once the client has paid the invoice. Salary accrues per working day, Monday to Friday.</div>`;
+  }
+}
+
+/* ---------- Payroll settings and the payroll email ---------- */
+function renderPayrollTools(){
+  const host = document.getElementById('payrollTools');
+  if(!host) return;
+  const st = paySettings();
+  const now = new Date();
+  const mv = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+  const inp = 'padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:12px;font-family:inherit;background:#fff;';
+  host.innerHTML = `
+    <div style="font-weight:600;margin-bottom:8px;color:var(--dark);">Payroll email</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+      <div><div style="font-size:11px;color:#999;">Payroll cut-off day of the month</div><input id="payCutoff" type="number" min="1" max="31" value="${st.cutoff || ''}" placeholder="e.g. 25" style="${inp}width:120px;"></div>
+      <div><div style="font-size:11px;color:#999;">Weekly pay day</div><select id="payDay" style="${inp}">${days.map((d, i) => `<option value="${i + 1}" ${st.payday === i + 1 ? 'selected' : ''}>${d}</option>`).join('')}</select></div>
+      <div><div style="font-size:11px;color:#999;">Send payroll to (email)</div><input id="payEmail" value="${esc(st.email)}" placeholder="payroll or accountant email" style="${inp}width:230px;"></div>
+      <button onclick="savePaySettings()" style="padding:8px 14px;background:none;border:1px solid var(--border);border-radius:2px;cursor:pointer;font-size:12px;">Save settings</button>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:10px;">
+      <div><div style="font-size:11px;color:#999;">Payroll month</div><input id="payMonth" type="month" value="${mv}" style="${inp}"></div>
+      <button onclick="createPayrollEmail()" style="padding:8px 16px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;">Create payroll email</button>
+    </div>
+    <div class="note-line" style="margin-top:6px;">Commission is included once the client has paid and the payment date is on or before that month's cut-off day. Anything paid after the cut-off moves to the next month automatically.</div>`;
+}
+function savePaySettings(){
+  const c = parseInt(document.getElementById('payCutoff').value, 10);
+  if(!(c >= 1 && c <= 31)){ showToast('Enter a cut-off day between 1 and 31'); return; }
+  finSet('l2h-payroll-cutoff', String(c));
+  finSet('l2h-payday', document.getElementById('payDay').value);
+  finSet('l2h-payroll-email', document.getElementById('payEmail').value.trim());
+  showToast('Payroll settings saved');
+}
+function ukDate(iso){ const d = new Date(String(iso).slice(0, 10) + 'T00:00:00Z'); return isNaN(d) ? '' : d.toLocaleDateString('en-GB', {day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC'}); }
+
+async function createPayrollEmail(){
+  const st = paySettings();
+  if(!st.cutoff){ showToast('Set and save the payroll cut-off day first'); return; }
+  const month = document.getElementById('payMonth').value;
+  if(!/^\d{4}-\d{2}$/.test(month)){ showToast('Choose a payroll month'); return; }
+  const employees = payEmployees();
+  if(!employees.length){ showToast('No one is on payroll yet'); return; }
+  let invoices = [];
+  try{ invoices = b2List(await b2Api('/api/invoices')); }catch(e){ showToast('Could not load invoices: ' + e.message); return; }
+  const [y, m] = month.split('-').map(Number);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const cutISO = `${month}-${String(Math.min(st.cutoff, last)).padStart(2, '0')}`;
+  const monthStart = `${month}-01`, monthEnd = `${month}-${String(last).padStart(2, '0')}`;
+  const monthName = new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-GB', {month: 'long', year: 'numeric', timeZone: 'UTC'});
+  const include = [];
+  const lines = [`Please process the payroll for ${monthName}. Commission is included where the client paid on or before the cut-off date of ${ukDate(cutISO)}.`, ''];
+  let grand = 0, anyone = false;
+  employees.forEach(e => {
+    if(e.startDate > monthEnd || (e.endDate && e.endDate < monthStart)) return;
+    anyone = true;
+    const weekly = round2((parseFloat(e.salary) || 0) / 52);
+    const pays = [];
+    for(let d = 1; d <= last; d++){
+      const dt = new Date(Date.UTC(y, m - 1, d));
+      const iso = dt.toISOString().slice(0, 10);
+      if(dt.getUTCDay() === st.payday && iso >= e.startDate && (!e.endDate || iso <= e.endDate)) pays.push(iso);
+    }
+    const salary = round2(weekly * pays.length);
+    const mine = invoices.filter(i => i.commissionAmount > 0 && empMatches(e, i.consultant) && String(i.status) === 'paid' && !i.commissionPaidDate);
+    const paidOn = i => String(i.paymentDate || i.date || '').slice(0, 10);
+    const inc = mine.filter(i => paidOn(i) <= cutISO);
+    const moved = mine.filter(i => paidOn(i) > cutISO);
+    const waiting = invoices.filter(i => i.commissionAmount > 0 && empMatches(e, i.consultant) && String(i.status) !== 'paid');
+    const comm = round2(inc.reduce((s, i) => s + i.commissionAmount, 0));
+    const pension = round2(((parseFloat(e.pensionPct) || 0) / 100) * (salary + (e.pensionOnComm === false ? 0 : comm)));
+    const gross = round2(salary + comm);
+    grand += gross;
+    inc.forEach(i => include.push(i.number));
+    lines.push(`${e.name}${e.role ? ' (' + e.role + ')' : ''}`);
+    lines.push(`- Salary: ${pays.length} weekly payment${pays.length === 1 ? '' : 's'} of ${gbp2(weekly)} = ${gbp2(salary)} gross${pays.length ? ' (pay days: ' + pays.map(ukDate).join(', ') + ')' : ''}`);
+    if(parseFloat(e.commissionPct) > 0 || inc.length){
+      if(inc.length){
+        lines.push(`- Commission (${parseFloat(e.commissionPct) || ''}% of invoice amount):`);
+        inc.forEach(i => lines.push(`    ${i.candidateName}, ${i.company}, invoice ${i.number}: invoice ${gbp2(i.amount)}, client paid ${ukDate(paidOn(i))}, commission ${gbp2(i.commissionAmount)}`));
+        lines.push(`  Commission total: ${gbp2(comm)} gross`);
+      }else lines.push('- Commission: none this month');
+    }
+    lines.push(`- Total gross pay: ${gbp2(gross)}`);
+    if(parseFloat(e.pensionPct)) lines.push(`- Employer pension (${parseFloat(e.pensionPct)}%${e.pensionOnComm === false ? ' on salary only' : ' on salary and commission'}): ${gbp2(pension)}`);
+    if(moved.length){
+      lines.push('- Commission moving to next month (client paid after the cut-off):');
+      moved.forEach(i => lines.push(`    ${i.candidateName}, ${i.company}, invoice ${i.number}: ${gbp2(i.commissionAmount)}, client paid ${ukDate(paidOn(i))}`));
+    }
+    if(waiting.length) lines.push(`- Commission not yet due (client has not paid): ${waiting.length} invoice${waiting.length === 1 ? '' : 's'}, ${gbp2(waiting.reduce((s, i) => s + i.commissionAmount, 0))}`);
+    lines.push('');
+  });
+  if(!anyone){ showToast('No one on payroll for ' + monthName); return; }
+  lines.push(`Total gross pay for the month: ${gbp2(round2(grand))}`);
+  lines.push('', 'Thank you,', (signedInUser && (signedInUser.fullName || signedInUser.name)) || 'Dan', 'Live 2 Help Recruitment');
+  showPayrollModal(`Payroll for ${monthName}`, lines.join('\n'), include, st.email);
+}
+
+function showPayrollModal(subject, body, invoiceNumbers, to){
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(10,20,40,.55);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  wrap.innerHTML = `<div style="background:#fff;border-radius:3px;padding:20px;max-width:720px;width:94%;max-height:90vh;overflow:auto;">
+    <div style="font-size:15px;font-weight:600;color:var(--dark);margin-bottom:10px;">Payroll email</div>
+    <label style="font-size:11px;color:#999;">To</label><input id="pmTo" value="${esc(to)}" placeholder="payroll email" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:2px;margin-bottom:8px;font-family:inherit;font-size:13px;">
+    <label style="font-size:11px;color:#999;">Subject</label><input id="pmSubject" value="${esc(subject)}" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:2px;margin-bottom:8px;font-family:inherit;font-size:13px;">
+    <label style="font-size:11px;color:#999;">Message</label><textarea id="pmBody" style="width:100%;height:320px;padding:10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12.5px;">${esc(body)}</textarea>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+      <button id="pmCopy" style="padding:9px 14px;border:1px solid var(--border);background:#fff;border-radius:2px;cursor:pointer;font-size:12px;">Copy</button>
+      <button id="pmMail" style="padding:9px 14px;background:var(--gold);border:none;border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;">Open in email app</button>
+      ${invoiceNumbers.length ? `<button id="pmPaid" style="padding:9px 14px;border:1px solid var(--border);background:#fff;border-radius:2px;cursor:pointer;font-size:12px;">Mark ${invoiceNumbers.length} commission${invoiceNumbers.length === 1 ? '' : 's'} as paid</button>` : ''}
+      <button id="pmClose" style="padding:9px 14px;border:none;background:none;color:#999;cursor:pointer;font-size:12px;">Close</button>
+    </div>
+    <div class="note-line" style="margin-top:8px;">Marking as paid stamps today's date on each commission so it is not included in the next payroll email. Do this once the payroll has gone through.</div></div>`;
+  document.body.appendChild(wrap);
+  const q = id => wrap.querySelector('#' + id);
+  q('pmClose').onclick = () => document.body.removeChild(wrap);
+  q('pmCopy').onclick = async () => { try{ await navigator.clipboard.writeText(q('pmSubject').value + '\n\n' + q('pmBody').value); showToast('Copied'); }catch(e){ q('pmBody').select(); showToast('Select and copy the message'); } };
+  q('pmMail').onclick = () => { window.location.href = 'mailto:' + encodeURIComponent(q('pmTo').value.trim()) + '?subject=' + encodeURIComponent(q('pmSubject').value) + '&body=' + encodeURIComponent(q('pmBody').value); };
+  if(invoiceNumbers.length) q('pmPaid').onclick = async () => {
+    if(!confirm('Mark ' + invoiceNumbers.length + ' commission payment(s) as paid today?')) return;
+    try{
+      for(const n of invoiceNumbers){
+        await b2Api('/api/invoices/' + encodeURIComponent(n), {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({commissionPaid: true})});
+      }
+      showToast('Commissions marked as paid');
+      document.body.removeChild(wrap);
+      loadBusinessHealth();
+    }catch(e){ showToast('Could not update: ' + e.message); }
+  };
+}
+
+/* ---------- Commission on invoices (Dan only) ---------- */
+(function(){
+  const _ric = renderInvoiceCard;
+  renderInvoiceCard = function(inv){
+    let html = _ric(inv);
+    if(!(signedInUser && signedInUser.admin) || !(Number(inv.commissionAmount) > 0)) return html;
+    const paidOut = !!inv.commissionPaidDate;
+    const due = inv.status === 'paid' && !paidOut;
+    const status = paidOut ? 'Paid on ' + ukDate(inv.commissionPaidDate) : due ? 'Due - client has paid' : 'Not yet due - client has not paid';
+    const block = `<div style="margin:8px 0;padding:8px 10px;background:#f6efd8;border-radius:2px;font-size:12px;color:var(--dark);">
+      <strong>${esc(inv.consultant)}'s commission: ${gbp2(Number(inv.commissionAmount))}</strong> (${esc(inv.commissionPct)}% of the invoice)
+      <div style="color:#777;margin-top:2px;">${esc(status)}</div>
+      ${paidOut ? `<button onclick="markCommission('${esc(inv.number)}', false)" style="margin-top:6px;padding:4px 8px;font-size:11px;cursor:pointer;">Undo</button>`
+                : due ? `<button onclick="markCommission('${esc(inv.number)}', true)" style="margin-top:6px;padding:4px 8px;font-size:11px;cursor:pointer;">Mark commission as paid</button>` : ''}
+    </div>`;
+    return html.replace('<div class="invoice-card-actions">', block + '<div class="invoice-card-actions">');
+  };
+})();
+async function markCommission(number, paid){
+  try{
+    await b2Api('/api/invoices/' + encodeURIComponent(number), {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({commissionPaid: paid})});
+    showToast(paid ? 'Commission marked as paid' : 'Commission marked as not paid');
+    loadInvoices();
+  }catch(e){ showToast('Could not update: ' + e.message); }
+}
+
+/* ---------- Fee preview on the candidate card (Dan only, once a salary is entered) ---------- */
+function commissionPreview(c){
+  const info = salaryInfo(c.salary);
+  if(!(signedInUser && signedInUser.admin) || !info.value) return '';
+  const {rate, fee} = calculateFeePreview(info.value);
+  const people = payEmployees().filter(e => parseFloat(e.commissionPct) > 0);
+  const lines = people.map(e => `${esc(e.name)}'s ${parseFloat(e.commissionPct)}%: ${gbp2(Math.round(fee * parseFloat(e.commissionPct)) / 100)}`);
+  return `<div class="field-row"><label>Fee preview (only you can see this)</label>
+    <div class="val" style="font-size:12.5px;">Salary ${gbp(info.value)}${info.isRange ? ' (midpoint of the range)' : ''} falls in the ${rate * 100}% bracket, so the fee is ${gbp2(fee)}.${lines.length ? '<br>If placed by ' + lines.join('<br>') : ''}</div></div>`;
+}
+
+/* ---------- Consultant picker for invoices ---------- */
+function pickConsultant(){
+  return new Promise(resolve => {
+    const names = payEmployees().map(e => e.name).filter(Boolean);
+    const opts = names.concat(['Dan']).filter((v, i, a) => a.findIndex(x => x.toLowerCase() === v.toLowerCase()) === i);
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;inset:0;background:rgba(10,20,40,.55);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    wrap.innerHTML = `<div style="background:#fff;border-radius:3px;padding:22px;max-width:360px;width:90%;">
+      <div style="font-size:15px;font-weight:600;color:var(--dark);margin-bottom:4px;">Who placed this candidate?</div>
+      <div style="font-size:12px;color:#777;margin-bottom:14px;">This credits the invoice to a person for their ROI.</div>
+      ${opts.map((n, i) => `<button data-i="${i}" style="display:block;width:100%;text-align:left;margin-bottom:8px;padding:10px 12px;border:1px solid var(--border);background:#fff;border-radius:2px;cursor:pointer;font-size:13px;">${esc(n)}</button>`).join('')}
+      <button data-i="u" style="display:block;width:100%;text-align:left;margin-bottom:8px;padding:10px 12px;border:1px solid var(--border);background:#fff;border-radius:2px;cursor:pointer;font-size:13px;">Unassigned</button>
+      <button data-i="c" style="padding:8px 12px;border:none;background:none;color:#999;cursor:pointer;font-size:12px;">Cancel</button></div>`;
+    wrap.addEventListener('click', ev => {
+      const b = ev.target.closest('button'); if(!b) return;
+      const i = b.getAttribute('data-i');
+      document.body.removeChild(wrap);
+      resolve(i === 'c' ? null : i === 'u' ? '' : opts[parseInt(i, 10)]);
+    });
+    document.body.appendChild(wrap);
+  });
+}
+
+/* ---------- Where they came from ---------- */
+function srcPool(c){
+  return (typeof POOL !== 'undefined' ? POOL : []).find(x => b2Same(x.name, c.name) && b2Same(x.role, currentRole));
+}
+function sourcePanel(c){
+  const p = srcPool(c);
+  if(!p) return '';
+  const need = !p.source && c.stage === 'applied';
+  return `<div class="field-row"><label>Where they came from${need ? ' (please select)' : ''}</label>
+    <select id="candSourceSel" onchange="saveCandSource('${esc(p.id)}', this.value)" ${need ? 'style="border-color:var(--gold);"' : ''}>
+      <option value="">Not recorded</option>${SOURCES.map(x => `<option ${x === p.source ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></div>`;
+}
+async function saveCandSource(id, val){
+  try{
+    const json = await b2Api('/api/candidate-pool/' + encodeURIComponent(id) + '/meta', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({source: val})});
+    applyPoolEntry(json.data);
+    showToast(val ? 'Source saved: ' + val : 'Source cleared');
+  }catch(e){ showToast('Could not save source: ' + e.message); }
+}
+(function(){
+  const _adv = advanceStage;
+  advanceStage = async function(newStage){
+    try{
+      const c = findCandidate(openCandidateId);
+      if(c && c.stage === 'applied' && newStage !== 'rejected'){
+        const p = srcPool(c);
+        if(p && !p.source && confirm('Where did ' + c.name + ' come from?\n\nOK = choose the source now\nCancel = skip and move on')){
+          const sel = document.getElementById('candSourceSel'); if(sel) sel.focus();
+          return;
+        }
+      }
+    }catch(e){ /* the prompt is optional */ }
+    return _adv(newStage);
+  };
+})();
+
+</script>
+
+<script>
+/* ============================================================
+   Build 9: safe salary reading (ranges, k, typos), salary editable at every
+   stage, forecast flags, and editing details on the Candidate Pool page
+   ============================================================ */
+
+function salaryInfo(raw){
+  const text = String(raw == null ? '' : raw).trim();
+  const out = {text, value: 0, low: 0, high: 0, isRange: false, ote: /\bote\b|on target|package/i.test(text), suspicious: false};
+  if(!text) return out;
+  const found = [];
+  text.replace(/(\d[\d,]*\.?\d*)\s*(k)?/gi, function(m, n, k, offset){
+    let v = parseFloat(String(n).replace(/,/g, ''));
+    if(!isFinite(v)) return m;
+    found.push({v: v, k: !!k, at: offset, end: offset + m.length});
+    return m;
+  });
+  if(!found.length) return out;
+  const anyK = found.some(f => f.k);
+  const nums = found.map(f => (f.k || (anyK && f.v < 1000)) ? f.v * 1000 : f.v);
+  let low = nums[0], high = nums[0];
+  if(nums.length >= 2){
+    const between = text.slice(found[0].end, found[1].at);
+    if(/[-\u2013\u2014\/]|\bto\b|\bor\b|\bup to\b/i.test(between)){
+      low = Math.min(nums[0], nums[1]); high = Math.max(nums[0], nums[1]); out.isRange = low !== high;
+    }
+  }
+  out.low = low; out.high = high;
+  out.value = out.isRange ? Math.round((low + high) / 2) : low;
+  if(out.value > 300000 || out.value < 1000){ out.suspicious = out.value > 300000; out.value = 0; }
+  return out;
+}
+function parseSalaryNumber(s){ return salaryInfo(s).value; }
+function salaryLabel(raw){
+  const i = salaryInfo(raw);
+  if(!i.value && !i.suspicious) return String(raw || '');
+  if(i.suspicious) return String(raw || '').replace(/[\u00A3]+/g, '\u00A3');
+  const f = n => '\u00A3' + Math.round(n).toLocaleString('en-GB');
+  return i.isRange ? f(i.low) + '-' + f(i.high) : f(i.value);
+}
+function tidySalary(raw){
+  return String(raw == null ? '' : raw).trim().replace(/\u00A3\s*\u00A3+/g, '\u00A3').replace(/\s+/g, ' ');
+}
+function salaryHintText(raw){
+  const i = salaryInfo(raw);
+  if(!String(raw || '').trim()) return 'Enter the basic salary. Fees are charged on basic salary, not OTE.';
+  const bits = [];
+  if(i.suspicious) return 'This looks too high to be a salary (over \u00A3300,000), so it is left out of forecasts. Please check it.';
+  if(!i.value) return 'This could not be read as a salary, so it is left out of forecasts.';
+  const f = n => '\u00A3' + Math.round(n).toLocaleString('en-GB');
+  bits.push(i.isRange ? 'Counts as ' + f(i.value) + ' in forecasts (midpoint of ' + f(i.low) + ' to ' + f(i.high) + ').' : 'Counts as ' + f(i.value) + ' in forecasts.');
+  if(i.ote) bits.push('This looks like OTE. Fees are charged on basic salary, so enter the basic and put the OTE in the notes.');
+  if(i.isRange) bits.push('Invoicing needs one agreed figure.');
+  return bits.join(' ');
+}
+function salaryHintUpdate(){
+  const el = document.getElementById('salaryHint'), inp = document.getElementById('salaryInput');
+  if(el && inp) el.textContent = salaryHintText(inp.value);
+}
+function singleSalaryOrWarn(raw){
+  const i = salaryInfo(raw);
+  if(!i.value || i.isRange){ showToast('Enter the agreed basic salary as one figure on the candidate card before invoicing'); return 0; }
+  if(i.ote){ showToast('That salary mentions OTE. Fees are charged on basic salary, so enter the basic figure first'); return 0; }
+  return i.value;
+}
+
+/* ---------- Candidate Pool: edit details ---------- */
+function poolCardFor(p){
+  let hit = null;
+  flatCandidates().forEach(x => { if(!hit && b2Same(x.c.name, p.name) && b2Same(x.role, p.role)) hit = x; });
+  return hit;
+}
+function poolEditSection(){
+  const p = POOL.find(x => x.id === openPoolId);
+  const host = document.getElementById('poolDialogBody');
+  if(!p || !host) return;
+  const card = poolCardFor(p);
+  const inp = 'width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13px;';
+  host.insertAdjacentHTML('afterbegin', `
+    <div class="stage-buttons" style="margin:0 0 8px;"><button onclick="poolEditToggle()">Edit details</button></div>
+    <div id="poolEditBox" style="display:none;border:1px solid var(--border);border-radius:2px;padding:12px;margin-bottom:12px;background:var(--lightbg);">
+      <div class="two-col">
+        <div class="field-row"><label>Name</label><input id="poeName" value="${esc(p.name)}" style="${inp}"></div>
+        <div class="field-row"><label>Role</label><input id="poeRole" value="${esc(p.role)}" style="${inp}"></div>
+        <div class="field-row"><label>Email</label><input id="poeEmail" value="${esc(p.email)}" style="${inp}"></div>
+        <div class="field-row"><label>Phone</label><input id="poePhone" value="${esc(p.phone)}" style="${inp}"></div>
+        <div class="field-row"><label>Company</label><input id="poeCompany" value="${esc(p.company)}" style="${inp}"></div>
+        <div class="field-row"><label>Date added</label><input type="date" id="poeDate" value="${esc(opsDateOnly(p.dateAdded))}" style="${inp}"></div>
+      </div>
+      ${card ? `<div class="field-row"><label>Basic salary (on the pipeline card)</label><input id="poeSalary" value="${esc(card.c.salary || '')}" oninput="document.getElementById('poeSalaryHint').textContent = salaryHintText(this.value)" style="${inp}">
+        <div id="poeSalaryHint" class="note-line" style="margin-top:4px;">${esc(salaryHintText(card.c.salary || ''))}</div></div>` : '<div class="note-line">No live pipeline card, so there is no salary to edit here.</div>'}
+      <div class="note-line" style="margin:6px 0;">Changes also update the matching pipeline card and form application, so the two stay in step. A role cannot be changed here for people who applied through a role form.</div>
+      <div class="stage-buttons" style="margin:0;"><button class="primary" onclick="poolSaveEdit()">Save changes</button><button onclick="poolEditToggle()">Cancel</button></div>
+    </div>`);
+}
+function poolEditToggle(){
+  const b = document.getElementById('poolEditBox');
+  if(b) b.style.display = b.style.display === 'none' ? 'block' : 'none';
+}
+async function poolSaveEdit(){
+  const p = POOL.find(x => x.id === openPoolId);
+  if(!p) return;
+  const val = id => (document.getElementById(id) || {}).value || '';
+  try{
+    const card = poolCardFor(p);
+    const salEl = document.getElementById('poeSalary');
+    if(card && salEl && tidySalary(salEl.value) !== String(card.c.salary || '')){
+      card.c.salary = tidySalary(salEl.value);
+      await saveCandidate(card.c);
+    }
+    const json = await b2Api('/api/candidate-pool/' + encodeURIComponent(p.id) + '/edit', {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: val('poeName'), role: val('poeRole'), email: val('poeEmail'), phone: val('poePhone'), company: val('poeCompany'), dateAdded: val('poeDate')}),
+    });
+    POOL = POOL.filter(x => x.id !== json.oldId);
+    openPoolId = json.data.id;
+    applyPoolEntry(json.data);
+    showToast('Details saved');
+    try{ await loadCandidates(); }catch(e){ /* the board refreshes on next load */ }
+    recomputeOps();
+  }catch(e){ showToast('Could not save: ' + e.message); }
+}
+(function(){
+  const _rpd2 = renderPoolDialog;
+  renderPoolDialog = function(){ _rpd2(); poolEditSection(); };
+})();
+</script>
+
+<script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '2 Oct 2026 - build 6';
+var PAGE_BUILD = '2 Oct 2026 - build 9';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -12962,12 +13551,12 @@ function buildTagApply(){
     tag.style.cssText = 'font-size:10.5px;color:#999;margin-left:10px;white-space:nowrap;';
     chip.appendChild(tag);
   }
-  tag.textContent = 'Page build 6';
+  tag.textContent = 'Page build 9';
   tag.title = 'Page: ' + PAGE_BUILD;
   b2Api('/api/version').then(function(j){
-    tag.textContent = 'Page build 6 | Server ' + serverBuildLabel(j.build);
+    tag.textContent = 'Page build 9 | Server ' + serverBuildLabel(j.build);
     tag.title = 'Page: ' + PAGE_BUILD + ' | Server: ' + j.build;
-  }).catch(function(){ tag.textContent = 'Page build 6 | Server older'; });
+  }).catch(function(){ tag.textContent = 'Page build 9 | Server older'; });
 }
 (function(){
   const _si = signIn;
