@@ -1302,6 +1302,15 @@
             </div>
           </div>
 
+          <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;padding:16px;margin-bottom:24px;max-width:420px;">
+            <label style="display:block;font-size:12px;color:#999;margin-bottom:8px;letter-spacing:0.5px;">Other monthly overheads (software, insurance, accountancy)</label>
+            <div style="display:flex;gap:8px;">
+              <input type="text" id="overheadsInput" placeholder="e.g. 300" style="flex:1;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-size:13px;font-family:inherit;background:#fff;">
+              <button onclick="saveOverheads()" style="padding:9px 14px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap;">Save</button>
+            </div>
+            <div style="font-size:11px;color:#999;margin-top:6px;">Used only in the runway calculation. Leave blank if none.</div>
+          </div>
+
           <!-- Costs & Profit -->
           <h4 style="font-size:14px;color:var(--dark);margin:20px 0 12px;font-weight:500;">Costs & Profit</h4>
           <div style="display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap;">
@@ -4229,6 +4238,7 @@ async function loadBusinessHealth(){
     const year = document.getElementById('healthYearSelector')?.value || '2026';
     await finLoad();
     try{ B3.adspend = b2List(await b2Api('/api/ad-spend')); }catch(e){ /* sourcing spend stays as last loaded */ }
+    try{ KPI_INV = b2List(await b2Api('/api/invoices')); }catch(e){ KPI_INV = []; }
     loadBackupStatus();
     loadQuarterHistory();
     
@@ -4248,7 +4258,7 @@ async function loadBusinessHealth(){
     if(!res.ok) throw new Error('Server returned ' + res.status);
     const metrics = await res.json();
     
-    const bankBalance = savedBankBalance ? parseInt(savedBankBalance) : 10000;
+    const bankBalance = savedBankBalance ? parseInt(savedBankBalance) : null;
     const ytdRevenue = metrics.ytdRevenue || 0;
     
     // YTD Revenue
@@ -4418,6 +4428,7 @@ function saveBankBalance(){
   }
   
   finSet('l2h-bank-balance', numValue.toString());
+  finSet('l2h-bank-updated', new Date().toISOString().slice(0, 10));
   showToast('Bank balance saved');
   loadBusinessHealth();
 }
@@ -11541,7 +11552,7 @@ async function rmGenerateCareers(silent){
 /* ---------- Automation batch A: server-backed finance figures, backups, quarter history, test candidates ---------- */
 var FIN_CACHE = {};
 var FIN_LOADED = false;
-var FIN_KEYS = ['l2h-bank-balance', 'l2h-advertising-cost', 'l2h-employees', 'l2h-seed-ella', 'l2h-seed-ella-comm', 'l2h-payroll-cutoff', 'l2h-payday', 'l2h-payroll-email'];
+var FIN_KEYS = ['l2h-bank-balance', 'l2h-advertising-cost', 'l2h-employees', 'l2h-seed-ella', 'l2h-seed-ella-comm', 'l2h-payroll-cutoff', 'l2h-payday', 'l2h-payroll-email', 'l2h-bank-updated', 'l2h-monthly-overheads'];
 async function finLoad(force){
   if(FIN_LOADED && !force) return;
   try{
@@ -13135,22 +13146,8 @@ function kpiRender(metrics, bank, ytdRevenue, manualAd, year){
   if(adLine) adLine.innerHTML = `Logged in Sourcing: <strong>${gbp(adAuto)}</strong> <a class="tpl-link" onclick="switchTab('sourcing')">view</a>`;
   document.getElementById('advertisingCostInput').value = manualAd || 0;
 
-  const per = payPeriod(year);
   const todayISO = new Date().toISOString().slice(0, 10);
-  const runRate = employees.filter(e => (!e.endDate || e.endDate >= todayISO) && e.startDate && e.startDate <= todayISO)
-    .reduce((s, e) => s + (parseFloat(e.salary) || 0) * (1 + (parseFloat(e.pensionPct) || 0) / 100), 0) / 12;
-  const monthsElapsed = per.isCurrent ? Math.max(1, ((per.end - per.ys) / 86400000 + 1) / 30.4) : 12;
-  const burn = runRate + (adTotal + teamComm) / monthsElapsed;
-  const runwayEl = document.getElementById('runwayMetric');
-  if(burn > 0){
-    const runway = (bank + ytdRevenue) / burn;
-    runwayEl.style.color = runway < 1 ? 'var(--danger)' : runway < 3 ? '#c9703f' : 'var(--success)';
-    runwayEl.textContent = runway.toFixed(1);
-    document.getElementById('runwayDetail').textContent = `Bank ${gbp(bank)} + revenue, against ${gbp(burn)} a month`;
-  }else{
-    runwayEl.textContent = '-';
-    document.getElementById('runwayDetail').textContent = 'Add team costs or advertising to calculate';
-  }
+  runwayRender(bank, employees, metrics, todayISO);
 
   const profit = ytdRevenue - teamCost - adTotal;
   const pEl = document.getElementById('ytdProfitMetric');
@@ -13349,6 +13346,59 @@ function commissionPreview(c){
     <div class="val" style="font-size:12.5px;">Salary ${gbp(info.value)}${info.isRange ? ' (midpoint of the range)' : ''} falls in the ${rate * 100}% bracket, so the fee is ${gbp2(fee)}.${lines.length ? '<br>If placed by ' + lines.join('<br>') : ''}</div></div>`;
 }
 
+/* ---------- Runway: bank balance against forward monthly costs ---------- */
+var KPI_INV = [];
+function saveOverheads(){
+  const v = parseFloat(String(document.getElementById('overheadsInput').value).replace(/[^0-9.]/g, ''));
+  finSet('l2h-monthly-overheads', isFinite(v) && v > 0 ? String(v) : '');
+  showToast('Overheads saved');
+  loadBusinessHealth();
+}
+function runwayParts(employees, todayISO){
+  const payroll = employees.filter(e => (!e.endDate || e.endDate >= todayISO) && e.startDate && e.startDate <= todayISO)
+    .reduce((s, e) => s + (parseFloat(e.salary) || 0) * (1 + (parseFloat(e.pensionPct) || 0) / 100), 0) / 12;
+  const d90 = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+  let commitments = 0, oneOff = 0;
+  (B3.adspend || []).forEach(e => {
+    const amt = parseFloat(e.amount) || 0, start = opsDateOnly(e.date);
+    if(!amt || !start) return;
+    if(e.frequency === 'monthly'){
+      const end = opsDateOnly(e.end_date);
+      if(start <= todayISO && (!end || end >= todayISO)) commitments += amt;
+    }else if(start >= d90 && start <= todayISO) oneOff += amt;
+  });
+  const advertising = commitments + oneOff / 3;
+  const commission = (KPI_INV || []).filter(i => i.commissionAmount > 0 && String(i.status) === 'paid')
+    .filter(i => { const d = String(i.paymentDate || i.date || '').slice(0, 10); return d >= d90 && d <= todayISO; })
+    .reduce((s, i) => s + i.commissionAmount, 0) / 3;
+  const overheads = parseFloat(finGet('l2h-monthly-overheads')) || 0;
+  return {payroll, advertising, commission, overheads, burn: payroll + advertising + commission + overheads};
+}
+function runwayRender(bank, employees, metrics, todayISO){
+  const el = document.getElementById('runwayMetric'), det = document.getElementById('runwayDetail');
+  const ov = document.getElementById('overheadsInput');
+  if(ov) ov.value = finGet('l2h-monthly-overheads') || '';
+  if(bank === null || bank === undefined || isNaN(bank)){
+    el.style.color = ''; el.textContent = '-';
+    det.textContent = 'Enter your bank balance above to calculate runway';
+    return;
+  }
+  const r = runwayParts(employees, todayISO);
+  if(r.burn <= 0){ el.textContent = '-'; det.textContent = 'Add team costs or advertising to calculate'; return; }
+  const runway = bank / r.burn;
+  el.style.color = runway < 1 ? 'var(--danger)' : runway < 3 ? '#c9703f' : 'var(--success)';
+  el.textContent = runway.toFixed(1);
+  const upd = finGet('l2h-bank-updated');
+  let stale = '';
+  if(upd){
+    const days = Math.floor((Date.now() - new Date(upd + 'T00:00:00Z').getTime()) / 86400000);
+    stale = days > 30 ? ` <span style="color:var(--danger);">(balance last updated ${days} days ago)</span>` : ` (updated ${ukDate(upd)})`;
+  }else stale = ' <span style="color:#c9703f;">(no update date recorded, please re-save your balance)</span>';
+  const pending = metrics && metrics.invoicePending ? metrics.invoicePending : 0;
+  const withInv = pending > 0 ? `<br>If outstanding invoices of ${gbp(pending)} are paid: <strong>${((bank + pending) / r.burn).toFixed(1)}</strong> months` : '';
+  det.innerHTML = `Bank ${gbp(bank)}${stale} against ${gbp(r.burn)} a month: payroll ${gbp(r.payroll)}, advertising ${gbp(r.advertising)}, commission ${gbp(r.commission)}, other ${gbp(r.overheads)}${withInv}`;
+}
+
 /* ---------- Consultant picker for invoices ---------- */
 function pickConsultant(){
   return new Promise(resolve => {
@@ -13540,7 +13590,7 @@ async function poolSaveEdit(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '2 Oct 2026 - build 9';
+var PAGE_BUILD = '2 Oct 2026 - build 10';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -13551,12 +13601,12 @@ function buildTagApply(){
     tag.style.cssText = 'font-size:10.5px;color:#999;margin-left:10px;white-space:nowrap;';
     chip.appendChild(tag);
   }
-  tag.textContent = 'Page build 9';
+  tag.textContent = 'Page build 10';
   tag.title = 'Page: ' + PAGE_BUILD;
   b2Api('/api/version').then(function(j){
-    tag.textContent = 'Page build 9 | Server ' + serverBuildLabel(j.build);
+    tag.textContent = 'Page build 10 | Server ' + serverBuildLabel(j.build);
     tag.title = 'Page: ' + PAGE_BUILD + ' | Server: ' + j.build;
-  }).catch(function(){ tag.textContent = 'Page build 9 | Server older'; });
+  }).catch(function(){ tag.textContent = 'Page build 10 | Server older'; });
 }
 (function(){
   const _si = signIn;
