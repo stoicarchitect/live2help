@@ -7134,7 +7134,7 @@ function ivInviteContent(iv){
     place ? ((iv.type === 'site' || !iv.location ? 'Address: ' : 'Details: ') + place) : false,
     '', 'Please arrive 5-10 minutes early and reply to confirm you can attend.',
   ].filter(l => l !== false).join('\n');
-  const clientSubject = `Interview scheduled with ${iv.candidate_name}${time12 ? ' at ' + time12 : ''}${iv.role ? ' for ' + iv.role : ''}`;
+  const clientSubject = `Interview scheduled with ${subRef(iv.candidate_name)}${time12 ? ' at ' + time12 : ''}${iv.role ? ' for ' + iv.role : ''}`;
   const clientBody = [clientSubject + '.', '', dateLong ? 'Date: ' + dateLong : false, time12 ? 'Time: ' + time12 : false].filter(l => l !== false).join('\n');
   return {
     candidate: {to: iv.candidate_email || candidateEmailFor(iv.candidate_name, iv.role, iv.company), subject: candSubject, body: candBody, location: place},
@@ -7235,7 +7235,7 @@ function ivInviteIcs(who){
   if(!iv) return;
   const f = ivInviteFields(who);
   const w = ivWindow(iv);
-  downloadText('Interview ' + (who === 'client' ? 'client ' : 'candidate ') + iv.candidate_name + ' ' + opsDateOnly(iv.date) + '.ics',
+  downloadText('Interview ' + (who === 'client' ? 'client ' + subRef(iv.candidate_name) : 'candidate ' + iv.candidate_name) + ' ' + opsDateOnly(iv.date) + '.ics',
     icsBuild({uid: iv.id + '-' + who, subject: f.subject, body: f.body, location: f.location, start: w.start, end: w.end}), 'text/calendar');
 }
 
@@ -10405,14 +10405,20 @@ function emlWrap(b64){ return (String(b64).match(/.{1,76}/g) || []).join('\r\n')
 function emlHtmlFromText(text){
   const style = "font-family:Calibri,'Segoe UI',Arial,sans-serif;font-size:11pt;color:#222222;";
   const paras = String(text || '').replace(/\r\n/g, '\n').trim().split(/\n{2,}/).map(p =>
-    '<p style="margin:0 0 12px 0;' + style + '">' + esc(p).replace(/\n/g, '<br>') + '</p>').join('');
+    (p.trim() === RL_TOKEN && RL_LINKS.length) ? replyLinksHtml() : '<p style="margin:0 0 12px 0;' + style + '">' + esc(p).replace(/\n/g, '<br>') + '</p>').join('');
   return paras;
+}
+function sigOwnKey(){ return 'l2hOwnSig-' + (signedInUser ? signedInUser.key : 'x'); }
+function sigUseOutlookOwn(){ try{ return localStorage.getItem(sigOwnKey()) === '1'; }catch(e){ return false; } }
+function sigSetOutlookOwn(on){
+  try{ if(on) localStorage.setItem(sigOwnKey(), '1'); else localStorage.removeItem(sigOwnKey()); }catch(e){}
+  showToast(on ? 'Emails will use your own Outlook signature' : 'Emails will use the dashboard signature');
 }
 function emlStripTextSignature(body){
   let b = String(body || '').replace(/\s+$/, '');
   try{
     const t = senderProfile().signature;
-    if(SIG.html && t && b.endsWith(t)) b = b.slice(0, -t.length).replace(/\s+$/, '');
+    if((SIG.html || sigUseOutlookOwn()) && t && b.endsWith(t)) b = b.slice(0, -t.length).replace(/\s+$/, '');
   }catch(e){ /* keep the body as it is */ }
   return b;
 }
@@ -10421,9 +10427,10 @@ function emlStripTextSignature(body){
    Adds the saved signature, with its logo as an inline image, and any attachments. */
 function emlBuildRich(to, subject, body, atts){
   atts = atts || [];
-  const useSig = !!SIG.html;
-  const cleanBody = useSig ? emlStripTextSignature(body) : String(body || '');
-  const textPart = (cleanBody + (useSig && SIG.text ? '\n\n' + SIG.text : '')).replace(/\r?\n/g, '\r\n');
+  const ownSig = sigUseOutlookOwn();
+  const useSig = !!SIG.html && !ownSig;
+  const cleanBody = (useSig || ownSig) ? emlStripTextSignature(body) : String(body || '');
+  const textPart = ((RL_LINKS.length ? cleanBody.split(RL_TOKEN).join(replyLinksText()) : cleanBody) + (useSig && SIG.text ? '\n\n' + SIG.text : '')).replace(/\r?\n/g, '\r\n');
   const htmlDoc = '<html><head><meta charset="utf-8"></head><body>' + emlHtmlFromText(cleanBody) +
     (useSig ? '<div style="margin-top:8px;">' + SIG.html + '</div>' : '') + '</body></html>';
   const rnd = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -10499,6 +10506,7 @@ async function openSigModal(userKey){
       <div class="note-line" style="margin:4px 0 10px;">This signature is added to the bottom of every email file (.eml) the dashboard builds, so it matches what you use in Outlook. ${esc(srcText)}.</div>
       ${isAdmin ? `<label class="sfl">Whose signature</label><select id="sigUser" onchange="openSigModal(this.value)" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;">
         ${USERS.map(u => `<option value="${esc(u.key)}" ${u.key === who ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select>` : ''}
+      ${(!sigEditingUser || sigEditingUser === (signedInUser && signedInUser.key)) ? `<label style="display:flex;gap:9px;align-items:flex-start;padding:10px 12px;background:#faf7f0;margin:0 0 10px;font-size:13px;line-height:1.45;cursor:pointer;"><input type="checkbox" ${sigUseOutlookOwn() ? 'checked' : ''} onchange="sigSetOutlookOwn(this.checked)" style="width:auto;margin:3px 0 0;"><span><strong>My Outlook already adds my own signature.</strong> Tick this if your emails show two signatures. The dashboard will then leave its signature off, so only Outlook's appears. This is saved on this computer.</span></label>` : ''}
       <div class="sig-preview">${s.html ? sigPreviewHtml(s) : '<span style="color:#999;">No signature to show.</span>'}</div>
       <label class="sfl">Replace it: choose the signature .html file, or paste the HTML below</label>
       <input type="file" id="sigFile" accept=".html,.htm,text/html" onchange="sigLoadFile()" style="margin-bottom:8px;">
@@ -11911,15 +11919,33 @@ function gsGoCand(co, role, id){
 </script>
 <script>
 /* ---------- Automation batch D: bulk actions, phone layout, reply links ---------- */
+var RL_TOKEN = '[[L2H-REPLY-BUTTONS]]';
+var RL_LINKS = [];
 function replyLinksInject(body, links){
-  if(!links || !links.length) return body;
-  const lines = links.map(function(l){ return '- ' + subRef(l.name) + ': ' + l.url; }).join('\n');
-  const block = 'To reply in one click (no login needed):\n' + lines + '\n';
+  if(!links || !links.length){ RL_LINKS = []; return body; }
+  RL_LINKS = links;
   const re = /\n(Kind regards|Best regards|Warm regards|Many thanks|Regards|Thanks)\b/gi;
   let last = -1, m;
   while((m = re.exec(body)) !== null) last = m.index;
-  if(last < 0) return body + '\n\n' + block;
-  return body.slice(0, last) + '\n' + block + body.slice(last);
+  if(last < 0) return body + '\n\n' + RL_TOKEN + '\n';
+  return body.slice(0, last) + '\n' + RL_TOKEN + '\n' + body.slice(last);
+}
+function replyLinksText(){
+  const lines = RL_LINKS.map(function(l){ return subRef(l.name) + '\n  YES, arrange an interview: ' + l.url + '?a=yes\n  NO, not this time: ' + l.url + '?a=no'; }).join('\n\n');
+  return 'Would you like to interview? Choose one below (no login needed):\n\n' + lines;
+}
+function replyLinksHtml(){
+  const font = "font-family:Calibri,'Segoe UI',Arial,sans-serif;";
+  const btn = function(href, bg, fg, label){
+    return '<td bgcolor="' + bg + '" style="background:' + bg + ';border-radius:3px;"><a href="' + esc(href) + '" style="display:inline-block;padding:10px 30px;' + font + 'font-size:11pt;font-weight:bold;color:' + fg + ';text-decoration:none;">' + label + '</a></td>';
+  };
+  const rows = RL_LINKS.map(function(l){
+    return '<p style="margin:0 0 6px 0;' + font + 'font-size:11pt;color:#222222;"><strong>' + esc(subRef(l.name)) + '</strong></p>' +
+      '<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 16px 0;"><tr>' +
+      btn(l.url + '?a=yes', '#C9A84C', '#0B0B18', 'YES') + '<td width="12" style="font-size:1px;">&nbsp;</td>' + btn(l.url + '?a=no', '#0B0B18', '#ffffff', 'NO') +
+      '</tr></table>';
+  }).join('');
+  return '<p style="margin:0 0 10px 0;' + font + 'font-size:11pt;color:#222222;">Would you like to interview? Choose one below (no login needed):</p>' + rows;
 }
 
 /* Phone layout */
