@@ -7801,6 +7801,7 @@ app.post('/api/reply-links', async (req, res) => {
       }
       out.push({ id: c.id, name: c.name, url: `${replyBase(req)}/r/${link.id}` });
     }
+    replyLinkCache = { at: 0, list: null };
     auditLog(auditActorOf(req), 'reply_links_created', 'candidate', `${out.length} link${out.length === 1 ? '' : 's'}`, '');
     res.json({ links: out });
   } catch (e) {
@@ -7881,13 +7882,21 @@ async function send(a){
     document.querySelector('main').innerHTML='<h1>Thank you</h1><div class="done">'+j.message+'</div><p>You can close this page. If you need to change your answer, reply to our email and we will update it.</p>';
   }catch(e){fail(e.message+' If it keeps failing, please reply to the email instead.');}
 }
+var q=new URLSearchParams(location.search).get('a');if(q==='yes')show('yes');else if(q==='no')show('no');
 </script></body></html>`;
 }
 
-async function loadReplyLink(id) {
+let replyLinkCache = { at: 0, list: null };
+async function loadReplyLink(id, fresh) {
   if (!/^[A-Za-z0-9_-]{8,20}$/.test(String(id || ''))) return null;
-  const link = (await replyLinksTable.list()).find(o => o.id === id);
-  return link || null;
+  const usable = !fresh && replyLinkCache.list && Date.now() - replyLinkCache.at < 30 * 60 * 1000;
+  if (usable) {
+    const hit = replyLinkCache.list.find(o => o.id === id);
+    if (hit) return hit;
+  }
+  const list = await replyLinksTable.list();
+  replyLinkCache = { at: Date.now(), list };
+  return list.find(o => o.id === id) || null;
 }
 
 app.get('/r/:id', async (req, res) => {
@@ -7930,6 +7939,86 @@ function buildReplyNote(answer, c) {
   return `[Client reply ${c.today}: asked for more information on ${c.label}: ${c.message}]`;
 }
 
+const recentReplyJobs = new Map();
+
+// Does all the work after a client has been thanked: moves the card, adds the task, alerts the sender,
+// and records the result for the dashboard pop-up. If it cannot finish, the sender gets an email with the
+// client's full answer so nothing is ever lost.
+async function runReplyJob(j) {
+  const { answer, reasons, reasonText, message, label, slots, ctx, note, ref, newStage, summary } = j;
+  let link = j.link;
+  const outcome = { moved: false, found: false, before: '', taskAdded: false, emailed: false, emailError: '', failed: '' };
+  const notifyTo = link.sender_email || process.env.REPLY_NOTIFY_TO || TEAM_CONTACTS.ella.email;
+  const who = TEAM_CONTACTS[link.sender_key] ? link.sender_key : 'ella';
+  const plainNote = note.replace(/^\[|\]$/g, '');
+
+  // 1. Move the card and save the note (retried, because this is the part that must not be lost)
+  let moved = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try { moved = await applyStageChange(ref, newStage, REPLY_MOVE_FROM[answer], note); outcome.failed = ''; break; }
+    catch (e) { outcome.failed = String(e.message || e).slice(0, 160); console.error(`reply stage change attempt ${attempt} failed:`, e.message); await new Promise(r => setTimeout(r, 1500 * attempt)); }
+  }
+  outcome.moved = !!(moved && moved.changed);
+  outcome.found = !!moved;
+  outcome.before = moved ? moved.before : '';
+  if (outcome.moved) {
+    stageAutomation({ name: link.candidate_name, role: link.role, company: link.company, notes: '' }, newStage);
+    scheduleReconcile();
+  }
+
+  // 2. Everything else is independent, so run it together
+  const tasks = [];
+  if (answer === 'not_interested') {
+    tasks.push(feedbackTable.upsert({ id: `fb-${Date.now()}`, date: todayISO(), company: link.company, role: link.role, candidate_name: link.candidate_name,
+      outcome: 'rejected_by_client', reason: reasons[0], detail: (reasons.length > 1 ? `All reasons ticked: ${reasonText}. ` : '') + (ctx.detail || 'Replied through the one-click link'), logged_by: 'client reply link' })
+      .catch(e => console.error('reply feedback log failed:', e.message)));
+  }
+  tasks.push((async () => {
+    try {
+      const tTitle = answer === 'interested'
+        ? `Confirm interview for ${label} with ${link.company}${slots.length ? ': ' + slots[0].text : ''}`
+        : answer === 'not_interested' ? `Reply to ${link.company} about ${label} (not taking forward)` : `${link.company} wants more information on ${label}`;
+      const tCtx = plainNote + '. ' + (answer === 'interested' ? 'Call the candidate to check the time, then reply to the client yourself.' : answer === 'more_info' ? 'Answer once only, then ask them to decide: interview or reject. Reply to the client yourself.' : 'Reply to the client yourself.');
+      const added = await addAutoTasks([{ key: `${slugKey(link.candidate_name + '-' + link.role)}-clientreply-${Date.now().toString(36)}`, priority: 'High', dueDate: todayISO(), title: tTitle, context: tCtx, user: who }]);
+      outcome.taskAdded = added > 0;
+    } catch (e) { console.error('reply task failed:', e.message); }
+  })());
+  tasks.push(commsTable.upsert({ id: `cm-${Date.now()}`, timestamp: new Date().toISOString(), user: 'client', entity_type: 'candidate', entity_name: link.candidate_name,
+    company: link.company, role: link.role, channel: 'Reply link', direction: 'In', summary: plainNote, follow_up_date: '', follow_up_done: '' })
+    .catch(e => console.error('reply comms log failed:', e.message)));
+  await Promise.all(tasks);
+
+  // 3. Alert the sender
+  const stageNote = answer === 'more_info' ? 'No stage change. The question is saved in the candidate notes.'
+    : outcome.failed ? 'The dashboard could not be updated after three tries, so please move the card yourself.'
+    : !moved ? 'The candidate could not be found on the board, so please check it.'
+    : moved.changed ? `The card has moved to ${newStage.replace(/_/g, ' ')} and the reply is saved in the candidate notes.`
+    : `The card was not moved because it is already at ${moved.before.replace(/_/g, ' ')}. The reply is saved in the candidate notes.`;
+  try {
+    if (!process.env.BREVO_SMTP_USER || !process.env.BREVO_SMTP_PASS || !process.env.BREVO_SENDER_EMAIL) throw new Error('Brevo email settings are missing on the server');
+    await emailTransporter.sendMail({
+      from: process.env.BREVO_SENDER_EMAIL, to: notifyTo,
+      subject: `Client reply: ${summary}`,
+      text: `${summary}\n\n${plainNote}\n\n${stageNote}\n\nA task has been added to your Tasks tab. Please reply to the client personally.\n\nLive 2 Help dashboard`,
+    });
+    outcome.emailed = true;
+  } catch (e) { outcome.emailError = String(e.message || e).slice(0, 160); console.error('reply notify failed:', e.message); }
+
+  // 4. Record the result for the dashboard pop-up (fresh read, so earlier answers are never overwritten)
+  try {
+    const fresh = (await loadReplyLink(link.id, true)) || link;
+    const answers = (() => { try { return JSON.parse(fresh.answers_json || '[]'); } catch (e) { return []; } })();
+    answers.push({ at: new Date().toISOString(), answer, reasons, slots: slots.map(s => s.text), note: (ctx.extra || ctx.detail || message || '').slice(0, 200), message: message.slice(0, 300),
+      moved: outcome.moved, found: outcome.found && !outcome.failed, before: outcome.before, to: outcome.moved ? newStage : '', taskAdded: outcome.taskAdded, emailed: outcome.emailed, emailError: outcome.emailError || outcome.failed });
+    const updated = { ...fresh, last_answer: answer, last_answer_at: new Date().toISOString(), answers_json: JSON.stringify(answers.slice(-10)) };
+    await replyLinksTable.upsert(updated);
+    if (replyLinkCache.list) { const i = replyLinkCache.list.findIndex(o => o.id === link.id); if (i >= 0) replyLinkCache.list[i] = updated; }
+  } catch (e) {
+    console.error('reply result not recorded:', e.message, JSON.stringify({ link: link.id, answer, note: plainNote }));
+  }
+  auditLog('client-link', 'client_reply', 'candidate', `${link.candidate_name} - ${link.role}`, `${answer}${outcome.moved ? ' (moved)' : outcome.found ? ' (left as is: ' + outcome.before + ')' : ' (card not found)'}`);
+}
+
 app.post('/r/:id', async (req, res) => {
   try {
     const ip = req.ip || 'x', now = Date.now();
@@ -7957,13 +8046,6 @@ app.post('/r/:id', async (req, res) => {
     const ref = { id: link.candidate_id, sourceTab: link.source_tab, formRole: link.form_role, name: link.candidate_name, role: link.role, company: link.company };
     const newStage = answer === 'interested' ? 'interview_requested' : answer === 'not_interested' ? 'rejected' : '';
 
-    // Stage change (when allowed) and the note on the candidate card
-    const moved = await applyStageChange(ref, newStage, REPLY_MOVE_FROM[answer], note);
-    if (moved && moved.changed) {
-      stageAutomation({ name: link.candidate_name, role: link.role, company: link.company, notes: '' }, newStage);
-      scheduleReconcile();
-    }
-
     let summary, thanks;
     if (answer === 'interested') {
       summary = `${link.company} replied: interested in ${label}` + (slots.length ? ` - ${slots.map(s => s.text).join(' or ')}` : '');
@@ -7973,55 +8055,22 @@ app.post('/r/:id', async (req, res) => {
     } else if (answer === 'not_interested') {
       summary = `${link.company} replied: not for them - ${label} (${reasonText})`;
       thanks = 'Thank you for letting us know. We will keep searching and send you stronger matches.';
-      try {
-        await feedbackTable.upsert({ id: `fb-${Date.now()}`, date: todayISO(), company: link.company, role: link.role, candidate_name: link.candidate_name,
-          outcome: 'rejected_by_client', reason: reasons[0], detail: (reasons.length > 1 ? `All reasons ticked: ${reasonText}. ` : '') + (ctx.detail || 'Replied through the one-click link'), logged_by: 'client reply link' });
-      } catch (e) { console.error('reply feedback log failed:', e.message); }
     } else {
       summary = `${link.company} asked for more information on ${label}: ${message}`;
       thanks = 'Thank you. We will come back to you shortly with the answer.';
     }
 
-    const who = TEAM_CONTACTS[link.sender_key] ? link.sender_key : 'ella';
-    const outcome = { moved: !!(moved && moved.changed), found: !!moved, before: moved ? moved.before : '', taskAdded: false, emailed: false, emailError: '' };
-
-    // One task for whoever sent the submission. They write the reply to the client themselves.
-    try {
-      const tTitle = answer === 'interested'
-        ? `Confirm interview for ${label} with ${link.company}${slots.length ? ': ' + slots[0].text : ''}`
-        : answer === 'not_interested' ? `Reply to ${link.company} about ${label} (not taking forward)` : `${link.company} wants more information on ${label}`;
-      const tCtx = note.replace(/^\[|\]$/g, '') + '. ' + (answer === 'interested' ? 'Call the candidate to check the time, then reply to the client yourself.' : answer === 'more_info' ? 'Answer once only, then ask them to decide: interview or reject. Reply to the client yourself.' : 'Reply to the client yourself.');
-      const added = await addAutoTasks([{ key: `${slugKey(link.candidate_name + '-' + link.role)}-clientreply-${Date.now().toString(36)}`, priority: 'High', dueDate: todayISO(), title: tTitle, context: tCtx, user: who }]);
-      outcome.taskAdded = added > 0;
-    } catch (e) { console.error('reply task failed:', e.message); }
-
-    try {
-      await commsTable.upsert({ id: `cm-${Date.now()}`, timestamp: new Date().toISOString(), user: 'client', entity_type: 'candidate', entity_name: link.candidate_name,
-        company: link.company, role: link.role, channel: 'Reply link', direction: 'In', summary: note.replace(/^\[|\]$/g, ''), follow_up_date: '', follow_up_done: '' });
-    } catch (e) { console.error('reply comms log failed:', e.message); }
-
-    const stageNote = answer === 'more_info' ? 'No stage change. The question is saved in the candidate notes.'
-      : !moved ? 'The candidate could not be found on the board, so please check it.'
-      : moved.changed ? `The card has moved to ${newStage.replace(/_/g, ' ')} and the reply is saved in the candidate notes.`
-      : `The card was not moved because it is already at ${moved.before.replace(/_/g, ' ')}. The reply is saved in the candidate notes.`;
-    const notifyTo = link.sender_email || process.env.REPLY_NOTIFY_TO || TEAM_CONTACTS.ella.email;
-    try {
-      if (!process.env.BREVO_SMTP_USER || !process.env.BREVO_SMTP_PASS || !process.env.BREVO_SENDER_EMAIL) throw new Error('Brevo email settings are missing on the server');
-      await emailTransporter.sendMail({
-        from: process.env.BREVO_SENDER_EMAIL, to: notifyTo,
-        subject: `Client reply: ${summary}`,
-        text: `${summary}\n\n${note.replace(/^\[|\]$/g, '')}\n\n${stageNote}\n\nA task has been added to your Tasks tab. Please reply to the client personally.\n\nLive 2 Help dashboard`,
-      });
-      outcome.emailed = true;
-    } catch (e) { outcome.emailError = String(e.message || e).slice(0, 160); console.error('reply notify failed:', e.message); }
-
-    const answers = (() => { try { return JSON.parse(link.answers_json || '[]'); } catch (e) { return []; } })();
-    answers.push({ at: new Date().toISOString(), answer, reasons, slots: slots.map(s => s.text), note: (ctx.extra || ctx.detail || message || '').slice(0, 200), message: message.slice(0, 300),
-      moved: outcome.moved, found: outcome.found, before: outcome.before, to: outcome.moved ? newStage : '', taskAdded: outcome.taskAdded, emailed: outcome.emailed, emailError: outcome.emailError });
-    await replyLinksTable.upsert({ ...link, last_answer: answer, last_answer_at: new Date().toISOString(), answers_json: JSON.stringify(answers.slice(-10)) });
-    auditLog('client-link', 'client_reply', 'candidate', `${link.candidate_name} - ${link.role}`, `${answer}${outcome.moved ? ' (moved)' : outcome.found ? ' (left as is: ' + outcome.before + ')' : ' (card not found)'}`);
-
+    // Answer the client straight away. Everything below happens in the background.
+    const dupKey = `${link.id}|${answer}|${note}`;
+    const lastSame = recentReplyJobs.get(dupKey);
     res.json({ ok: true, message: thanks });
+    if (lastSame && now - lastSame < 20000) return; // a double click: already being handled
+    recentReplyJobs.set(dupKey, now);
+    setTimeout(() => recentReplyJobs.delete(dupKey), 60000);
+    setImmediate(() => {
+      runReplyJob({ link, answer, reasons, reasonText, message, label, slots, ctx, note, ref, newStage, summary })
+        .catch(e => console.error('reply job crashed:', e.message));
+    });
   } catch (e) {
     console.error('POST /r/:id error:', e.message);
     res.status(500).json({ error: 'Something went wrong.' });
