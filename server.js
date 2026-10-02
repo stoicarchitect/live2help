@@ -740,7 +740,7 @@ app.post('/api/candidates', async (req, res) => {
       const appRow = [
         existing[0] || c.id, existing[1], existing[2], c.email || existing[3], c.phone || existing[4],
         existing[5], existing[6], existing[7], existing[8], existing[9], existing[10], existing[11],
-        existing[12], existing[13], existing[14], c.salary || existing[15], existing[16],
+        existing[12], existing[13], existing[14], c.salary !== undefined ? c.salary : existing[15], existing[16],
         c.company !== undefined ? c.company : (existing[17] || ''),
         c.contact !== undefined ? c.contact : (existing[18] || ''),
         c.stage || existing[19] || 'applied',
@@ -1005,6 +1005,29 @@ async function ensureSalesManagerTab(tabName, region) {
   return p;
 }
 
+// Where an applicant came from. A tracking tag on the advert link (?src=indeed) wins, then the
+// form answer, then "Careers website". Anything unrecognised is stored as "Other".
+const SOURCE_CHANNELS = ['Indeed','LinkedIn','Reed','Totaljobs','CV-Library','Facebook','Careers website','Referral','Cold call','Existing database','Other'];
+const SOURCE_TAGS = { indeed: 'Indeed', linkedin: 'LinkedIn', reed: 'Reed', totaljobs: 'Totaljobs', cvlibrary: 'CV-Library', 'cv-library': 'CV-Library', facebook: 'Facebook', fb: 'Facebook', careers: 'Careers website', website: 'Careers website', referral: 'Referral', friend: 'Referral', other: 'Other' };
+function normaliseSource(src, formAnswer) {
+  for (const v of [src, formAnswer]) {
+    const t = String(v || '').trim();
+    if (!t) continue;
+    const k = t.toLowerCase().replace(/[^a-z-]/g, '');
+    if (SOURCE_TAGS[k]) return SOURCE_TAGS[k];
+    const hit = SOURCE_CHANNELS.find(c => c.toLowerCase() === t.toLowerCase());
+    if (hit) return hit;
+    return 'Other';
+  }
+  return 'Careers website';
+}
+async function stampPoolSource(poolId, body) {
+  try {
+    const b = body || {};
+    await patchPoolRow(poolId, { 16: normaliseSource(b.src || b.source, b.heardFrom) });
+  } catch (e) { console.error('Could not record application source:', e.message); }
+}
+
 async function handleSalesManagerApplication(req, res, form) {
   try {
     const b = req.body || {};
@@ -1064,6 +1087,7 @@ async function handleSalesManagerApplication(req, res, form) {
         consentBasis: poolConsent === 'Yes' ? 'Application form - talent pool' : 'Application form - this role only',
       }, true, { createOnly: true });
       if (saved) await attachCvToPool(poolId, saved);
+      await stampPoolSource(poolId, req.body);
     } catch (poolErr) {
       console.error('Could not create pool record for application:', poolErr.message);
     }
@@ -1199,6 +1223,7 @@ app.post('/api/applications/:role', async (req, res) => {
         consentBasis: poolConsent === 'Yes' ? 'Application form - talent pool' : 'Application form - this role only',
       }, true, { createOnly: true });
       if (saved) await attachCvToPool(poolId, saved);
+      await stampPoolSource(poolId, req.body);
     } catch (poolErr) {
       console.error('Could not create pool record for application:', poolErr.message);
     }
@@ -1317,7 +1342,7 @@ const CLIENT_RANGE = `${CLIENT_TAB}!A2:J`;
 const LEAD_CLIENT_TAB = 'Lead Clients';
 const LEAD_CLIENT_RANGE = `${LEAD_CLIENT_TAB}!A2:J`;
 const INVOICES_TAB = 'Invoices';
-const INVOICES_RANGE = `${INVOICES_TAB}!A2:K`;
+const INVOICES_RANGE = `${INVOICES_TAB}!A2:O`;
 const KPI_TARGETS_TAB = 'KPI Targets';
 const KPI_TARGETS_RANGE = `${KPI_TARGETS_TAB}!A2:E`;
 
@@ -1592,6 +1617,17 @@ const GREY = '#444444';
 const LIGHT_GREY = '#888888';
 const BORDER = '#DDDDDD';
 
+// A salary for an invoice must be one clear figure: handles £, commas and k, and rejects ranges and typos
+function parseSingleSalary(raw) {
+  const t = String(raw == null ? '' : raw).trim();
+  if (!t) return 0;
+  const nums = [];
+  t.replace(/(\d[\d,]*\.?\d*)\s*(k)?/gi, (m, n, k) => { let v = parseFloat(n.replace(/,/g, '')); if (k) v *= 1000; nums.push(v); return m; });
+  if (nums.length !== 1) return 0;
+  const v = nums[0];
+  return v > 0 && v <= 300000 ? v : 0;
+}
+
 function calculatePlacementFee(salary) {
   const s = Number(salary) || 0;
   let rate;
@@ -1641,6 +1677,10 @@ function rowToInvoice(row) {
     amount: parseFloat(row[8]) || 0,
     status: row[9] || 'pending',
     paymentDate: row[10] || '',
+    consultant: row[11] || '',
+    commissionPct: row[12] || '',
+    commissionAmount: parseFloat(row[13]) || 0,
+    commissionPaidDate: row[14] || '',
   };
 }
 
@@ -1648,7 +1688,8 @@ function invoiceToRow(inv) {
   return [
     inv.number || '', inv.date || '', inv.dueDate || '', inv.company || '',
     inv.role || '', inv.candidateName || '', inv.salary || '', inv.feePercentage || '',
-    inv.amount || 0, inv.status || 'pending', inv.paymentDate || '',
+    inv.amount || 0, inv.status || 'pending', inv.paymentDate || '', inv.consultant || '',
+    inv.commissionPct === undefined ? '' : inv.commissionPct, inv.commissionAmount || '', inv.commissionPaidDate || '',
   ];
 }
 
@@ -1682,6 +1723,23 @@ function requireDan(req, res, next) {
   next();
 }
 
+let invoiceHeadersChecked = false;
+async function ensureInvoiceHeaders() {
+  if (invoiceHeadersChecked) return;
+  invoiceHeadersChecked = true;
+  try {
+    const sheets = getSheetsClient();
+    const r = await sheets.spreadsheets.values.get({ spreadsheetId: CLIENT_SHEET_ID, range: `${INVOICES_TAB}!L1:O1` });
+    const have = (r.data.values && r.data.values[0]) || [];
+    if (!have.some(Boolean)) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: CLIENT_SHEET_ID, range: `${INVOICES_TAB}!L1:O1`, valueInputOption: 'RAW',
+        requestBody: { values: [['Consultant', 'Commission %', 'Commission amount', 'Commission paid date']] },
+      });
+    }
+  } catch (e) { invoiceHeadersChecked = false; console.warn('Could not check invoice headers:', e.message); }
+}
+
 // GET all invoices
 app.get('/api/invoices', async (req, res) => {
   try {
@@ -1700,9 +1758,13 @@ app.get('/api/invoices', async (req, res) => {
 app.post('/api/invoices', requireDan, async (req, res) => {
   auditOnFinish(req, res, () => ({ action: 'invoice_created', type: 'invoice', entity: `${(req.body || {}).candidateName || ''} - ${(req.body || {}).company || ''}`, detail: `salary ${(req.body || {}).salary || ''}` }));
   try {
-    const { candidateId, company, role, candidateName, salary } = req.body;
-    if (!company || !candidateName || !salary) {
-      return res.status(400).json({ error: 'company, candidateName and salary are required' });
+    const { candidateId, company, role, candidateName, consultant, commissionPct } = req.body;
+    const salary = parseSingleSalary(req.body.salary);
+    if (!company || !candidateName) {
+      return res.status(400).json({ error: 'company and candidateName are required' });
+    }
+    if (!salary) {
+      return res.status(400).json({ error: 'The salary must be one agreed basic figure (not a range, and no more than 300,000). Correct it on the candidate card first.' });
     }
 
     const sheets = getSheetsClient();
@@ -1720,7 +1782,15 @@ app.post('/api/invoices', requireDan, async (req, res) => {
       amount: fee,
       status: 'pending',
       paymentDate: '',
+      consultant: String(consultant || '').trim().slice(0, 60),
     };
+    // The consultant's commission is locked in when the invoice is raised, from the fee calculated here
+    const pct = Math.min(100, Math.max(0, parseFloat(commissionPct) || 0));
+    if (newInvoice.consultant && pct > 0) {
+      newInvoice.commissionPct = pct;
+      newInvoice.commissionAmount = Math.round(fee * pct) / 100;
+    }
+    await ensureInvoiceHeaders();
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: CLIENT_SHEET_ID,
@@ -1763,7 +1833,7 @@ app.put('/api/invoices/:number', requireDan, async (req, res) => {
   auditOnFinish(req, res, () => ({ action: 'invoice_updated', type: 'invoice', entity: req.params.number, detail: JSON.stringify(req.body || {}).slice(0, 200) }));
   try {
     const { number } = req.params;
-    const { status, paymentDate } = req.body;
+    const { status, paymentDate, consultant, commissionPaid } = req.body;
 
     const sheets = getSheetsClient();
     const rows = await readInvoiceRows();
@@ -1774,12 +1844,19 @@ app.put('/api/invoices/:number', requireDan, async (req, res) => {
     }
 
     const updatedRow = [...rows[rowIndex]];
-    if (status !== undefined) updatedRow[9] = status;
+    while (updatedRow.length < 15) updatedRow.push('');
+    if (status !== undefined) {
+      updatedRow[9] = status;
+      // Record the date the client paid, so commission timing and payroll cut-offs work
+      if (status === 'paid' && !updatedRow[10] && paymentDate === undefined) updatedRow[10] = toISODate(new Date());
+    }
     if (paymentDate !== undefined) updatedRow[10] = paymentDate;
+    if (consultant !== undefined) updatedRow[11] = String(consultant || '').trim().slice(0, 60);
+    if (commissionPaid !== undefined) updatedRow[14] = commissionPaid ? (typeof commissionPaid === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(commissionPaid) ? commissionPaid : toISODate(new Date())) : '';
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: CLIENT_SHEET_ID,
-      range: `${INVOICES_TAB}!A${rowIndex + 2}:K${rowIndex + 2}`,
+      range: `${INVOICES_TAB}!A${rowIndex + 2}:O${rowIndex + 2}`,
       valueInputOption: 'RAW',
       requestBody: { values: [updatedRow] },
     });
@@ -1804,7 +1881,7 @@ app.delete('/api/invoices/:number', requireDan, async (req, res) => {
     }
     await sheets.spreadsheets.values.clear({
       spreadsheetId: CLIENT_SHEET_ID,
-      range: `${INVOICES_TAB}!A${rowIndex + 2}:K${rowIndex + 2}`,
+      range: `${INVOICES_TAB}!A${rowIndex + 2}:O${rowIndex + 2}`,
     });
     res.json({ ok: true, deleted: number });
   } catch (e) {
@@ -4242,6 +4319,86 @@ app.put('/api/candidate-pool/:id/meta', async (req, res) => {
     res.json({ ok: true, data: entry });
   } catch (e) {
     console.error('PUT /api/candidate-pool/:id/meta error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+// Edit a pool record's details. Keeps the live pipeline card (and form application row) in step so the
+// two never drift apart or create a duplicate.
+app.put('/api/candidate-pool/:id/edit', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const out = await withPoolLock(async () => {
+      const sheets = getSheetsClient();
+      const rows = await readPoolRows();
+      const idx = rows.findIndex(r => r && r[0] === req.params.id);
+      if (idx === -1) return { status: 404, error: 'Pool record not found' };
+      const row = padPoolRow(rows[idx]);
+      const oldId = row[0], oldName = row[1], oldRole = row[5];
+      const clean = v => String(v == null ? '' : v).trim().replace(/\s+/g, ' ');
+      const name = b.name !== undefined ? clean(b.name) : oldName;
+      const role = b.role !== undefined ? clean(b.role) : oldRole;
+      if (!name || !role) return { status: 400, error: 'Name and role cannot be blank' };
+      const newId = poolIdFor(name, role);
+      if (newId !== oldId && rows.some(r => r && r[0] === newId)) {
+        return { status: 409, error: `A record for ${name} applying for ${role} already exists` };
+      }
+      const email = b.email !== undefined ? clean(b.email) : row[2];
+      const phone = b.phone !== undefined ? clean(b.phone) : row[3];
+      const company = b.company !== undefined ? clean(b.company) : row[4];
+      const notes = b.notes !== undefined ? String(b.notes) : row[10];
+      const dateAdded = b.dateAdded !== undefined ? (/^\d{4}-\d{2}-\d{2}/.test(b.dateAdded) ? String(b.dateAdded).slice(0, 10) : row[8]) : row[8];
+
+      // Linked form application row?
+      const apps = await readApplicationsRows();
+      const app = apps.find(a => poolIdFor(a.name, a.role) === oldId);
+      if (app && role !== oldRole) {
+        return { status: 409, error: 'This person applied through a role form, so their role cannot be changed here. Change the other details instead.' };
+      }
+
+      // 1. live Dashboard card
+      const dash = await readAllRows();
+      const di = dash.findIndex(r => r && r[0] && poolIdFor(r[3], r[2]) === oldId);
+      if (di !== -1) {
+        const d = [...dash[di]];
+        while (d.length < 12) d.push('');
+        d[1] = company; d[2] = role; d[3] = name; d[6] = notes; d[8] = email; d[9] = phone;
+        if (dateAdded) d[5] = dateAdded;
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SHEET_ID, range: `${TAB}!A${di + 2}:L${di + 2}`, valueInputOption: 'RAW', requestBody: { values: [d] },
+        });
+      }
+      // 2. form application row
+      if (app) {
+        const tabName = `Applications - ${app.formRole}`;
+        const got = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tabName}'!A2:U` });
+        const arows = got.data.values || [];
+        const ai = arows.findIndex(r => (r[2] || '').trim().toLowerCase() === String(app.name).trim().toLowerCase());
+        if (ai !== -1) {
+          const a = [...arows[ai]];
+          while (a.length < 21) a.push('');
+          a[2] = name; a[3] = email; a[4] = phone; a[17] = company; a[20] = notes;
+          if (dateAdded && String(a[1]).slice(0, 10) !== dateAdded) a[1] = dateAdded;
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: SHEET_ID, range: `'${tabName}'!A${ai + 2}:U${ai + 2}`, valueInputOption: 'RAW', requestBody: { values: [a] },
+          });
+        }
+      }
+      // 3. the pool row itself
+      row[0] = newId; row[1] = name; row[2] = email; row[3] = phone; row[4] = company; row[5] = role;
+      row[8] = dateAdded; row[10] = notes; row[9] = new Date().toISOString();
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID, range: `'${POOL_TAB}'!A${idx + 2}:${POOL_LAST_COL}${idx + 2}`, valueInputOption: 'RAW', requestBody: { values: [row] },
+      });
+      return { status: 200, row, oldId, newId };
+    });
+    if (out.status !== 200) return res.status(out.status).json({ error: out.error });
+    const entry = rowToPoolEntry(out.row);
+    auditLog(auditActorOf(req), 'pool_edited', 'pool', `${entry.name} - ${entry.role}`, out.oldId !== out.newId ? `renamed from ${out.oldId}` : 'details corrected');
+    res.json({ ok: true, data: entry, oldId: out.oldId });
+  } catch (e) {
+    console.error('PUT /api/candidate-pool/:id/edit error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -6732,12 +6889,28 @@ app.get('/api/metrics/business-health', async (req, res) => {
 
     let ytdRevenue = 0, invoicePaid = 0, invoicePending = 0, invoiceOverdue = 0, invoiceCount = 0;
     const revenueBy = new Map();
+    const revenueByConsultant = {};
+    const commissionByConsultant = {};
+    const commission = { recognised: 0, due: 0, paidOut: 0, pending: 0 };
     invoices.forEach(inv => {
       const d = parseISODate(inv.date);
       const inYear = d && d >= yStart && d < yEnd;
       if (inYear) {
         ytdRevenue += inv.amount; invoiceCount++;
         revenueBy.set(lc(inv.company), (revenueBy.get(lc(inv.company)) || 0) + inv.amount);
+        const cons = String(inv.consultant || '').trim() || 'Unassigned';
+        revenueByConsultant[cons] = (revenueByConsultant[cons] || 0) + inv.amount;
+      }
+      if (inv.commissionAmount > 0) {
+        if (lc(inv.status) === 'paid') {
+          const pd = parseISODate(inv.paymentDate) || d;
+          if (pd && pd >= yStart && pd < yEnd) {
+            commission.recognised += inv.commissionAmount;
+            const ck = String(inv.consultant || '').trim() || 'Unassigned';
+            commissionByConsultant[ck] = (commissionByConsultant[ck] || 0) + inv.commissionAmount;
+          }
+          if (inv.commissionPaidDate) commission.paidOut += inv.commissionAmount; else commission.due += inv.commissionAmount;
+        } else commission.pending += inv.commissionAmount;
       }
       if (lc(inv.status) === 'paid') { if (inYear) invoicePaid += inv.amount; }
       else {
@@ -6763,7 +6936,7 @@ app.get('/api/metrics/business-health', async (req, res) => {
 
     res.json({
       ytdRevenue, invoicePaid, invoicePending, invoiceOverdue, invoiceCount,
-      ellaROI: 0,
+      ellaROI: 0, revenueByConsultant, commissionByConsultant, commission,
       clientPerformance: [...map.values()].sort((a, b) => b.revenue - a.revenue),
     });
   } catch (e) {
@@ -8152,7 +8325,7 @@ app.post('/r/:id', async (req, res) => {
 });
 
 // Lets the dashboard show which server version is live
-const SERVER_BUILD = '2 Oct 2026 - build 7';
+const SERVER_BUILD = '2 Oct 2026 - build 10';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
