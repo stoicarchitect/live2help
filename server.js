@@ -234,19 +234,21 @@ const PUBLIC_API = [
   { method: 'GET', re: /^\/api\/health$/ },
 ];
 let cronWarned = false;
+// The automation sends its secret in the x-cron-key header (the ?key= form still works)
+function cronKeyOf(req) { return String(req.get('x-cron-key') || req.query.key || ''); }
 
 app.use('/api', async (req, res, next) => {
   if (req.method === 'OPTIONS' || !AUTH_ENABLED) return next();
   const p = req.originalUrl.split('?')[0].replace(/\/+$/, '');
   if (PUBLIC_API.some(r => r.method === req.method && r.re.test(p))) return next();
-  if (p.startsWith('/api/cron/') && process.env.CRON_SECRET && String(req.query.key || '') === process.env.CRON_SECRET) return next();
+  if (p.startsWith('/api/cron/') && process.env.CRON_SECRET && cronKeyOf(req) === process.env.CRON_SECRET) return next();
   if (p === '/api/check-invoice-reminders') {
     const secret = process.env.CRON_SECRET;
     if (!secret) {
       if (!cronWarned) { console.warn('CRON_SECRET is not set: /api/check-invoice-reminders is open'); cronWarned = true; }
       return next();
     }
-    if (String(req.query.key || '') === secret) return next();
+    if (cronKeyOf(req) === secret) return next();
   }
   const header = String(req.get('Authorization') || '');
   let token = header.startsWith('Bearer ') ? header.slice(7) : '';
@@ -6486,7 +6488,7 @@ if (process.env.RENDER_EXTERNAL_URL) {
 
 function cronAuthorised(req) {
   const secret = process.env.CRON_SECRET;
-  if (secret && String(req.query.key || '') === secret) return true;
+  if (secret && cronKeyOf(req) === secret) return true;
   return isAdmin(req);
 }
 function cronOnly(req, res, next) {
@@ -6530,17 +6532,43 @@ async function findOrCreateBackupFolder(drive) {
   return c.data.id;
 }
 
+async function exportBackupCopy(fileId, name, folderId, uploadDrive) {
+  // Fallback: the service account (which can read both sheets) exports an .xlsx copy,
+  // and the upload sign-in saves it. Needs no permission over the original sheet.
+  const svc = getDriveClient();
+  const xlsx = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  const r = await svc.files.export({ fileId, mimeType: xlsx }, { responseType: 'arraybuffer' });
+  const buffer = Buffer.from(r.data);
+  await uploadDrive.files.create({
+    requestBody: { name: name + '.xlsx', parents: [folderId] },
+    media: { mimeType: xlsx, body: Readable.from([buffer]) },
+    fields: 'id',
+  });
+}
+
 async function runBackup() {
   const drive = getUploadDriveClient();
   const folderId = await findOrCreateBackupFolder(drive);
   const date = todayISO();
   const targets = [['Candidate Tracking', SHEET_ID], ['Clients and Contacts', CLIENT_SHEET_ID]];
   const made = [];
+  const methods = {};
   for (const [label, fileId] of targets) {
     const name = `${label} backup ${date}`;
-    const existing = await drive.files.list({ q: `'${folderId}' in parents and name='${name}' and trashed=false`, fields: 'files(id)', pageSize: 1 });
+    const existing = await drive.files.list({ q: `'${folderId}' in parents and (name='${name}' or name='${name}.xlsx') and trashed=false`, fields: 'files(id)', pageSize: 1 });
     if (!(existing.data.files && existing.data.files.length)) {
-      await drive.files.copy({ fileId, requestBody: { name, parents: [folderId] }, fields: 'id' });
+      try {
+        await drive.files.copy({ fileId, requestBody: { name, parents: [folderId] }, fields: 'id' });
+        methods[label] = 'copy';
+      } catch (e) {
+        console.warn('Backup copy failed for ' + label + ', trying export:', e.message);
+        try {
+          await exportBackupCopy(fileId, name, folderId, drive);
+          methods[label] = 'export (copy failed: ' + String(e.message).slice(0, 120) + ')';
+        } catch (e2) {
+          throw new Error(`${label}: copy failed (${e.message}); export failed (${e2.message})`);
+        }
+      }
       made.push(name);
     }
     // Keep the newest BACKUP_KEEP copies of each sheet; older ones go to the Drive bin (not permanently deleted)
@@ -6552,7 +6580,7 @@ async function runBackup() {
       await drive.files.update({ fileId: f.id, requestBody: { trashed: true } });
     }
   }
-  const status = { at: new Date().toISOString(), ok: true, made, folderId };
+  const status = { at: new Date().toISOString(), ok: true, made, methods, folderId };
   await settingsTable.upsert({ id: 'backup_last', value: JSON.stringify(status), updated_by: 'system' });
   return status;
 }
@@ -6560,14 +6588,42 @@ async function runBackup() {
 async function safeBackup() {
   try { return await runBackup(); }
   catch (e) {
-    const status = { at: new Date().toISOString(), ok: false, error: friendlyDriveError(e) };
+    const status = { at: new Date().toISOString(), ok: false, error: friendlyDriveError(e), detail: String((e && e.message) || e).slice(0, 600) };
     try { await settingsTable.upsert({ id: 'backup_last', value: JSON.stringify(status), updated_by: 'system' }); } catch (x) { /* ignore */ }
-    await alertDan('backup', 'Live 2 Help dashboard: backup failed', `The nightly backup did not complete.\n\nReason: ${status.error}\n\nLive 2 Help dashboard`);
+    await alertDan('backup', 'Live 2 Help dashboard: backup failed', `The nightly backup did not complete.\n\nReason: ${status.error}\n\nDetail: ${status.detail || ''}\n\nLive 2 Help dashboard`);
     return status;
   }
 }
 
-app.get('/api/cron/backup', cronOnly, async (req, res) => res.json(await safeBackup()));
+// Background jobs: the call returns at once ("started") so a sleeping or slow server can never
+// make the scheduler time out. The result is stored and read back from /api/cron/status.
+const cronRunning = {};
+async function runCronJob(name, fn) {
+  if (cronRunning[name]) return { started: false, running: true };
+  cronRunning[name] = true;
+  const startedAt = new Date().toISOString();
+  try { await settingsTable.upsert({ id: 'cron_' + name, value: JSON.stringify({ startedAt, running: true }), updated_by: 'system' }); } catch (e) { /* not essential */ }
+  fn().then(async result => {
+    const failed = result && typeof result === 'object' && (result.ok === false || Object.values(result).some(v => typeof v === 'string' && v.startsWith('FAIL')));
+    try { await settingsTable.upsert({ id: 'cron_' + name, value: JSON.stringify({ startedAt, finishedAt: new Date().toISOString(), running: false, ok: !failed, result }).slice(0, 45000), updated_by: 'system' }); } catch (e) { /* not essential */ }
+  }).catch(async e => {
+    try { await settingsTable.upsert({ id: 'cron_' + name, value: JSON.stringify({ startedAt, finishedAt: new Date().toISOString(), running: false, ok: false, error: e.message }), updated_by: 'system' }); } catch (x) { /* not essential */ }
+    await alertDan('cron:' + name, `Live 2 Help dashboard: ${name} job failed`, e.message);
+  }).finally(() => { cronRunning[name] = false; });
+  return { started: true, startedAt };
+}
+
+app.get('/api/cron/backup', cronOnly, async (req, res) => {
+  if (req.query.wait === '1') return res.json(await safeBackup());
+  res.json(await runCronJob('backup', safeBackup));
+});
+app.get('/api/cron/status', cronOnly, async (req, res) => {
+  try {
+    const rows = await settingsTable.list();
+    const get = id => { const r = rows.find(o => o.id === id); if (!r) return null; try { return JSON.parse(r.value); } catch (e) { return null; } };
+    res.json({ now: new Date().toISOString(), build: SERVER_BUILD, backup: get('backup_last'), backupJob: get('cron_backup'), daily: get('cron_daily') });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.post('/api/backup/run', requireAdmin, async (req, res) => {
   const s = await safeBackup();
   auditLog(auditActorOf(req), 'backup_run', 'backup', s.ok ? 'ok' : 'failed', s.error || '');
@@ -6909,17 +6965,22 @@ app.get('/api/cron/weekly-digest', cronOnly, async (req, res) => {
 });
 
 /* ---------- One daily job ---------- */
-app.get('/api/cron/daily', cronOnly, async (req, res) => {
+async function runDailyJob(skipBackup) {
   const result = {};
   const step = async (name, fn) => {
     try { result[name] = await fn(); }
     catch (e) { result[name] = 'FAIL: ' + e.message; await alertDan('daily:' + name, `Live 2 Help dashboard: daily job step failed (${name})`, e.message); }
   };
   await step('health', deepHealthCheck);
-  await step('backup', safeBackup);
+  if (!skipBackup) await step('backup', safeBackup);
   await step('tasks', reconcileTasks);
   await step('invoiceChase', checkOverdueInvoices);
-  res.json(result);
+  return result;
+}
+app.get('/api/cron/daily', cronOnly, async (req, res) => {
+  const skipBackup = req.query.skipBackup === '1';
+  if (req.query.wait === '1') return res.json(await runDailyJob(skipBackup));
+  res.json(await runCronJob('daily', () => runDailyJob(skipBackup)));
 });
 
 
@@ -8091,7 +8152,7 @@ app.post('/r/:id', async (req, res) => {
 });
 
 // Lets the dashboard show which server version is live
-const SERVER_BUILD = '2 Oct 2026 - build 6';
+const SERVER_BUILD = '2 Oct 2026 - build 7';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
