@@ -8077,6 +8077,10 @@ app.post('/r/:id', async (req, res) => {
   }
 });
 
+// Lets the dashboard show which server version is live
+const SERVER_BUILD = '2 Oct 2026 - build 5';
+app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
+
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
 // Each person sees the replies to the emails they built (anything without a sender is shown to everyone).
 app.get('/api/reply-activity', async (req, res) => {
