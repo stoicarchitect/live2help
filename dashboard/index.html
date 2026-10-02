@@ -955,6 +955,72 @@
     .sub-pair,.sub-pair.top,.sub-trio{grid-template-columns:1fr 30px;}
     .sub-pair input:nth-child(2),.sub-pair textarea:nth-child(2){grid-column:1;}
   }
+
+  /* ---- Bulk actions ---- */
+  .card.bulk-sel{outline:2px solid var(--gold);background:#FBF6EA;}
+  body.bulk-on .card{cursor:pointer;position:relative;}
+  body.bulk-on .card::after{content:"";position:absolute;top:8px;right:8px;width:16px;height:16px;border:2px solid #bbb;border-radius:3px;background:#fff;}
+  body.bulk-on .card.bulk-sel::after{background:var(--gold);border-color:var(--gold);}
+  #bulkBar{display:none;position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:6400;background:var(--dark);color:#fff;border-top:2px solid var(--gold);padding:10px 14px;border-radius:3px;box-shadow:0 6px 24px rgba(0,0,0,.35);align-items:center;gap:8px;flex-wrap:wrap;max-width:96vw;}
+  #bulkBar.show{display:flex;}
+  #bulkBar .bc{font-size:13px;margin-right:6px;white-space:nowrap;}
+  #bulkBar button{padding:8px 12px;border:1px solid #666;background:transparent;color:#fff;border-radius:2px;font-family:inherit;font-size:12.5px;cursor:pointer;}
+  #bulkBar button.gold{background:var(--gold);border-color:var(--gold);color:var(--dark);font-weight:600;}
+  #bulkBar button.red{border-color:#B3372B;color:#ff9b91;}
+  #bulkBtn.on{background:var(--gold) !important;color:var(--dark) !important;border-color:var(--gold) !important;}
+  .bk-box{background:#fff;border-top:3px solid var(--gold);max-width:560px;width:100%;max-height:90vh;overflow:auto;border-radius:3px;padding:20px 22px;}
+  .bk-box label{display:block;font-size:11px;color:#999;letter-spacing:.5px;margin:12px 0 4px;}
+  .bk-box select,.bk-box textarea,.bk-box input[type=text]{width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;}
+  .bk-box .list{font-size:12.5px;color:var(--grey);background:var(--lightbg);padding:8px 10px;margin:8px 0;max-height:120px;overflow:auto;}
+  .bk-act{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;}
+  .bk-act button{padding:10px 16px;border:1px solid var(--border);background:#fff;border-radius:2px;font-family:inherit;font-size:13px;cursor:pointer;}
+  .bk-act button.gold{background:var(--gold);border-color:var(--gold);color:var(--dark);font-weight:600;}
+  .tk-bar,.pl-bar{display:none;align-items:center;gap:8px;flex-wrap:wrap;background:var(--dark);color:#fff;padding:9px 14px;margin-bottom:10px;border-left:3px solid var(--gold);font-size:13px;}
+  .tk-bar.show,.pl-bar.show{display:flex;}
+  .tk-bar button,.pl-bar button{padding:7px 12px;border:1px solid #666;background:transparent;color:#fff;border-radius:2px;font-family:inherit;font-size:12.5px;cursor:pointer;}
+  .tk-sel,.pl-sel{width:auto !important;margin-right:8px;vertical-align:middle;transform:scale(1.15);}
+
+  /* ---- Phone layout ---- */
+  #mobBar,#botNav,#navScrim{display:none;}
+  @media (max-width:780px){
+    body.app-on #mobBar{display:flex;position:fixed;top:0;left:0;right:0;height:calc(50px + env(safe-area-inset-top));padding-top:env(safe-area-inset-top);background:#0B0B18;border-bottom:2px solid var(--gold);z-index:6500;align-items:center;justify-content:space-between;padding-left:6px;padding-right:6px;}
+    #mobBar button{background:none;border:none;color:#fff;font-size:15px;min-width:46px;height:46px;font-family:inherit;}
+    #mobBar .mb-brand{color:#fff;letter-spacing:2.5px;font-size:12px;}
+    #mobBar .mb-brand b{color:var(--gold);}
+    body.app-on #botNav{display:flex;position:fixed;bottom:0;left:0;right:0;height:calc(58px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);background:#fff;border-top:1px solid var(--border);z-index:6500;}
+    #botNav button{flex:1;border:none;background:none;font-family:inherit;font-size:11px;color:#777;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:48px;}
+    #botNav button .ic{font-size:18px;line-height:1;}
+    #botNav button.on{color:var(--dark);font-weight:600;box-shadow:inset 0 3px 0 var(--gold);}
+    body.app-on #app.visible{padding-top:calc(50px + env(safe-area-inset-top));padding-bottom:calc(58px + env(safe-area-inset-bottom));}
+    #sidebar{position:fixed;top:0;left:0;bottom:0;width:86%;max-width:340px;z-index:7000;transform:translateX(-105%);transition:transform .22s;max-height:none;overflow-y:auto;}
+    body.nav-open #sidebar{transform:none;}
+    body.nav-open #navScrim{display:block;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:6900;}
+    #companyList{max-height:none;}
+    #groupBar{padding:0 8px;gap:6px;overflow-x:auto;flex-wrap:nowrap;}
+    #groupBtns{flex-wrap:nowrap;}
+    .grp-btn{padding:12px 10px;white-space:nowrap;font-size:12.5px;}
+    #userChip .who{display:none;}
+    #tabs{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;}
+    .tab-btn{white-space:nowrap;}
+    #topbar{padding:12px 14px;gap:8px;}
+    #topbar > button,#topbar > select{flex:1 1 auto;min-height:42px;}
+    .stage-col.is-empty{display:none;}
+    .stage-col{margin-bottom:8px;}
+    .card{padding:12px 12px;min-height:54px;}
+    input,select,textarea{font-size:16px !important;}
+    .modal-overlay{padding:0;align-items:stretch;}
+    .modal-overlay .modal{max-width:none;max-height:none;height:100%;border-radius:0;padding:18px 16px calc(24px + env(safe-area-inset-bottom));}
+    #odOverlay,#pmOverlay,.bk-ov{padding:0 !important;align-items:stretch !important;}
+    #odBox,#pmBox,.bk-box{max-width:none !important;max-height:none !important;height:100%;border-radius:0 !important;}
+    #gsOverlay{padding:calc(56px + env(safe-area-inset-top)) 8px 8px !important;}
+    .tile-grid{grid-template-columns:1fr 1fr;gap:10px;}
+    .tile{padding:12px;}
+    .save,.cancel,.row-actions button,.task-actions button,.pool-actions button{min-height:40px;}
+    .ops-table-wrap{-webkit-overflow-scrolling:touch;}
+    #bulkBar{left:8px;right:8px;transform:none;bottom:calc(66px + env(safe-area-inset-bottom));max-width:none;}
+    #toast,.toast{bottom:calc(72px + env(safe-area-inset-bottom)) !important;}
+    .board-scroll-btn{display:none !important;}
+  }
 </style>
 </head>
 <body>
@@ -983,6 +1049,16 @@
   </div>
 </div>
 
+<div id="mobBar"><button onclick="mobNav(true)" aria-label="Roles and companies">&#9776;</button><div class="mb-brand">LIVE <b>2</b> HELP</div><button onclick="gsOpen()" aria-label="Search">&#128269;</button></div>
+<div id="navScrim" onclick="mobNav(false)"></div>
+<div id="botNav">
+  <button data-mb="home" onclick="mobGo('home')"><span class="ic">&#8962;</span>Home</button>
+  <button data-mb="candidates" onclick="mobGo('candidates')"><span class="ic">&#9776;</span>Pipeline</button>
+  <button data-mb="tasks" onclick="mobGo('tasks')"><span class="ic">&#10003;</span>Tasks</button>
+  <button data-mb="notifications" onclick="mobGo('notifications')"><span class="ic">&#9888;</span>Alerts</button>
+  <button onclick="mobNav(true)"><span class="ic">&#9776;</span>Roles</button>
+</div>
+<div id="bulkBar"></div>
 <div id="app">
   <div id="sidebar">
     <div class="brand">
@@ -1040,6 +1116,7 @@
         <option value="rejected">Rejected</option>
       </select>
       <div class="sync-status" id="syncStatus"><span class="sync-dot"></span><span id="syncTime">Last synced: never</span></div>
+      <button id="bulkBtn" onclick="bulkToggle()" style="padding:10px 16px;background:#fff;color:var(--dark);border:1px solid var(--dark);border-radius:2px;font-family:inherit;font-size:12.5px;cursor:pointer;">Select</button>
       <button id="addCandBtn" onclick="openAddCandidate()" style="display:none;padding:10px 16px;background:var(--dark);color:var(--white);border:none;border-radius:2px;font-family:inherit;font-size:12.5px;cursor:pointer;">+ Add candidate</button>
       <button id="briefBtn" onclick="openBriefModal()" style="display:none;padding:10px 16px;background:#fff;color:var(--dark);border:1px solid var(--dark);border-radius:2px;font-family:inherit;font-size:12.5px;cursor:pointer;">Role brief</button>
       <button id="subSendBtn" onclick="subOpenSendForCurrentRole()" style="display:none;padding:10px 16px;background:var(--gold);color:var(--white);border:none;border-radius:2px;font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;">Send submissions</button>
@@ -2527,7 +2604,8 @@ function renderBoard(){
         if(c.stage === 'rejected') typeClass = 'stage-rejected';
         else if(successStages.includes(c.stage)) typeClass = 'stage-success';
         card.className = 'card ' + typeClass;
-        card.onclick = () => openCandidateModal(c.id);
+        card.dataset.bk = bulkKey(currentCompany, currentRole, c.id);
+        card.onclick = () => { if(BULK.on) bulkTick(card); else openCandidateModal(c.id); };
         const d = daysSince(c.date);
         card.innerHTML = `
           <div class="avatar">${initials(c.name)}</div>
@@ -2585,7 +2663,8 @@ function renderAggregateBoard(){
         if(c.stage === 'rejected') typeClass = 'stage-rejected';
         else if(successStages.includes(c.stage)) typeClass = 'stage-success';
         card.className = 'card ' + typeClass;
-        card.onclick = () => openCandidateFromAll(x.company, x.role, c.id);
+        card.dataset.bk = bulkKey(x.company, x.role, c.id);
+        card.onclick = () => { if(BULK.on) bulkTick(card); else openCandidateFromAll(x.company, x.role, c.id); };
         const d = daysSince(c.date);
         const where = x.role + (x.company && x.company !== UNASSIGNED_LABEL ? ' - ' + x.company : '');
         card.innerHTML = `
@@ -2722,7 +2801,7 @@ function openCandidateModal(id){
     <div class="field-row">
       <label>Notes</label>
       <textarea id="notesInput" placeholder="Add notes for this candidate">${c.notes || ''}</textarea>
-      <label style="display:flex;gap:8px;align-items:center;font-size:12px;color:#999;margin-top:8px;cursor:pointer;"><input type="checkbox" id="testCandidateToggle" ${/\[test\]/i.test(c.notes || '') ? 'checked' : ''} onchange="toggleTestCandidate(this.checked)"> Test candidate (left out of reports, forecasts and automatic tasks)</label>
+      <label style="display:flex;gap:8px;align-items:center;font-size:12px;color:#999;margin-top:8px;cursor:pointer;"><input type="checkbox" style="width:auto;margin:0;" id="testCandidateToggle" ${/\[test\]/i.test(c.notes || '') ? 'checked' : ''} onchange="toggleTestCandidate(this.checked)"> Test candidate (left out of reports, forecasts and automatic tasks)</label>
     </div>
   `;
 
@@ -3343,7 +3422,7 @@ function renderTaskRow(task){
   const dueStr = fmtDateShort(task.dueDate);
   const context = (task.context || '').substring(0, 50);
   return `<div class="task-row${overdue ? ' overdue' : ''}">
-    <div class="task-cell task-title">${escapeHtml(task.title)}</div>
+    <div class="task-cell task-title"><input type="checkbox" class="tk-sel" data-id="${task.id}" onclick="tkUpdateBar()">${escapeHtml(task.title)}</div>
     <div class="task-cell"><span class="task-priority ${task.priority}">${task.priority}</span></div>
     <div class="task-cell task-duedate">${dueStr}</div>
     <div class="task-cell" title="${escapeHtml(task.context || '')}">${escapeHtml(context)}${(task.context || '').length > 50 ? '...' : ''}</div>
@@ -5128,7 +5207,7 @@ function renderPool(){
       : `<span class="pool-tag">${esc(poolStageLabel(p.currentStage))}</span>`;
     return `
       <tr onclick="openPoolDialog('${esc(p.id)}')">
-        <td class="pool-name">${esc(p.name)}${p.inPipeline ? '' : '<div class="pool-muted">Removed from pipeline</div>'}${p.tags ? '<div class="pool-tags">' + String(p.tags).split(',').map(t => '<span class="pool-tag">' + esc(t.trim()) + '</span>').join('') + '</div>' : ''}</td>
+        <td class="pool-name"><input type="checkbox" class="pl-sel" data-id="${esc(p.id)}" onclick="event.stopPropagation();plUpdateBar()">${esc(p.name)}${p.inPipeline ? '' : '<div class="pool-muted">Removed from pipeline</div>'}${p.tags ? '<div class="pool-tags">' + String(p.tags).split(',').map(t => '<span class="pool-tag">' + esc(t.trim()) + '</span>').join('') + '</div>' : ''}</td>
         <td>${esc(p.role)}</td>
         <td>${p.company ? esc(p.company) : '<span class="pool-muted">Not yet assigned</span>'}</td>
         <td>${esc(poolStageLabel(p.furthestStage))}</td>
@@ -9995,7 +10074,12 @@ async function subBuildEml(){
         atts.push({fileName: b.fileName, mime, base64: b.base64});
       }
     }
-    const eml = emlBuildMulti(SUB.to, SUB.subject, SUB.body, atts);
+    let emailBody = SUB.body;
+    try{
+      const lj = await b2Post('/api/reply-links', {candidates: chosen.map(x => ({id:x.c.id, name:x.c.name, role:ctx.role, company:ctx.company, sourceTab:x.c.sourceTab || '', formRole:x.c.formRole || '', contact:SUB.contactName || ''}))});
+      emailBody = replyLinksInject(SUB.body, lj.links);
+    }catch(e){ showToast('Reply links could not be added: ' + e.message); }
+    const eml = emlBuildMulti(SUB.to, SUB.subject, emailBody, atts);
     const fname = 'Draft ' + String(SUB.subject || 'submission').replace(/[^A-Za-z0-9 \-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 70) + '.eml';
     downloadText(fname, eml, 'message/rfc822');
     const batch = 'b-' + Date.now().toString(36);
@@ -11566,8 +11650,8 @@ function odShell(){
 }
 function odClose(){ const el = document.getElementById('odOverlay'); if(el) el.style.display = 'none'; }
 
-async function odOpen(kind){
-  OD = {kind:kind, cand:odSnapshot(), extra:{}, res:null, busy:true, error:''};
+async function odOpen(kind, cand){
+  OD = {kind:kind, cand:cand || odSnapshot(), extra:{}, res:null, busy:true, error:''};
   odRender();
   await odBuild();
 }
@@ -11721,7 +11805,7 @@ function compRender(){
     row('Right to work', compSel('cpRtw', r.rtw_status, st)) +
     row('Document type', compSel('cpDoc', r.rtw_doc, docs)) +
     row('Checked on', '<input type="date" id="cpDate" value="' + esc(r.rtw_date || '') + '" style="padding:7px 8px;border:1px solid var(--border);border-radius:2px;font-size:12.5px;">') +
-    row('Original seen Day 1', '<input type="checkbox" id="cpOrig"' + (String(r.rtw_original_seen).toLowerCase() === 'yes' ? ' checked' : '') + '>') +
+    row('Original seen Day 1', '<input type="checkbox" style="width:auto;margin:0;" id="cpOrig"' + (String(r.rtw_original_seen).toLowerCase() === 'yes' ? ' checked' : '') + '>') +
     row('Reference 1', compSel('cpRef1', r.ref1_status, rf)) +
     row('Reference 2', compSel('cpRef2', r.ref2_status, rf)) +
     '<button onclick="compSave()" style="padding:8px 16px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:12.5px;font-weight:600;">Save compliance</button>';
@@ -11836,6 +11920,292 @@ function gsGoCand(co, role, id){
   gsClose(); switchTab('candidates'); selectRole(co, role);
   setTimeout(function(){ try{ openCandidateModal(id); }catch(e){} }, 120);
 }
+</script>
+<script>
+/* ---------- Automation batch D: bulk actions, phone layout, reply links ---------- */
+function replyLinksInject(body, links){
+  if(!links || !links.length) return body;
+  const lines = links.map(function(l){ return '- ' + subRef(l.name) + ': ' + l.url; }).join('\n');
+  const block = 'To reply in one click (no login needed):\n' + lines + '\n';
+  const re = /\n(Kind regards|Best regards|Warm regards|Many thanks|Regards|Thanks)\b/gi;
+  let last = -1, m;
+  while((m = re.exec(body)) !== null) last = m.index;
+  if(last < 0) return body + '\n\n' + block;
+  return body.slice(0, last) + '\n' + block + body.slice(last);
+}
+
+/* Phone layout */
+function mobNav(open){ document.body.classList.toggle('nav-open', !!open); }
+function mobGo(tab){ mobNav(false); switchTab(tab); if(tab === 'candidates'){ try{ openCandidatesView('all'); }catch(e){} } mobMark(tab); }
+function mobMark(tab){ document.querySelectorAll('#botNav button[data-mb]').forEach(function(b){ b.classList.toggle('on', b.dataset.mb === tab); }); }
+(function(){
+  const _ch = chooseHome;
+  chooseHome = function(){ document.body.classList.add('app-on'); _ch(); };
+  const _st = switchTab;
+  switchTab = function(tab){ _st(tab); mobMark(tab); mobNav(false); if(tab !== 'candidates' && BULK.on) bulkToggle(); };
+  const _rb = renderBoard;
+  renderBoard = function(){
+    _rb();
+    document.querySelectorAll('#board .stage-col').forEach(function(col){ col.classList.toggle('is-empty', !col.querySelector('.card')); });
+    bulkMarks();
+  };
+  document.addEventListener('click', function(e){ if(e.target.closest && e.target.closest('#sidebar .role-item')) mobNav(false); });
+})();
+
+/* ---------- Bulk selection on the pipeline board ---------- */
+var BULK = {on:false, sel:{}};
+var BULK_STAGES = [['applied','Applied'],['submitted','Submitted'],['interview_requested','Interview Requested'],['interviewed','Interviewed']];
+function bulkKey(co, role, id){ return [co, role, id].join('||'); }
+function bulkSplit(k){ const p = k.split('||'); return {co:p[0], role:p[1], id:p.slice(2).join('||')}; }
+function bulkCand(k){ const p = bulkSplit(k); const list = (DATA[p.co] && DATA[p.co][p.role]) || []; const c = list.find(function(x){ return x.id === p.id; }); return c ? {c:c, co:p.co, role:p.role} : null; }
+function bulkItems(){ return Object.keys(BULK.sel).map(bulkCand).filter(Boolean); }
+function bulkToggle(){
+  BULK.on = !BULK.on; BULK.sel = {};
+  document.body.classList.toggle('bulk-on', BULK.on);
+  const b = document.getElementById('bulkBtn'); if(b){ b.classList.toggle('on', BULK.on); b.textContent = BULK.on ? 'Done selecting' : 'Select'; }
+  bulkMarks(); bulkBarRender();
+}
+function bulkTick(card){ const k = card.dataset.bk; if(BULK.sel[k]) delete BULK.sel[k]; else BULK.sel[k] = 1; card.classList.toggle('bulk-sel', !!BULK.sel[k]); bulkBarRender(); }
+function bulkMarks(){ document.querySelectorAll('#board .card').forEach(function(c){ c.classList.toggle('bulk-sel', !!BULK.sel[c.dataset.bk]); }); }
+function bulkBarRender(){
+  const bar = document.getElementById('bulkBar'), n = Object.keys(BULK.sel).length;
+  if(!BULK.on || !n){ bar.className = ''; bar.innerHTML = ''; return; }
+  bar.className = 'show';
+  bar.innerHTML = '<span class="bc">' + n + ' selected</span>' +
+    '<button class="gold" onclick="bulkMoveOpen()">Move</button>' +
+    '<button class="red" onclick="bulkRejectOpen()">Reject</button>' +
+    '<button onclick="bulkAssignOpen()">Assign company</button>' +
+    '<button onclick="bulkTest()">Mark test</button>' +
+    '<button onclick="bulkAll()">All in view</button>' +
+    '<button onclick="BULK.sel={};bulkMarks();bulkBarRender()">Clear</button>';
+}
+function bulkAll(){ document.querySelectorAll('#board .card').forEach(function(c){ BULK.sel[c.dataset.bk] = 1; }); bulkMarks(); bulkBarRender(); }
+
+function bkOverlay(html){
+  let el = document.getElementById('bkOverlay');
+  if(!el){ el = document.createElement('div'); el.id = 'bkOverlay'; el.className = 'bk-ov'; el.style.cssText = 'position:fixed;inset:0;background:rgba(10,15,30,.55);z-index:6800;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(el); }
+  el.style.display = 'flex'; el.innerHTML = '<div class="bk-box">' + html + '</div>';
+}
+function bkClose(){ const el = document.getElementById('bkOverlay'); if(el) el.style.display = 'none'; }
+function bkNames(items){ return '<div class="list">' + items.map(function(x){ return esc(formatCandidateName(x.c.name)) + ' - ' + esc(x.role) + (x.co && x.co !== UNASSIGNED_LABEL ? ' (' + esc(x.co) + ')' : '') + ' - ' + esc(String(x.c.stage).replace(/_/g, ' ')); }).join('<br>') + '</div>'; }
+
+async function bulkPost(c){
+  const r = await fetch(API_BASE + '/api/candidates', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(c)});
+  if(!r.ok){ const e = await r.json().catch(function(){ return {}; }); throw new Error(e.error || ('Server returned ' + r.status)); }
+}
+async function bulkRun(items, mutate, label){
+  let ok = 0; const failed = [];
+  for(let i = 0; i < items.length; i++){
+    const c = items[i].c;
+    showToast(label + ' ' + (i + 1) + ' of ' + items.length + '...');
+    try{
+      const upd = mutate(c, items[i]);
+      if(upd === false){ failed.push(c.name + ' (skipped)'); continue; }
+      await bulkPost(Object.assign({}, c, upd));
+      ok++;
+    }catch(e){ failed.push(c.name + ': ' + e.message); }
+  }
+  await loadCandidates();
+  return {ok:ok, failed:failed};
+}
+function bulkReport(title, res){
+  bkOverlay('<h3 style="margin:0 0 8px;">' + esc(title) + '</h3><p style="font-size:13.5px;">' + res.ok + ' updated.' + (res.failed.length ? ' ' + res.failed.length + ' not updated:' : '') + '</p>' +
+    (res.failed.length ? '<div class="list">' + res.failed.map(esc).join('<br>') + '</div>' : '') + '<div class="bk-act"><button class="gold" onclick="bkClose()">Close</button></div>');
+}
+function bulkFinish(){ BULK.sel = {}; if(BULK.on) bulkToggle(); }
+
+/* Move */
+function bulkMoveOpen(){
+  const items = bulkItems(); if(!items.length) return;
+  bkOverlay('<h3 style="margin:0 0 6px;">Move ' + items.length + ' candidate' + (items.length === 1 ? '' : 's') + '</h3>' + bkNames(items) +
+    '<label>MOVE TO</label><select id="bkStage">' + BULK_STAGES.map(function(s){ return '<option value="' + s[0] + '">' + s[1] + '</option>'; }).join('') + '</select>' +
+    '<p style="font-size:12px;color:#999;">Stages that need details (Ready to Submit, Interview Scheduled, Offer and later) are done one at a time on each card. Moving back is allowed. Candidates without a company cannot move forward from Applied.</p>' +
+    '<div class="bk-act"><button class="gold" onclick="bulkMoveGo()">Move</button><button onclick="bkClose()">Cancel</button></div>');
+}
+async function bulkMoveGo(){
+  const to = document.getElementById('bkStage').value, items = bulkItems(), today = new Date().toISOString().slice(0, 10);
+  bkClose();
+  const res = await bulkRun(items, function(c){
+    if(c.stage === to) return false;
+    if(c.stage === 'applied' && (!c.company || c.company === UNASSIGNED_LABEL)) throw new Error('assign a company first');
+    return {stage:to, date:today};
+  }, 'Moving');
+  bulkFinish(); bulkReport('Move complete', res);
+}
+
+/* Reject */
+function bulkRejectOpen(items0){
+  const items = items0 || bulkItems(); if(!items.length) return;
+  BK_REJ = items;
+  bkOverlay('<h3 style="margin:0 0 6px;">Reject ' + items.length + ' candidate' + (items.length === 1 ? '' : 's') + '</h3>' + bkNames(items) +
+    '<label>WHO DECIDED?</label><select id="bkWho"><option value="client">The client</option><option value="us">We screened them out</option></select>' +
+    '<label>MAIN REASON</label><select id="bkReason"><option value="skills">Skills</option><option value="experience">Experience level</option><option value="salary">Salary expectations</option><option value="culture">Culture or personality fit</option><option value="location">Location or commute</option><option value="availability">Availability or notice period</option><option value="communication">Communication</option><option value="timing">Timing or role changed</option><option value="other">Other</option></select>' +
+    '<label>DETAIL (OPTIONAL)</label><textarea id="bkDetail" style="min-height:70px;"></textarea>' +
+    '<p style="font-size:12px;color:#999;">Each card moves to Rejected and Ella gets a task to send the rejection email. If the client decided, the reason is also saved to Client Feedback. Nothing is emailed automatically.</p>' +
+    '<div class="bk-act"><button class="gold" onclick="bulkRejectGo()">Reject</button><button onclick="bkClose()">Cancel</button></div>');
+}
+var BK_REJ = [];
+async function bulkRejectGo(){
+  const who = document.getElementById('bkWho').value, reason = document.getElementById('bkReason').value, detail = document.getElementById('bkDetail').value.trim();
+  const items = BK_REJ.slice(), today = new Date().toISOString().slice(0, 10);
+  bkClose();
+  const res = await bulkRun(items, function(c){
+    if(c.stage === 'rejected') return false;
+    const tag = '[Rejected ' + today + ': ' + reason + (detail ? ' - ' + detail : '') + ']';
+    return {stage:'rejected', date:today, notes:(c.notes ? c.notes + '\n' : '') + tag};
+  }, 'Rejecting');
+  if(who === 'client'){
+    for(let i = 0; i < items.length; i++){
+      const c = items[i].c;
+      try{ await b2Post('/api/client-feedback', {id:'fb-' + Date.now() + '-' + i, date:today, company:c.company || items[i].co, role:c.role || items[i].role, candidate_name:c.name, outcome:'rejected_by_client', reason:reason, detail:detail, logged_by:(signedInUser && signedInUser.name) || ''}); }catch(e){}
+    }
+  }
+  bulkFinish();
+  const done = items.map(function(x){ return x; });
+  bkOverlay('<h3 style="margin:0 0 8px;">Rejected ' + res.ok + ' candidate' + (res.ok === 1 ? '' : 's') + '</h3>' +
+    (res.failed.length ? '<div class="list">' + res.failed.map(esc).join('<br>') + '</div>' : '') +
+    '<p style="font-size:13px;">Draft each rejection email below. Tasks have also been added for Ella.</p>' +
+    done.map(function(x, i){ return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px solid #eee;padding:7px 0;font-size:13px;"><span>' + esc(formatCandidateName(x.c.name)) + '</span><button class="sub-btn small" onclick="bulkRejEmail(' + i + ')">Rejection email</button></div>'; }).join('') +
+    '<div class="bk-act"><button class="gold" onclick="bkClose()">Close</button></div>');
+  window.BK_DONE = done;
+}
+function bulkRejEmail(i){
+  const x = window.BK_DONE[i]; if(!x) return;
+  bkClose();
+  odOpen('rejection', {name:x.c.name, company:x.c.company || x.co, role:x.c.role || x.role, stage:'rejected', notes:x.c.notes || '', email:x.c.email || '', phone:x.c.phone || '', salary:x.c.salary || '', startDate:x.c.startDate || ''});
+}
+
+/* Assign company and contact */
+function bulkAssignOpen(){
+  const items = bulkItems().filter(function(x){ return x.c.stage === 'applied'; });
+  if(!items.length){ showToast('Select candidates at Applied to assign a company'); return; }
+  const list = (APPLICANT_CLIENT_LIST || []);
+  const companies = Array.from(new Set(list.map(function(c){ return c.company; }).filter(Boolean))).sort();
+  BK_ASSIGN = items;
+  bkOverlay('<h3 style="margin:0 0 6px;">Assign a company to ' + items.length + ' candidate' + (items.length === 1 ? '' : 's') + '</h3>' + bkNames(items) +
+    '<label>COMPANY</label><select id="bkCo" onchange="bulkAssignContacts()"><option value="">Choose...</option>' + companies.map(function(c){ return '<option>' + esc(c) + '</option>'; }).join('') + '</select>' +
+    '<label>CONTACT (HIRING MANAGER)</label><select id="bkContact"><option value="">Choose a company first</option></select>' +
+    '<div class="bk-act"><button class="gold" onclick="bulkAssignGo()">Assign</button><button onclick="bkClose()">Cancel</button></div>');
+}
+var BK_ASSIGN = [];
+function bulkAssignContacts(){
+  const co = document.getElementById('bkCo').value;
+  const names = (APPLICANT_CLIENT_LIST || []).filter(function(c){ return c.company === co && c.contactName; }).map(function(c){ return c.contactName; });
+  document.getElementById('bkContact').innerHTML = '<option value="">No contact</option>' + Array.from(new Set(names)).map(function(n){ return '<option>' + esc(n) + '</option>'; }).join('');
+}
+async function bulkAssignGo(){
+  const co = document.getElementById('bkCo').value, contact = document.getElementById('bkContact').value;
+  if(!co){ showToast('Choose a company'); return; }
+  const items = BK_ASSIGN.slice(); bkClose();
+  const res = await bulkRun(items, function(c){ return {company:co, contact:contact}; }, 'Assigning');
+  bulkFinish(); bulkReport('Assign complete', res);
+}
+
+/* Mark as test */
+async function bulkTest(){
+  const items = bulkItems(); if(!items.length) return;
+  if(!confirm('Mark ' + items.length + ' candidate' + (items.length === 1 ? '' : 's') + ' as test? They are left out of reports, forecasts and automatic tasks.')) return;
+  const res = await bulkRun(items, function(c){ return /\[test\]/i.test(c.notes || '') ? false : {notes:'[TEST] ' + (c.notes || '')}; }, 'Marking');
+  bulkFinish(); bulkReport('Marked as test', res);
+}
+
+/* Close a role: offer to reject whoever is still active */
+(function(){
+  const _sr = saveRole;
+  saveRole = async function(){
+    const statusEl = document.getElementById('rmStatus');
+    const status = statusEl ? statusEl.value : '';
+    const company = document.getElementById('rmCompany').value.trim(), role = document.getElementById('rmRole').value.trim();
+    await _sr();
+    if(status !== 'filled' && status !== 'lost') return;
+    const co = Object.keys(DATA).find(function(c){ return c.trim().toLowerCase() === company.toLowerCase(); });
+    const rk = co && Object.keys(DATA[co]).find(function(r){ return r.trim().toLowerCase() === role.toLowerCase(); });
+    if(!rk) return;
+    const active = ['applied','ready_to_submit','submitted','interview_requested','interview_scheduled','interviewed'];
+    const items = DATA[co][rk].filter(function(c){ return active.indexOf(c.stage) >= 0; }).map(function(c){ return {c:c, co:co, role:rk}; });
+    if(!items.length) return;
+    bkOverlay('<h3 style="margin:0 0 6px;">' + esc(role) + ' is now ' + (status === 'filled' ? 'filled' : 'closed') + '</h3><p style="font-size:13.5px;">' + items.length + ' candidate' + (items.length === 1 ? ' is' : 's are') + ' still active on this role.</p>' + bkNames(items) +
+      '<div class="bk-act"><button class="gold" id="bkRejAll">Reject them all</button><button onclick="bkClose()">Leave them for now</button></div>');
+    document.getElementById('bkRejAll').onclick = function(){ bulkRejectOpen(items); };
+  };
+})();
+
+/* ---------- Bulk tasks ---------- */
+function tkSelected(){ return Array.from(document.querySelectorAll('.tk-sel:checked')).map(function(c){ return c.dataset.id; }); }
+function tkUpdateBar(){
+  let bar = document.getElementById('tkBar');
+  if(!bar){
+    const body = document.getElementById('tasksBody'); if(!body) return;
+    bar = document.createElement('div'); bar.id = 'tkBar'; bar.className = 'tk-bar';
+    body.parentNode.insertBefore(bar, body);
+  }
+  const n = tkSelected().length;
+  bar.className = 'tk-bar' + (n ? ' show' : '');
+  bar.innerHTML = '<span>' + n + ' selected</span><button onclick="tkDone()">Mark done</button><button onclick="tkDue()">Change due date</button>' +
+    (signedInUser && signedInUser.admin ? '<button onclick="tkAssign()">Reassign</button>' : '') + '<button onclick="tkDelete()">Delete</button>';
+}
+async function tkEach(ids, fn, label){
+  let ok = 0, bad = 0;
+  for(let i = 0; i < ids.length; i++){ showToast(label + ' ' + (i + 1) + ' of ' + ids.length + '...'); try{ await fn(ids[i]); ok++; }catch(e){ bad++; } }
+  showToast(ok + ' done' + (bad ? ', ' + bad + ' failed' : ''));
+  loadTasks('active');
+}
+function tkDone(){ const ids = tkSelected(); tkEach(ids, function(id){ return fetch(API_BASE + '/api/tasks/' + id + '/complete', {method:'POST', headers:{'X-User-Role':currentUserRole}}).then(function(r){ if(!r.ok) throw 0; }); }, 'Completing'); }
+function tkDelete(){ const ids = tkSelected(); if(!confirm('Delete ' + ids.length + ' task(s)?')) return; tkEach(ids, function(id){ return fetch(API_BASE + '/api/tasks/' + id, {method:'DELETE', headers:{'X-User-Role':currentUserRole}}).then(function(r){ if(!r.ok) throw 0; }); }, 'Deleting'); }
+function tkDue(){
+  const ids = tkSelected(); const d = prompt('New due date (YYYY-MM-DD):', new Date().toISOString().slice(0, 10));
+  if(!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+  tkEach(ids, function(id){ return fetch(API_BASE + '/api/tasks/' + id, {method:'PUT', headers:{'Content-Type':'application/json', 'X-User-Role':currentUserRole}, body:JSON.stringify({dueDate:d})}).then(function(r){ if(!r.ok) throw 0; }); }, 'Updating');
+}
+function tkAssign(){
+  const ids = tkSelected(); const who = prompt('Reassign to (dan or ella):', 'ella');
+  if(!who || ['dan','ella'].indexOf(who.trim().toLowerCase()) < 0) return;
+  tkEach(ids, function(id){ return fetch(API_BASE + '/api/tasks/' + id, {method:'PUT', headers:{'Content-Type':'application/json', 'X-User-Role':currentUserRole}, body:JSON.stringify({user:who.trim().toLowerCase()})}).then(function(r){ if(!r.ok) throw 0; }); }, 'Reassigning');
+}
+(function(){ const _lt = loadTasks; loadTasks = async function(v){ await _lt(v); tkUpdateBar(); }; })();
+
+/* ---------- Bulk talent pool ---------- */
+function plSelected(){ return Array.from(document.querySelectorAll('.pl-sel:checked')).map(function(c){ return c.dataset.id; }); }
+function plUpdateBar(){
+  let bar = document.getElementById('plBar');
+  if(!bar){
+    const body = document.getElementById('poolBody'); if(!body) return;
+    const wrap = body.closest('table'); bar = document.createElement('div'); bar.id = 'plBar'; bar.className = 'pl-bar';
+    wrap.parentNode.insertBefore(bar, wrap);
+  }
+  const n = plSelected().length;
+  bar.className = 'pl-bar' + (n ? ' show' : '');
+  bar.innerHTML = '<span>' + n + ' selected</span><button onclick="plTag()">Add tags</button><button onclick="plOutreach()">Draft outreach emails</button>';
+}
+async function plTag(){
+  const ids = plSelected(); const t = prompt('Tags to add, separated by commas (for example: procurement, sap):'); if(!t) return;
+  const add = t.split(',').map(function(x){ return x.trim().toLowerCase(); }).filter(Boolean);
+  let ok = 0;
+  for(let i = 0; i < ids.length; i++){
+    const p = POOL.find(function(x){ return x.id === ids[i]; }); if(!p) continue;
+    const have = String(p.tags || '').split(',').map(function(x){ return x.trim().toLowerCase(); }).filter(Boolean);
+    const merged = Array.from(new Set(have.concat(add))).join(', ');
+    try{ await fetch(API_BASE + '/api/candidate-pool/' + encodeURIComponent(ids[i]) + '/tags', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({tags:merged})}); p.tags = merged; ok++; }catch(e){}
+  }
+  showToast('Tagged ' + ok + ' candidate' + (ok === 1 ? '' : 's')); renderPool(); plUpdateBar();
+}
+function plOutreach(){
+  const ids = plSelected(); const role = prompt('Role title to offer (client name is never shown):'); if(!role) return;
+  const loc = prompt('Location (optional):') || '', sal = prompt('Salary (optional):') || '';
+  const list = ids.map(function(id){ return POOL.find(function(x){ return x.id === id; }); }).filter(function(p){ return p && p.email && String(p.erased).toLowerCase() !== 'yes'; });
+  if(!list.length){ showToast('None of the selected people have an email address'); return; }
+  bkOverlay('<h3 style="margin:0 0 8px;">Outreach drafts</h3><p style="font-size:13px;">One separate draft per person, so nobody sees anyone else. Each opens in Outlook.</p>' +
+    list.map(function(p, i){ return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px solid #eee;padding:7px 0;font-size:13px;"><span>' + esc(p.name) + '</span><button class="sub-btn small" onclick="plOutreachOne(' + i + ')">Open draft</button></div>'; }).join('') +
+    '<div class="bk-act"><button class="gold" onclick="bkClose()">Close</button></div>');
+  window.PL_OUT = {list:list, role:role, loc:loc, sal:sal};
+}
+function plOutreachOne(i){
+  const o = window.PL_OUT, p = o.list[i], first = String(p.name || '').split(/\s+/)[0] || 'there';
+  const body = 'Hi ' + first + ',\n\nWe spoke before about ' + p.role + ' and you kindly agreed we could keep in touch about future roles.\n\nI have a new vacancy that looks like a good fit for your background:\n\n- Role: ' + o.role + '\n' + (o.loc ? '- Location: ' + o.loc + '\n' : '') + (o.sal ? '- Salary: ' + o.sal + '\n' : '') +
+    '\nIf you would like to hear more, reply or give me a call and I will talk you through it. If now is not the right time, just say and I will leave it with you.\n\nKind regards,\n\n' + OD_SIG;
+  downloadText('Draft ' + o.role.replace(/[^A-Za-z0-9 \-]+/g, ' ').trim().slice(0, 40) + ' ' + p.name.replace(/[^A-Za-z ]+/g, '') + '.eml', emlBuild(p.email, 'A new ' + o.role + ' opportunity', body), 'message/rfc822');
+}
+(function(){ const _rp = renderPool; renderPool = function(){ _rp(); plUpdateBar(); }; })();
 </script>
 </body>
 </html>
