@@ -12696,5 +12696,31 @@ function rpOpenCard(name, role){
 })();
 </script>
 
+<script>
+/* Shows which versions are live, so it is easy to tell whether an update has been deployed */
+var PAGE_BUILD = '2 Oct 2026 - build 5';
+function buildTagApply(){
+  const chip = document.getElementById('userChip');
+  if(!chip) return;
+  let tag = document.getElementById('buildTag');
+  if(!tag){
+    tag = document.createElement('span');
+    tag.id = 'buildTag';
+    tag.style.cssText = 'font-size:10.5px;color:#999;margin-left:10px;white-space:nowrap;';
+    chip.appendChild(tag);
+  }
+  tag.textContent = 'Page build 5';
+  tag.title = 'Page: ' + PAGE_BUILD;
+  b2Api('/api/version').then(function(j){
+    tag.textContent = 'Page build 5 | Server ' + (String(j.build || '').indexOf('build 5') > -1 ? 'build 5' : 'older');
+    tag.title = 'Page: ' + PAGE_BUILD + ' | Server: ' + j.build;
+  }).catch(function(){ tag.textContent = 'Page build 5 | Server older'; });
+}
+(function(){
+  const _si = signIn;
+  signIn = function(user){ _si(user); buildTagApply(); };
+  if(typeof signedInUser !== 'undefined' && signedInUser) buildTagApply();
+})();
+</script>
 </body>
 </html>
