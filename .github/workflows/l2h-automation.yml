@@ -1,35 +1,100 @@
-name: L2H Automation
+name: L2H automation
 
 on:
   schedule:
-    - cron: '0 6 * * *'      # every day at 06:00 UTC (07:00 UK summer time, 06:00 winter)
-    - cron: '30 6 * * 1'     # Mondays at 06:30 UTC for the weekly digest email
-  workflow_dispatch:         # lets you press Run workflow in the Actions tab to test
+    - cron: '30 5 * * *'
+  workflow_dispatch:
 
 env:
-  API: https://l2h-api.onrender.com
+  BASE_URL: https://l2h-api.onrender.com
   CRON_SECRET: ${{ secrets.CRON_SECRET }}
 
 jobs:
-  daily:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 6 * * *'
+  run:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
-      - name: Daily job (health check, backup, tasks, invoice chasing)
+      - name: Wake the server
         run: |
-          curl -sS -G --fail-with-body --retry 4 --retry-delay 30 --retry-connrefused --max-time 120 \
-            --data-urlencode "key=$CRON_SECRET" "$API/api/cron/daily"
-      - name: Invoice reminder (candidates starting tomorrow)
-        if: always()
-        run: |
-          curl -sS -G --fail-with-body --retry 4 --retry-delay 30 --retry-connrefused --max-time 120 \
-            --data-urlencode "key=$CRON_SECRET" "$API/api/check-invoice-reminders"
+          for i in $(seq 1 40); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 "$BASE_URL/api/health" || true)
+            echo "Attempt $i: HTTP $code"
+            if [ "$code" = "200" ]; then exit 0; fi
+            sleep 5
+          done
+          echo "The server did not wake up within about 4 minutes"
+          exit 1
 
-  weekly-digest:
-    if: github.event.schedule == '30 6 * * 1'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Monday digest email
+      - name: Check the server is on the latest build
         run: |
-          curl -sS -G --fail-with-body --retry 4 --retry-delay 30 --retry-connrefused --max-time 120 \
-            --data-urlencode "key=$CRON_SECRET" "$API/api/cron/weekly-digest"
+          curl -sS --max-time 30 --retry 3 --retry-all-errors --retry-delay 10 "$BASE_URL/api/version"
+          echo
+
+      - name: Start the backup
+        run: |
+          echo "START=$(date -u -d '60 seconds ago' +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_ENV"
+          curl -sS --fail-with-body --max-time 60 --retry 3 --retry-all-errors --retry-delay 10 \
+            -H "x-cron-key: $CRON_SECRET" "$BASE_URL/api/cron/backup"
+          echo
+
+      - name: Check the backup result
+        run: |
+          for i in $(seq 1 60); do
+            out=$(curl -sS --max-time 30 --retry 3 --retry-all-errors --retry-delay 5 \
+              -H "x-cron-key: $CRON_SECRET" "$BASE_URL/api/cron/status")
+            fin=$(echo "$out" | jq -r '.backupJob.finishedAt // ""')
+            if [ -n "$fin" ] && [[ "$fin" > "$START" ]]; then
+              echo "$out" | jq '.backupJob'
+              ok=$(echo "$out" | jq -r '.backupJob.ok')
+              if [ "$ok" = "true" ]; then exit 0; fi
+              echo "The backup reported a failure. See the details above."
+              exit 1
+            fi
+            echo "Waiting for the backup to finish ($i)"
+            sleep 5
+          done
+          echo "The backup did not report a result within 5 minutes"
+          exit 1
+
+      - name: Start the daily job
+        run: |
+          echo "START=$(date -u -d '60 seconds ago' +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_ENV"
+          curl -sS --fail-with-body --max-time 60 --retry 3 --retry-all-errors --retry-delay 10 \
+            -H "x-cron-key: $CRON_SECRET" "$BASE_URL/api/cron/daily?skipBackup=1"
+          echo
+
+      - name: Check the daily job result
+        run: |
+          for i in $(seq 1 60); do
+            out=$(curl -sS --max-time 30 --retry 3 --retry-all-errors --retry-delay 5 \
+              -H "x-cron-key: $CRON_SECRET" "$BASE_URL/api/cron/status")
+            fin=$(echo "$out" | jq -r '.daily.finishedAt // ""')
+            if [ -n "$fin" ] && [[ "$fin" > "$START" ]]; then
+              echo "$out" | jq '.daily'
+              ok=$(echo "$out" | jq -r '.daily.ok')
+              if [ "$ok" = "true" ]; then exit 0; fi
+              echo "A daily step reported a failure. See the details above."
+              exit 1
+            fi
+            echo "Waiting for the daily job to finish ($i)"
+            sleep 5
+          done
+          echo "The daily job did not report a result within 5 minutes"
+          exit 1
+
+      - name: Invoice reminders
+        run: |
+          curl -sS --fail-with-body --max-time 120 --retry 3 --retry-all-errors --retry-delay 15 \
+            -H "x-cron-key: $CRON_SECRET" "$BASE_URL/api/check-invoice-reminders"
+          echo
+
+      - name: Monday digest
+        if: ${{ github.event_name == 'schedule' && format('{0}', github.event.schedule) != '' }}
+        run: |
+          if [ "$(date -u +%u)" = "1" ]; then
+            curl -sS --fail-with-body --max-time 120 --retry 3 --retry-all-errors --retry-delay 15 \
+              -H "x-cron-key: $CRON_SECRET" "$BASE_URL/api/cron/weekly-digest"
+            echo
+          else
+            echo "Not Monday, no digest today"
+          fi
