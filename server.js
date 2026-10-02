@@ -6761,7 +6761,7 @@ const OFFER_SYNONYMS = { ellaConsultant: 'consultant' };
 
 function offerLongDate(iso) {
   const d = parseISODate(iso);
-  return d ? d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '';
+  return d ? d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).replace(/^(\w+),\s*/, '$1 ') : '';
 }
 function offerPlainDate(iso) {
   const d = parseISODate(iso);
@@ -7104,12 +7104,21 @@ OFFER_EMAILS.feedback_month1 = {
 
 const replyLinksTable = makeSimpleTable({
   tab: 'Reply Links',
-  header: ['id', 'created', 'expires', 'company', 'role', 'candidate_name', 'candidate_id', 'source_tab', 'form_role', 'contact', 'last_answer', 'last_answer_at', 'answers_json'],
+  header: ['id', 'created', 'expires', 'company', 'role', 'candidate_name', 'candidate_id', 'source_tab', 'form_role', 'contact', 'last_answer', 'last_answer_at', 'answers_json', 'sender_key', 'sender_name', 'sender_email'],
   path: null,
   label: 'Reply link',
 });
 
 const REPLY_DAYS = 30;
+// Who gets the alert when a client answers: whoever built and sent the submission email.
+const TEAM_CONTACTS = (() => {
+  const base = {
+    dan: { name: 'Dan', email: process.env.REPLY_EMAIL_DAN || 'dan.brown@live2helprecruitment.co.uk' },
+    ella: { name: 'Ella', email: process.env.REPLY_EMAIL_ELLA || 'ella@live2helprecruitment.co.uk' },
+  };
+  try { Object.assign(base, JSON.parse(process.env.TEAM_CONTACTS_JSON || '{}')); } catch (e) { /* ignore bad JSON */ }
+  return base;
+})();
 const REPLY_MOVE_FROM = {
   interested: ['submitted', 'ready_to_submit'],
   not_interested: ['submitted', 'interview_requested', 'interview_scheduled', 'interviewed'],
@@ -7129,10 +7138,11 @@ function shortName(full) {
 }
 const htmlEsc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-// Change a candidate's stage straight in the sheet. Returns { before, changed } or null if not found.
-async function applyStageChange(ref, newStage, allowFrom) {
+// Change a candidate's stage straight in the sheet and/or append a note. Returns { before, changed } or null if not found.
+async function applyStageChange(ref, newStage, allowFrom, noteAppend) {
   const sheets = getSheetsClient();
   const today = todayISO();
+  const addNote = old => noteAppend ? ((old ? old + '\n' : '') + noteAppend) : old;
   if (ref.sourceTab === 'application') {
     const tabName = `Applications - ${ref.formRole || ref.role}`;
     const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tabName}'!A2:U` });
@@ -7141,20 +7151,24 @@ async function applyStageChange(ref, newStage, allowFrom) {
     if (idx < 0) return null;
     const row = rows[idx]; while (row.length < 21) row.push('');
     const before = normStage(row[19] || 'applied');
-    if (allowFrom && !allowFrom.includes(before)) return { before, changed: false };
-    row[19] = newStage;
+    const allowed = !!newStage && !(allowFrom && !allowFrom.includes(before));
+    if (allowed) row[19] = newStage;
+    if (noteAppend) row[20] = addNote(row[20]);
+    if (!allowed && !noteAppend) return { before, changed: false };
     await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `'${tabName}'!A${idx + 2}:U${idx + 2}`, valueInputOption: 'RAW', requestBody: { values: [row] } });
-    return { before, changed: true };
+    return { before, changed: allowed };
   }
   const rows = await readAllRows();
   const idx = rows.findIndex(x => x && x[0] === ref.id);
   if (idx < 0) return null;
   const row = rows[idx]; while (row.length < 12) row.push('');
   const before = normStage(row[4] || 'submitted');
-  if (allowFrom && !allowFrom.includes(before)) return { before, changed: false };
-  row[4] = newStage; row[5] = today;
+  const allowed = !!newStage && !(allowFrom && !allowFrom.includes(before));
+  if (allowed) { row[4] = newStage; row[5] = today; }
+  if (noteAppend) row[6] = addNote(row[6]);
+  if (!allowed && !noteAppend) return { before, changed: false };
   await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `${TAB}!A${idx + 2}:L${idx + 2}`, valueInputOption: 'RAW', requestBody: { values: [row] } });
-  return { before, changed: true };
+  return { before, changed: allowed };
 }
 
 // Create (or reuse) links for the candidates in a submission email
@@ -7165,6 +7179,8 @@ app.post('/api/reply-links', async (req, res) => {
     const existing = await replyLinksTable.list();
     const now = Date.now();
     const out = [];
+    const senderKey = String((req.body || {}).sender || '').toLowerCase();
+    const sender = TEAM_CONTACTS[senderKey] ? { key: senderKey, name: TEAM_CONTACTS[senderKey].name, email: TEAM_CONTACTS[senderKey].email } : { key: '', name: '', email: '' };
     for (const c of list) {
       if (!c || !c.id || !c.name || !c.role) continue;
       let link = existing.find(o => o.candidate_id === c.id && lc(o.role) === lc(c.role) && o.expires && new Date(o.expires).getTime() > now + 5 * 86400000);
@@ -7175,9 +7191,14 @@ app.post('/api/reply-links', async (req, res) => {
           company: c.company || '', role: c.role, candidate_name: c.name, candidate_id: c.id,
           source_tab: c.sourceTab || '', form_role: c.formRole || '', contact: c.contact || '',
           last_answer: '', last_answer_at: '', answers_json: '[]',
+          sender_key: sender.key, sender_name: sender.name, sender_email: sender.email,
         };
         await replyLinksTable.upsert(link);
         existing.push(link);
+      } else if (sender.key && link.sender_key !== sender.key) {
+        // Whoever builds the email now is the one who gets the alert
+        link.sender_key = sender.key; link.sender_name = sender.name; link.sender_email = sender.email;
+        await replyLinksTable.upsert(link);
       }
       out.push({ id: c.id, name: c.name, url: `${replyBase(req)}/r/${link.id}` });
     }
@@ -7206,11 +7227,18 @@ h1{font-size:21px;margin:6px 0 4px}p{line-height:1.5;color:var(--grey);font-size
 button.big{display:block;width:100%;padding:15px;margin:10px 0;border:1px solid var(--ink);background:#fff;font:inherit;font-size:16px;cursor:pointer;border-radius:2px;text-align:left}
 button.big strong{display:block}button.big span{font-size:13px;color:var(--grey)}
 button.gold{background:var(--gold);border-color:var(--gold)}button.gold span{color:#3a2f0b}
-select,textarea{width:100%;padding:11px;border:1px solid var(--line);font:inherit;font-size:16px;margin:6px 0 10px;border-radius:2px;background:#fff}
-textarea{min-height:90px}label{font-size:12px;color:#888;letter-spacing:.5px}
+select,textarea,input{width:100%;padding:11px;border:1px solid var(--line);font:inherit;font-size:16px;margin:6px 0 10px;border-radius:2px;background:#fff}
+textarea{min-height:90px}label{font-size:12px;color:#888;letter-spacing:.5px;display:block}
+.row2{display:grid;grid-template-columns:3fr 2fr;gap:10px}
 .done{background:#EAF4EC;border-left:4px solid #2E7D4F;padding:12px 14px;margin:14px 0;font-size:15px}
 .err{background:#FDF1EF;border-left:4px solid #B3372B;padding:12px 14px;margin:14px 0;font-size:14px;display:none}
-.link{background:none;border:none;color:var(--grey);text-decoration:underline;cursor:pointer;font:inherit;font-size:14px;padding:6px 0}
+.link{background:none;border:none;color:var(--grey);text-decoration:underline;cursor:pointer;font:inherit;font-size:14px;padding:6px 0;width:auto}
+.hint{font-size:13px;color:#888;margin:0 0 8px}
+.opt{display:inline-block;background:#F1EBD8;color:#6b5a1c;font-size:11px;padding:1px 8px;border-radius:9px;margin-left:6px;letter-spacing:0;font-weight:600}
+.chk{display:flex;gap:12px;align-items:center;padding:12px 14px;border:1px solid var(--line);margin:6px 0;background:#fff;font-size:16px;color:var(--ink);letter-spacing:0;cursor:pointer;border-radius:2px}
+.chk input{width:22px;height:22px;margin:0;padding:0;flex:none}
+.chk:has(input:checked){border-color:var(--gold);background:#FBF6EA}
+.note{font-size:13px;color:#888;margin:2px 0 0;text-align:center}
 .sub{display:none}
 footer{text-align:center;color:#999;font-size:12px;padding:16px}
 </style></head><body>
@@ -7221,27 +7249,38 @@ ${done}
 <div class="err" id="err"></div>
 <div class="card" id="choices">
 <p style="margin-top:0">Tell us what you would like to do next. We act on your answer straight away.</p>
-<button class="big gold" onclick="send('interested')"><strong>Interested - arrange an interview</strong><span>We will contact the candidate for their availability</span></button>
+<button class="big gold" onclick="show('yes')"><strong>Interested - arrange an interview</strong><span>You can suggest a date and time on the next step</span></button>
 <button class="big" onclick="show('more')"><strong>I need more information first</strong><span>Tell us what you would like to know</span></button>
-<button class="big" onclick="show('no')"><strong>Not for us</strong><span>We will let the candidate know and keep looking</span></button>
+<button class="big" onclick="show('no')"><strong>Not for us</strong><span>Tick the reason and we will keep looking</span></button>
 </div>
+<div class="card sub" id="yes">
+<p class="hint"><strong style="color:#1A1A1A">Everything on this page is optional.</strong> You can simply press Send and we will arrange the interview time with you.</p>
+<label>FIRST CHOICE OF DATE AND TIME <span class="opt">Optional</span></label><div class="row2"><input type="date" id="d1"><input type="time" id="t1"></div>
+<label>SECOND CHOICE <span class="opt">Optional</span></label><div class="row2"><input type="date" id="d2"><input type="time" id="t2"></div>
+<label>LOCATION, WHO IS INTERVIEWING, OR ANYTHING ELSE <span class="opt">Optional</span></label><textarea id="extra" placeholder="Leave blank if you prefer. For example: at your site, with the Supply Chain Manager, one hour"></textarea>
+<button class="big gold" onclick="send('interested')"><strong>Send</strong></button><p class="note">Nothing above is required</p><button class="link" onclick="show('choices')">Back</button></div>
 <div class="card sub" id="more"><label>WHAT WOULD YOU LIKE TO KNOW?</label><textarea id="msg" placeholder="For example: notice period, salary expectation, reasons for leaving"></textarea>
 <button class="big gold" onclick="send('more_info')"><strong>Send</strong></button><button class="link" onclick="show('choices')">Back</button></div>
-<div class="card sub" id="no"><label>MAIN REASON</label><select id="reason">${reasons}</select>
-<label>ANYTHING ELSE? (OPTIONAL)</label><textarea id="detail" placeholder="This helps us find you a better match"></textarea>
+<div class="card sub" id="no"><label>TICK THE REASON(S) - ONE OR MORE</label>
+${Object.entries(REPLY_REASONS).map(([k, v]) => `<label class="chk"><input type="checkbox" name="why" value="${k}"><span>${v}</span></label>`).join('')}
+<label style="margin-top:14px">ANYTHING ELSE <span class="opt">Optional</span></label><textarea id="detail" placeholder="Leave blank if you prefer. This helps us find you a better match"></textarea>
 <button class="big gold" onclick="send('not_interested')"><strong>Send</strong></button><button class="link" onclick="show('choices')">Back</button></div>
 </main><footer>Live 2 Help Recruitment Ltd - Anyone - Anywhere - Anytime</footer>
 <script>
-function show(id){['choices','more','no'].forEach(function(x){var e=document.getElementById(x);e.style.display=(x===id)?'block':'none';});window.scrollTo(0,0);}
+var today=new Date().toISOString().slice(0,10);['d1','d2'].forEach(function(i){document.getElementById(i).min=today;});
+function show(id){['choices','yes','more','no'].forEach(function(x){var e=document.getElementById(x);e.style.display=(x===id)?'block':'none';});document.getElementById('err').style.display='none';window.scrollTo(0,0);}
+function fail(m){var err=document.getElementById('err');err.textContent=m;err.style.display='block';window.scrollTo(0,0);}
 async function send(a){
-  var body={answer:a,message:document.getElementById('msg').value,reason:document.getElementById('reason').value,detail:document.getElementById('detail').value};
-  var err=document.getElementById('err');err.style.display='none';
+  var body={answer:a,message:document.getElementById('msg').value,reasons:Array.prototype.map.call(document.querySelectorAll('input[name=why]:checked'),function(x){return x.value;}),detail:document.getElementById('detail').value,extra:document.getElementById('extra').value,slots:[]};
+  [['d1','t1'],['d2','t2']].forEach(function(p){var d=document.getElementById(p[0]).value;if(d)body.slots.push({date:d,time:document.getElementById(p[1]).value});});
+  if(a==='not_interested'&&!body.reasons.length){fail('Please tick at least one reason.');return;}
+  if(a==='more_info'&&!body.message.trim()){fail('Please tell us what you would like to know.');return;}
   try{
     var r=await fetch(location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     var j=await r.json().catch(function(){return{};});
     if(!r.ok) throw new Error(j.error||'Something went wrong');
     document.querySelector('main').innerHTML='<h1>Thank you</h1><div class="done">'+j.message+'</div><p>You can close this page. If you need to change your answer, reply to our email and we will update it.</p>';
-  }catch(e){err.textContent=e.message+' Please reply to the email instead.';err.style.display='block';}
+  }catch(e){fail(e.message+' If it keeps failing, please reply to the email instead.');}
 }
 </script></body></html>`;
 }
@@ -7267,6 +7306,31 @@ app.get('/r/:id', async (req, res) => {
 });
 
 const replyHits = new Map();
+
+function cleanSlot(s) {
+  const d = String((s && s.date) || ''), t = String((s && s.time) || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+  const dt = parseISODate(d);
+  if (!dt) return null;
+  const days = daysBetween(new Date(), dt);
+  if (days < -1 || days > 120) return null;
+  const time = /^([01]\d|2[0-3]):[0-5]\d$/.test(t) ? t : '';
+  return { date: d, time, text: `${offerLongDate(d)}${time ? ' at ' + time : ''}` };
+}
+function oneLine(s, n) { return String(s || '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n); }
+
+// Builds the note that is added to the candidate card. No reply to the client is written or sent by the system.
+function buildReplyNote(answer, c) {
+  if (answer === 'interested') {
+    const opts = c.slots.map((s, i) => `${c.slots.length > 1 ? 'Option ' + (i + 1) + ': ' : ''}${s.text}`);
+    return `[Client reply ${c.today}: interested in an interview.` + (c.slots.length ? ` Preferred: ${opts.join('; ')}.` : ' No time given.') + (c.extra ? ` Note: ${c.extra}.` : '') + ']';
+  }
+  if (answer === 'not_interested') {
+    return `[Client reply ${c.today}: not taking ${c.label} forward. Reasons: ${c.reasonText}.${c.detail ? ' ' + c.detail + '.' : ''}]`;
+  }
+  return `[Client reply ${c.today}: asked for more information on ${c.label}: ${c.message}]`;
+}
+
 app.post('/r/:id', async (req, res) => {
   try {
     const ip = req.ip || 'x', now = Date.now();
@@ -7280,57 +7344,76 @@ app.post('/r/:id', async (req, res) => {
     const b = req.body || {};
     const answer = String(b.answer || '');
     if (!['interested', 'not_interested', 'more_info'].includes(answer)) return res.status(400).json({ error: 'Unknown answer.' });
+    let reasons = (Array.isArray(b.reasons) ? b.reasons : []).filter(k => REPLY_REASONS[k]).filter((k, i, a) => a.indexOf(k) === i).slice(0, 9);
+    if (!reasons.length && REPLY_REASONS[b.reason]) reasons = [b.reason];
+    if (answer === 'not_interested' && !reasons.length) return res.status(400).json({ error: 'Please tick at least one reason.' });
+    const reasonText = reasons.map(k => REPLY_REASONS[k]).join(', ');
+    const message = oneLine(b.message, 600);
+    if (answer === 'more_info' && !message) return res.status(400).json({ error: 'Please tell us what you would like to know.' });
 
-    const ref = { id: link.candidate_id, sourceTab: link.source_tab, formRole: link.form_role, name: link.candidate_name, role: link.role, company: link.company };
     const label = shortName(link.candidate_name);
-    const reason = REPLY_REASONS[b.reason] ? b.reason : 'other';
-    const msg = String(b.message || '').slice(0, 800), detail = String(b.detail || '').slice(0, 800);
+    const slots = (Array.isArray(b.slots) ? b.slots : []).slice(0, 2).map(cleanSlot).filter(Boolean);
+    const ctx = { label, contact: link.contact, today: todayISO(), slots, extra: oneLine(b.extra, 400), reasonText, detail: oneLine(b.detail, 600), message };
+    const note = buildReplyNote(answer, ctx);
+    const ref = { id: link.candidate_id, sourceTab: link.source_tab, formRole: link.form_role, name: link.candidate_name, role: link.role, company: link.company };
+    const newStage = answer === 'interested' ? 'interview_requested' : answer === 'not_interested' ? 'rejected' : '';
 
-    let moved = null, newStage = '', summary = '', message = '';
-    if (answer === 'interested') {
-      newStage = 'interview_requested';
-      moved = await applyStageChange(ref, newStage, REPLY_MOVE_FROM.interested);
-      summary = `${link.company} replied: interested in ${label}`;
-      message = `Thank you. We will contact ${htmlEsc(label)} now and come back to you to confirm interview times.`;
-    } else if (answer === 'not_interested') {
-      newStage = 'rejected';
-      moved = await applyStageChange(ref, newStage, REPLY_MOVE_FROM.not_interested);
-      summary = `${link.company} replied: not for them - ${label} (${REPLY_REASONS[reason]})`;
-      message = 'Thank you for letting us know. We will keep searching and send you stronger matches.';
-      try {
-        await feedbackTable.upsert({ id: `fb-${Date.now()}`, date: todayISO(), company: link.company, role: link.role, candidate_name: link.candidate_name,
-          outcome: 'rejected_by_client', reason, detail: detail || 'Replied through the one-click link', logged_by: 'client reply link' });
-      } catch (e) { console.error('reply feedback log failed:', e.message); }
-    } else {
-      summary = `${link.company} asked for more information on ${label}: ${msg || '(no message)'}`;
-      message = 'Thank you. We will come back to you shortly with the answer.';
-      try {
-        await addAutoTasks([{ key: `${slugKey(link.candidate_name + '-' + link.role)}-moreinfo-${Date.now().toString(36)}`, user: 'ella', priority: 'High', dueDate: todayISO(),
-          title: `${link.company} wants more information on ${label}`, context: `Client message: ${msg || '(none)'}. Answer once only, then ask them to decide: interview or reject.` }]);
-      } catch (e) { console.error('reply task failed:', e.message); }
-    }
-
+    // Stage change (when allowed) and the note on the candidate card
+    const moved = await applyStageChange(ref, newStage, REPLY_MOVE_FROM[answer], note);
     if (moved && moved.changed) {
       stageAutomation({ name: link.candidate_name, role: link.role, company: link.company, notes: '' }, newStage);
       scheduleReconcile();
     }
+
+    let summary, thanks;
+    if (answer === 'interested') {
+      summary = `${link.company} replied: interested in ${label}` + (slots.length ? ` - ${slots.map(s => s.text).join(' or ')}` : '');
+      thanks = slots.length
+        ? `Thank you. We have noted your preferred ${slots.length > 1 ? 'times' : 'time'} and will confirm with ${htmlEsc(label)} shortly.`
+        : `Thank you. We will contact ${htmlEsc(label)} now and come back to you to confirm interview times.`;
+    } else if (answer === 'not_interested') {
+      summary = `${link.company} replied: not for them - ${label} (${reasonText})`;
+      thanks = 'Thank you for letting us know. We will keep searching and send you stronger matches.';
+      try {
+        await feedbackTable.upsert({ id: `fb-${Date.now()}`, date: todayISO(), company: link.company, role: link.role, candidate_name: link.candidate_name,
+          outcome: 'rejected_by_client', reason: reasons[0], detail: (reasons.length > 1 ? `All reasons ticked: ${reasonText}. ` : '') + (ctx.detail || 'Replied through the one-click link'), logged_by: 'client reply link' });
+      } catch (e) { console.error('reply feedback log failed:', e.message); }
+    } else {
+      summary = `${link.company} asked for more information on ${label}: ${message}`;
+      thanks = 'Thank you. We will come back to you shortly with the answer.';
+    }
+
+    // One task for Ella. She writes the reply to the client herself.
+    try {
+      const tTitle = answer === 'interested'
+        ? `Confirm interview for ${label} with ${link.company}${slots.length ? ': ' + slots[0].text : ''}`
+        : answer === 'not_interested' ? `Reply to ${link.company} about ${label} (not taking forward)` : `${link.company} wants more information on ${label}`;
+      const tCtx = note.replace(/^\[|\]$/g, '') + '. ' + (answer === 'interested' ? 'Call the candidate to check the time, then reply to the client yourself.' : answer === 'more_info' ? 'Answer once only, then ask them to decide: interview or reject. Reply to the client yourself.' : 'Reply to the client yourself.');
+      await addAutoTasks([{ key: `${slugKey(link.candidate_name + '-' + link.role)}-clientreply-${Date.now().toString(36)}`, user: 'ella', priority: 'High', dueDate: todayISO(), title: tTitle, context: tCtx, user: TEAM_CONTACTS[link.sender_key] ? link.sender_key : 'ella' }]);
+    } catch (e) { console.error('reply task failed:', e.message); }
+
     try {
       await commsTable.upsert({ id: `cm-${Date.now()}`, timestamp: new Date().toISOString(), user: 'client', entity_type: 'candidate', entity_name: link.candidate_name,
-        company: link.company, role: link.role, channel: 'Reply link', direction: 'In', summary: summary + (detail ? ` - ${detail}` : ''), follow_up_date: '', follow_up_done: '' });
+        company: link.company, role: link.role, channel: 'Reply link', direction: 'In', summary: note.replace(/^\[|\]$/g, ''), follow_up_date: '', follow_up_done: '' });
     } catch (e) { console.error('reply comms log failed:', e.message); }
 
     const answers = (() => { try { return JSON.parse(link.answers_json || '[]'); } catch (e) { return []; } })();
-    answers.push({ at: new Date().toISOString(), answer, reason: answer === 'not_interested' ? reason : '', note: (msg || detail).slice(0, 200), moved: !!(moved && moved.changed) });
+    answers.push({ at: new Date().toISOString(), answer, reasons, slots: slots.map(s => s.text), note: (ctx.extra || ctx.detail || message).slice(0, 200), moved: !!(moved && moved.changed) });
     await replyLinksTable.upsert({ ...link, last_answer: answer, last_answer_at: new Date().toISOString(), answers_json: JSON.stringify(answers.slice(-10)) });
     auditLog('client-link', 'client_reply', 'candidate', `${link.candidate_name} - ${link.role}`, `${answer}${moved && moved.changed ? ' (moved)' : moved ? ' (left as is: ' + moved.before + ')' : ''}`);
 
-    const stageNote = moved && moved.changed ? `The card has moved to ${newStage.replace(/_/g, ' ')}.` : moved ? `The card was not moved because it is already at ${moved.before.replace(/_/g, ' ')}.` : answer === 'more_info' ? 'No stage change.' : 'The candidate could not be found on the board, so please check it.';
+    const stageNote = answer === 'more_info' ? 'No stage change. The question is saved in the candidate notes.'
+      : !moved ? 'The candidate could not be found on the board, so please check it.'
+      : moved.changed ? `The card has moved to ${newStage.replace(/_/g, ' ')} and the reply is saved in the candidate notes.`
+      : `The card was not moved because it is already at ${moved.before.replace(/_/g, ' ')}. The reply is saved in the candidate notes.`;
+    const notifyTo = link.sender_email || process.env.REPLY_NOTIFY_TO || TEAM_CONTACTS.ella.email;
     emailTransporter.sendMail({
-      from: process.env.BREVO_SENDER_EMAIL, to: dansInbox(), cc: process.env.REPLY_NOTIFY_CC || 'ella@live2helprecruitment.co.uk',
-      subject: `Client reply: ${summary}`, text: `${summary}\n\n${detail || msg ? 'Message: ' + (detail || msg) + '\n\n' : ''}${stageNote}\n\nLive 2 Help dashboard`,
+      from: process.env.BREVO_SENDER_EMAIL, to: notifyTo,
+      subject: `Client reply: ${summary}`,
+      text: `${summary}\n\n${note.replace(/^\[|\]$/g, '')}\n\n${stageNote}\n\nA task has been added to your Tasks tab. Please reply to the client personally.\n\nLive 2 Help dashboard`,
     }).catch(e => console.error('reply notify failed:', e.message));
 
-    res.json({ ok: true, message });
+    res.json({ ok: true, message: thanks });
   } catch (e) {
     console.error('POST /r/:id error:', e.message);
     res.status(500).json({ error: 'Something went wrong.' });
