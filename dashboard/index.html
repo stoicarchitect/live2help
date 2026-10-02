@@ -10076,7 +10076,7 @@ async function subBuildEml(){
     }
     let emailBody = SUB.body;
     try{
-      const lj = await b2Post('/api/reply-links', {candidates: chosen.map(x => ({id:x.c.id, name:x.c.name, role:ctx.role, company:ctx.company, sourceTab:x.c.sourceTab || '', formRole:x.c.formRole || '', contact:SUB.contactName || ''}))});
+      const lj = await b2Post('/api/reply-links', {sender:(signedInUser && signedInUser.key) || '', candidates: chosen.map(x => ({id:x.c.id, name:x.c.name, role:ctx.role, company:ctx.company, sourceTab:x.c.sourceTab || '', formRole:x.c.formRole || '', contact:SUB.contactName || ''}))});
       emailBody = replyLinksInject(SUB.body, lj.links);
     }catch(e){ showToast('Reply links could not be added: ' + e.message); }
     const eml = emlBuildMulti(SUB.to, SUB.subject, emailBody, atts);
