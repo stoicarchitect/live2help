@@ -1100,151 +1100,9 @@ async function handleSalesManagerApplication(req, res, form) {
   }
 }
 
-// ---- CAD Technician form (Venesta, Stoke on Trent) - self-creating tab, same layout rules as Sales Manager ----
-const CAD_FORMS = {
-  'cad-technician': { roleName: 'CAD Technician' },
-};
-const CAD_ROLE_NAMES = new Set(Object.values(CAD_FORMS).map(f => f.roleName));
-const CAD_SLOT_FIELDS = [
-  { key: 'location', col: 7, label: 'Home postcode area and approximate travel time to Trentham, Stoke-on-Trent' },
-  { key: 'rightToWork', col: 8, label: 'Right to work in the UK' },
-  { key: 'transport', col: 9, label: 'Reliable transport to the Trentham site' },
-  { key: 'cadSoftware', col: 10, label: 'CAD software proficient in' },
-  { key: 'cadYears', col: 11, label: 'Years of experience using AutoCAD or 2D CAD' },
-  { key: 'recentProject', col: 12, label: 'Recent CAD project, industry and their role' },
-  { key: 'prodDocs', col: 13, label: 'Experience preparing production documentation from drawings' },
-  { key: 'confidence2D', col: 14, label: 'Confidence (1-10) producing accurate 2D layout drawings without supervision' },
-  { key: 'salaryExpectation', col: 15, label: 'Salary Expectation' },
-  { key: 'additionalInfo', col: 16, label: 'Additional Info' },
-  { key: 'qualityChecks', col: 26, label: 'Personal quality checks before issuing drawings to a customer' },
-  { key: 'errorScenario', col: 27, label: 'Response to a 5mm dimension error that goes unnoticed once production has started' },
-  { key: 'errorSpotted', col: 28, label: 'Example of spotting an error before it became a larger issue' },
-  { key: 'customerFrequency', col: 29, label: 'How often they speak directly to customers about design changes' },
-  { key: 'customerConfidence', col: 30, label: 'Confidence (1-10) speaking to customers about technical drawings' },
-  { key: 'difficultCustomer', col: 31, label: 'Handling a customer who keeps changing requirements mid-project' },
-  { key: 'projectsCount', col: 32, label: 'Number of live projects comfortable managing at once' },
-  { key: 'prioritise', col: 33, label: 'Prioritising when several customers need urgent changes' },
-  { key: 'targets', col: 34, label: 'Working to daily targets and strict deadlines' },
-  { key: 'writingTask', col: 35, label: 'Written task: message to a customer explaining a drawing revision delay' },
-];
-const CAD_ARRAY_FIELDS = new Set(['cadSoftware']);
-const CAD_REQUIRED = ['location', 'rightToWork', 'transport', 'cadSoftware', 'cadYears', 'recentProject', 'prodDocs',
-  'confidence2D', 'qualityChecks', 'errorScenario', 'errorSpotted', 'customerFrequency', 'customerConfidence',
-  'difficultCustomer', 'projectsCount', 'prioritise', 'targets', 'writingTask',
-  'employmentStatus', 'noticePeriod', 'salaryExpectation'];
-
-function cadHeaderRow() {
-  const h = new Array(36).fill('');
-  h[0] = 'Application ID'; h[1] = 'Date Applied'; h[2] = 'Name'; h[3] = 'Email'; h[4] = 'Phone';
-  h[5] = 'Current Employment Status'; h[6] = 'Notice Period';
-  CAD_SLOT_FIELDS.forEach(f => { h[f.col] = f.label; });
-  h[17] = 'Company'; h[18] = 'Contact'; h[19] = 'Status'; h[20] = 'Notes';
-  h[21] = 'Privacy Notice Accepted'; h[22] = 'Consent Date'; h[23] = 'Wording Version';
-  h[24] = 'Talent Pool Consent'; h[25] = 'CV Link';
-  return h;
-}
-
-const cadTabLocks = new Map();
-async function ensureCadTab(tabName) {
-  if (cadTabLocks.has(tabName)) return cadTabLocks.get(tabName);
-  const p = (async () => {
-    const sheets = getSheetsClient();
-    const ss = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties.title' });
-    if (!(ss.data.sheets || []).some(t => t.properties.title === tabName)) {
-      await sheets.spreadsheets.batchUpdate({
-        spreadsheetId: SHEET_ID,
-        requestBody: { requests: [{ addSheet: { properties: { title: tabName, gridProperties: { frozenRowCount: 1 } } } }] },
-      });
-    }
-    const head = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tabName}'!A1:AJ1` });
-    const first = head.data.values && head.data.values[0];
-    if (!first || first[0] !== 'Application ID') {
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: SHEET_ID, range: `'${tabName}'!A1:AJ1`,
-        valueInputOption: 'RAW', requestBody: { values: [cadHeaderRow()] },
-      });
-    }
-  })();
-  cadTabLocks.set(tabName, p);
-  p.catch(() => cadTabLocks.delete(tabName));
-  return p;
-}
-
-async function handleCadApplication(req, res, form) {
-  try {
-    const b = req.body || {};
-    const { name, email, phone, cvData, cvFileName, consentApplication, consentPool } = b;
-    if (!name || !email || !phone) return res.status(400).json({ error: 'Missing required fields' });
-    if (consentApplication !== true && consentApplication !== 'Yes') {
-      return res.status(400).json({ error: 'Privacy notice must be accepted' });
-    }
-    if (!cvData || !cvFileName) return res.status(400).json({ error: 'CV is required' });
-    if (!/\.(pdf|docx?)$/i.test(String(cvFileName))) return res.status(400).json({ error: 'CV must be a PDF, DOC or DOCX file' });
-    if (String(cvData).length > MAX_CV_BASE64_LENGTH) return res.status(400).json({ error: 'CV is larger than 5MB' });
-    const missing = CAD_REQUIRED.filter(k => {
-      const v = b[k];
-      return Array.isArray(v) ? v.length === 0 : !String(v || '').trim();
-    });
-    if (missing.length) return res.status(400).json({ error: 'Please answer every required question' });
-
-    const roleName = form.roleName;
-    const tabName = `Applications - ${roleName}`;
-    await ensureCadTab(tabName);
-
-    const sheets = getSheetsClient();
-    const slug = roleName.toLowerCase().replace(/\s+/g, '-');
-    const applicationId = `${slug}-${Date.now()}`;
-    const dateApplied = new Date().toISOString();
-    const poolConsent = (consentPool === true || consentPool === 'Yes') ? 'Yes' : 'No';
-
-    const cleanName = String(name).trim().replace(/\s+/g, ' ').replace(/['"\\]/g, '');
-    let saved = null;
-    try {
-      saved = await saveCandidateCv({ company: '', name, fileName: cvFileName, fileData: cvData });
-    } catch (cvErr) {
-      console.error(`CV could not be saved for application from ${cleanName}:`, cvErr.message);
-    }
-
-    const row = new Array(36).fill('');
-    row[0] = applicationId; row[1] = dateApplied; row[2] = name; row[3] = email; row[4] = phone;
-    row[5] = b.employmentStatus || ''; row[6] = b.noticePeriod || '';
-    CAD_SLOT_FIELDS.forEach(f => {
-      const v = b[f.key];
-      row[f.col] = Array.isArray(v) ? v.join(', ') : String(v == null ? '' : v);
-    });
-    row[19] = 'applied';
-    row[21] = 'Yes'; row[22] = dateApplied; row[23] = APPLICATION_WORDING_VERSION;
-    row[24] = poolConsent; row[25] = saved ? saved.link : '';
-
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: SHEET_ID, range: `'${tabName}'!A:AJ`,
-      valueInputOption: 'USER_ENTERED', requestBody: { values: [row] },
-    });
-
-    try {
-      const poolId = poolIdFor(name, roleName);
-      await upsertPoolEntry({
-        name, role: roleName, company: '', stage: 'applied', source: 'application',
-        email, phone, dateAdded: dateApplied, consentDate: dateApplied.slice(0, 10),
-        consentBasis: poolConsent === 'Yes' ? 'Application form - talent pool' : 'Application form - this role only',
-      }, true, { createOnly: true });
-      if (saved) await attachCvToPool(poolId, saved);
-      await stampPoolSource(poolId, req.body);
-    } catch (poolErr) {
-      console.error('Could not create pool record for application:', poolErr.message);
-    }
-
-    res.json({ success: true, applicationId });
-    sendApplicationAck({ name, email, roleName });
-  } catch (err) {
-    console.error('POST /api/applications (cad technician) error:', err);
-    res.status(500).json({ error: 'Failed to save application' });
-  }
-}
-
 // Header-driven screening fields for tabs that do not use the Transport Coordinator layout
 async function getScreeningFieldsForRole(role) {
-  if (!SALES_MANAGER_ROLE_NAMES.has(role) && !CAD_ROLE_NAMES.has(role)) return null;
+  if (!SALES_MANAGER_ROLE_NAMES.has(role)) return null;
   const sheets = getSheetsClient();
   const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'Applications - ${role}'!A1:AJ1` });
   const header = (r.data.values && r.data.values[0]) || [];
@@ -1258,7 +1116,6 @@ app.post('/api/applications/:role', async (req, res) => {
   try {
     const { role } = req.params;
     if (SALES_MANAGER_FORMS[role]) return await handleSalesManagerApplication(req, res, SALES_MANAGER_FORMS[role]);
-    if (CAD_FORMS[role]) return await handleCadApplication(req, res, CAD_FORMS[role]);
     const {
       name,
       email,
@@ -3951,6 +3808,17 @@ const rolesTable = makeSimpleTable({
   path: '/api/roles',
   label: 'Role',
   auditType: 'role',
+  auditName: o => `${o.role} - ${o.company}`,
+});
+
+/* ---------- Role notes (free-text notes tied to a role; the tab is created automatically) ---------- */
+
+const roleNotesTable = makeSimpleTable({
+  tab: 'Role Notes',
+  header: ['id', 'role_id', 'company', 'role', 'author', 'text', 'created', 'updated'],
+  path: '/api/role-notes',
+  label: 'Note',
+  auditType: 'role note',
   auditName: o => `${o.role} - ${o.company}`,
 });
 
