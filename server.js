@@ -8336,7 +8336,7 @@ app.post('/r/:id', async (req, res) => {
 });
 
 // Lets the dashboard show which server version is live
-const SERVER_BUILD = '2 Oct 2026 - build 10';
+const SERVER_BUILD = '6 Oct 2026 - build 11';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
