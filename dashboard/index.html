@@ -1302,15 +1302,6 @@
             </div>
           </div>
 
-          <div style="background:var(--white);border:1px solid var(--border);border-radius:2px;padding:16px;margin-bottom:24px;max-width:420px;">
-            <label style="display:block;font-size:12px;color:#999;margin-bottom:8px;letter-spacing:0.5px;">Other monthly overheads (software, insurance, accountancy)</label>
-            <div style="display:flex;gap:8px;">
-              <input type="text" id="overheadsInput" placeholder="e.g. 300" style="flex:1;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-size:13px;font-family:inherit;background:#fff;">
-              <button onclick="saveOverheads()" style="padding:9px 14px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap;">Save</button>
-            </div>
-            <div style="font-size:11px;color:#999;margin-top:6px;">Used only in the runway calculation. Leave blank if none.</div>
-          </div>
-
           <!-- Costs & Profit -->
           <h4 style="font-size:14px;color:var(--dark);margin:20px 0 12px;font-weight:500;">Costs & Profit</h4>
           <div style="display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap;">
@@ -2069,6 +2060,24 @@
         <label>Security and reception</label><input id="sdSecurity">
         <div class="actions"><button class="cancel" onclick="closeModal('siteModal')">Cancel</button><button class="save" onclick="saveSiteDetails()">Save site details</button></div>
       </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="rnModal">
+  <div class="modal">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="closeModal('rnModal')">&times;</button>
+      <h2 id="rnTitle">Role notes</h2>
+      <div style="font-size:12px;color:#888;margin:-4px 0 12px;" id="rnSub"></div>
+      <div class="simple-form">
+        <label>Add a note</label>
+        <textarea id="rnText" placeholder="e.g. Names from earlier emails to chase, background on the hiring manager, anything tied to this role" style="width:100%;min-height:90px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"></textarea>
+        <div class="actions">
+          <button class="save" onclick="rnAdd()">Add note</button>
+        </div>
+      </div>
+      <div id="rnList" style="margin-top:14px;max-height:340px;overflow-y:auto;"></div>
     </div>
   </div>
 </div>
@@ -4238,7 +4247,6 @@ async function loadBusinessHealth(){
     const year = document.getElementById('healthYearSelector')?.value || '2026';
     await finLoad();
     try{ B3.adspend = b2List(await b2Api('/api/ad-spend')); }catch(e){ /* sourcing spend stays as last loaded */ }
-    try{ KPI_INV = b2List(await b2Api('/api/invoices')); }catch(e){ KPI_INV = []; }
     loadBackupStatus();
     loadQuarterHistory();
     
@@ -4258,7 +4266,7 @@ async function loadBusinessHealth(){
     if(!res.ok) throw new Error('Server returned ' + res.status);
     const metrics = await res.json();
     
-    const bankBalance = savedBankBalance ? parseInt(savedBankBalance) : null;
+    const bankBalance = savedBankBalance ? parseInt(savedBankBalance) : 10000;
     const ytdRevenue = metrics.ytdRevenue || 0;
     
     // YTD Revenue
@@ -4428,7 +4436,6 @@ function saveBankBalance(){
   }
   
   finSet('l2h-bank-balance', numValue.toString());
-  finSet('l2h-bank-updated', new Date().toISOString().slice(0, 10));
   showToast('Bank balance saved');
   loadBusinessHealth();
 }
@@ -5907,10 +5914,119 @@ function renderRoles(){
         <button onclick="openRoleModal('${esc(r.id)}')">Edit</button>
         <button onclick="duplicateRole('${esc(r.id)}')">Duplicate</button>
         <button onclick="poolMatchOpen('${esc(r.id)}')">Find matches</button>
+        <button onclick="rnOpen('${esc(r.id)}')">Notes${rnCount(r.id) ? ' (' + rnCount(r.id) + ')' : ''}</button>
       </div></td>
     </tr>`;
   }).join('');
 }
+
+/* ---------- Role notes ---------- */
+
+const RN = {list: [], loaded: false, loading: false, roleId: null, editingId: null};
+
+function rnCount(roleId){ return RN.list.filter(n => n.role_id === roleId).length; }
+
+async function rnLoad(){
+  if(RN.loading) return;
+  RN.loading = true;
+  try{ RN.list = b2List(await b2Api('/api/role-notes')); RN.loaded = true; }
+  catch(e){ /* the Notes button still works, counts just stay blank */ }
+  RN.loading = false;
+}
+
+function rnStamp(iso){
+  const d = new Date(iso);
+  return isNaN(d) ? '' : d.toLocaleString('en-GB', {day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'});
+}
+
+async function rnOpen(roleId){
+  const r = mergedRoles().find(x => x.id === roleId);
+  if(!r) return;
+  RN.roleId = roleId;
+  RN.editingId = null;
+  document.getElementById('rnTitle').textContent = 'Notes - ' + r.role;
+  document.getElementById('rnSub').textContent = r.company;
+  document.getElementById('rnText').value = '';
+  document.getElementById('rnModal').classList.add('visible');
+  document.getElementById('rnList').innerHTML = '<div class="panel-empty">Loading...</div>';
+  await rnLoad();
+  rnRender();
+}
+
+function rnRender(){
+  const box = document.getElementById('rnList');
+  const notes = RN.list.filter(n => n.role_id === RN.roleId)
+    .sort((a, b) => String(b.created).localeCompare(String(a.created)));
+  if(!notes.length){ box.innerHTML = '<div class="panel-empty">No notes for this role yet.</div>'; return; }
+  box.innerHTML = notes.map(n => {
+    const edited = n.updated && n.updated !== n.created ? ' (edited ' + esc(rnStamp(n.updated)) + ')' : '';
+    const head = '<div style="font-size:11.5px;color:#888;margin-bottom:6px;">' + esc(userLabel(n.author)) + ' - ' + esc(rnStamp(n.created)) + edited + '</div>';
+    if(RN.editingId === n.id){
+      return '<div style="border:1px solid var(--gold);border-radius:2px;padding:10px 12px;margin-bottom:10px;">' + head +
+        '<textarea id="rnEditText" style="width:100%;min-height:80px;padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;">' + esc(n.text) + '</textarea>' +
+        '<div class="actions" style="margin-top:8px;"><button class="cancel" onclick="rnEdit(null)">Cancel</button><button class="save" onclick="rnSaveEdit(\'' + esc(n.id) + '\')">Save</button></div></div>';
+    }
+    return '<div style="border:1px solid var(--border);border-radius:2px;padding:10px 12px;margin-bottom:10px;">' + head +
+      '<div style="white-space:pre-wrap;font-size:13.5px;line-height:1.5;">' + esc(n.text) + '</div>' +
+      '<div class="row-actions" style="margin-top:8px;"><button onclick="rnEdit(\'' + esc(n.id) + '\')">Edit</button><button onclick="rnDelete(\'' + esc(n.id) + '\')">Delete</button></div></div>';
+  }).join('');
+}
+
+function rnEdit(id){ RN.editingId = id; rnRender(); }
+
+async function rnAdd(){
+  const text = document.getElementById('rnText').value.trim();
+  if(!text){ showToast('Type a note first'); return; }
+  const r = mergedRoles().find(x => x.id === RN.roleId);
+  if(!r) return;
+  const now = new Date().toISOString();
+  const body = {
+    id: 'rn-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+    role_id: r.id, company: r.company, role: r.role,
+    author: (signedInUser && signedInUser.key) || '', text, created: now, updated: now,
+  };
+  try{
+    const json = await b2Post('/api/role-notes', body);
+    RN.list.push(json.data || body);
+    document.getElementById('rnText').value = '';
+    rnRender();
+    renderRoles();
+    showToast('Note added');
+  }catch(e){ showToast('Could not save note: ' + e.message); }
+}
+
+async function rnSaveEdit(id){
+  const text = (document.getElementById('rnEditText').value || '').trim();
+  if(!text){ showToast('A note cannot be empty'); return; }
+  const n = RN.list.find(x => x.id === id);
+  if(!n) return;
+  try{
+    const json = await b2Post('/api/role-notes', {id, text, updated: new Date().toISOString()});
+    Object.assign(n, json.data || {text});
+    RN.editingId = null;
+    rnRender();
+    showToast('Note updated');
+  }catch(e){ showToast('Could not update note: ' + e.message); }
+}
+
+async function rnDelete(id){
+  if(!confirm('Delete this note?')) return;
+  try{
+    await b2Del('/api/role-notes', id);
+    RN.list = RN.list.filter(x => x.id !== id);
+    rnRender();
+    renderRoles();
+    showToast('Note deleted');
+  }catch(e){ showToast('Could not delete note: ' + e.message); }
+}
+
+(function(){
+  const _rr = renderRoles;
+  renderRoles = function(){
+    _rr();
+    if(!RN.loaded && !RN.loading) rnLoad().then(() => { if(RN.loaded) _rr(); });
+  };
+})();
 
 function rolesFilter(status){
   switchTab('roles');
@@ -11552,7 +11668,7 @@ async function rmGenerateCareers(silent){
 /* ---------- Automation batch A: server-backed finance figures, backups, quarter history, test candidates ---------- */
 var FIN_CACHE = {};
 var FIN_LOADED = false;
-var FIN_KEYS = ['l2h-bank-balance', 'l2h-advertising-cost', 'l2h-employees', 'l2h-seed-ella', 'l2h-seed-ella-comm', 'l2h-payroll-cutoff', 'l2h-payday', 'l2h-payroll-email', 'l2h-bank-updated', 'l2h-monthly-overheads'];
+var FIN_KEYS = ['l2h-bank-balance', 'l2h-advertising-cost', 'l2h-employees', 'l2h-seed-ella', 'l2h-seed-ella-comm', 'l2h-payroll-cutoff', 'l2h-payday', 'l2h-payroll-email'];
 async function finLoad(force){
   if(FIN_LOADED && !force) return;
   try{
@@ -13146,8 +13262,22 @@ function kpiRender(metrics, bank, ytdRevenue, manualAd, year){
   if(adLine) adLine.innerHTML = `Logged in Sourcing: <strong>${gbp(adAuto)}</strong> <a class="tpl-link" onclick="switchTab('sourcing')">view</a>`;
   document.getElementById('advertisingCostInput').value = manualAd || 0;
 
+  const per = payPeriod(year);
   const todayISO = new Date().toISOString().slice(0, 10);
-  runwayRender(bank, employees, metrics, todayISO);
+  const runRate = employees.filter(e => (!e.endDate || e.endDate >= todayISO) && e.startDate && e.startDate <= todayISO)
+    .reduce((s, e) => s + (parseFloat(e.salary) || 0) * (1 + (parseFloat(e.pensionPct) || 0) / 100), 0) / 12;
+  const monthsElapsed = per.isCurrent ? Math.max(1, ((per.end - per.ys) / 86400000 + 1) / 30.4) : 12;
+  const burn = runRate + (adTotal + teamComm) / monthsElapsed;
+  const runwayEl = document.getElementById('runwayMetric');
+  if(burn > 0){
+    const runway = (bank + ytdRevenue) / burn;
+    runwayEl.style.color = runway < 1 ? 'var(--danger)' : runway < 3 ? '#c9703f' : 'var(--success)';
+    runwayEl.textContent = runway.toFixed(1);
+    document.getElementById('runwayDetail').textContent = `Bank ${gbp(bank)} + revenue, against ${gbp(burn)} a month`;
+  }else{
+    runwayEl.textContent = '-';
+    document.getElementById('runwayDetail').textContent = 'Add team costs or advertising to calculate';
+  }
 
   const profit = ytdRevenue - teamCost - adTotal;
   const pEl = document.getElementById('ytdProfitMetric');
@@ -13346,59 +13476,6 @@ function commissionPreview(c){
     <div class="val" style="font-size:12.5px;">Salary ${gbp(info.value)}${info.isRange ? ' (midpoint of the range)' : ''} falls in the ${rate * 100}% bracket, so the fee is ${gbp2(fee)}.${lines.length ? '<br>If placed by ' + lines.join('<br>') : ''}</div></div>`;
 }
 
-/* ---------- Runway: bank balance against forward monthly costs ---------- */
-var KPI_INV = [];
-function saveOverheads(){
-  const v = parseFloat(String(document.getElementById('overheadsInput').value).replace(/[^0-9.]/g, ''));
-  finSet('l2h-monthly-overheads', isFinite(v) && v > 0 ? String(v) : '');
-  showToast('Overheads saved');
-  loadBusinessHealth();
-}
-function runwayParts(employees, todayISO){
-  const payroll = employees.filter(e => (!e.endDate || e.endDate >= todayISO) && e.startDate && e.startDate <= todayISO)
-    .reduce((s, e) => s + (parseFloat(e.salary) || 0) * (1 + (parseFloat(e.pensionPct) || 0) / 100), 0) / 12;
-  const d90 = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
-  let commitments = 0, oneOff = 0;
-  (B3.adspend || []).forEach(e => {
-    const amt = parseFloat(e.amount) || 0, start = opsDateOnly(e.date);
-    if(!amt || !start) return;
-    if(e.frequency === 'monthly'){
-      const end = opsDateOnly(e.end_date);
-      if(start <= todayISO && (!end || end >= todayISO)) commitments += amt;
-    }else if(start >= d90 && start <= todayISO) oneOff += amt;
-  });
-  const advertising = commitments + oneOff / 3;
-  const commission = (KPI_INV || []).filter(i => i.commissionAmount > 0 && String(i.status) === 'paid')
-    .filter(i => { const d = String(i.paymentDate || i.date || '').slice(0, 10); return d >= d90 && d <= todayISO; })
-    .reduce((s, i) => s + i.commissionAmount, 0) / 3;
-  const overheads = parseFloat(finGet('l2h-monthly-overheads')) || 0;
-  return {payroll, advertising, commission, overheads, burn: payroll + advertising + commission + overheads};
-}
-function runwayRender(bank, employees, metrics, todayISO){
-  const el = document.getElementById('runwayMetric'), det = document.getElementById('runwayDetail');
-  const ov = document.getElementById('overheadsInput');
-  if(ov) ov.value = finGet('l2h-monthly-overheads') || '';
-  if(bank === null || bank === undefined || isNaN(bank)){
-    el.style.color = ''; el.textContent = '-';
-    det.textContent = 'Enter your bank balance above to calculate runway';
-    return;
-  }
-  const r = runwayParts(employees, todayISO);
-  if(r.burn <= 0){ el.textContent = '-'; det.textContent = 'Add team costs or advertising to calculate'; return; }
-  const runway = bank / r.burn;
-  el.style.color = runway < 1 ? 'var(--danger)' : runway < 3 ? '#c9703f' : 'var(--success)';
-  el.textContent = runway.toFixed(1);
-  const upd = finGet('l2h-bank-updated');
-  let stale = '';
-  if(upd){
-    const days = Math.floor((Date.now() - new Date(upd + 'T00:00:00Z').getTime()) / 86400000);
-    stale = days > 30 ? ` <span style="color:var(--danger);">(balance last updated ${days} days ago)</span>` : ` (updated ${ukDate(upd)})`;
-  }else stale = ' <span style="color:#c9703f;">(no update date recorded, please re-save your balance)</span>';
-  const pending = metrics && metrics.invoicePending ? metrics.invoicePending : 0;
-  const withInv = pending > 0 ? `<br>If outstanding invoices of ${gbp(pending)} are paid: <strong>${((bank + pending) / r.burn).toFixed(1)}</strong> months` : '';
-  det.innerHTML = `Bank ${gbp(bank)}${stale} against ${gbp(r.burn)} a month: payroll ${gbp(r.payroll)}, advertising ${gbp(r.advertising)}, commission ${gbp(r.commission)}, other ${gbp(r.overheads)}${withInv}`;
-}
-
 /* ---------- Consultant picker for invoices ---------- */
 function pickConsultant(){
   return new Promise(resolve => {
@@ -13590,7 +13667,7 @@ async function poolSaveEdit(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '2 Oct 2026 - build 10';
+var PAGE_BUILD = '2 Oct 2026 - build 9';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -13601,12 +13678,12 @@ function buildTagApply(){
     tag.style.cssText = 'font-size:10.5px;color:#999;margin-left:10px;white-space:nowrap;';
     chip.appendChild(tag);
   }
-  tag.textContent = 'Page build 10';
+  tag.textContent = 'Page build 9';
   tag.title = 'Page: ' + PAGE_BUILD;
   b2Api('/api/version').then(function(j){
-    tag.textContent = 'Page build 10 | Server ' + serverBuildLabel(j.build);
+    tag.textContent = 'Page build 9 | Server ' + serverBuildLabel(j.build);
     tag.title = 'Page: ' + PAGE_BUILD + ' | Server: ' + j.build;
-  }).catch(function(){ tag.textContent = 'Page build 10 | Server older'; });
+  }).catch(function(){ tag.textContent = 'Page build 9 | Server older'; });
 }
 (function(){
   const _si = signIn;
