@@ -5131,8 +5131,10 @@ function poolFmtDate(d){
 }
 
 function poolNeedsCv(p){
-  return !p.hasCv && poolStageRank(p.furthestStage) >= 1;
+  return !p.erased && !p.hasCv && poolStageRank(p.furthestStage) >= 1;
 }
+
+function poolLive(){ return POOL.filter(p => !p.erased); }
 
 function updatePoolBadge(){
   const el = document.getElementById('poolMissingBadge');
@@ -5195,6 +5197,7 @@ function poolFilteredList(){
   const cv = document.getElementById('poolCvFilter').value;
   const tg = (document.getElementById('poolTagFilter') || {}).value || '';
   return POOL.filter(p => {
+    if(p.erased) return false;
     if(q && !(`${p.name} ${p.role} ${p.company} ${p.tags || ''}`.toLowerCase().includes(q))) return false;
     if(co && p.company !== co) return false;
     if(ro && p.role !== ro) return false;
@@ -5214,8 +5217,8 @@ function rebuildPoolFilterOptions(){
       values.map(v => `<option value="${esc(v.value)}">${esc(v.label)}</option>`).join('');
     if(values.some(v => v.value === current)) sel.value = current;
   };
-  const companies = [...new Set(POOL.map(p => p.company).filter(Boolean))].sort();
-  const roles = [...new Set(POOL.map(p => p.role).filter(Boolean))].sort();
+  const companies = [...new Set(poolLive().map(p => p.company).filter(Boolean))].sort();
+  const roles = [...new Set(poolLive().map(p => p.role).filter(Boolean))].sort();
   fill('poolCompanyFilter', companies.map(c => ({value:c, label:c})), 'All companies');
   fill('poolRoleFilter', roles.map(r => ({value:r, label:r})), 'All roles');
   fill('poolStageFilter', STAGES.filter(s => s.key !== 'rejected').map(s => ({value:s.key, label:'Reached: ' + s.label})), 'Any stage reached');
@@ -5226,12 +5229,15 @@ function renderPool(){
   const list = poolFilteredList();
   const body = document.getElementById('poolBody');
   const summary = document.getElementById('poolSummary');
-  const missing = POOL.filter(poolNeedsCv).length;
-  summary.textContent = `${POOL.length} candidate${POOL.length === 1 ? '' : 's'} in the pool` +
-    (missing ? ` - ${missing} submitted without a CV` : '');
+  const live = poolLive();
+  const erasedCount = POOL.length - live.length;
+  const missing = live.filter(poolNeedsCv).length;
+  summary.textContent = `${live.length} candidate${live.length === 1 ? '' : 's'} in the pool` +
+    (missing ? ` - ${missing} submitted without a CV` : '') +
+    (erasedCount ? ` - ${erasedCount} erased (hidden)` : '');
 
   if(!list.length){
-    body.innerHTML = `<tr><td colspan="8" class="pool-empty">${POOL.length ? 'No candidates match these filters.' : 'No candidates in the pool yet.'}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8" class="pool-empty">${live.length ? 'No candidates match these filters.' : 'No candidates in the pool yet.'}</td></tr>`;
     return;
   }
 
@@ -13717,7 +13723,7 @@ async function poolSaveEdit(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '6 Oct 2026 - build 11';
+var PAGE_BUILD = '6 Oct 2026 - build 12';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -13728,12 +13734,12 @@ function buildTagApply(){
     tag.style.cssText = 'font-size:10.5px;color:#999;margin-left:10px;white-space:nowrap;';
     chip.appendChild(tag);
   }
-  tag.textContent = 'Page build 11';
+  tag.textContent = 'Page build 12';
   tag.title = 'Page: ' + PAGE_BUILD;
   b2Api('/api/version').then(function(j){
-    tag.textContent = 'Page build 11 | Server ' + serverBuildLabel(j.build);
+    tag.textContent = 'Page build 12 | Server ' + serverBuildLabel(j.build);
     tag.title = 'Page: ' + PAGE_BUILD + ' | Server: ' + j.build;
-  }).catch(function(){ tag.textContent = 'Page build 11 | Server older'; });
+  }).catch(function(){ tag.textContent = 'Page build 12 | Server older'; });
 }
 (function(){
   const _si = signIn;
