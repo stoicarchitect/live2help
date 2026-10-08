@@ -4542,7 +4542,7 @@ function flReportEmail(o, pri) {
       <td style="padding:12px;border:1px solid ${line};border-radius:6px;"><div style="color:#B4B8C4;font-size:12px;">YOUR OFFER</div><div style="font-size:26px;font-weight:700;color:#E4CB8A;">${flEsc(o.offer_score)}/100</div><div style="color:#B4B8C4;font-size:12px;">Counter-offer risk: ${flEsc(o.offer_risk)}</div></td>
     </tr></table>
     ${items ? `<h2 style="font-size:16px;color:${gold};margin:22px 0 4px;">Your top priorities</h2><table role="presentation" width="100%">${items}</table>` : ''}
-    <p style="margin:22px 0 6px;">Want a recruiter to fix this for you? Reply to this email or call Ella on 07434 351996 for a 15 minute chat, no obligation.</p>
+    <p style="margin:22px 0 6px;">Want a recruiter to fix this for you? Reply to this email or call a recruiter on 01902 945444 for a 15 minute chat, no obligation.</p>
     <p style="color:#B4B8C4;font-size:12px;margin-top:22px;">Live 2 Help Recruitment Ltd, Company No. 11731080. You received this because you completed the UK Hiring Toolkit. Reply to ask us to delete your details.</p>
   </div></div>`;
 }
@@ -4631,7 +4631,7 @@ app.post('/api/funnel-lead', async (req, res) => {
       if (!obj.report_sent && process.env.BREVO_SENDER_EMAIL) {
         try {
           await emailTransporter.sendMail({
-            from: process.env.BREVO_SENDER_EMAIL, to: email, replyTo: 'ella@live2helprecruitment.co.uk',
+            from: process.env.BREVO_SENDER_EMAIL, to: email, replyTo: 'office@live2helprecruitment.co.uk',
             subject: `Your Hiring Report: ${obj.role || 'your vacancy'}`, html: flReportEmail(obj, pri),
           });
           obj.report_sent = 'Yes';
@@ -9244,7 +9244,7 @@ app.post('/api/talent-pool/reconsent/run', requireAdmin, async (req, res) => {
 });
 
 // Lets the dashboard show which server version is live
-const SERVER_BUILD = '8 Oct 2026 - build 13';
+const SERVER_BUILD = '8 Oct 2026 - build 14';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

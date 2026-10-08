@@ -258,7 +258,7 @@ footer b{color:var(--text);font-family:var(--display);font-weight:500}
 
   <footer>
     <div><b>Live 2 Help Recruitment Ltd</b> - Anyone. Anywhere. Anytime.</div>
-    <div>Talk to a recruiter: ella@live2helprecruitment.co.uk - 07434 351996 - live2helprecruitment.co.uk</div>
+    <div>Talk to a recruiter: office@live2helprecruitment.co.uk - 01902 945444 - live2helprecruitment.co.uk</div>
     <div>Company No. 11731080. We use your details only to send your report and to follow up about hiring. You can ask us to delete them at any time. Figures are estimates built from the numbers you enter, not guarantees.</div>
   </footer>
 </div>
@@ -581,18 +581,18 @@ footer b{color:var(--text);font-family:var(--display);font-weight:500}
       '<div class="rings"><div class="score"><div>'+ringHTML(h.score,hb.col)+'</div><div><div class="lbl2">Hiring process</div><div class="band '+hb.c+'">'+hb.t+'</div></div></div>'+
       '<div class="score"><div>'+ringHTML(o.score,o.band.col)+'</div><div><div class="lbl2">Your offer</div><div class="band '+o.band.c+'">'+o.band.t+'</div><div class="note">Counter-offer risk: <b class="'+o.band.c+'">'+o.risk+'</b></div></div></div></div>'+bench+
       '<h3 class="pri">Your three priorities</h3><ul class="list">'+(top3.length?top3.map(function(p,i){return '<li><i class="dot b"></i><div><b>'+(i+1)+'. '+p.t+'</b><span>'+p.x+'</span></div></li>'}).join(''):'<li><i class="dot g"></i><div><b>Your hiring set-up is strong</b><span>Keep measuring time to offer and offer acceptance rate.</span></div></li>')+'</ul>'+
-      '<div class="foot"><span>Live 2 Help Recruitment - UK-wide</span><span>ella@live2helprecruitment.co.uk - 07434 351996</span></div></div>'+
+      '<div class="foot"><span>Live 2 Help Recruitment - UK-wide</span><span>office@live2helprecruitment.co.uk - 01902 945444</span></div></div>'+
       '<p class="note" style="margin-top:10px">Screenshot your scorecard to share it with your team.</p>'+
       '<h3 class="sec2">How the cost was worked out</h3><p class="note">'+gbp(m.lost)+' work not done + '+gbp(m.coverPrem)+' overtime premium + '+gbp(m.agency)+' agency cover - '+gbp(m.saved)+' salary not paid = '+gbp(m.net)+' a week, plus '+gbp(m.oneOff)+' one-off hiring cost.</p>'+
       '<h3 class="sec2">Fixes for your hiring process</h3><ul class="list">'+plist(h.gaps.map(function(g){return {gap:g.gap,t:g.q.area,x:g.q.fix}}))+'</ul>'+
       '<h3 class="sec2">Fixes for your offer</h3><ul class="list">'+plist(o.weak.map(function(w){return {gap:w.gap,t:w.q.k,x:w.q.fix}}))+'</ul>'+
       '<p class="note" style="margin-top:12px">If a candidate mentions a counter-offer, ask: "What would your current employer need to change for you to stay, and would that fix why you started looking?"</p>'+
-      '<div class="cta"><p><strong>Want a recruiter to fix this for you?</strong><br><span class="note">Ella or Dan will talk through your report and your live vacancies. 15 minutes, no obligation.</span></p><a class="btn" href="mailto:ella@live2helprecruitment.co.uk?subject=My%20Hiring%20Report">Talk to Ella</a></div>'+
-      '<p class="note" style="margin-top:10px">ella@live2helprecruitment.co.uk - 07434 351996</p>'+
+      '<div class="cta"><p><strong>Want a recruiter to fix this for you?</strong><br><span class="note">A recruiter will talk through your report and your live vacancies. 15 minutes, no obligation.</span></p><a class="btn" href="mailto:office@live2helprecruitment.co.uk?subject=My%20Hiring%20Report">Talk to a recruiter</a></div>'+
+      '<p class="note" style="margin-top:10px">office@live2helprecruitment.co.uk - 01902 945444</p>'+
       '<div class="row"><button class="btn ghost" id="cp">Copy my results</button><button class="btn ghost" id="again">Start again</button><span class="note" id="cpm"></span></div></div>';
     animRings(el); countTo($('#cNet'),m.net,gbp,REDUCED?0:1000);
     $('#cp').addEventListener('click',function(){
-      var t='Hiring Report - '+c.role+' ('+S.lead.company+')\nNet cost of vacancy: '+gbp(m.net)+' a week, '+gbp(total)+' over '+c.weeks+' weeks\nHiring process score: '+h.score+'/100 ('+hb.t+')\nOffer rating: '+o.score+'/100 ('+o.band.t+'), counter-offer risk '+o.risk+'\nLive 2 Help Recruitment - ella@live2helprecruitment.co.uk - 07434 351996';
+      var t='Hiring Report - '+c.role+' ('+S.lead.company+')\nNet cost of vacancy: '+gbp(m.net)+' a week, '+gbp(total)+' over '+c.weeks+' weeks\nHiring process score: '+h.score+'/100 ('+hb.t+')\nOffer rating: '+o.score+'/100 ('+o.band.t+'), counter-offer risk '+o.risk+'\nLive 2 Help Recruitment - office@live2helprecruitment.co.uk - 01902 945444';
       var d=function(ok){$('#cpm').textContent=ok?'Copied.':'Copy blocked here. Select the text and copy it manually.'};
       try{navigator.clipboard.writeText(t).then(function(){d(true)},function(){d(false)})}catch(e){d(false)}
     });
