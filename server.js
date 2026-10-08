@@ -992,12 +992,22 @@ async function ensureSalesManagerTab(tabName, region) {
   if (smTabLocks.has(tabName)) return smTabLocks.get(tabName);
   const p = (async () => {
     const sheets = getSheetsClient();
-    const ss = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties.title' });
-    if (!(ss.data.sheets || []).some(t => t.properties.title === tabName)) {
+    const ss = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties(sheetId,title,gridProperties)' });
+    const existing = (ss.data.sheets || []).find(t => t.properties.title === tabName);
+    if (!existing) {
       await sheets.spreadsheets.batchUpdate({
         spreadsheetId: SHEET_ID,
-        requestBody: { requests: [{ addSheet: { properties: { title: tabName, gridProperties: { frozenRowCount: 1 } } } }] },
+        requestBody: { requests: [{ addSheet: { properties: { title: tabName, gridProperties: { frozenRowCount: 1, columnCount: SM_WIDTH + 2 } } } }] },
       });
+    } else {
+      // Google rejects any write past the last column of the grid, so widen older tabs before writing the newer columns
+      const cols = (existing.properties.gridProperties && existing.properties.gridProperties.columnCount) || 0;
+      if (cols && cols < SM_WIDTH) {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: SHEET_ID,
+          requestBody: { requests: [{ appendDimension: { sheetId: existing.properties.sheetId, dimension: 'COLUMNS', length: SM_WIDTH - cols } }] },
+        });
+      }
     }
     const head = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tabName}'!A1:${SM_LAST_COL}1` });
     const first = head.data.values && head.data.values[0];
