@@ -960,14 +960,21 @@ const SM_SLOT_FIELDS = [
   { key: 'travelComfort', col: 33, label: 'Comfort with regular travel and overnight stays' },
   { key: 'territoryLocation', col: 34, label: 'Home location (postcode area)' },
   { key: 'territoryCoverage', col: 35, label: 'Comfortable covering the territory' },
+  { key: 'newPartnerTarget', col: 36, label: 'Annual target for generating new trade partners (carried and achieved)' },
+  { key: 'newVsExistingRole', col: 37, label: 'Role scope: managing existing trade partners only, or also developing and onboarding new ones' },
+  { key: 'newVsExistingRatio', col: 38, label: 'Business contribution from new trade partners versus existing trade partners' },
+  { key: 'partnerSalesType', col: 39, label: 'Trade partners primarily involved in end-user sales or project sales' },
 ];
+const SM_WIDTH = 40;
+const SM_LAST_COL = 'AN';
 const SM_REQUIRED = ['fireYears', 'fireSectors', 'currentRoleEmployer', 'tradeRelationships', 'namedPartners', 'dayOneDoors',
   'newPartnerExample', 'distributionExperience', 'targetAchieved', 'targetConsistency', 'totalPackage', 'managesPeople',
   'trainingAttitude', 'crmConfidence', 'drivingLicence', 'travelComfort', 'territoryLocation', 'territoryCoverage',
+  'newPartnerTarget', 'newVsExistingRole', 'newVsExistingRatio', 'partnerSalesType',
   'employmentStatus', 'noticePeriod', 'salaryExpectation'];
 
 function smHeaderRow(region) {
-  const h = new Array(36).fill('');
+  const h = new Array(SM_WIDTH).fill('');
   h[0] = 'Application ID'; h[1] = 'Date Applied'; h[2] = 'Name'; h[3] = 'Email'; h[4] = 'Phone';
   h[5] = 'Current Employment Status'; h[6] = 'Notice Period';
   SM_SLOT_FIELDS.forEach(f => { h[f.col] = f.label; });
@@ -991,12 +998,18 @@ async function ensureSalesManagerTab(tabName, region) {
         requestBody: { requests: [{ addSheet: { properties: { title: tabName, gridProperties: { frozenRowCount: 1 } } } }] },
       });
     }
-    const head = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tabName}'!A1:AJ1` });
+    const head = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tabName}'!A1:${SM_LAST_COL}1` });
     const first = head.data.values && head.data.values[0];
     if (!first || first[0] !== 'Application ID') {
       await sheets.spreadsheets.values.update({
-        spreadsheetId: SHEET_ID, range: `'${tabName}'!A1:AJ1`,
+        spreadsheetId: SHEET_ID, range: `'${tabName}'!A1:${SM_LAST_COL}1`,
         valueInputOption: 'RAW', requestBody: { values: [smHeaderRow(region)] },
+      });
+    } else if (!first[36] || !first[39]) {
+      // Tab was created before the trade partner questions were added: add the new headings only
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID, range: `'${tabName}'!AK1:${SM_LAST_COL}1`,
+        valueInputOption: 'RAW', requestBody: { values: [smHeaderRow(region).slice(36, SM_WIDTH)] },
       });
     }
   })();
@@ -1063,7 +1076,7 @@ async function handleSalesManagerApplication(req, res, form) {
       console.error(`CV could not be saved for application from ${cleanName}:`, cvErr.message);
     }
 
-    const row = new Array(36).fill('');
+    const row = new Array(SM_WIDTH).fill('');
     row[0] = applicationId; row[1] = dateApplied; row[2] = name; row[3] = email; row[4] = phone;
     row[5] = b.employmentStatus || ''; row[6] = b.noticePeriod || '';
     SM_SLOT_FIELDS.forEach(f => {
@@ -1075,7 +1088,7 @@ async function handleSalesManagerApplication(req, res, form) {
     row[24] = poolConsent; row[25] = saved ? saved.link : '';
 
     await sheets.spreadsheets.values.append({
-      spreadsheetId: SHEET_ID, range: `'${tabName}'!A:AJ`,
+      spreadsheetId: SHEET_ID, range: `'${tabName}'!A:${SM_LAST_COL}`,
       valueInputOption: 'USER_ENTERED', requestBody: { values: [row] },
     });
 
@@ -1246,9 +1259,10 @@ async function handleCadApplication(req, res, form) {
 async function getScreeningFieldsForRole(role) {
   if (!SALES_MANAGER_ROLE_NAMES.has(role) && !CAD_ROLE_NAMES.has(role)) return null;
   const sheets = getSheetsClient();
-  const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'Applications - ${role}'!A1:AJ1` });
+  const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'Applications - ${role}'!A1:AN1` });
   const header = (r.data.values && r.data.values[0]) || [];
   const cols = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35];
+  if (SALES_MANAGER_ROLE_NAMES.has(role)) cols.push(36, 37, 38, 39);
   const labels = { 2: 'Candidate Name', 3: 'Email', 4: 'Phone' };
   return cols.map(c => ({ key: `col${c}`, label: String(labels[c] || header[c] || `Question ${c}`).trim(), col: c }));
 }
@@ -2431,7 +2445,7 @@ async function findApplicationRow(candidateName, role) {
   try {
     const result = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
-      range: `'${tabName}'!A2:AJ`,
+      range: `'${tabName}'!A2:AN`,
     });
     const rows = result.data.values || [];
     
@@ -4594,7 +4608,7 @@ app.get('/api/gdpr/export/:id', requireAdmin, async (req, res) => {
     try {
       const sheets = getSheetsClient();
       const formTab = await formRoleFor(name, row[5]);
-      const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'Applications - ${formTab}'!A2:AJ` });
+      const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'Applications - ${formTab}'!A2:AN` });
       const ar = (r.data.values || []).find(x => match(x[2]));
       if (ar) {
         application = {};
@@ -5025,7 +5039,7 @@ async function loadScreening(name, role) {
   const tabName = `Applications - ${await formRoleFor(name, role)}`;
   let all;
   try {
-    const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tabName}'!A1:AJ` });
+    const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tabName}'!A1:AN` });
     all = r.data.values || [];
   } catch (e) {
     return { found: false, qa: [], reason: `No application form tab for ${role}` };
