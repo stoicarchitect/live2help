@@ -456,8 +456,8 @@
   #board::-webkit-scrollbar{height:12px;}
   #board::-webkit-scrollbar-track{background:#eee;}
   #board::-webkit-scrollbar-thumb{background:var(--gold);border-radius:6px;}
-  #clientHealthView,#referralsView,#sourcingView,#gdprView,#auditView{display:none;flex:1;flex-direction:column;}
-  #clientHealthView.visible,#referralsView.visible,#sourcingView.visible,#gdprView.visible,#auditView.visible{display:flex;}
+  #clientHealthView,#referralsView,#funnelLeadsView,#sourcingView,#gdprView,#auditView{display:none;flex:1;flex-direction:column;}
+  #clientHealthView.visible,#referralsView.visible,#funnelLeadsView.visible,#sourcingView.visible,#gdprView.visible,#auditView.visible{display:flex;}
   @media (max-width:780px){.board-scroll-btn{display:none !important;}}
 
 
@@ -1107,6 +1107,7 @@
       <button class="tab-btn" data-tab="clientComms" onclick="switchTab('clientComms')">Client Comms Log</button>
       <button class="tab-btn" data-tab="coldCalls" onclick="switchTab('coldCalls')">Cold Call Tracker</button>
       <button class="tab-btn" data-tab="referrals" onclick="switchTab('referrals')">Referrals</button>
+      <button class="tab-btn" data-tab="funnelLeads" onclick="switchTab('funnelLeads')">Funnel Leads</button>
     </div>
     
     <div id="candidatesView" class="visible">
@@ -1657,6 +1658,21 @@
       <div class="view-body">
         <div class="tile-grid" id="rfTiles"></div>
         <div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>Date</th><th>Referred</th><th>Referred by</th><th>Role</th><th>Status</th><th>Reward</th><th style="text-align:right;">Actions</th></tr></thead><tbody id="rfBody"></tbody></table></div>
+      </div>
+    </div>
+
+    <div id="funnelLeadsView">
+      <div class="view-head">
+        <div><h2>Funnel Leads</h2><div class="sub" id="flSummary"></div></div>
+        <div class="head-actions">
+          <select id="flFilter" onchange="renderFunnelLeads()" style="padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13px;background:#fff;">
+            <option value="">All leads</option><option value="hot">Hot</option><option value="new">New</option><option value="contacted">Contacted</option><option value="converted">Converted</option><option value="lost">Lost</option><option value="unfinished">Did not finish</option></select>
+        </div>
+      </div>
+      <div class="view-body">
+        <div class="tile-grid" id="flTiles"></div>
+        <div class="ops-table-wrap"><table class="ops-table" style="min-width:1020px;"><thead><tr><th>Date</th><th>Lead</th><th>Role</th><th>Net cost a week</th><th>Process</th><th>Offer</th><th>Reached</th><th>Status</th><th>Notes</th><th style="text-align:right;">Actions</th></tr></thead><tbody id="flBody"></tbody></table></div>
+        <div class="note-line">These come from the Hiring Toolkit page at careers.live2helprecruitment.co.uk/hire. A lead is marked Hot when the process score is under 55 or the offer score is under 50. When someone finishes all three steps, their company is added to Lead Clients if it is new, a follow-up task is created for Ella for the next working day, and they are emailed their report. Leads who stop partway are kept here as Did not finish.</div>
       </div>
     </div>
 
@@ -7875,7 +7891,7 @@ function renderForecast(){
    Batch 3 part B: Audit trail and Data & GDPR
    ============================================================ */
 
-const B3 = {audit:[], referrals:[], adspend:[], coldCalls:[], fetchedAt:0};
+const B3 = {audit:[], referrals:[], funnelLeads:[], adspend:[], coldCalls:[], fetchedAt:0};
 
 function onB3Tab(tab){
   if(tab === 'audit') loadAudit();
@@ -7883,6 +7899,7 @@ function onB3Tab(tab){
   if(tab === 'sourcing') loadSourcing();
   if(tab === 'clientHealth') loadClientHealth();
   if(tab === 'referrals') loadReferrals();
+  if(tab === 'funnelLeads') loadFunnelLeads();
 }
 
 /* ---------- Audit trail ---------- */
@@ -8110,12 +8127,12 @@ function authUrl(u){
 const TAB_GROUPS = [
   {key:'overview', label:'Overview', tabs:['home','notifications','tasks']},
   {key:'recruitment', label:'Recruitment', tabs:['candidates','candidatePool','roles','interviews','placements','comms','feedback','templates']},
-  {key:'clients', label:'Clients', tabs:['leadClients','clients','clientHealth','clientComms','coldCalls','referrals']},
+  {key:'clients', label:'Clients', tabs:['leadClients','clients','clientHealth','clientComms','coldCalls','referrals','funnelLeads']},
   {key:'money', label:'Money and reporting', tabs:['invoices','forecast','kpi','sourcing','team']},
   {key:'admin', label:'Admin', tabs:['gdpr','audit'], adminOnly:true},
 ];
 const ADMIN_TABS = ['invoices','forecast','team','sourcing','gdpr','audit'];
-const B3_VIEWS = ['clientHealth','clientComms','referrals','sourcing','gdpr','audit'];
+const B3_VIEWS = ['clientHealth','clientComms','referrals','funnelLeads','sourcing','gdpr','audit'];
 
 function renderGroupBar(){
   const host = document.getElementById('groupBtns');
@@ -8449,6 +8466,77 @@ async function saveReferral(){
     renderReferrals();
     recomputeOps();
   }catch(e){ showToast('Could not save: ' + e.message); }
+}
+
+/* ---------- Funnel leads (Hiring Toolkit page) ---------- */
+
+const FL_STATUS = {new:'New', hot:'Hot', contacted:'Contacted', converted:'Converted', lost:'Lost'};
+const FL_STAGE = {cost:'Step 1', process:'Step 2', complete:'Finished'};
+
+async function loadFunnelLeads(){
+  try{ B3.funnelLeads = b2List(await b2Api('/api/funnel-leads')); }catch(e){ showToast('Could not load funnel leads'); }
+  renderFunnelLeads();
+}
+
+function flMoney(v){ const n = parseFloat(v); return isFinite(n) ? opsMoney(n) : '<span style="color:#bbb;">-</span>'; }
+function flScore(v, good){ const n = parseFloat(v); if(!isFinite(n)) return '<span style="color:#bbb;">-</span>'; return '<span class="status-pill ' + (n >= good ? 'active' : (n >= good - 25 ? 'hold' : 'lost')) + '">' + n + '</span>'; }
+
+function renderFunnelLeads(){
+  const list = (B3.funnelLeads || []).slice().sort((a, b) => String(b.created_at || b.date).localeCompare(String(a.created_at || a.date)));
+  const f = b2Val('flFilter');
+  const shown = list.filter(l => !f || (f === 'unfinished' ? l.stage !== 'complete' : l.status === f));
+  const done = list.filter(l => l.stage === 'complete');
+  const hot = list.filter(l => l.status === 'hot').length;
+  const conv = list.filter(l => l.status === 'converted').length;
+  document.getElementById('flSummary').textContent = list.length + ' lead' + (list.length === 1 ? '' : 's') + ' from the Hiring Toolkit';
+  document.getElementById('flTiles').innerHTML = [
+    {n: list.length, l:'Leads captured'}, {n: done.length, l:'Finished all 3 steps'}, {n: hot, l:'Hot leads', warn: hot > 0},
+    {n: list.filter(l => l.status === 'new').length, l:'New, not yet contacted'}, {n: conv, l:'Converted to clients'},
+  ].map(t => `<div class="tile static ${t.warn ? 'warn' : ''}"><div class="n">${esc(t.n)}</div><div class="l">${t.l}</div></div>`).join('');
+  document.getElementById('flBody').innerHTML = shown.length ? shown.map(l => `<tr>
+    <td>${esc(opsFmt(l.date))}</td>
+    <td class="strong">${esc(l.name)}<div class="pool-muted">${esc(l.company)}</div><div class="pool-muted">${esc(l.email)}</div></td>
+    <td>${esc(l.role)}<div class="pool-muted">${l.salary ? opsMoney(parseFloat(l.salary)) + ' salary' : ''}${l.weeks ? ', ' + esc(l.weeks) + ' weeks' : ''}</div></td>
+    <td>${flMoney(l.net_per_week)}<div class="pool-muted">${l.total_cost ? flMoney(l.total_cost) + ' total' : ''}</div></td>
+    <td>${flScore(l.process_score, 75)}</td>
+    <td>${flScore(l.offer_score, 75)}${l.offer_risk ? '<div class="pool-muted">' + esc(l.offer_risk) + ' counter-offer risk</div>' : ''}</td>
+    <td>${esc(FL_STAGE[l.stage] || l.stage)}${l.top_gaps ? '<div class="pool-muted">' + esc(l.top_gaps) + '</div>' : ''}${l.source ? '<div class="pool-muted">' + esc(l.source) + '</div>' : ''}</td>
+    <td><select onchange="setFunnelLead('${esc(l.id)}',{status:this.value})" style="padding:6px 8px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12px;background:#fff;">${Object.keys(FL_STATUS).map(k => `<option value="${k}"${l.status === k ? ' selected' : ''}>${FL_STATUS[k]}</option>`).join('')}</select></td>
+    <td><input value="${esc(l.notes)}" placeholder="Add a note" onchange="setFunnelLead('${esc(l.id)}',{notes:this.value})" style="padding:6px 8px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12px;width:170px;"></td>
+    <td><div class="row-actions"><button onclick="flEmail('${esc(l.id)}')">Email</button><button onclick="flDelete('${esc(l.id)}')">Delete</button></div></td></tr>`).join('')
+    : '<tr><td colspan="10" class="empty-row">' + (list.length ? 'Nothing matches this filter.' : 'No leads yet. They appear here as soon as someone gets past step 1 of the Hiring Toolkit.') + '</td></tr>';
+}
+
+async function setFunnelLead(id, patch){
+  const l = (B3.funnelLeads || []).find(x => x.id === id);
+  if(!l) return;
+  try{
+    const json = await b2Post('/api/funnel-leads', Object.assign({id: id}, patch));
+    Object.assign(l, json.data);
+    showToast('Saved');
+    renderFunnelLeads();
+  }catch(e){ showToast('Could not save: ' + e.message); }
+}
+
+function flEmail(id){
+  const l = (B3.funnelLeads || []).find(x => x.id === id);
+  if(!l) return;
+  const first = String(l.name || '').split(' ')[0];
+  const body = 'Hi ' + first + ',\n\nThanks for working through our Hiring Toolkit' + (l.role ? ' for the ' + l.role + ' role' : '') + '. '
+    + (l.net_per_week ? 'Your numbers showed the vacancy costing around ' + opsMoney(parseFloat(l.net_per_week)) + ' a week. ' : '')
+    + 'I would be glad to talk through your report and see where we can help you fill it faster.\n\nDo you have 15 minutes this week?\n\nKind regards';
+  openMailInOutlook('web', l.email, 'Your Hiring Report - ' + (l.role || 'your vacancy'), body);
+}
+
+async function flDelete(id){
+  const l = (B3.funnelLeads || []).find(x => x.id === id);
+  if(!l || !confirm('Delete ' + l.name + ' from Funnel Leads? This removes their details from this list.')) return;
+  try{
+    await b2Del('/api/funnel-leads', id);
+    B3.funnelLeads = B3.funnelLeads.filter(x => x.id !== id);
+    showToast('Lead deleted');
+    renderFunnelLeads();
+  }catch(e){ showToast('Could not delete: ' + e.message); }
 }
 
 /* ---------- Candidate pool: source and consent ---------- */
@@ -13936,7 +14024,7 @@ async function tpReviewed(id){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '8 Oct 2026 - build 13';
+var PAGE_BUILD = '8 Oct 2026 - build 14';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -13947,12 +14035,12 @@ function buildTagApply(){
     tag.style.cssText = 'font-size:10.5px;color:#999;margin-left:10px;white-space:nowrap;';
     chip.appendChild(tag);
   }
-  tag.textContent = 'Page build 13';
+  tag.textContent = 'Page build 14';
   tag.title = 'Page: ' + PAGE_BUILD;
   b2Api('/api/version').then(function(j){
-    tag.textContent = 'Page build 13 | Server ' + serverBuildLabel(j.build);
+    tag.textContent = 'Page build 14 | Server ' + serverBuildLabel(j.build);
     tag.title = 'Page: ' + PAGE_BUILD + ' | Server: ' + j.build;
-  }).catch(function(){ tag.textContent = 'Page build 13 | Server older'; });
+  }).catch(function(){ tag.textContent = 'Page build 14 | Server older'; });
 }
 (function(){
   const _si = signIn;

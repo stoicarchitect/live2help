@@ -230,6 +230,7 @@ const PUBLIC_API = [
   { method: 'POST', re: /^\/api\/login$/ },
   { method: 'POST', re: /^\/api\/applications\/[^/]+$/ },
   { method: 'POST', re: /^\/api\/talent-pool$/ },
+  { method: 'POST', re: /^\/api\/funnel-lead$/ },
   { method: 'POST', re: /^\/api\/claude$/ },
   { method: 'GET', re: /^\/api\/public\/roles(\/[a-z0-9-]+)?$/ },
   { method: 'GET', re: /^\/api\/health$/ },
@@ -4493,6 +4494,179 @@ makeSimpleTable({
   label: 'Referral',
   auditType: 'referral',
   auditName: o => `${o.referred_name} referred by ${o.referrer_name}`,
+});
+
+
+/* ---------- Hiring Toolkit funnel leads ----------
+   Public page: careers.live2helprecruitment.co.uk/hire. Each visitor who passes step 1 is one row, keyed by
+   email and updated as they finish each step. Dashboard tab: Funnel Leads (Clients group).
+   On completion: the company is added to Lead Clients if it is new, a follow-up task is created for Ella,
+   the visitor is emailed their Hiring Report and Dan is alerted. */
+
+const funnelLeadsTable = makeSimpleTable({
+  tab: 'Funnel Leads',
+  header: ['id', 'date', 'name', 'email', 'company', 'role', 'salary', 'weeks', 'net_per_week', 'total_cost', 'process_score', 'offer_score', 'offer_risk', 'top_gaps', 'stage', 'source', 'status', 'notes', 'consent', 'created_at', 'report_sent', 'task_created'],
+  path: '/api/funnel-leads',
+  label: 'Funnel lead',
+  auditType: 'funnel_lead',
+  auditName: o => `${o.name} - ${o.company}`,
+});
+
+function flNum(v, min, max) { const n = Number(v); return Number.isFinite(n) ? String(Math.min(max, Math.max(min, Math.round(n)))) : ''; }
+function flGbp(n) { const v = Number(n) || 0; return (v < 0 ? '-' : '') + '£' + Math.round(Math.abs(v)).toLocaleString('en-GB'); }
+function flEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function flNextWorkingDay() {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + 1);
+  while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+const FL_STAGE_ORDER = { cost: 1, process: 2, complete: 3 };
+
+function flReportEmail(o, pri) {
+  const gold = '#C9A24C', navy = '#0B0B18', line = '#2C2C4C';
+  const items = pri.map((p, i) => `<tr><td style="padding:10px 0;border-top:1px solid ${line};"><div style="font-weight:700;color:#F3F1EA;">${i + 1}. ${flEsc(p.t)}</div><div style="color:#B4B8C4;font-size:14px;">${flEsc(p.x)}</div></td></tr>`).join('');
+  return `<div style="background:${navy};padding:24px;font-family:'DM Sans',Arial,sans-serif;color:#F3F1EA;">
+  <div style="max-width:560px;margin:0 auto;">
+    <div style="color:${gold};letter-spacing:.14em;font-size:12px;text-transform:uppercase;font-weight:700;">Live 2 Help - Your Hiring Report</div>
+    <h1 style="font-size:24px;margin:10px 0 2px;color:#F3F1EA;">${flEsc(o.role || 'Your vacancy')} - ${flEsc(o.company)}</h1>
+    <p style="color:#B4B8C4;margin:0 0 18px;">Hi ${flEsc(String(o.name).split(' ')[0])}, here is your report from the UK Hiring Toolkit.</p>
+    <div style="border:1px solid ${gold};border-radius:8px;padding:16px;background:#1B1B38;">
+      <div style="color:#B4B8C4;font-size:13px;">Net cost of leaving the role empty</div>
+      <div style="font-size:34px;font-weight:700;color:#E4CB8A;">${flGbp(o.net_per_week)} a week</div>
+      <div style="color:#B4B8C4;font-size:14px;">${flGbp(o.total_cost)} over ${flEsc(o.weeks)} weeks, including hiring costs</div>
+    </div>
+    <table role="presentation" width="100%" style="margin-top:14px;"><tr>
+      <td style="padding:12px;border:1px solid ${line};border-radius:6px;"><div style="color:#B4B8C4;font-size:12px;">HIRING PROCESS</div><div style="font-size:26px;font-weight:700;color:#E4CB8A;">${flEsc(o.process_score)}/100</div></td>
+      <td width="12"></td>
+      <td style="padding:12px;border:1px solid ${line};border-radius:6px;"><div style="color:#B4B8C4;font-size:12px;">YOUR OFFER</div><div style="font-size:26px;font-weight:700;color:#E4CB8A;">${flEsc(o.offer_score)}/100</div><div style="color:#B4B8C4;font-size:12px;">Counter-offer risk: ${flEsc(o.offer_risk)}</div></td>
+    </tr></table>
+    ${items ? `<h2 style="font-size:16px;color:${gold};margin:22px 0 4px;">Your top priorities</h2><table role="presentation" width="100%">${items}</table>` : ''}
+    <p style="margin:22px 0 6px;">Want a recruiter to fix this for you? Reply to this email or call Ella on 07434 351996 for a 15 minute chat, no obligation.</p>
+    <p style="color:#B4B8C4;font-size:12px;margin-top:22px;">Live 2 Help Recruitment Ltd, Company No. 11731080. You received this because you completed the UK Hiring Toolkit. Reply to ask us to delete your details.</p>
+  </div></div>`;
+}
+
+app.post('/api/funnel-lead', async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (tpClean(b.website, 200)) return res.json({ ok: true }); // hidden field filled in: a bot, say nothing
+    const ip = tpClientIp(req);
+    if (!tpAllow('fl:ip:' + ip, 40, 60 * 60 * 1000)) return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+    const name = tpClean(b.name, 80), email = tpClean(b.email, 120).toLowerCase(), company = tpClean(b.company, 120);
+    if (name.length < 2 || company.length < 2 || !/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(email)) {
+      return res.status(400).json({ error: 'Please check your name, email and company.' });
+    }
+    if (b.consent !== true) return res.status(400).json({ error: 'Consent is needed to send your report.' });
+    if (!tpAllow('fl:em:' + email, 12, 24 * 3600 * 1000)) return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+
+    const stage = FL_STAGE_ORDER[b.stage] ? b.stage : 'cost';
+    const id = 'fl-' + crypto.createHash('sha1').update(email).digest('hex').slice(0, 12);
+    const existing = (await funnelLeadsTable.list()).find(o => o.id === id) || null;
+    const ex = existing || {};
+    const cost = b.cost || {}, proc = b.process || {}, off = b.offer || {};
+    const pri = (Array.isArray(b.priorities) ? b.priorities : []).slice(0, 3).map(p => ({ t: tpClean(p && p.t, 80), x: tpClean(p && p.x, 260) })).filter(p => p.t);
+    const nowIso = new Date().toISOString();
+
+    const obj = {
+      ...ex,
+      id,
+      date: ex.date || todayISO(),
+      name, email, company,
+      role: tpClean(cost.role, 80) || ex.role || '',
+      salary: flNum(cost.salary, 0, 2000000) || ex.salary || '',
+      weeks: flNum(cost.weeks, 1, 104) || ex.weeks || '',
+      net_per_week: cost.netPerWeek !== undefined ? flNum(cost.netPerWeek, -10000000, 10000000) : (ex.net_per_week || ''),
+      total_cost: cost.total !== undefined ? flNum(cost.total, -100000000, 100000000) : (ex.total_cost || ''),
+      process_score: proc.score != null ? flNum(proc.score, 0, 100) : (ex.process_score || ''),
+      offer_score: off.score != null ? flNum(off.score, 0, 100) : (ex.offer_score || ''),
+      offer_risk: ['Low', 'Medium', 'High'].includes(off.risk) ? off.risk : (ex.offer_risk || ''),
+      top_gaps: pri.length ? pri.map(p => p.t).join('; ') : (ex.top_gaps || ''),
+      stage: (FL_STAGE_ORDER[ex.stage] || 0) > FL_STAGE_ORDER[stage] ? ex.stage : stage,
+      source: tpClean(b.source, 120) || ex.source || '',
+      status: ex.status || 'new',
+      notes: ex.notes || '',
+      consent: 'Yes',
+      created_at: ex.created_at || nowIso,
+      report_sent: ex.report_sent || '',
+      task_created: ex.task_created || '',
+    };
+
+    const justCompleted = stage === 'complete' && ex.stage !== 'complete';
+    if (stage === 'complete' && (obj.status === 'new' || !obj.status)) {
+      if ((Number(obj.process_score) || 100) < 55 || (Number(obj.offer_score) || 100) < 50) obj.status = 'hot';
+    }
+
+    if (justCompleted) {
+      // 1. New company goes onto the Lead Clients list so it shows up in the Cold Call Tracker
+      try {
+        const [leads, clients] = await Promise.all([readLeadClientRows(), readClientRows()]);
+        const known = new Set([...leads, ...clients].map(r => String((r && r[1]) || '').trim().toLowerCase()).filter(Boolean));
+        if (!known.has(company.toLowerCase())) {
+          const sheets = getSheetsClient();
+          await sheets.spreadsheets.values.append({
+            spreadsheetId: CLIENT_SHEET_ID, range: LEAD_CLIENT_RANGE, valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS',
+            requestBody: { values: [clientToRow({ timestamp: nowIso, company, address: '', postcode: '', contactName: name, jobTitle: '', email, phone: '', folderCreated: 'No', notes: 'Added from the Hiring Toolkit' })] },
+          });
+        }
+      } catch (e) { console.error('Funnel lead: could not add Lead Client:', e.message); }
+
+      // 2. Follow-up task for Ella, next working day
+      if (!obj.task_created) {
+        try {
+          const task = {
+            id: `task-fl-${Date.now()}`, user: 'ella',
+            title: `Follow up Hiring Toolkit lead: ${name}, ${company}`,
+            priority: obj.status === 'hot' ? 'High' : 'Medium', dueDate: flNextWorkingDay(),
+            context: `${obj.role || 'Role'}: ${flGbp(obj.net_per_week)} a week net vacancy cost. Process ${obj.process_score}/100, offer ${obj.offer_score}/100 (${obj.offer_risk} counter-offer risk). Email ${email}. See the Funnel Leads tab.`,
+            status: 'Open', recurring: 'none', archived: false,
+          };
+          const sheets = getSheetsClient();
+          await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: TASKS_RANGE, valueInputOption: 'RAW', requestBody: { values: [taskToRow(task)] } });
+          obj.task_created = 'Yes';
+        } catch (e) { console.error('Funnel lead: could not create task:', e.message); }
+      }
+
+      // 3. Email the visitor their report
+      if (!obj.report_sent && process.env.BREVO_SENDER_EMAIL) {
+        try {
+          await emailTransporter.sendMail({
+            from: process.env.BREVO_SENDER_EMAIL, to: email, replyTo: 'ella@live2helprecruitment.co.uk',
+            subject: `Your Hiring Report: ${obj.role || 'your vacancy'}`, html: flReportEmail(obj, pri),
+          });
+          obj.report_sent = 'Yes';
+        } catch (e) { console.error('Funnel lead: report email failed:', e.message); }
+      }
+
+      // 4. Alert Dan
+      try {
+        await emailTransporter.sendMail({
+          from: process.env.BREVO_SENDER_EMAIL, to: process.env.LEAD_ALERT_TO || dansInbox(),
+          subject: `${obj.status === 'hot' ? 'HOT lead' : 'New lead'} from the Hiring Toolkit: ${name}, ${company}`,
+          text: `${name} (${email}) at ${company} finished the Hiring Toolkit.\nRole: ${obj.role}\nNet cost: ${flGbp(obj.net_per_week)} a week, ${flGbp(obj.total_cost)} over ${obj.weeks} weeks\nProcess score: ${obj.process_score}/100\nOffer score: ${obj.offer_score}/100 (${obj.offer_risk} counter-offer risk)\nTop gaps: ${obj.top_gaps}\nSource: ${obj.source || 'direct'}\n\nA follow-up task has been created for Ella. See the Funnel Leads tab on the dashboard.`,
+        });
+      } catch (e) { console.error('Funnel lead: alert email failed:', e.message); }
+    }
+
+    await funnelLeadsTable.upsert(obj);
+    auditLog('website', 'funnel_lead', 'lead', `${name} - ${company}`, stage);
+
+    // Benchmarks appear only once there is real data to compare against
+    const out = { ok: true };
+    if (stage === 'complete') {
+      try {
+        const all = (await funnelLeadsTable.list()).filter(o => o.id !== id && o.stage === 'complete');
+        if (all.length >= 30) {
+          const pct = (key, mine) => { const vals = all.filter(o => o[key] !== '' && o[key] != null).map(o => Number(o[key])).filter(n => Number.isFinite(n)); return vals.length ? Math.round(vals.filter(v => v < mine).length / vals.length * 100) : null; };
+          out.bench = { process: pct('process_score', Number(obj.process_score)), offer: pct('offer_score', Number(obj.offer_score)) };
+        }
+      } catch (e) { /* benchmarks are optional */ }
+    }
+    res.json(out);
+  } catch (e) {
+    console.error('POST /api/funnel-lead error:', e);
+    res.status(500).json({ error: 'Something went wrong saving your details. Please try again.' });
+  }
 });
 
 /* ---------- GDPR: consent, retention review, export and erase ---------- */
@@ -9070,7 +9244,7 @@ app.post('/api/talent-pool/reconsent/run', requireAdmin, async (req, res) => {
 });
 
 // Lets the dashboard show which server version is live
-const SERVER_BUILD = '8 Oct 2026 - build 12';
+const SERVER_BUILD = '8 Oct 2026 - build 13';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

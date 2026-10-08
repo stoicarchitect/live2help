@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Free UK hiring toolkit: cost your vacancy, score your hiring process and rate your offer in about four minutes. Built by Live 2 Help Recruitment.">
+<meta property="og:title" content="What is your open vacancy really costing you?">
+<meta property="og:description" content="A free four minute Hiring Toolkit for UK employers. Every line of the working is shown.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://careers.live2helprecruitment.co.uk/hire">
+<meta name="theme-color" content="#0B0B18">
+<title>Hiring Toolkit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Poppins:wght@300;500;700&display=swap" rel="stylesheet">
+<style>
+/* Layout: a hero that is the first question (three inputs), then a live reveal screen (count-up, waterfall, weeks slider with cost chart, refinable assumptions, full working, one lead gate), then one-question-per-screen quizzes, then a shareable scorecard. Navy and gold, single dark look by choice. */
+:root{
+  --navy:#0B0B18; --navy-2:#13132A; --navy-3:#1B1B38; --line:#2C2C4C;
+  --gold:#C9A24C; --gold-soft:#E4CB8A; --text:#F3F1EA; --mute:#B4B8C4;
+  --good:#5BBE8A; --warn:#E3AE48; --bad:#E8685A;
+  --display:'Poppins',system-ui,sans-serif; --body:'DM Sans',system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{background:var(--navy);color:var(--text)}
+body{margin:0;font-family:var(--body);font-size:16px;line-height:1.6;padding-inline:16px;padding-block:0 48px}
+.wrap{max-width:980px;margin-inline:auto}
+a{color:var(--gold-soft)}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance}
+.eyebrow{font-family:var(--display);font-weight:500;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold)}
+
+.top{display:flex;align-items:center;gap:12px;padding-block:20px}
+.top img{width:40px;height:auto}
+.top b{font-family:var(--display);font-weight:500;letter-spacing:.14em;font-size:13px;text-transform:uppercase}
+.top span{margin-left:auto;color:var(--mute);font-size:13px}
+
+/* hero */
+.hero{display:grid;grid-template-columns:1.1fr 1fr;gap:34px;align-items:start;padding-block:20px 30px}
+.hero h1{font-size:clamp(30px,5.4vw,54px);font-weight:700;line-height:1.08;margin-block:14px 16px}
+.hero h1 em{font-style:normal;color:var(--gold)}
+.hero p.lead{color:var(--mute);max-width:50ch;margin:0 0 18px;font-size:17px}
+.proof{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--mute);font-size:13px;margin:0;padding:0;list-style:none}
+.proof li::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--gold);margin-right:8px;vertical-align:middle}
+.start{background:var(--navy-2);border:1px solid var(--line);border-top:3px solid var(--gold);border-radius:8px;padding:clamp(18px,3vw,26px);min-width:0}
+.start h2{font-size:20px;margin-bottom:4px}
+.start .sub{color:var(--mute);font-size:14px;margin:0 0 16px}
+
+/* tracker */
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;list-style:none;padding:0;margin:0 0 18px}
+.steps li{padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--navy-2);min-width:0;font-size:13px;color:var(--mute);display:flex;flex-direction:column;gap:2px}
+.steps li b{font-family:var(--display);font-weight:500;font-size:11px;letter-spacing:.12em;text-transform:uppercase}
+.steps li.done{color:var(--text);border-color:var(--gold)}
+.steps li.done b::after{content:' - done';color:var(--gold)}
+.steps li.cur{background:var(--gold);border-color:var(--gold);color:var(--navy)}
+.steps li.cur b{color:#3a2f12}
+
+.panel{background:var(--navy-2);border:1px solid var(--line);border-radius:8px;padding:clamp(18px,4vw,36px)}
+.panel h2{font-size:clamp(22px,3.4vw,30px);font-weight:700;margin-bottom:6px}
+.panel .lede{color:var(--mute);margin:0 0 22px;max-width:64ch}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+label,.lbl{font-size:13px;color:var(--gold-soft);font-weight:500}
+.hint{font-size:12px;color:var(--mute);margin:0}
+input[type=text],input[type=email],input[type=number],select{width:100%;font:inherit;color:var(--text);background:var(--navy);border:1px solid var(--line);border-radius:5px;padding:12px;min-width:0}
+input:focus,select:focus{border-color:var(--gold);outline:none}
+input[type=range]{width:100%;accent-color:var(--gold);margin:6px 0}
+.btn{font-family:var(--display);font-weight:500;font-size:15px;background:var(--gold);color:var(--navy);border:0;border-radius:5px;padding:14px 22px;cursor:pointer}
+.btn:hover{background:var(--gold-soft)}
+.btn[disabled]{opacity:.6;cursor:default}
+.btn.ghost{background:transparent;color:var(--gold-soft);border:1px solid var(--line)}
+.btn.ghost:hover{border-color:var(--gold)}
+.btn.wide{width:100%}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:20px}
+.note{font-size:13px;color:var(--mute)}
+.err{color:var(--bad);font-size:13px;margin-top:10px;min-height:1em}
+.opts{display:flex;flex-wrap:wrap;gap:8px}
+.opt{position:relative}
+.opt input{position:absolute;opacity:0;inset:0;cursor:pointer;margin:0}
+.opt span{display:block;padding:9px 14px;border:1px solid var(--line);border-radius:999px;font-size:14px;background:var(--navy)}
+.opt input:checked + span{background:var(--gold);border-color:var(--gold);color:var(--navy);font-weight:500}
+.opt input:focus-visible + span{outline:2px solid var(--gold-soft);outline-offset:2px}
+
+/* reveal */
+.reveal-head{display:grid;grid-template-columns:1.2fr 1fr;gap:24px;align-items:end}
+.bignum{font-family:var(--display);font-weight:700;font-size:clamp(40px,9vw,76px);line-height:1;color:var(--gold-soft);font-variant-numeric:tabular-nums;margin:6px 0 8px}
+.bignum small{font-size:.32em;font-weight:500;color:var(--mute);margin-left:8px}
+.reveal-head p{margin:0;color:var(--mute)}
+.reveal-head p b{color:var(--text);font-weight:500}
+.alreadybox{background:var(--navy);border:1px solid var(--bad);border-radius:8px;padding:14px 16px}
+.alreadybox small{display:block;color:var(--mute);font-size:12px}
+.alreadybox b{font-family:var(--display);font-size:24px;color:var(--bad);font-variant-numeric:tabular-nums}
+.sec{margin-top:30px;padding-top:24px;border-top:1px solid var(--line)}
+.sec h3{font-size:18px;margin-bottom:4px}
+.sec .note{margin:0 0 12px}
+
+.wf{display:grid;gap:10px}
+.wf .r{display:grid;grid-template-columns:minmax(0,170px) minmax(0,1fr) 84px;gap:12px;align-items:center;font-size:14px}
+.wf .tr{height:16px;background:var(--navy);border-radius:4px;overflow:hidden;border:1px solid var(--line)}
+.wf .tr i{display:block;height:100%;width:0;background:var(--gold);transition:width .7s cubic-bezier(.2,.7,.2,1)}
+.wf .r.minus .tr i{background:var(--good)}
+.wf .r.net .tr i{background:var(--gold-soft)}
+.wf .r.net{font-weight:700;padding-top:8px;border-top:1px solid var(--line)}
+.wf .v{text-align:right;font-variant-numeric:tabular-nums}
+.wf small{display:block;color:var(--mute);font-size:12px;font-weight:400}
+
+.slidebox{background:var(--navy);border:1px solid var(--line);border-radius:8px;padding:18px}
+.slidebox .top2{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:baseline}
+.slidebox .wk{font-family:var(--display);font-weight:700;font-size:22px}
+.slidebox .tot{font-family:var(--display);font-weight:700;font-size:22px;color:var(--gold-soft);font-variant-numeric:tabular-nums}
+.chart{width:100%;height:auto;display:block;margin-top:8px}
+.chart .ax{fill:var(--mute);font-size:11px;font-family:var(--body)}
+.chart .gl{stroke:var(--line);stroke-width:1}
+.chart .b0{fill:var(--line)}
+.chart .b1{fill:var(--gold)}
+.chart .b2{fill:var(--bad)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--mute);margin-top:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:middle}
+.savebox{margin-top:12px;padding:12px 14px;border-radius:6px;background:var(--navy-2);border:1px solid var(--good);font-size:14px}
+.savebox b{color:var(--good);font-family:var(--display)}
+
+details.adv{border:1px solid var(--line);border-radius:6px;background:var(--navy)}
+details.adv summary{cursor:pointer;padding:12px 14px;font-weight:500;color:var(--gold-soft);font-size:14px}
+details.adv .in{padding:4px 14px 16px}
+.work{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px}
+.work th{font-family:var(--display);font-weight:500;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+.work td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
+.work td.n,.work th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.work tr.sub td{color:var(--mute)}
+.work tr.tot td{font-weight:700;color:var(--gold-soft);border-bottom:0}
+.work small{display:block;color:var(--mute);font-size:12px}
+.scroll{overflow-x:auto}
+.box{margin-top:18px;padding:14px 16px;border:1px dashed var(--line);border-radius:6px;font-size:14px;color:var(--mute)}
+.box b{color:var(--text);font-weight:500}
+.box ul{margin:6px 0 0;padding-left:20px}
+
+.gate{margin-top:30px;border:1px solid var(--gold);border-radius:8px;padding:clamp(16px,3vw,26px);background:var(--navy-3)}
+.gate h3{font-size:20px;margin-bottom:4px}
+.gate p{margin:0 0 16px;color:var(--mute);font-size:15px}
+.gate .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.consent{display:flex;gap:10px;align-items:flex-start;margin-top:14px;font-size:13px;color:var(--mute)}
+.consent input{margin-top:4px;accent-color:var(--gold)}
+
+/* quiz, one question per screen */
+.qbar{height:4px;background:var(--line);border-radius:2px;overflow:hidden;margin-block:4px 18px}
+.qbar i{display:block;height:100%;background:var(--gold);width:0;transition:width .3s}
+.qmeta{display:flex;justify-content:space-between;gap:12px;align-items:center;font-size:13px;color:var(--mute);flex-wrap:wrap}
+.pill{font-family:var(--display);font-weight:500;color:var(--gold-soft);border:1px solid var(--line);border-radius:999px;padding:3px 12px;font-variant-numeric:tabular-nums}
+.bigq{font-size:clamp(20px,3.6vw,28px);font-weight:700;margin:18px 0 20px;line-height:1.25}
+.choices{display:grid;gap:10px}
+.choice{all:unset;box-sizing:border-box;cursor:pointer;padding:16px 18px;border:1px solid var(--line);border-radius:8px;background:var(--navy);font-size:16px;display:flex;justify-content:space-between;gap:12px;align-items:center}
+.choice:hover{border-color:var(--gold)}
+.choice:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.choice.on{background:var(--gold);border-color:var(--gold);color:var(--navy);font-weight:500}
+.backl{all:unset;cursor:pointer;color:var(--mute);font-size:13px;margin-top:14px;display:inline-block;text-decoration:underline}
+.backl:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+.score{display:flex;gap:22px;align-items:center;flex-wrap:wrap}
+.ring{--p:0;--c:var(--gold);width:112px;height:112px;border-radius:50%;background:conic-gradient(var(--c) calc(var(--p)*1%),var(--line) 0);display:grid;place-items:center;flex:none}
+.ring b{width:86px;height:86px;border-radius:50%;background:var(--navy-2);display:grid;place-items:center;font-family:var(--display);font-size:28px;font-variant-numeric:tabular-nums}
+.card .ring b{background:var(--navy-3)}
+.band{font-family:var(--display);font-weight:700;font-size:22px}
+.g{color:var(--good)}.w{color:var(--warn)}.b{color:var(--bad)}
+.list{list-style:none;padding:0;margin:0;display:grid;gap:10px}
+.list li{display:grid;grid-template-columns:auto 1fr;gap:12px;padding:12px 14px;background:var(--navy);border:1px solid var(--line);border-radius:6px}
+.list li b{display:block;font-weight:500}
+.list li span{color:var(--mute);font-size:14px}
+.dot{width:12px;height:12px;border-radius:50%;margin-top:7px}
+.dot.g{background:var(--good)}.dot.b{background:var(--bad)}.dot.w{background:var(--warn)}
+
+/* build screen and scorecard */
+.build{display:grid;gap:12px;padding-block:24px}
+.build div{display:flex;gap:12px;align-items:center;font-family:var(--display);font-weight:500;opacity:.25;transition:opacity .3s}
+.build div.on{opacity:1}
+.build i{width:18px;height:18px;border-radius:50%;border:2px solid var(--gold);display:grid;place-items:center;font-style:normal;font-size:11px;color:var(--navy)}
+.build div.on i{background:var(--gold)}
+.card{background:var(--navy-3);border:1px solid var(--gold);border-top-width:5px;border-radius:10px;padding:clamp(18px,4vw,34px)}
+.card .hd{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.card .hd img{width:44px;height:auto}
+.card .hd b{font-family:var(--display);font-weight:500;letter-spacing:.14em;font-size:12px;text-transform:uppercase;color:var(--gold)}
+.card .hd span{margin-left:auto;color:var(--mute);font-size:13px}
+.card h2{font-size:clamp(20px,3.4vw,28px);margin-block:16px 2px}
+.card .who{color:var(--mute);margin:0}
+.card .cost{margin-top:18px;padding-block:16px;border-block:1px solid var(--line)}
+.card .cost .bignum{font-size:clamp(34px,7vw,56px)}
+.card .rings{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px}
+.card .rings .score{flex-wrap:nowrap;gap:14px}
+.card .rings .lbl2{font-size:12px;color:var(--mute);letter-spacing:.1em;text-transform:uppercase}
+.card h3.pri{font-size:15px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);margin:22px 0 10px;font-weight:500}
+.card .foot{margin-top:20px;padding-top:14px;border-top:1px solid var(--line);color:var(--mute);font-size:13px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.cta{margin-top:26px;background:var(--navy);border:1px solid var(--gold);border-radius:8px;padding:20px;display:flex;gap:18px;justify-content:space-between;align-items:center;flex-wrap:wrap}
+.cta p{margin:0;max-width:52ch}
+.cta strong{font-family:var(--display);font-weight:500}
+.rep h3.sec2{font-size:18px;margin:28px 0 12px}
+
+footer{margin-top:40px;padding-top:22px;border-top:1px solid var(--line);color:var(--mute);font-size:13px;display:grid;gap:6px}
+footer b{color:var(--text);font-family:var(--display);font-weight:500}
+
+@media (max-width:860px){.hero{grid-template-columns:1fr}.reveal-head{grid-template-columns:1fr}}
+@media (max-width:620px){
+  .grid2,.gate .grid3,.card .rings{grid-template-columns:1fr}
+  .steps{grid-template-columns:repeat(2,1fr)}
+  .wf .r{grid-template-columns:minmax(0,1fr) 84px}
+  .wf .r .tr{grid-column:1/-1;order:3}
+  .top span{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <img alt="Live 2 Help" id="logoimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAABzCAYAAABTo8YRAAABCGlDQ1BJQ0MgUHJvZmlsZQAAeJxjYGA8wQAELAYMDLl5JUVB7k4KEZFRCuwPGBiBEAwSk4sLGHADoKpv1yBqL+viUYcLcKakFicD6Q9ArFIEtBxopAiQLZIOYWuA2EkQtg2IXV5SUAJkB4DYRSFBzkB2CpCtkY7ETkJiJxcUgdT3ANk2uTmlyQh3M/Ck5oUGA2kOIJZhKGYIYnBncAL5H6IkfxEDg8VXBgbmCQixpJkMDNtbGRgkbiHEVBYwMPC3MDBsO48QQ4RJQWJRIliIBYiZ0tIYGD4tZ2DgjWRgEL7AwMAVDQsIHG5TALvNnSEfCNMZchhSgSKeDHkMyQx6QJYRgwGDIYMZAKbWPz9HbOBQAAAt2ElEQVR42u2deZxlVXXvv2vvc++t6m6asSGCDTKIitIgiJAoigOOKIJEZBCDQ9QkxCcvgjFRMSqoUQbFqAxRohhjoijysFUg2iqOZEBEQJqhQZuhh6quqjucs/de74+9z7nndjXdt5qqxrxX58P9dFdz69x79tp7Db/1W2sJoMxf/89eZn4J5gU8f80LeP6aF/D8NS/g+WtewPPXvIDnr3kBzwt4/poX8Pw1L+D567G/si2+QwSjEIDnPOfpnHzi8yjyAkFRFIKiqqjE9woS942AKgTV6j6CIGKQjT5CCfHfROIL4i+jCKB4CAHRAARCcOlnBRG8BlBFEKwxqAZUAxIEgiJWWP3wFJ++7HrGJscBQVXZb7/9eOtb30pmhXQrQnqe+J1Jn098RgVjBCXgnCN4H39J42eGEF8aIISQHkPT//P44PDO4bwn+EDQ+HyooiHE96KgSqj+rVw+xWYNvrfiR9x6620Mm0LYgoAFND4QwLIDH89b/uwPoTNePnZcAZHanzatjImv6lYmKQxTbYBSvKSHisJVIICWLx9f3kFw8U+v8e8hCjb+HNIzB8CDF/ABTKDbUV5/5tcZm5wAaaGhx9KlS7niiitYduCBOJcjIrU9LdXPqkrQMCB4xVMUBd77JFTFO0/hHM4VUYhFgfcO5zzeOwqXUxQ5hStQ5wnex00S4mZ0vsA7X91TVfEhoGmjCNBotfjlr37FTPJD2UyOu9UCOmNoewJVjfIwJp5eI7UTaFAxlaBFylMtoBlgBwRcLlxc0yhUxSPqUfUQHBocEjwaPOJB1SNBQdMihICmn40zSMgh6zK2ocVbzrqGf/v27XFvBceSJUu49NJLecpTnsLk1CSSFiw+k2xCwFqdSICgrhJOKRDnHN5HAfmioHA5zrn07y4Ju8AVOeo93jm8SxtEA86n3w8e9Ukb+JBUSDpAzgx8j1kQcDxdGleGDJNOtI2qBBAVEIVQCtogYhEx6feSoImqDBEUScKU2uek51AbN4WSPkNBbVTHGj/KaLIZ6iGY6sATNN4Ei2koE8UIf/nX3+Dfvv1rxAgalO22255P/8OnOfyIw2lPtTFm0yd34Gftb4D4rQUxgqhgjBnYGMYIwRgEi6AYUQKKEBCxGJPhNS2LFVQCeI8RRUVQEQI+KcTy+8QtaE0zaUhm+wTHh3bBR5sWtK8lDCAeRDHBRvVoFEKWTrWWS5IWSRCTFgRNVja9L2nooGlrhGi7qGxq/NyQ7ggWCJX9Vwnxjg2hxyLe8XdXceW1/x01Sgi0mk0uuOBCXvDCF9BpdxCJtjeaD61tOKleIiDqB060MRar/TWI/2aSaq1ZKJusWNJgRjKMUGk8VUHVowY0aLJ0STMKaddK+i+uj5l1J2szAgchiCLaQEJATB5vqVJzuGx8UomnX8T2T7Uk0dcfSEI8oSiQEferA7WUb1QTj7IoqCRVXfoAWLyBvz7n/3D5l34BxkLwNBoNPvHJT3Liia+m3e5g7eBJKF2AUpB1Va0iycFLThMBI4IxluA9RszApqjrvxAAq4ixOKcgFjEBbxSMIgaCj05UPOum2mrGJotV+jqlRpsrAUtlY6WmvhUJGWICPd+i17PpNCpiAmI0OWmKkNR4egSR/oIoARGNp9pHJyTexsSd7k1SkRYTytUrVbLEkxICAeHjn/o+F11+YzpCBY1Gg7/927/lxBNPZMOGicqJqQuzVL/GmMHnZXBhS41d2twQlBA8RRHtraoSAjgXcC7a0RDA+0DwycyIRUqNJUTNI8lvMWnTa7nrQAj9Dazb5ARvtPXxMNri8s/+mE9+5jpEQwopQNOXUu2feu1HYBiRKCcN1Qkqww1b/lyGD+Xv6IDprnwQUSic5+5V6xGToZpDMJiG4V//9V/50pe+VAtdpgu0LtS+4yfJEUwWyUSphBCFG095/56SIgfvff8zJIVNCpKc0fL9ZVhUhmGHP/MwXnnsy+lpB68hKTZJGsP0w8jZE7AghBSBhKhPkkrUtKhqPMgCVj+wgdtu/+3vQXgv0S/QuAt6vR633HLL/whgYt9998FYg5j0CoqYDIi2v+4UzuIJrh2ZpN5KB4TS21XBzvDD5+6qOYH/wziF1saw0ohElS2h7/Ax8/WduQ3WEOPSpNoqO6Uhqp9tcT5rNnP6AlmyLENEKjBipvd4bAVsaTQyitygtq+6pzu4cyBgjdhjtLs1F161/LdtdD5VaTQa7Lvvvhx88ME8+clPZvfdd2eHHXZg4cKFtFojGCNMTU0xNjbGww+v4a67VnLbbbdxxx2/4f7775sxYLDNjEvyzq210TbbPnwqMusnWConAyUiRt6hwaeQJ4IXUqGNOuen9dBDD+XlL385Rx11FPvvvz/bL16MKhRFHuE+7wne4X1IXn6MdSPaVDA+Ps4dt9/BihUruP7661l5190bnQ5JcOdjJmGsNVUY53FYI/gQkBI1nM0TXCJlJE8X71DvEohh+m+aoxOhqmRZxjHHHMMb3/hGjjjiCEZHR8nznKIoaLfbaApVgvoI6vsihiUhAvreaxUajY6OcMghT+fQQw/hDW84nR//5Cd86Uv/zM9//ouNwI7HTL79E1xCo16xItH5mm0B16+gmrzopJ5NlL4gEMKs5B43DlMOPfRQzjnnHI466igA8jyn2+32szWl+yEGUT+geURiPGlKpCvd1/mC4D2joy1e8pKjed7zj2L5t77Npz/9We69995p32Hb+v9CZqOAq8/XuDmttTN2tMzMPryMe0vwtwT7PRAQmZ0Tq6qMjIxw9tlnc/XVV/Pc5z6XTqdDt9vd7KLrJjZL6ZGaCpkqI/F46rudLiF4jnnFy7j88kt5+ctfOhAnPyaOVpZhk5DLl0l/znocrJQghVYLU4HvIZRwcA30ePT2ds+le3LBBRdw9NFHk+c9Op3OZhwMRSUBBiKbEDIpo6VI8kjj15TahoL25BTbL96O9/ztu3nifvvyD5++hDzPExCj2/IIk9mMLGuCCkEiwhfUT4NXZyWbpDWzFJGUvhxFNwFqPUrhHvaMZ3DpJZey9xP2pttuR0y7Fn7pRpkd1T6UaKyN9zFS2VznfIRptJ/OLNVc5cClE+tcjvee17zmBFqtES644CKKotimp9cYQ5Y1yGyRYIeIzQc1ZFmGkTkMk7IsA2Nj6k0kZv8qT0ynS3yGNveQQw/hi1/8IrvtuhvdXrfv5NV2Tv0kx3ApI8sseZ4zPj7O+vXrmZqcxIfA6MgIO++8MwsWLEBVaypeKuFu7KWHECiKnGOOeSl53uPCiy5+1JppZnFwRqvVpMgjCcE5h2hMrJTx/Rxi0QLWIDZlPBI2WtFtdOuMsKrypCc9ic/94+fYbbfd6HV7A8mNTT1Tq9XCe88tt9zCd76znBtv/DErV65kfHwDRd5DNb5n990fx5Oe9CSe9aw/4rnPfS5Lliyh02kPACClzS1PfdwMbY455qXcddc9fOPqb267EyxCo9Gg2WxG4YrggyeoRAHPLlRZpjuikfUJ3DCYStUpNqL/YmJiYSuEu+MOO3DxJz7BXkv3pNvtDqhQqjRDX4U1my1+8IMfcPHFF3PDDTfQ7XY3ee9Ot8vY+Di3/vo2rvr6N9hz6VJOOfUUTjjh1SxatJBOp13mw5Jt7gvaOQ94TjrpNfzylpu56657k08685TdkO5r8m8EazOyRiNqSUCCIWig0WgiM4xVzEw+Pmj6FbGI6b8wMee7Nc6IiPD+953D4Yc9k263s0lVXPK0Go2MDRvGOfPMMzn22GO59tprH1G4m7pW3Xcf5533YV73utdz882/ZMHChQmsoUaa6/Os8rxg0aKFnHrKyVvl4Gwlio61GSbLyLKMrNkka2QJgm1U2ao5CZOsNZA14stkBJOh1kZVbcxWgQQveclLOOWUU6KnvJnfb7VGuPfee3nNa07k0ksvpSiKGduj8v233norb37zW/je977P6MiC6KUm8ptqGLDJeZ6z7KADOfigZSlcmHt7bG2GtSY6XAmbbjYbNBqNaenN2Y2DxYDNwGaoydLfyxNsZhyEL1y4kHe+86zK0dFNgekCzWaTu+++m5NPPiUhTmwVENF/v2FsbIyzz3oX//Vf/x2dR0pGRRigwAYNWGN44Qufv01QrhACxghGooCttQnZiid6pprEDKc2pA8kWINaC9aAtYi1qGlAZtEZEsJOePXxHHzwMnp5N8XbycmRMrYNGGNZv36MN73pzdx6669nURHC+vVjfOhD5zIxMQFEUl7wGtmZiZIrqnjv2X//J7LTzjvOoWLWJODoz1hrKoFG4TYwxs5Ygwx5gpOARcBkkTlpLWJNEnQz/jkD+zDSanHaaa/DuzxiyISBmBY0MheN8N73vo9f/OKmWV7QqLJ/+ctbuP76G8iyrA+CqNZcTCFoYPHixey3797bJJtkTTR7JYpVCjqzjZl75cPtLEkuvAWTIWKjipYsOlo2/rvOQOMf+ZwjedrTnkav1+vbPsKAzzwyMsLy5cu58sor5yyRAbBixQ+mwZMDsTdC1sjYb7/9hrLxI60RFi5cxKJFi1iwYCELFy5k8eLFQ6lXkSRY0xduFHBG1sjSKZ71OLhEjeIJVpsl2l8KG1IVw0yUx3HHHYe1ljxPhLx6pKDR/nQ6HS688EJCCHOaoF+5ciWdTmeA8yRltUYZJ4fArrvtusUN8+xnP5u/eueZlWEriiI9T8Y73/lX3HXXXVtc6/LE1stfjNGUhDCzLGDRCsDwgYRkpaxGGaeKBclqxLrNXzvvtBPPfOZhuLwXYcIKWUoWX5Vms8n1199Qqea5BP97vZh6bDayPsE+xfuKVkTA7RdvvxkTFgVw8sknseuSnSlcj5K9bUxGt5sP9Qwlx9oYU2mEEoAZyDDNBZJV8nPVCH0yAImeOnyucr/99mXXJUvwziWsu1/8VV+0r33tqm3CvNhll11ZsGABea+b0osRWIiVFGV9luK824yl8xxyyCEctOxpdDvtSBsus1diCMFVNV7DCLgUZh1OjSp+TtKFNS/amD6RnUFBDyvgAw44gNGRkWo3hoo2qtUDrl+/nhtvvHHOHRqAZcuW0Ww2p4H+dTVtjGHdurWbNWEnnHA8xsgmiiTjMw0TRsYwyQy8+ra4wZwS3zX0GX7lY9WrAYa99tprz0gJFcHQt62RcNYAVVasWMF9990356c3yzJe+MIXVppCytRirbLBGIMYYc2aRxJwYNmyZRx+xOERWUsZmOr0wdAARQiKsQZjTeRdVypZYsJfZtsGa1lDBD7EyoL+h+jWkO1ZusfjE8PfYGxGq9mkKAruvusufvjDH7J8+XJ+9vNf4Jybm5NLv+b3ZS97KQcffCCdzhQ2S0V1aqqyzTKZErxy2213POI9j37h82k1GnRcEdU6pZBBRfvctmFUtCS8X31VqCcSN5lqmP0TLFWd33Q4UlXiAxCGTqst2m47RkdH8MFz1933sGLFD1i+fDk33XQTGzZs2GaZm6cffBDv/ut3IaIRPTImlTFLBfSDYq3hd/c/wMo7H9kDbjQalUaqOBFS1ieV5afDaDol+ID6UKtHlhioILNdPjpdnVWEd/pqqK5etmj0jWFiaoovXHklX/3q1/jZz37O+Pj4NLs4l16zAns/4Qmcf/7H2XHHHel02qlqwGLEIsb3DZFGCs1PfvIT2u32ZvDj+Pt97RBicsb0VfWwVQnOuZgiTOFhZKpEJ0/nsjbJ1BIKfdSpFIYOJWCAd77zLNavX78FvHjursfvvkdkjey9N+12u8J5nXdJyFWpYXSu1q7lhhtu2OLalI7ZIwImQ9pPX2W1ki9gBA0SC8JnF8mqgqN0RD3gCMGjqepeQ4EGR+ydsWXhhBAq4Ypse4rqTjvtxCWXfJanPu0A8rxIJ89gxdIwDSzxFEZWsNBsNfn2t6/jd6sf3KJWqAgK1ApNtG+Lh3FWRAQN/ZYRkRKsAyHT7ApY6EOQvgDfRV0XXAdxXfA9xBXgXN8xmXF2Z9tcCxcu5DOf+Qx/9Kw/JM97VUrOpkIvayyZyciMxYjQajW54ze/4eprrt3ywpbedul9lxmh5CCpbkxdeGQB15klISVgygrL2afsaN/7Cxqg6CGuRKBSrb36SOXR389ykNJGnn/++bzqVccyPrY+JRcS/iyCzbJYzJ0ZjFpadgEPPfQwn7j400xMTG5xYa2JoY1tZHgRJPUNscR0qipDxcFSD6JrB0G2kkgyHGWnsruxn4QWqY1RKisVDWAMRn9/633OO+88Tj/9DXTa7Qo4KBcvqCLeI9ZisoyWhampNp/85Kf4zZ0rh9I2UoIjNqp48SnESoXSRnV4EKpKfGgV1PWRvjkBOlIhswYoPBQ+FTTH7I9RnzzI3yMB18LO97znbzjzHWfS7bQRCTUoELIstisy1mJCoGGETsfz8fMvZMUPfpjUaxjqA23K/JTGVwmISkVSHNZsaarU6G8q3WqqwXAClojLWlFwOb6IBWilXTAayBqt2PXm9+PIxo4+eN5x5tt433v/Ny6fxJSN1YwgxmKsID5grcX72Mej3W5z3nkf4Zprru1rrWEQKI3pVGuySBgwqcFM0KqQe+Y7dNBM9lkvcxQmgUBREFyR3Hif6h0C6oqhwPRtc3gNiueNp7+Gj3zkf6E8AGYhJltACFlMKMTqTKw1hBBVtnOOv//7j/GNb1w94/Rk3cM11gA2eigCJmtUGbOtjdwrL3ouBayqqHOE1MVNNSTEJ+CLYit26VxcBlXPscc+j09cfBbWPIz6BkYsKi3UZBFtIqpAGwTVuAwf+chH+PKX/2WrPPwQtOJaV140FqPxBGdZNhQeHVJ3u0ECQlkyxNwS3zV4XN6lKHpJRQeCRhgtClwfszMb05WRGXLkc57BpZedzWhrXexsIwsRemBzJDSwmoEBaxSyJlmmfOADH+SSSy7benQsOIJzaOpfacWiRjEIppEhPgydTdJaf0+SWq5+d3aRLK060sXGo56i16Eoun2ieBCC1dja7zHxovstdjQoz3zGMr74hb9myQ5j+Bw0G01k8SYiGYYWARsje9sgyzLOPfdDXHDBhY8O/gwhajfvEDWYLEKXWJNoNjK8lpzmTaczHKoahLmyweCLguB8QlhCJLyj+LyYMdAxWwKOrUMCTztgf/75yrPY8w8m8B2PmhZojpChdEANRkZQLMY2aNhRzjvvPM4999xH/S18ai7qnYt9sEKZ3pOKizW0htsoP14hXFuhIWdsg70L+CI23SwLS0IAZ5N62ubyDWgQlu7xOP7psjPYZ89JtO0RWRCDUa9gcsR0EyOlhcgCmo3tOP/8T3LOOefMimmJjUgjl9qI4HxArCfLbI33PVy6sOqFEkKVjg1lK0Mzq/lgGQgoVUPsf+GKqi+jIgQPPnPbrLGJ1LDfWNu0iEsv/FOe/kRBxxyhYSDLo3kJNrY7VBtPsunRyBpcfvnlnH322bP2nY2JfSd98AQgEyEEwXs/iJptMdzSqr9Xmc/Run2eS6ADDalFrk8YaUSyVDLUFzM3EI/CU0bigu24/Q5cduGf8fyDRwnja9HR7SBksXdm0QJTom05ajNstoArv/zPnHHGmThXDCIijzL0Lr8TEpuWew9iDd5nM1LPQUMskqmxOst+ZHMaBxsx/T7H+L5DYGId67aJgyPBABUWjozyD3//Bo47cmdCdwxtNgnaw/jYD1KlSO2HR5GsQEbh6quu50/fdBadTi/lWmbnO1dJfe13ASz9lAHP+FHArTr7WPT0bepDoHBFv+jbJE86+G0j4NTEs5k1+Pv3ns5xz1tC0V6LkSbqm+A0Ul3Ux9NrQDKF5g5877u/4Q1vfA/tqbKKcfa+b1HkVX9KqTlKZcVibPVUDHGfosot93liUt13juLgNDnBOwqXQI5SWSQmit8KtsHQ6rjCYiOIIVje847jOfWVu6EbuviGxRiPaI7kgWAbqDWQFbEV/mjGf/x8Ja877eOsXR8pQU/cfz+ecehhsX+1kGLoqBlCqmGRlNtVNM1n0BiqlIYxhZCCsP8Tn5hI7lCvBlEf4u8iHH/cq/rEvYourP2aLFUOOOCp1WfXHaqSbTrLJ1gHBRw8RdGLJ5h+UlsNsW2u17nSytWCiQrvOuNVvO2Ep6BT4+SNUWyIOWsNDuMB08NbRZxhZHSEm296iJPecDH3P7AGgF133ZXPf+4KDjroIIqiwDlPnrcp8i5FkVoDFwUujyGh8w7nYjeeCKj0u8WisRe09/H3rLUxJjaxS6wAoSgQY3jjn7y+KiYrS1DqXebL+xapsr/+OaXA55T4Hk+xjw8wAIlLmmEwF2FSPFUqFrTgL97wUs56w2GY3mqQjIDDaDQdpAaeEhR8Fzu6Hb+8fQ2vffM/csddDwCRHHfhBRewbNkyJicnq0YtRdElz3sUuaMoHEWeU3R7uCLOWihcNwE/FlLnG02TXkQaNQGE6T3hUtqwLI8pC7k3Fm6pmjF94Zantvz7nHKyIn00Og0+EcLKRu3lkIrZvzLAgxa85sV/yN+85XBM90FELZrl4DOC6dvmIA7RBs3GIm5fNcFpf3Ylv175ANAACt79rndxzCtewdTU1KAHXMOa+rYz1KaghMHqgmpQzPS2DiXFJgQly5IQk00tGRvG1OZBbDQnomwHtXH3+dhFaFYFPNiivuxqXpLCSoRURdIEEZ01nVxS61ViO6Gj//BpfOisZzPi1+GIxW7iRsF08Rp3vWJADa0WrB7r8tZ3fIX/um11eoaC1772jznjjLczNTWV0oAJBUs2s47ta4h54viKTVCESIjr9xCxqS9JlLb3JVoVy3isTTRXEWx9wEaKPoL2Z1cMNkqfziyNReFz1vE9nkznAs57XBGdrJJ0IMbgbaix8GdXQx91xP6c/67nsb0do3CjGKMoDsWjHozxsdMAYI1jzQbL2979NX7036uqhP1hzziUD37ggxSui/c+qjvqTXItQSVu0hDQZIpCmVQpN2/KeZs0cESCIOJj9xtVQjCJY63ViZVqAIdUnxdC7BxQTqFJI6rQkp/NdEamIDOGg2dImxUIZbv6fg5Ug8Nldsas+0f2mbUaBXDY0/bhove+mCWjk+AWoQ2H9wZfYrUGxBtsAVlDGesJb3//V1m+4u5Y0qqBffZ+Apdc8ll22WUXut1uRVLvN3SIPS29b6IhIK7AZwZVC8RhGibh3XWNWk5/UxUIsVBcpFZPnexneYqzrJkYnJHgZxKjEyOYzCZel90ke9IYSXnmubTB1XwFSYF9REklkbtnR0WbSuU95Qm7c9H7X8ZuC3qE3ihkXYIXfJB+wZpJY/GMsCEs4G8+/O988/o70qCE6NCceOKJ/Pa3v+XOO+8caCZWflsfFFe42KU2pfyKvKgainufiOhlvteYdFqjCgdoZBl77rWUZqsZiQRq+wQADEGVe++5naLw2CyrpsWZZFtN4nItWbKEffbZZ5qQNy4pnRMBh6DJydLBjjQaR71tvRfdr/4OiR60x64788kPvJp9dulQdAQ1XSQI6hsEzaPaFAEvNKzFZS3O++S/86/fvgXBVnyx4B0f//jHOe/DH9k44urbXCNlj6ho52oEdSnBFer+0EY3UGXh6Cgf/ei5PG73P8C5gmBC5axZtTjvef/ffZCVd9+TRvX0O7nXnbsXv+hFXH75ZQN1WWIMpmztMJcCjimxnOCLmqcZ6bQ91Udsnz+MIxedtWigdtlhOy58//E8da+cYjLgSGPriCPtVHycHqZNBIdvZFx8xX/y+a/+KvXS7A/kCAp54QYje52G8G8E9s/8OQof1XdwjuCVYMuhlBZPhg9K7nx14h/pyotiWuvGqhxGIMxl+Wg9bAghtjXwXnFByQiVCpupv1y3udstWMDF557KkQcq+USPXgAfiprXGwe/FWJpSk7DtPjMlb/kos/9FBVJ6PJj0OfZSH92oQ/YRAIIIZAJuM328uxrsLJ1oauBHdRi7Lmt8NeytDKWU5Y8pKDEEGErFlbLoU+asaDV4sK/ex3PP3QR3bUPk/tAN0yiztbmBoLRBla66GiLK666lQuu+BleBIwn+MduJHKZ9I++pq9sZzx5wyetvI+tFONcKVP5ON6HuW5GmpL+SbghzcmN0zlnmu2QPmaripGCD7z7RI47eicmV99P2xX08gJXKCF0q4FSiNBAaI60+Jflq/jo535MoYqlEWdVVvOStua7PLqrnIamIcbLZcIgSH9M7TBaMjp3RRWnl2U15WS1WRXwwBSD1Dy79KAjcmVQHCHIkGMbpN/YpQIJhLPf8WpOP/4AJh9YyVTu6HZz8iLH5z5O7swsRpqRfL9Quer7q/joZ35Mnsyrp6gQppmn4qLnfsQRzyRLHOnSx/DeV6h7o9Fg3bq13H7HHdM/RiCoxxc5Pkh0jKpBVlo99qY3lA5ogSLvRXZM2tQSQI3FFRlzO7uQjSZbB8WXw5OHVkEpByshDpwk8I4/O5l3ve0wJh64lalOTrfjyPOA98RUmxgIQgtHo9ng2z/6Hed+6ibahd+oI/vWnUJVz2mnncb73vse2u1JJsfGGBtbT7vTwSdv1toMHwIf+/gFj/gpqiGFVJKIfpqyVbGnydBtHJxHXVFO6EBM7PxubDHXyYZYo1rf4VU1uw5L7NZ6foo3nvZK3v+uI+muvp32xCSdXk6Rhxq2bZBgUekRRptcd9N6zv2H/2Qyz1MueutVa6lCjzzySN77nr/B5T18Hid193o5ea+HTzMUjTV89etf52c3/cfmbWfySWKoVo6dHR6kiMmPPv02tlOMaxud2Ln0otOk6uB9Glfj8SH2p/MynIcnEqr+zK865rmcf+4J+LHb2DC+nqnJQK/XrSZjx2BfyQRGGk1+dGuPD37mJ4x1uhjJ0ODpNzl45DMs/Rnf0+zd0qVLueD8j9FsNpjqdhJ4kTSSxBoh22zwy1/9mq9/45v98aPTE0bRa3Y+DpW0IZXPZAmYGU40qoHcRYaq2JiFEh9xaB9mjvcPNQG8vyA+zpkPLo5MTeFS0ICX4bJJEdpUjjzyYD574euRiZWse2gNG8an6Ha6uKIgkAZvRdo4dkGD/7gn50OfupH1E720xr5mzs000kf9GWTA9CXsl8CC0VE+9rGPsnTp49kwvgGnUPjYkFQIcYK3saxZt4F//PwX6PXyzRiehEV7T/ABCSBZxPGNUbxuZn1qJlmDxjXQCJAYG1OSGFOxNufYiw4VLBlSHBzU47dY4d/HZQ9eth9f/NSfsiDcz8OrH2TDujHaU22KPK9mP5R9pTLb5PZVHd5/4c9YvbYXo+aN6YYbFWXpJrapTYL32CqEefvbz+A5z342ExOTKRIIqVoj4NPLiOVfvvKVLbZ0Ui3hTl/1xgo+oMTERlCGblJTlq8EqMpPQzpgc2yDqbrSVUL2Aa+KZ3Mq2qSsjmPvvfbgis/+Kbu0Huahe1czPv4gUxM98iRca2Onm9grw/DQZI+LPn8La9uBxTssRHwcplxPqZVziDWNHzCEfjIhBGxmmJwq6PRyMA4CvOD5z+Ok157I+Pp1sf91BTtGoCSokjUafP/7P2TFihVDmC8lL4rYR6PkUKUel5HuKsN1iisr/H0aQGYtYhSTUfXsmDsB19j2ZQjhfRSuJ6R5gZvSPoqq43F/sAtfuOQd7LVTl1X33M3U2jbtqTa9PA7hyLIMYw1ZZuKJV2HHRTvwnrcfHUtByFFnCeJq/StSIXql4iIRPhDS7K4eD28QPnzJjdz/YAFBeeJ++/CXZ/wFvU4Hmi1ss39yQsKwm60Wv77tNq780peHPjWa1qRkawRmTlSXEgHzPhb2qSLWEFCyVPA3qwKWjdSQ1gQbaoCHM2wSZy2pJ9stXMRlF72dA59QcP/Ku1n/8Hq6k5NpQoqn0chiTwvqY2stI6Zg9+36iQxtKt4Vyf4noQQXSX/JRAQMhS9AlfEufO4rt3H/g5NAYIftF/MXb3sLrcwwOTEBi5SWxmkyPgEVmRHWT05x+WVXML5hYniKQtA4BU5CrPAHRD2igg4stW4qsEjfPUQfx/sIW3qPCRYJAdfI8TNM6My4laFLHq5zpaDBpQT6pmxwUBgdaXHxx/6cZx9kuefWW1jz0Do6ExMR3zSKzcpmKLYabiVEsKCcTOZDf3CGTxmtvoBLNkXJR3ZY55gyli9e/Vtuun0KyMgyeNPpf8LSx++RKDsRvBAsJrNpcqknBPj8P13Jb+5c2W9MOmSIU2oWJMTQSOu1vcOp1/J7lClD0QBBsIWd24R/6VgVhcc77Z9iHwGPekwaHYvYYvf8c9/GK5/X4N5bb2b1qofYMLEBNNBqNshScVbZziizNjUPk1o9rFYkt6iiQs1MpDGy5ULi0ZBR2BZXX7ea635xf2ygGhzHH3sshx96KN1Oh0azEWnARYE1BUZjDCvG8s1rruU7372uOlFDo+pJuNHLT3VKapINHjJRUIafGzErxZbFBXOW8JcU+4YqJxz/nnBXDQNjdcoirHPPeSunvnIfVt38M1aveojxiXE0KJmNk1pKoTazjIaNrIZYsmFqJzjaxhi6hFQtmsIYakPXFIxaJIPv3rSOr163iiAWguewpx/MS55/NJ3OOiRrYbzBuZw8z2KsG+Iom5tvvpnPff6f4gab4SS30qGqekuGmpCHFE1IQIf3rtrgYgyC3aoKiSHbKMUdqgHynk/qGbwjhRcxaR7TqHFhjFjO+PNTef1x+/PgPb/igbUbGOvkOAxiwRmDEYvPGhQ2A7EUahBH1Ym2rHUKAbwKPoBzWlPTyQ57Q/BxA4oa7rqnxxVX30k3ZXUev/sfcMJxx1IU7dhKAYuIJc8LVDuE4BkZXcD6dWu58KKLmJya3ArkU1KlZRSlFY8EqQllyOKzEOgVBb4oKmalNZYGIWLRYS6RLB/I81hUFReagTrWoLVWAybj+utu5Lvfuhb1vjrxWmv5JiX9ZaA9YtwsUm9ZXHriKQcttRaKtWK81CjMMDFZsH4yOiOtVpOTXvsaFi0cxRUFKhYrnkLziKW7+D6bNbn0sstZufIutvYKPlF4tGy8EvrUomFPsPf0el00RSTGGLCxE0qWEh9zx+gIAe8EV5Tc3/42HyyPFLzPueXXv3nMcrNlouqVL3s5ez3+cbhe7GwXvIAWqI11zsEpjWaTa6/9FsuXf2erU4eaKj9i2BZhXaOmj9kPOTfMh4DLCzSFW2RxfEJI8fEcc7I8rgqN+s26NOGD/dGnErNFScXXKW66UewVeysPIsm6Ecth8/nbQYHU+U1HPutwjvqjZ9DrtLFiCCqpVqjAhAiIZLbBLb+6lc9d8U8Vp3lrBFzSXCsh1E5vFZ/rcHbcO0dwHmNjwkIQwlaUrQwt4KqboU/FVKE/aDke4ga+4dIUluh79v2TwQ5v00IFqQtY2EgvVy04+k6mDN5z45Ay2e4n7r0Xr37FMbiiiAPLDSnWgpBqqTILa9av5R+v+ALjE5PVd996lZHSqcbEz0kMVEno2FBq2ifNklpUQezlZWx/GtucnWBjZFqlukVj9zgaqRtt6XBMF8506IRpiyolaq39VIEOrKNGvrIawMU2DToYZuy4w/acdspJNK0hTzyx6iR5nzzkiHb929eu4t5V9w2Ua261Da4IAqRp41rzE4Z3slxRJO+7zz23IQExcylgQQYmUIsIRiLLIIQG7d7k4LHaZIpMh8gWDwpscxsCMZW3HRueGE4+8QSW7Lw9eadLfWjIwOa0DVb84If89Bf/2T95j+ZSrdKckuqobdXvKqQx8zLEbVKSIgQCPoaNNQ62znU2afpl6bkuu+25B6e95RiOuPd+pGjjOl18Nyd3Dhci07AkFmtKMYYQ8C6WnfbRIkn2KlSEs/K9ieGOQcnE03FN/v3Hd7J+YqpanJe8+EU8/cAD6E1NUDZY97XZwIpixXLnypV869vXzSr/cqCkdKM9qgyXEI5InE+AiVSxdb1B2hynC2PFQOxYo/i8zZK9n8or3vKX7LjbEuBewsP3snbVbxlbO87kxBTtySnyXo5LbJAiLygcERHLlSJ35LmrULEyRCjtc0y6+STwJiqOQoVv/XQNG9rtirbzjEMO5pijn0fR66AiBImpTCWk7K6HoKwda/ONa5bT7eXMFuEujXqokiQSSvAl9qwMAx3BN/WZKRgMsZIiBI3mLxhssGmXzvx7zVjAQsASEaxO4dnjqYdx/Jv/nEU7L0Dzu/Ebfsf46geYXLOW9vgEU5NTtNsditzhXUjF1A7nQqxW7DlcPgh/lu0Kqu4ysW9rRJzIoWlZcUuX7/3sQXyCsvZcugennXQCDQkUKX4s7V/MxcY8rQtwzbXLuX8LHdy3Vk3H76593HxaLfWWj7D3kfCgpq8RNHVBm2n56AxzWf3+0e3Cs/uTD+L4t76dRTsvQovVSPtB8rXr6G6YIC+6BOcj0985gotUUA0u2szUMFtirWZypXSAXFN1Ok+cL9XYVe+Wewu++/MHcRJP5OLttuONp53C9gtHo42qp+jKPHGIo2pv/Pl/8F+3/Hpon2AGgXDlAEUTVAuR6q0Jh1DRkQrVpy2F2mtOgQ5rBGMadF2XfZ9+GK98018wujgj5PcRJh8gX7OGyXXr6banaPe6dIpOpL6mvh4hsf59CLXmJDXVVVNn9Uac5Tsya7j7Ic9VK1bTKVIHR4GT/vh49nvCUnrdDmoyJLjkAKbC6ZRrvuPue/juDd+fE2BFpTYkrORnDaB8YYad7vpxdb2iYZYboaVjrkQVqdFu7nPos3jF6afTWhjQ7r34sYfJ161jcnyMqYlJ2pNdik5B3s0pejmF8zEp4WMkpemFj/FofBBf9YOS+oQ1URyGhigPjhf82/cfZrzj4ng9Dbzo+Udx5BGH4Yoi9qI09f6OUTtkmWVsfIKvXf0ter3eFrLeTE8yTBu6uYnYQARjspiVikhAlYDxiVK0eQFXFUgxgyUkYMYRQlabqjzrxHep1GcnCPsf+WJe9NpTkSyH/H50/YN0H15Dd2qCbqdNr1eQ9xw+V9QLqI21tSWyJUSUq2y5ayIMZ4zE0DZZDk1DIQVoIvwuz/nKijEe2pD6W6nnmYcczKknvhprBMmy6G37CBFKWXydNeip4evfuorVD68dLjjTmYV2ZUbEWolDtqKejSMCvCcLgSCmto30kb+DxGEeqh5RjyFmw/AewWNmt4VD+u6JKtra6fE86YgXsGrVfWhvDaHzIL21Y7Q3TNHttenmOd1uh7zXpejl5HmO6xVVb8tYiSixgNtrTFg4E50rF6p8ajTPmvhRBqeea37aZdUaVyUeFi9ezMte+mImJiaI+YJ+st251EQl1fc+8PCD5J1JDth/v6QUwkauhRm0lWajhddyQLYZMBoRsvWoGhaMjtBNY2rLrgeZ7THV6NJodgjKI47qk9rJdF6ZaHdAI6PDdLoYY2k2WnR9rPaYMYS6xbckO9ZqtRhZEOkjpiwG035Xt5T2rgd/yQMejBDqGaABIENqD1suKuAR2r2Y+/USPcwsa7BgtIV6l2YVyeD9ayxJAWwC7TfFjxY2ErDUUgi1aSn9aaT9euF6Py3nfDXFZWBl0zjeXq+XWC86zdMtediZtYyOtAZaClefbYROt9xEOlsC3thGzUVp5pa+hokUGIXf38E9v5+XzJHE5q/fk8vML8G8gOeveQHPX/MCnr/mBTx/zQt4/poX8Pw1L+D/j67/C8A2SZIOGMoTAAAAAElFTkSuQmCC">
+    <b>Live 2 Help</b>
+    <span>Recruitment across the whole of the UK</span>
+  </header>
+
+  <section class="hero" id="hero">
+    <div>
+      <div class="eyebrow">The UK Hiring Toolkit</div>
+      <h1>What is that empty seat <em>really</em> costing you?</h1>
+      <p class="lead">Answer three questions and see the real cost of an unfilled role, with every line of the maths shown. Then check your hiring process and your offer, and get your personal Hiring Report.</p>
+      <ul class="proof" id="proof"><li>Free, no card needed</li><li>About 4 minutes</li><li>Built by working UK recruiters</li></ul>
+    </div>
+    <form class="start" id="f0" novalidate>
+      <h2>Start with the role</h2>
+      <p class="sub">Three questions. The number appears straight away.</p>
+      <div class="field" style="margin-bottom:14px"><label for="sRole">Role you are trying to fill</label><input type="text" id="sRole" placeholder="e.g. Production Supervisor" autocomplete="off"></div>
+      <div class="field" style="margin-bottom:14px"><label for="sSal">Annual salary for the role (£)</label><input type="number" id="sSal" placeholder="45000" min="12000" max="400000" step="500" inputmode="numeric"></div>
+      <div class="field" style="margin-bottom:6px"><span class="lbl">What does this role do for your business?</span>
+        <div class="opts" role="radiogroup" id="sType">
+          <label class="opt"><input type="radio" name="stype" value="revenue"><span>Brings in revenue</span></label>
+          <label class="opt"><input type="radio" name="stype" value="skilled"><span>Makes or delivers what we sell</span></label>
+          <label class="opt"><input type="radio" name="stype" value="support"><span>Supports others</span></label>
+        </div>
+        <p class="hint" id="sHint">Sales, business development and account management count as revenue roles.</p>
+      </div>
+      <div class="field" id="sRevBox" hidden style="margin-top:10px"><label for="sRev">Annual revenue this person should bring in (£)</label><input type="number" id="sRev" placeholder="180000" min="0" step="1000" inputmode="numeric"></div>
+      <div class="err" id="e0" role="alert"></div>
+      <button class="btn wide" type="submit" style="margin-top:6px">Show me the cost</button>
+    </form>
+  </section>
+
+  <ol class="steps" id="steps" aria-label="Progress" hidden></ol>
+  <main class="panel" id="panel" tabindex="-1" hidden></main>
+
+  <footer>
+    <div><b>Live 2 Help Recruitment Ltd</b> - Anyone. Anywhere. Anytime.</div>
+    <div>Talk to a recruiter: ella@live2helprecruitment.co.uk - 07434 351996 - live2helprecruitment.co.uk</div>
+    <div>Company No. 11731080. We use your details only to send your report and to follow up about hiring. You can ask us to delete them at any time. Figures are estimates built from the numbers you enter, not guarantees.</div>
+  </footer>
+</div>
+
+<script>
+(function(){
+  /* Set to the lead endpoint once the backend is live, e.g. 'https://l2h-api.onrender.com/api/leads'. Empty means preview mode: nothing is sent. */
+  var API_URL = 'https://l2h-api.onrender.com/api/funnel-lead';
+  /* Real proof points only. Add figures here when you want them shown, e.g. {placements:'120+ placements',clients:'8 UK employers'} */
+  var PROOF = [];
+  var HOURS_WEEK = 37.5;
+  var REDUCED = false; try{REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches}catch(e){}
+  var gbp = function(n){var s=Math.round(Math.abs(n)).toLocaleString('en-GB');return (n<0?'-':'')+'£'+s};
+  var gbp2 = function(n){return '£'+n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',')};
+  var esc = function(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML};
+  var $ = function(s,r){return (r||document).querySelector(s)};
+  var $$ = function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
+  var source=''; try{source=location.search.replace(/^\?/,'')}catch(e){}
+  var logoSrc=$('#logoimg').src;
+  PROOF.forEach(function(p){var li=document.createElement('li');li.textContent=p;$('#proof').appendChild(li)});
+
+  /* ---------- cost model ---------- */
+  var TYPES={
+    revenue:{label:'Brings in revenue',mult:null,hint:'Sales, business development and account management count as revenue roles.',u:'high'},
+    skilled:{label:'Makes or delivers what you sell',mult:3,mtxt:'3 times salary',hint:'Valued at 3 times salary, an estimate you can change on the next screen.',u:'high'},
+    support:{label:'Supports others',mult:2,mtxt:'2 times salary',hint:'Valued at 2 times salary, an estimate you can change on the next screen.',u:'mid'}
+  };
+  var UNCOV={high:{t:'Most of it (75%)',v:.75},mid:{t:'About half (50%)',v:.5},low:{t:'A little (25%)',v:.25}};
+  function model(i){
+    var hourly=i.salary/52/HOURS_WEEK;
+    var annualValue=i.type==='revenue'?i.revenue:i.salary*TYPES[i.type].mult;
+    var weeklyValue=annualValue/52;
+    var u=UNCOV[i.uncov].v, oc=i.oncostPct/100;
+    var lost=weeklyValue*u;
+    var coverPrem=i.coverHours*hourly*0.5;
+    var agency=i.agency;
+    var saved=i.salary*(1+oc)/52;
+    var gross=lost+coverPrem+agency;
+    var net=gross-saved;
+    var mgrHourly=i.mgrSalary/52/HOURS_WEEK;
+    var mgrCost=i.mgrHours*mgrHourly*(1+oc);
+    var oneOff=mgrCost+i.fees;
+    return {hourly:hourly,annualValue:annualValue,weeklyValue:weeklyValue,u:u,oc:oc,lost:lost,coverPrem:coverPrem,agency:agency,saved:saved,gross:gross,net:net,mgrHourly:mgrHourly,mgrCost:mgrCost,oneOff:oneOff,perDay:net/5,
+      total:function(w){return net*w+oneOff}};
+  }
+  function defaults(role,salary,type,revenue){
+    return {role:role,salary:salary,type:type,revenue:revenue,uncov:TYPES[type].u,coverHours:10,agency:0,oncostPct:20,weeks:8,weeksEmpty:0,mgrHours:20,mgrSalary:Math.round(salary*1.5/500)*500,fees:0};
+  }
+
+  /* ---------- state ---------- */
+  var S={stage:'start',in:null,lead:null,health:null,offer:null,benchP:null,bench:null};
+  var STEPS=['Cost of the vacancy','Your hiring process','Your offer','Your report'];
+  function drawSteps(){
+    var n=S.stage==='reveal'?1:(typeof S.stage==='number'?S.stage:0);
+    $('#hero').hidden=S.stage!=='start';
+    $('#steps').hidden=S.stage==='start';
+    $('#panel').hidden=S.stage==='start';
+    $('#steps').innerHTML=STEPS.map(function(t,i){var k=i+1;return '<li class="'+(k<n?'done':k===n?'cur':'')+'"'+(k===n?' aria-current="step"':'')+'><b>Step '+k+'</b>'+t+'</li>'}).join('');
+  }
+  function go(stage){S.stage=stage;drawSteps();render();try{$('#steps').scrollIntoView({behavior:REDUCED?'auto':'smooth',block:'start'})}catch(e){}}
+
+  /* ---------- helpers: animation ---------- */
+  function countTo(el,to,fmt,ms){
+    var from=+(el.dataset.v||0); el.dataset.v=to;
+    if(REDUCED||ms===0){el.textContent=fmt(to);return}
+    var t0=null;
+    function f(t){if(!t0)t0=t;var p=Math.min(1,(t-t0)/ms);var e=1-Math.pow(1-p,3);el.textContent=fmt(from+(to-from)*e);if(p<1)requestAnimationFrame(f)}
+    requestAnimationFrame(f);
+  }
+  function animRings(root){
+    $$('.ring',root).forEach(function(r){
+      var s=+r.dataset.s, b=r.firstChild;
+      if(REDUCED){r.style.setProperty('--p',s);b.textContent=s;return}
+      var t0=null;
+      function f(t){if(!t0)t0=t;var p=Math.min(1,(t-t0)/900),e=1-Math.pow(1-p,3);r.style.setProperty('--p',s*e);b.textContent=Math.round(s*e);if(p<1)requestAnimationFrame(f)}
+      requestAnimationFrame(f);
+    });
+  }
+  function ringHTML(s,col){return '<div class="ring" data-s="'+s+'" style="--c:'+col+'"><b>0</b></div>'}
+  function bandOf(s){return s>=80?{t:'Strong',c:'g',col:'var(--good)'}:s>=55?{t:'Needs work',c:'w',col:'var(--warn)'}:{t:'At risk',c:'b',col:'var(--bad)'}}
+
+  /* ---------- lead capture ---------- */
+  function send(payload){
+    if(!API_URL) return Promise.resolve(null);
+    try{return fetch(API_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){return r.json()}).catch(function(){return null})}catch(e){return Promise.resolve(null)}
+  }
+  function leadPayload(stage){
+    var m=model(S.in);
+    var P={name:S.lead.name,email:S.lead.email,company:S.lead.company,stage:stage,source:source,page:'hiring-toolkit',consent:true,at:new Date().toISOString()};
+    P.website=S.lead.website||'';
+    P.cost={role:S.in.role,salary:S.in.salary,weeks:S.in.weeks,netPerWeek:Math.round(m.net),total:Math.round(m.total(S.in.weeks)),inputs:S.in};
+    if(S.health) P.process={score:S.health.score,gaps:S.health.gaps.map(function(g){return g.q.area}),answers:S.health.ans};
+    if(S.offer) P.offer={score:S.offer.score,risk:S.offer.risk,answers:S.offer.ans};
+    if(S.health&&S.offer){var pr=[];S.health.gaps.forEach(function(g){pr.push({w:g.gap*2,t:g.q.area+' (process)',x:g.q.fix})});S.offer.weak.forEach(function(w){pr.push({w:w.gap*(w.q.k==='Salary'?2.5:2),t:w.q.k+' (offer)',x:w.q.fix})});pr.sort(function(a,b){return b.w-a.w});P.priorities=pr.slice(0,3).map(function(p){return {t:p.t,x:p.x}})}
+    return P;
+  }
+
+  /* ---------- START (hero) ---------- */
+  var hint=function(){var r=$('input[name=stype]:checked');$('#sRevBox').hidden=!(r&&r.value==='revenue');if(r)$('#sHint').textContent=TYPES[r.value].hint};
+  $$('input[name=stype]').forEach(function(i){i.addEventListener('change',hint)});
+  $('#f0').addEventListener('submit',function(ev){
+    ev.preventDefault();
+    var role=$('#sRole').value.trim()||'This role', sal=+$('#sSal').value||0, t=$('input[name=stype]:checked'), rev=+$('#sRev').value||0, e=$('#e0');
+    if(sal<12000||sal>400000){e.textContent='Enter the annual salary in pounds, for example 45000.';return}
+    if(!t){e.textContent='Pick what this role does for your business.';return}
+    if(t.value==='revenue'&&rev<=0){e.textContent='Enter the annual revenue this person should bring in.';return}
+    e.textContent='';
+    S.in=defaults(role,sal,t.value,t.value==='revenue'?rev:sal*4);
+    go('reveal');
+  });
+
+  /* ---------- REVEAL ---------- */
+  function chartSVG(m,weeks){
+    var cw=0;try{cw=$('#rChart').clientWidth}catch(e){}var W=Math.max(300,Math.min(640,cw||640)),H=W<480?210:230,pl=W<480?50:58,pr=10,pt=16,pb=30,maxW=Math.max(26,weeks);
+    var vals=[];for(var w=0;w<=maxW;w++)vals.push(m.total(w));
+    var lo=Math.min(0,Math.min.apply(null,vals)),hi=Math.max(1,Math.max.apply(null,vals));
+    var y=function(v){return pt+(hi-v)/(hi-lo)*(H-pt-pb)};
+    var bw=(W-pl-pr)/maxW, half=Math.max(1,Math.round(weeks/2));
+    var s='<svg class="chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Cumulative cost of the vacancy by week">';
+    [0,.5,1].forEach(function(f){var v=lo+(hi-lo)*f,yy=y(v);s+='<line class="gl" x1="'+pl+'" x2="'+(W-pr)+'" y1="'+yy+'" y2="'+yy+'"/><text class="ax" x="'+(pl-8)+'" y="'+(yy+4)+'" text-anchor="end">'+gbp(v)+'</text>'});
+    for(var k=1;k<=maxW;k++){
+      var v=m.total(k),x=pl+(k-1)*bw+bw*0.12,h=Math.abs(y(v)-y(0)),yy=v>=0?y(v):y(0);
+      var cls=k<=half?'b1':(k<=weeks?'b2':'b0');
+      s+='<rect class="'+cls+'" x="'+x.toFixed(1)+'" y="'+yy.toFixed(1)+'" width="'+(bw*0.76).toFixed(1)+'" height="'+Math.max(1,h).toFixed(1)+'" rx="2"/>';
+    }
+    for(var t=0;t<=maxW;t+=Math.ceil(maxW/(W<480?4:6))){s+='<text class="ax" x="'+(pl+t*bw)+'" y="'+(H-12)+'" text-anchor="middle">'+(t===0?'wk 0':t)+'</text>'}
+    return s+'</svg>';
+  }
+  function workTable(c,m){
+    var typeTxt=c.type==='revenue'?'Revenue you entered: '+gbp(c.revenue)+' a year':TYPES[c.type].mtxt.charAt(0).toUpperCase()+TYPES[c.type].mtxt.slice(1)+': '+gbp(c.salary)+' x '+TYPES[c.type].mult+' = '+gbp(m.annualValue)+' a year';
+    return '<p class="note" style="margin:0 0 6px">'+typeTxt+'. Every figure comes from the numbers you entered.</p>'+
+    '<div class="scroll"><table class="work"><thead><tr><th>Cost line</th><th>The working</th><th class="n">Per week</th></tr></thead><tbody>'+
+    '<tr><td><b>Work that does not get done</b><small>Value lost while nobody does it</small></td><td>'+gbp(m.annualValue)+' a year ÷ 52 = '+gbp(m.weeklyValue)+' a week, x '+Math.round(m.u*100)+'% not covered</td><td class="n">'+gbp(m.lost)+'</td></tr>'+
+    '<tr><td><b>Overtime premium for cover</b><small>Extra paid to colleagues covering</small></td><td>'+c.coverHours+' hrs x '+gbp2(m.hourly)+' an hour x 50% premium</td><td class="n">'+gbp(m.coverPrem)+'</td></tr>'+
+    '<tr><td><b>Temp or agency cover</b></td><td>What you told us you pay each week</td><td class="n">'+gbp(m.agency)+'</td></tr>'+
+    '<tr class="sub"><td><b>Less: salary you are not paying</b><small>An empty seat saves money, so we deduct it</small></td><td>'+gbp(c.salary)+' x '+(1+m.oc).toFixed(2)+' (with on-costs) ÷ 52</td><td class="n">-'+gbp(m.saved)+'</td></tr>'+
+    '<tr class="tot"><td>Net cost per week</td><td></td><td class="n">'+gbp(m.net)+'</td></tr></tbody></table></div>'+
+    '<div class="scroll"><table class="work" style="margin-top:14px"><thead><tr><th>One-off hiring cost</th><th>The working</th><th class="n">Total</th></tr></thead><tbody>'+
+    '<tr><td><b>Hiring manager time</b></td><td>'+c.mgrHours+' hrs x '+gbp2(m.mgrHourly)+' an hour x '+(1+m.oc).toFixed(2)+'</td><td class="n">'+gbp(m.mgrCost)+'</td></tr>'+
+    '<tr><td><b>Advert or agency fees</b></td><td>What you told us you expect to pay</td><td class="n">'+gbp(c.fees)+'</td></tr>'+
+    '<tr class="tot"><td>Total over '+c.weeks+' weeks</td><td>'+gbp(m.net)+' x '+c.weeks+' weeks + '+gbp(m.oneOff)+' one-off</td><td class="n">'+gbp(m.total(c.weeks))+'</td></tr></tbody></table></div>';
+  }
+
+  function stepReveal(el){
+    var c=S.in;
+    var unc=Object.keys(UNCOV).map(function(k){return '<label class="opt"><input type="radio" name="uncov" value="'+k+'"'+(c.uncov===k?' checked':'')+'><span>'+UNCOV[k].t+'</span></label>'}).join('');
+    el.innerHTML=
+    '<div class="eyebrow">Step 1 - '+esc(c.role)+' left empty</div>'+
+    '<div class="reveal-head"><div><div class="bignum"><span id="rNet">£0</span><small>a week</small></div><p id="rSub"></p></div><div class="alreadybox" id="rAlready" hidden></div></div>'+
+    '<div class="sec"><h3>Where the money goes</h3><p class="note">Each bar is one line of the calculation. Green is salary you are not paying, which we deduct.</p><div class="wf" id="rWf"></div></div>'+
+    '<div class="sec"><h3>Drag to see what time costs</h3><div class="slidebox"><div class="top2"><span class="wk"><span id="rWk">8</span> weeks to fill</span><span class="tot" id="rTot">£0</span></div>'+
+    '<input type="range" id="rSl" min="2" max="26" step="1" value="'+c.weeks+'" aria-label="Weeks to fill the role"><div id="rChart"></div>'+
+    '<div class="legend"><span><i style="background:var(--gold)"></i>Cost if filled in half the time</span><span><i style="background:var(--bad)"></i>Extra cost of the longer wait</span><span><i style="background:var(--line)"></i>Beyond your estimate</span></div><div class="savebox" id="rSave" hidden></div></div></div>'+
+    '<div class="sec"><details class="adv"><summary>Refine this number (optional, it updates live)</summary><div class="in"><div class="grid2">'+
+    '<div class="field" style="grid-column:1/-1"><span class="lbl">While the seat is empty, how much of this person\'s work does not get done?</span><div class="opts" role="radiogroup">'+unc+'</div><p class="hint">The rest is picked up by colleagues, which costs overtime.</p></div>'+
+    '<div class="field"><label for="cCover">Hours per week colleagues cover</label><input type="number" id="cCover" value="'+c.coverHours+'" min="0" max="200" inputmode="numeric"></div>'+
+    '<div class="field"><label for="cAg">Temp or agency cover (£ per week)</label><input type="number" id="cAg" value="'+c.agency+'" min="0" step="50" inputmode="numeric"></div>'+
+    '<div class="field"><label for="cWe">Weeks it has already been empty</label><input type="number" id="cWe" value="'+c.weeksEmpty+'" min="0" max="104" inputmode="numeric"></div>'+
+    '<div class="field"><label for="cOn">Employer on-costs on salary (%)</label><input type="number" id="cOn" value="'+c.oncostPct+'" min="0" max="60" inputmode="numeric"><p class="hint">National Insurance, pension and similar.</p></div>'+
+    '<div class="field"><label for="cMh">Hours the hiring manager spends on this hire</label><input type="number" id="cMh" value="'+c.mgrHours+'" min="0" max="300" inputmode="numeric"></div>'+
+    '<div class="field"><label for="cMs">Hiring manager annual salary (£)</label><input type="number" id="cMs" value="'+c.mgrSalary+'" min="12000" step="500" inputmode="numeric"></div>'+
+    '<div class="field"><label for="cFe">Advert or agency fees (£)</label><input type="number" id="cFe" value="'+c.fees+'" min="0" step="100" inputmode="numeric"></div>'+
+    (c.type==='revenue'?'<div class="field"><label for="cRv">Annual revenue this person should bring in (£)</label><input type="number" id="cRv" value="'+c.revenue+'" min="0" step="1000" inputmode="numeric"></div>':'')+
+    '</div></div></details></div>'+
+    '<div class="sec"><h3>Show every calculation</h3><div id="rWork"></div>'+
+    '<div class="box"><b>What we did not count, so the real figure is likely higher:</b><ul><li>Customers lost or orders delayed while the seat is empty</li><li>Colleagues who burn out or resign from carrying extra work</li><li>Projects that slip and the knock-on cost of late delivery</li></ul></div></div>'+
+    '<div id="rGate"></div>';
+
+    var first=true;
+    function upd(){
+      var c=S.in, m=model(c);
+      var neg=m.net<=0;
+      var net=$('#rNet');
+      if(neg){net.dataset.v=m.net;net.textContent=gbp(m.net)}else countTo(net,m.net,gbp,first?1300:0);
+      $('#rSub').innerHTML=neg
+        ?'On these numbers the salary you save is larger than the value you lose. Check the value of the role and the share of work not done, because most employers underestimate both.'
+        :'That is <b>'+gbp(m.perDay)+' a day</b> in net cost for leaving <b>'+esc(c.role)+'</b> empty. Over '+c.weeks+' weeks, including the cost of hiring, it comes to <b>'+gbp(m.total(c.weeks))+'</b>.';
+      var al=$('#rAlready');
+      if(c.weeksEmpty>0&&m.net>0){al.hidden=false;al.innerHTML='<small>Already lost over '+c.weeksEmpty+' weeks</small><b>'+gbp(m.net*c.weeksEmpty)+'</b>'}else al.hidden=true;
+      var rows=[['Work not done','Value lost',m.lost,''],['Overtime premium','Cover costs',m.coverPrem,''],['Agency cover','Temp spend',m.agency,''],['Salary not paid','Deducted',-m.saved,'minus'],['Net cost','Per week',m.net,'net']];
+      var mx=Math.max.apply(null,rows.map(function(r){return Math.abs(r[2])}))||1;
+      if(!$('#rWf').children.length){
+        $('#rWf').innerHTML=rows.map(function(r,i){return '<div class="r '+r[3]+'" data-i="'+i+'"><div>'+r[0]+'<small>'+r[1]+'</small></div><div class="tr"><i></i></div><div class="v"></div></div>'}).join('');
+      }
+      $$('#rWf .r').forEach(function(d,i){
+        var r=rows[i],bar=$('i',d);
+        $('.v',d).textContent=(r[2]<0?'-':'')+gbp(Math.abs(r[2]));
+        var w=Math.min(100,Math.abs(r[2])/mx*100);
+        if(first&&!REDUCED){bar.style.width='0';setTimeout(function(){bar.style.width=w+'%'},120+i*160)}else bar.style.width=w+'%';
+      });
+      $('#rWk').textContent=c.weeks; $('#rTot').textContent=gbp(m.total(c.weeks));
+      $('#rChart').innerHTML=chartSVG(m,c.weeks);
+      var sv=$('#rSave');
+      if(m.net>0){var half=Math.round(c.weeks/2);sv.hidden=false;sv.innerHTML='Filling it in <b>'+half+' weeks instead of '+c.weeks+'</b> saves you <b>'+gbp(m.net*(c.weeks-half))+'</b>.'}else sv.hidden=true;
+      $('#rWork').innerHTML=workTable(c,m);
+      first=false;
+    }
+    upd();
+    var rt=null;window.addEventListener('resize',function(){clearTimeout(rt);rt=setTimeout(function(){if(S.stage==='reveal'&&$('#rChart'))$('#rChart').innerHTML=chartSVG(model(S.in),S.in.weeks)},150)});
+
+    $('#rSl').addEventListener('input',function(){S.in.weeks=+this.value;upd()});
+    var bind=function(id,key,min,max,def){var e=$(id);if(!e)return;e.addEventListener('input',function(){var v=+e.value;if(isNaN(v)||e.value==='')v=def;S.in[key]=Math.min(max,Math.max(min,v));upd()})};
+    bind('#cCover','coverHours',0,200,0);bind('#cAg','agency',0,100000,0);bind('#cWe','weeksEmpty',0,104,0);bind('#cOn','oncostPct',0,60,20);bind('#cMh','mgrHours',0,300,0);bind('#cMs','mgrSalary',12000,1000000,12000);bind('#cFe','fees',0,1000000,0);bind('#cRv','revenue',0,100000000,0);
+    $$('input[name=uncov]',el).forEach(function(r){r.addEventListener('change',function(){S.in.uncov=r.value;upd()})});
+
+    var g=$('#rGate');
+    if(S.lead){g.innerHTML='<div class="row"><button class="btn" id="next1">Continue to Step 2</button></div>';$('#next1').addEventListener('click',function(){go(2)});return}
+    g.innerHTML='<form class="gate" id="gate1" novalidate><h3>Save your number and continue</h3><p>Two more short steps check your hiring process and your offer. At the end we build your Hiring Report and email you a copy.</p>'+
+      '<div class="grid3"><div class="field"><label for="gN">Your name</label><input type="text" id="gN" autocomplete="name"></div><div class="field"><label for="gE">Work email</label><input type="email" id="gE" autocomplete="email"></div><div class="field"><label for="gC">Company</label><input type="text" id="gC" autocomplete="organization"></div></div>'+
+      '<div style="position:absolute;left:-9999px;height:0;overflow:hidden" aria-hidden="true"><label>Website<input type="text" id="gW" tabindex="-1" autocomplete="off"></label></div><label class="consent"><input type="checkbox" id="gK"> <span>I agree that Live 2 Help may email me my report and contact me about hiring. I can opt out at any time.</span></label><div class="err" id="gX" role="alert"></div><div class="row" style="margin-top:8px"><button class="btn" type="submit" id="gB">Save and continue to Step 2</button></div></form>';
+    $('#gate1').addEventListener('submit',function(ev){
+      ev.preventDefault();
+      var n=$('#gN').value.trim(),e=$('#gE').value.trim(),co=$('#gC').value.trim(),k=$('#gK').checked,x=$('#gX');
+      if(n.length<2){x.textContent='Add your name so we know who the report is for.';return}
+      if(!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(e)){x.textContent='Enter a valid work email, for example name@company.co.uk.';return}
+      if(co.length<2){x.textContent='Add your company name.';return}
+      if(!k){x.textContent='Tick the box so we can send your report.';return}
+      x.textContent=''; S.lead={name:n,email:e,company:co,website:($('#gW')||{}).value||''};
+      var b=$('#gB'); b.disabled=true; b.textContent='Saving...';
+      var moved=false, nxt=function(){if(!moved){moved=true;go(2)}};
+      send(leadPayload('cost')).then(nxt); setTimeout(nxt,3500);
+    });
+  }
+
+  /* ---------- question banks ---------- */
+  var HQ=[
+    {q:'How long from approving a role to the advert going live?',o:[['Within a week',2],['One to two weeks',1],['Longer',0]],area:'Speed to market',fix:'Pre-write role templates and agree sign-off owners so adverts go live within five working days.'},
+    {q:'Do your adverts show the salary?',o:[['Always',2],['Sometimes',1],['Never',0]],area:'Pay transparency',fix:'Publish the salary band. It attracts more suitable applicants and removes wasted interviews.'},
+    {q:'How many interview stages do candidates go through?',o:[['One or two',2],['Three',1],['Four or more',0]],area:'Process length',fix:'Merge stages. Two well-run interviews give you the same information as four, and each extra stage adds about a week.'},
+    {q:'How soon do you give feedback after an interview?',o:[['Within 48 hours',2],['Within a week',1],['Often no reply',0]],area:'Candidate communication',fix:'Set a 48 hour feedback rule. Silence is a leading reason candidates accept other offers.'},
+    {q:'How soon does an offer go out after the final interview?',o:[['Within 48 hours',2],['Within a week',1],['Longer',0]],area:'Offer speed',fix:'Pre-approve the salary range and contract so the offer is ready when the final interview ends.'},
+    {q:'Do you have a plan for counter-offers?',o:[['Yes, written',2],['Discussed ad hoc',1],['No plan',0]],area:'Counter-offer defence',fix:'Ask every candidate in round one what would make them stay where they are, and revisit it before you offer.'},
+    {q:'Do you keep a warm list of future candidates?',o:[['Yes, maintained',2],['A few names',1],['Start from zero each time',0]],area:'Talent pipeline',fix:'Keep a shortlist of near-miss candidates and contact them every quarter.'},
+    {q:'Do you stay in touch between offer and day one?',o:[['Weekly contact',2],['Occasionally',1],['No contact',0]],area:'Pre-start engagement',fix:'Send a welcome pack, name a buddy and call weekly. It closes the gap where most no-shows happen.'}
+  ];
+  var OQ=[
+    {k:'Salary',q:'Against similar adverts you have seen, is your salary...',o:[['Below the market',0],['In line',2],['Above the market',3]],fix:'Check three live adverts for the same role in your region. Below-market pay is a leading reason offers are declined.'},
+    {k:'Benefits',q:'What benefits do you offer beyond the statutory minimum?',o:[['None',0],['A few',1],['A strong package',2]],fix:'List pension match, extra holiday, training budget and any bonus. Candidates compare the whole package, not base pay alone.'},
+    {k:'Flexibility',q:'What working pattern can you offer?',o:[['Fixed on-site only',0],['Some flexibility',1],['Hybrid or flexible hours',2]],fix:'Offer what you can: compressed hours, a flexible start time or one remote day.'},
+    {k:'Progression',q:'Can you show a candidate where the role leads?',o:[['Not clear',0],['Roughly',1],['A defined path',2]],fix:'Put a named next step and a review date in the offer letter.'},
+    {k:'Speed',q:'How fast can you make an offer?',o:[['Over a week',0],['Within a week',1],['Within 48 hours',2]],fix:'Slow offers lose people to faster employers. Pre-approve the range.'},
+    {k:'Role clarity',q:'Will the candidate know the role, the boss and the team before they accept?',o:[['Not really',0],['Partly',1],['Fully, they met the team',2]],fix:'Let them meet their manager and a future colleague before you offer.'}
+  ];
+
+  /* ---------- one-question-per-screen engine ---------- */
+  function runQuiz(el,Q,o,done){
+    var idx=0, ans=[];
+    var maxOf=function(q){return Math.max.apply(null,q.o.map(function(x){return x[1]}))};
+    function show(){
+      var q=Q[idx], got=0, mx=0;
+      for(var i=0;i<idx;i++){got+=ans[i];mx+=maxOf(Q[i])}
+      var live=mx?Math.round(got/mx*100):null;
+      el.innerHTML='<div class="eyebrow">'+o.eyebrow+'</div>'+(idx===0?'<p class="lede" style="margin-top:6px">'+o.lede+'</p>':'')+
+        '<div class="qbar"><i style="width:'+(idx/Q.length*100)+'%"></i></div>'+
+        '<div class="qmeta"><span>Question '+(idx+1)+' of '+Q.length+'</span><span class="pill">'+(live==null?'Score so far: -':'Score so far: '+live)+'</span></div>'+
+        '<h2 class="bigq">'+q.q+'</h2><div class="choices">'+q.o.map(function(x,j){return '<button type="button" class="choice'+(ans[idx]===x[1]?' on':'')+'" data-j="'+j+'">'+x[0]+'</button>'}).join('')+'</div>'+
+        (idx>0?'<button type="button" class="backl" id="bk">Back</button>':'');
+      requestAnimationFrame(function(){var b=$('.qbar i',el);if(b)b.style.width=((idx+(ans[idx]!=null?1:0))/Q.length*100)+'%'});
+      $$('.choice',el).forEach(function(b){b.addEventListener('click',function(){
+        var j=+b.dataset.j; ans[idx]=q.o[j][1];
+        $$('.choice',el).forEach(function(x){x.classList.remove('on')}); b.classList.add('on');
+        $$('.choice',el).forEach(function(x){x.disabled=true});
+        setTimeout(function(){if(idx<Q.length-1){idx++;show()}else done(ans)},REDUCED?0:260);
+      })});
+      var bk=$('#bk',el); if(bk)bk.addEventListener('click',function(){idx--;show()});
+    }
+    show();
+  }
+
+  function stepHealth(el){
+    runQuiz(el,HQ,{eyebrow:'Step 2 - Your hiring process',lede:'Eight quick questions. A slow or unclear process is what turns a short vacancy into a long one.'},function(ans){
+      var tot=0,gaps=[];
+      HQ.forEach(function(q,i){tot+=ans[i];if(ans[i]<2)gaps.push({q:q,gap:2-ans[i]})});
+      gaps.sort(function(a,b){return b.gap-a.gap});
+      var score=Math.round(tot/16*100), b=bandOf(score);
+      S.health={score:score,gaps:gaps,ans:ans};
+      el.innerHTML='<div class="eyebrow">Step 2 - Your hiring process</div><h2 style="margin-top:6px">Your process score</h2><div class="score" style="margin-top:18px">'+ringHTML(score,b.col)+'<div><div class="band '+b.c+'">'+b.t+'</div><div class="note">'+gaps.length+' of 8 areas are slowing you down. Your fix list is in your report.</div></div></div><div class="row"><button class="btn" id="n2">Continue to Step 3</button></div>';
+      animRings(el);
+      $('#n2').addEventListener('click',function(){send(leadPayload('process'));go(3)});
+    });
+  }
+  function stepOffer(el){
+    runQuiz(el,OQ,{eyebrow:'Step 3 - Your offer',lede:'Six questions about the offer you would make for this role. We rate how likely a strong candidate is to accept and how exposed you are to a counter-offer.'},function(ans){
+      var tot=0,max=0,weak=[];
+      OQ.forEach(function(q,i){var top=Math.max.apply(null,q.o.map(function(x){return x[1]}));tot+=ans[i];max+=top;if(ans[i]<top)weak.push({q:q,gap:top-ans[i]})});
+      weak.sort(function(a,b){return b.gap-a.gap});
+      var score=Math.round(tot/max*100);
+      var b=score>=75?{t:'Strong offer',c:'g',col:'var(--good)',risk:'Low'}:score>=50?{t:'Fair offer',c:'w',col:'var(--warn)',risk:'Medium'}:{t:'Weak offer',c:'b',col:'var(--bad)',risk:'High'};
+      S.offer={score:score,risk:b.risk,weak:weak,ans:ans,band:b};
+      el.innerHTML='<div class="eyebrow">Step 3 - Your offer</div><h2 style="margin-top:6px">Your offer rating</h2><div class="score" style="margin-top:18px">'+ringHTML(score,b.col)+'<div><div class="band '+b.c+'">'+b.t+'</div><div class="note">Counter-offer risk: <b class="'+b.c+'">'+b.risk+'</b></div></div></div><div class="row"><button class="btn" id="n3">Build my Hiring Report</button></div>';
+      animRings(el);
+      $('#n3').addEventListener('click',function(){S.benchP=send(leadPayload('complete'));go(4)});
+    });
+  }
+
+  /* ---------- report ---------- */
+  function stepReport(el){
+    var lines=['Costing the vacancy','Scoring your hiring process','Rating your offer','Writing your priorities'];
+    el.innerHTML='<div class="eyebrow">Step 4 - Your report</div><h2 style="margin-top:6px">Building your Hiring Report</h2><div class="build">'+lines.map(function(l){return '<div><i>&#10003;</i>'+l+'</div>'}).join('')+'</div>';
+    var els=$$('.build div',el), i=0;
+    var tick=setInterval(function(){if(i<els.length){els[i].classList.add('on');i++}else clearInterval(tick)},REDUCED?0:330);
+    var wait=function(ms){return new Promise(function(r){setTimeout(r,ms)})};
+    var p=S.benchP?Promise.race([S.benchP,wait(2500)]):Promise.resolve(null);
+    Promise.all([p,wait(REDUCED?0:1550)]).then(function(r){var j=r[0];if(j&&j.bench)S.bench=j.bench;clearInterval(tick);if(S.stage===4)drawReport(el)});
+  }
+  function drawReport(el){
+    var c=S.in,m=model(c),h=S.health,o=S.offer,hb=bandOf(h.score),total=m.total(c.weeks);
+    var pri=[];
+    h.gaps.forEach(function(g){pri.push({w:g.gap*2,t:g.q.area+' (process)',x:g.q.fix})});
+    o.weak.forEach(function(w){pri.push({w:w.gap*(w.q.k==='Salary'?2.5:2),t:w.q.k+' (offer)',x:w.q.fix})});
+    pri.sort(function(a,b){return b.w-a.w});
+    var top3=pri.slice(0,3);
+    var plist=function(arr){return arr.length?arr.map(function(g){return '<li><i class="dot '+(g.gap>=2?'b':'w')+'"></i><div><b>'+g.t+'</b><span>'+g.x+'</span></div></li>'}).join(''):'<li><i class="dot g"></i><div><b>No gaps found</b><span>Nothing to fix here.</span></div></li>'};
+    var bench=S.bench?'<p class="note" style="margin:14px 0 0">'+(S.bench.process!=null?'Your process scores higher than <b>'+S.bench.process+'%</b> of UK employers who have taken this check. ':'')+(S.bench.offer!=null?'Your offer beats <b>'+S.bench.offer+'%</b>.':'')+'</p>':'';
+    var dt=''; try{dt=new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})}catch(e){}
+    el.innerHTML='<div class="rep"><div class="card" id="card">'+
+      '<div class="hd"><img alt="" src="'+logoSrc+'"><b>Hiring Report</b><span>'+dt+'</span></div>'+
+      '<h2>'+esc(c.role)+' - '+esc(S.lead.company)+'</h2><p class="who">Prepared for '+esc(S.lead.name)+'</p>'+
+      '<div class="cost"><div class="note">Net cost of leaving the role empty</div><div class="bignum"><span id="cNet">£0</span><small>a week</small></div><div class="note">'+gbp(total)+' over '+c.weeks+' weeks, including hiring costs</div></div>'+
+      '<div class="rings"><div class="score"><div>'+ringHTML(h.score,hb.col)+'</div><div><div class="lbl2">Hiring process</div><div class="band '+hb.c+'">'+hb.t+'</div></div></div>'+
+      '<div class="score"><div>'+ringHTML(o.score,o.band.col)+'</div><div><div class="lbl2">Your offer</div><div class="band '+o.band.c+'">'+o.band.t+'</div><div class="note">Counter-offer risk: <b class="'+o.band.c+'">'+o.risk+'</b></div></div></div></div>'+bench+
+      '<h3 class="pri">Your three priorities</h3><ul class="list">'+(top3.length?top3.map(function(p,i){return '<li><i class="dot b"></i><div><b>'+(i+1)+'. '+p.t+'</b><span>'+p.x+'</span></div></li>'}).join(''):'<li><i class="dot g"></i><div><b>Your hiring set-up is strong</b><span>Keep measuring time to offer and offer acceptance rate.</span></div></li>')+'</ul>'+
+      '<div class="foot"><span>Live 2 Help Recruitment - UK-wide</span><span>ella@live2helprecruitment.co.uk - 07434 351996</span></div></div>'+
+      '<p class="note" style="margin-top:10px">Screenshot your scorecard to share it with your team.</p>'+
+      '<h3 class="sec2">How the cost was worked out</h3><p class="note">'+gbp(m.lost)+' work not done + '+gbp(m.coverPrem)+' overtime premium + '+gbp(m.agency)+' agency cover - '+gbp(m.saved)+' salary not paid = '+gbp(m.net)+' a week, plus '+gbp(m.oneOff)+' one-off hiring cost.</p>'+
+      '<h3 class="sec2">Fixes for your hiring process</h3><ul class="list">'+plist(h.gaps.map(function(g){return {gap:g.gap,t:g.q.area,x:g.q.fix}}))+'</ul>'+
+      '<h3 class="sec2">Fixes for your offer</h3><ul class="list">'+plist(o.weak.map(function(w){return {gap:w.gap,t:w.q.k,x:w.q.fix}}))+'</ul>'+
+      '<p class="note" style="margin-top:12px">If a candidate mentions a counter-offer, ask: "What would your current employer need to change for you to stay, and would that fix why you started looking?"</p>'+
+      '<div class="cta"><p><strong>Want a recruiter to fix this for you?</strong><br><span class="note">Ella or Dan will talk through your report and your live vacancies. 15 minutes, no obligation.</span></p><a class="btn" href="mailto:ella@live2helprecruitment.co.uk?subject=My%20Hiring%20Report">Talk to Ella</a></div>'+
+      '<p class="note" style="margin-top:10px">ella@live2helprecruitment.co.uk - 07434 351996</p>'+
+      '<div class="row"><button class="btn ghost" id="cp">Copy my results</button><button class="btn ghost" id="again">Start again</button><span class="note" id="cpm"></span></div></div>';
+    animRings(el); countTo($('#cNet'),m.net,gbp,REDUCED?0:1000);
+    $('#cp').addEventListener('click',function(){
+      var t='Hiring Report - '+c.role+' ('+S.lead.company+')\nNet cost of vacancy: '+gbp(m.net)+' a week, '+gbp(total)+' over '+c.weeks+' weeks\nHiring process score: '+h.score+'/100 ('+hb.t+')\nOffer rating: '+o.score+'/100 ('+o.band.t+'), counter-offer risk '+o.risk+'\nLive 2 Help Recruitment - ella@live2helprecruitment.co.uk - 07434 351996';
+      var d=function(ok){$('#cpm').textContent=ok?'Copied.':'Copy blocked here. Select the text and copy it manually.'};
+      try{navigator.clipboard.writeText(t).then(function(){d(true)},function(){d(false)})}catch(e){d(false)}
+    });
+    $('#again').addEventListener('click',function(){S={stage:'start',in:null,lead:null,health:null,offer:null,benchP:null,bench:null};drawSteps();window.scrollTo(0,0)});
+  }
+
+  function render(){
+    var el=$('#panel'); el.innerHTML='';
+    if(S.stage==='reveal')stepReveal(el);
+    else if(S.stage===2)stepHealth(el);
+    else if(S.stage===3)stepOffer(el);
+    else if(S.stage===4)stepReport(el);
+  }
+  drawSteps();
+})();
+</script>
+</body>
+</html>
