@@ -1740,6 +1740,12 @@
             <option value="onfile">CV on file</option>
           </select>
           <select id="poolTagFilter" onchange="renderPool()"><option value="">All tags</option></select>
+          <select id="poolShowFilter" onchange="renderPool()">
+            <option value="">Show: everyone</option>
+            <option value="talent">Talent pool sign-ups</option>
+            <option value="new">New sign-ups to review</option>
+            <option value="lapsed">Flagged for deletion</option>
+          </select>
         </div>
         <div class="pool-match">
           <div class="row">
@@ -8220,7 +8226,7 @@ function renderSourcing(){
   const from = sourcingPeriodStart(b2Val('spPeriod') || 'month');
   const inRange = d => { const x = opsDateOnly(d); return x && (!from || x >= from); };
   const spend = B3.adspend.filter(s => inRange(s.date));
-  const pool = (typeof POOL !== 'undefined' ? POOL : []).filter(p => !p.erased && inRange(p.dateAdded));
+  const pool = (typeof POOL !== 'undefined' ? POOL : []).filter(p => !p.erased && p.role !== 'Talent Pool' && inRange(p.dateAdded));
   const total = spend.reduce((s, x) => s + (parseFloat(x.amount) || 0), 0);
   const placed = pool.filter(p => stageIdx(p.furthestStage) >= stageIdx('start_date')).length;
   const untagged = (typeof POOL !== 'undefined' ? POOL : []).filter(p => !p.erased && !p.source).length;
@@ -8759,7 +8765,7 @@ renderSourcing = function(){
   const today = opsToday();
   const occ = spendOccurrences(B3.adspend, from, today);
   const inRange = d => { const x = opsDateOnly(d); return x && (!from || x >= from); };
-  const pool = (typeof POOL !== 'undefined' ? POOL : []).filter(p => !p.erased && inRange(p.dateAdded));
+  const pool = (typeof POOL !== 'undefined' ? POOL : []).filter(p => !p.erased && p.role !== 'Talent Pool' && inRange(p.dateAdded));
   const total = occ.reduce((s, o) => s + o.amount, 0);
   const placed = pool.filter(p => stageIdx(p.furthestStage) >= stageIdx('start_date')).length;
   const live = pool.filter(p => p.currentStage !== 'rejected');
@@ -13722,8 +13728,215 @@ async function poolSaveEdit(){
 </script>
 
 <script>
+/* ============================================================
+   Talent pool sign-ups (build 13)
+   People who join the talent pool on the careers site land in the
+   Candidate Pool. Dan and Ella each get a pop-up until they dismiss it.
+   ============================================================ */
+var TP = {timer:null, stats:null, statsAt:0};
+
+function tpMe(){ return signedInUser ? String(signedInUser.key || '').toLowerCase() : ''; }
+function tpUnseen(p){ return !p.erased && !!p.sector && !(p.seenBy || []).includes(tpMe()); }
+function tpIsPoolOnly(p){ return p.role === 'Talent Pool'; }
+function tpAddMonths(iso, n){
+  const d = new Date(String(iso || '').slice(0, 10) + 'T00:00:00Z');
+  if(isNaN(d.getTime())) return '';
+  d.setUTCMonth(d.getUTCMonth() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+async function tpLoadStats(force){
+  if(!signedInUser) return;
+  if(!force && Date.now() - TP.statsAt < 120000) return;
+  TP.statsAt = Date.now();
+  try{
+    TP.stats = await b2Api('/api/talent-pool/stats');
+    if(typeof poolLoaded !== 'undefined' && poolLoaded) renderPool();
+    const home = document.getElementById('homeView');
+    if(home && home.classList.contains('visible')) renderHome();
+  }catch(e){ /* the counter is optional */ }
+}
+
+async function tpCheck(){
+  if(!signedInUser || lgViewAs) return;
+  const el = document.getElementById('tpOverlay');
+  if(el && el.style.display === 'flex') return;
+  let rows = [];
+  try{ rows = b2List(await b2Api('/api/talent-pool/new')); }catch(e){ return; }
+  if(rows.length) tpShow(rows);
+}
+
+function tpShow(list){
+  TP.shown = list;
+  const card = p => '<div style="border:1px solid var(--border);border-left:4px solid var(--gold);padding:11px 14px;margin-bottom:10px;">' +
+    '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;"><strong>' + esc(p.name) + '</strong><span style="color:var(--gold);font-weight:600;font-size:12.5px;">' + esc(p.sector) + '</span></div>' +
+    '<div style="font-size:12.5px;color:#777;margin:2px 0 4px;">' + esc(p.jobTitle) + (p.location ? ' - ' + esc(p.location) : '') + '</div>' +
+    '<div style="font-size:12.5px;">' + esc(p.salaryExpectation) + ' - notice: ' + esc(p.noticePeriod) + '</div>' +
+    '</div>';
+  lgOverlay('tpOverlay',
+    '<div style="font-size:11px;letter-spacing:.8px;color:var(--gold);font-weight:600;margin-bottom:4px;">NEW FROM THE WEBSITE</div>' +
+    '<h3 style="margin:0 0 6px;font-size:18px;">' + (list.length === 1 ? 'A new CV has been uploaded' : list.length + ' new CVs have been uploaded') + '</h3>' +
+    '<div style="font-size:12.5px;color:#777;margin-bottom:12px;">' + (list.length === 1 ? 'Someone' : 'People') + ' joined the talent pool through the careers site. Please take a look.</div>' +
+    list.slice(0, 8).map(card).join('') +
+    (list.length > 8 ? '<div style="font-size:12.5px;color:#777;margin-bottom:8px;">and ' + (list.length - 8) + ' more in the Candidate Pool.</div>' : '') +
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;flex-wrap:wrap;">' +
+    '<button style="' + LG_BTN2 + '" onclick="tpDismiss(false)">Got it</button>' +
+    '<button style="' + LG_BTN + '" onclick="tpDismiss(true)">Open the Candidate Pool</button></div>');
+}
+
+async function tpMarkSeen(ids){
+  try{ await b2Post('/api/talent-pool/seen', {ids}); }catch(e){ showToast('Could not save that: ' + e.message); return false; }
+  (ids || []).forEach(id => {
+    const p = POOL.find(x => x.id === id);
+    if(p){ p.seenBy = (p.seenBy || []).concat([tpMe()]); }
+  });
+  return true;
+}
+
+async function tpDismiss(openPool){
+  const ids = (TP.shown || []).map(p => p.id);
+  lgClose('tpOverlay');
+  TP.shown = [];
+  await tpMarkSeen(ids);
+  try{ if(typeof loadCandidatePool === 'function') await loadCandidatePool(true); if(typeof refreshOps === 'function') refreshOps(true); }catch(e){}
+  if(openPool){
+    switchTab('candidatePool');
+    const f = document.getElementById('poolShowFilter');
+    if(f){ f.value = 'talent'; renderPool(); }
+  }
+}
+
+async function tpReviewed(id){
+  if(await tpMarkSeen([id])){
+    renderPool();
+    if(openPoolId === id) renderPoolDialog();
+    updatePoolBadge();
+    try{ if(typeof refreshOps === 'function') refreshOps(true); }catch(e){}
+  }
+}
+
+/* Pool list: filter, flags and growth counter */
+(function(){
+  const _pfl = poolFilteredList;
+  poolFilteredList = function(){
+    let list = _pfl();
+    const f = (document.getElementById('poolShowFilter') || {}).value || '';
+    if(f === 'talent') list = list.filter(p => !!p.sector);
+    else if(f === 'new') list = list.filter(tpUnseen);
+    else if(f === 'lapsed') list = list.filter(p => !!p.deletionFlag);
+    return list;
+  };
+
+  const _rp = renderPool;
+  renderPool = function(){
+    _rp();
+    // flags on each row
+    document.querySelectorAll('#poolBody tr[onclick^="openPoolDialog"]').forEach(tr => {
+      const m = String(tr.getAttribute('onclick')).match(/openPoolDialog\('(.*)'\)/);
+      const p = m && POOL.find(x => x.id === m[1].replace(/&#39;/g, "'"));
+      if(!p || !p.sector) return;
+      const tds = tr.querySelectorAll('td');
+      const nameTd = tds[0], roleTd = tds[1];
+      if(nameTd){
+        nameTd.querySelectorAll('.pool-muted').forEach(x => { if(/Removed from pipeline/.test(x.textContent) && tpIsPoolOnly(p)) x.remove(); });
+        let flags = '';
+        if(tpUnseen(p)) flags += '<span class="pool-tag warn" style="margin-left:6px;">New</span>';
+        if(p.deletionFlag) flags += '<span class="pool-tag rej" style="margin-left:6px;">Flagged for deletion</span>';
+        if(flags) nameTd.insertAdjacentHTML('beforeend', '<div>' + flags + '</div>');
+      }
+      if(roleTd){
+        roleTd.innerHTML = (tpIsPoolOnly(p) ? 'Talent pool' : esc(p.role) + ' <span class="pool-tag">Talent pool sign-up</span>') +
+          '<div class="pool-muted">' + esc(p.sector) + (p.location ? ' - ' + esc(p.location) : '') + '</div>';
+      }
+    });
+    const s = document.getElementById('poolSummary');
+    if(s && TP.stats && TP.stats.total){
+      s.textContent += ' - talent pool sign-ups: ' + TP.stats.total + ' in total, ' + TP.stats.last30 + ' in the last 30 days';
+    }
+  };
+
+  const _lcp = loadCandidatePool;
+  loadCandidatePool = async function(quiet){
+    await _lcp(quiet);
+    tpLoadStats(false);
+  };
+})();
+
+/* Candidate dialog: talent pool details, consent and retention */
+(function(){
+  const _rpd3 = renderPoolDialog;
+  renderPoolDialog = function(){
+    _rpd3();
+    const p = POOL.find(x => x.id === openPoolId);
+    if(!p || !p.sector) return;
+    const body = document.getElementById('poolDialogBody');
+    if(!body) return;
+    const consent = p.consentDate || String(p.dateAdded || '').slice(0, 10);
+    const reconsentOn = tpIsPoolOnly(p) ? tpAddMonths(consent, 11) : '';
+    const expiry = tpIsPoolOnly(p) ? tpAddMonths(consent, 12) : '';
+    const fr = (l, v) => '<div class="field-row"><label>' + l + '</label><div class="val">' + (v ? esc(v) : '<span class="pool-muted">Not given</span>') + '</div></div>';
+    const html = '<div class="pool-section-label">Talent pool sign-up</div>' +
+      '<div class="two-col">' +
+        fr('Sector', p.sector) + fr('Current or last job title', p.jobTitle) +
+        fr('Location', p.location) + fr('Salary expectation', p.salaryExpectation) +
+        fr('Notice period', p.noticePeriod) + fr('Right to work in the UK', p.rightToWork) +
+        fr('Would relocate', p.relocation) + fr('Work type', p.workType) +
+      '</div>' +
+      '<div class="pool-section-label">Consent and retention</div>' +
+      '<div class="pool-cv-box">' +
+        '<div class="pool-cv-status">Consent given on <strong>' + esc(poolFmtDate(consent)) + '</strong>' + (p.consentBasis ? ' - ' + esc(p.consentBasis) : '') + '.</div>' +
+        (reconsentOn ? '<div class="pool-cv-status">Re-consent email goes out on <strong>' + esc(poolFmtDate(reconsentOn)) + '</strong>' + (p.reconsentSent ? ' (already sent on ' + esc(poolFmtDate(p.reconsentSent)) + ')' : '') + '. Details are held until <strong>' + esc(poolFmtDate(expiry)) + '</strong> unless they re-confirm.</div>' : '') +
+        (p.deletionFlag ? '<div class="pool-cv-status" style="color:#9B2C22;"><strong>Flagged for deletion on ' + esc(poolFmtDate(p.deletionFlag)) + '</strong> - no reply to the re-consent email. ' + (signedInUser && signedInUser.admin ? 'Erase this record from the data protection section below.' : 'Dan will remove this record.') + '</div>' : '') +
+        (tpUnseen(p) ? '<div class="pool-cv-buttons"><button class="gold" onclick="tpReviewed(\'' + esc(p.id) + '\')">Mark as reviewed</button></div>' : '') +
+      '</div>';
+    const first = body.querySelector('.pool-section-label');
+    if(first) first.insertAdjacentHTML('beforebegin', html); else body.insertAdjacentHTML('beforeend', html);
+  };
+})();
+
+/* Notifications and Home */
+(function(){
+  const _bn = buildNotifications;
+  buildNotifications = function(){
+    const out = _bn();
+    if(!signedInUser || typeof poolLoaded === 'undefined' || !poolLoaded) return out;
+    const fresh = POOL.filter(tpUnseen);
+    if(fresh.length){
+      out.push({sev:'med', title: fresh.length + ' new CV' + (fresh.length === 1 ? '' : 's') + ' from the talent pool sign-up',
+        detail: 'Uploaded through the website. Open the Candidate Pool and take a look', act:{type:'tab', tab:'candidatePool'}});
+    }
+    const lapsed = POOL.filter(p => !p.erased && p.deletionFlag);
+    if(lapsed.length){
+      out.push({sev:'high', title: lapsed.length + ' talent pool candidate' + (lapsed.length === 1 ? '' : 's') + ' did not re-confirm',
+        detail: signedInUser.admin ? 'Flagged for deletion. Open the Candidate Pool and erase them' : 'Flagged for deletion. Dan will remove them', act:{type:'tab', tab:'candidatePool'}});
+    }
+    const rank = {high:0, med:1, low:2};
+    return out.map((n, i) => ({n, i})).sort((a, b) => (rank[a.n.sev] - rank[b.n.sev]) || (a.i - b.i)).map(x => x.n);
+  };
+
+  const _rh = renderHome;
+  renderHome = function(){
+    _rh();
+    const el = document.getElementById('homeTiles');
+    if(el && TP.stats){
+      el.insertAdjacentHTML('beforeend', '<div class="tile" onclick="switchTab(\'candidatePool\')"><div class="n">' + esc(TP.stats.last30) + '</div><div class="l">Talent pool sign-ups (30 days)</div></div>');
+    }
+  };
+
+  const _si = signIn;
+  signIn = function(user){
+    _si(user);
+    if(TP.timer) clearInterval(TP.timer);
+    TP.stats = null; TP.statsAt = 0;
+    setTimeout(() => { tpCheck(); tpLoadStats(true); }, 5000);
+    TP.timer = setInterval(tpCheck, 60 * 1000);
+  };
+})();
+</script>
+
+<script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '6 Oct 2026 - build 12';
+var PAGE_BUILD = '8 Oct 2026 - build 13';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -13734,12 +13947,12 @@ function buildTagApply(){
     tag.style.cssText = 'font-size:10.5px;color:#999;margin-left:10px;white-space:nowrap;';
     chip.appendChild(tag);
   }
-  tag.textContent = 'Page build 12';
+  tag.textContent = 'Page build 13';
   tag.title = 'Page: ' + PAGE_BUILD;
   b2Api('/api/version').then(function(j){
-    tag.textContent = 'Page build 12 | Server ' + serverBuildLabel(j.build);
+    tag.textContent = 'Page build 13 | Server ' + serverBuildLabel(j.build);
     tag.title = 'Page: ' + PAGE_BUILD + ' | Server: ' + j.build;
-  }).catch(function(){ tag.textContent = 'Page build 12 | Server older'; });
+  }).catch(function(){ tag.textContent = 'Page build 13 | Server older'; });
 }
 (function(){
   const _si = signIn;

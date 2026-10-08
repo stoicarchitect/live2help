@@ -119,6 +119,14 @@ main { max-width: 760px; margin: 0 auto; padding: 32px 20px 90px; }
 .apply-bar p { color: var(--tx2); font-size: 13px; }
 .apply-bar .btn-gold { padding: 12px 26px; font-size: 15px; }
 
+.pool-cta {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  background: var(--gold-dim); border: 1px solid var(--bdr-h); border-radius: var(--radius);
+  padding: 16px 20px; margin-bottom: 22px;
+}
+.pool-cta h2 { font-size: 22px; font-weight: 600; color: var(--gold-l); margin-bottom: 2px; }
+.pool-cta p { color: var(--tx2); font-size: 13px; }
+.pool-cta .btn { padding: 11px 20px; font-size: 14px; white-space: nowrap; }
 .empty-state { text-align: center; color: var(--tx2); padding: 60px 20px; border: 1px dashed var(--bdr); border-radius: var(--radius); }
 .empty-state h2 { color: var(--tx); font-size: 24px; margin-bottom: 8px; }
 footer { text-align: center; padding: 30px 20px; color: var(--tx3); font-size: 12px; border-top: 1px solid var(--bdr); }
@@ -133,6 +141,13 @@ footer { text-align: center; padding: 30px 20px; color: var(--tx3); font-size: 1
 </header>
 
 <main>
+  <div class="pool-cta" id="poolCta">
+    <div>
+      <h2 class="serif">Not seeing the right role?</h2>
+      <p>Upload your CV and join our talent pool. We will keep you in mind when roles come up.</p>
+    </div>
+    <a class="btn btn-gold" href="talent-pool/">Join our talent pool</a>
+  </div>
   <div id="status">Loading current roles...</div>
   <div id="view"></div>
 </main>
@@ -206,6 +221,7 @@ async function loadRoleDetail(slug) {
 
 function render() {
   const slug = roleSlugFromUrl();
+  document.getElementById('poolCta').style.display = slug ? 'none' : 'flex';
   if (slug) renderRole(slug); else renderList();
 }
 

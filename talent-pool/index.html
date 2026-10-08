@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Join our talent pool - Live 2 Help Recruitment</title>
+<meta name="description" content="Upload your CV and tell us what you are looking for. We will keep you in mind for roles with our clients as they come up.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Live 2 Help Recruitment">
+<meta property="og:title" content="Join our talent pool - Live 2 Help Recruitment">
+<meta property="og:description" content="Upload your CV and tell us what you are looking for. We will keep you in mind for roles as they come up.">
+<meta property="og:image" content="https://careers.live2helprecruitment.co.uk/assets/og-image.png">
+<link rel="icon" href="../assets/logo.png" type="image/png">
+<style>
+  :root {
+    --gold: #C9A84C;
+    --gold-l: #E8C96A;
+    --navy: #0B0B18;
+    --dark: #1A1A1A;
+    --grey: #444444;
+    --lightbg: #F7F6F3;
+    --border: #DDDDDD;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Gill Sans MT', 'Gill Sans', Calibri, sans-serif; background: var(--lightbg); color: var(--dark); }
+
+  .topbar { background: var(--navy); padding: 26px 20px; text-align: center; border-bottom: 3px solid var(--gold); }
+  .topbar img { height: 52px; width: auto; }
+
+  .wrap { max-width: 720px; margin: 0 auto; padding: 32px 20px 80px; }
+  .intro { text-align: center; margin-bottom: 28px; }
+  .intro h1 { font-size: 28px; margin: 0 0 8px; color: var(--navy); }
+  .intro p { color: var(--grey); font-size: 15px; margin: 0 auto; max-width: 560px; line-height: 1.55; }
+  .intro .roles-link { display: inline-block; margin-top: 14px; color: var(--navy); font-weight: bold; text-decoration: underline; text-decoration-color: var(--gold); text-underline-offset: 3px; }
+
+  form { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 28px 24px; }
+  .field { margin-bottom: 22px; }
+  label { display: block; font-weight: bold; font-size: 14px; margin-bottom: 6px; color: var(--dark); }
+  label .req { color: var(--gold); }
+  .hint { font-size: 12px; color: var(--grey); margin-top: 4px; }
+
+  input[type="text"], input[type="email"], input[type="tel"], select {
+    width: 100%; padding: 11px 12px; border: 1px solid var(--border); border-radius: 6px;
+    font-size: 15px; font-family: inherit; background: #fff; color: var(--dark);
+  }
+  input[type="file"] {
+    width: 100%; padding: 12px; border: 1px dashed var(--gold); border-radius: 6px;
+    font-size: 14px; font-family: inherit; background: #FFFDF6; color: var(--dark); cursor: pointer;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--gold); }
+
+  .radio-group, .check-group { display: flex; flex-direction: column; gap: 8px; }
+  .option { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; cursor: pointer; font-weight: normal; margin: 0; }
+  .option:hover { border-color: var(--gold); }
+  .option input { margin-right: 10px; accent-color: var(--navy); }
+  .option span { font-size: 14px; }
+
+  .section-divider { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
+  .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--gold); font-weight: bold; margin-bottom: 18px; }
+
+  .consent-box { background: var(--lightbg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 22px; }
+  .consent-box p { font-size: 13px; line-height: 1.55; color: var(--grey); margin: 0 0 12px; }
+  .consent-box a { color: var(--dark); font-weight: bold; text-decoration: underline; }
+  .consent-row { display: flex; align-items: flex-start; gap: 10px; font-weight: normal; font-size: 14px; line-height: 1.45; margin: 0; cursor: pointer; }
+  .consent-row input { margin-top: 3px; flex-shrink: 0; width: 18px; height: 18px; accent-color: var(--navy); }
+
+  button[type="submit"] { width: 100%; background: var(--navy); color: #fff; border: none; padding: 15px; font-size: 16px; font-weight: bold; border-radius: 6px; cursor: pointer; letter-spacing: .5px; }
+  button[type="submit"]:hover { background: #000; }
+  button[type="submit"]:disabled { background: #999; cursor: not-allowed; }
+  .footer-note { text-align: center; font-size: 12px; color: var(--grey); margin-top: 18px; }
+
+  #errorMessage { display: none; background: #FBEAEA; border: 1px solid #E5B4B4; color: #8A2E2E; padding: 12px 14px; border-radius: 6px; font-size: 14px; margin-bottom: 18px; }
+
+  /* hidden spam trap: real people never see or fill this */
+  .hp { position: absolute; left: -9999px; top: auto; width: 1px; height: 1px; overflow: hidden; }
+
+  /* instant acknowledgement */
+  #ack { display: none; position: fixed; inset: 0; z-index: 50; background: rgba(11,11,24,.78); align-items: center; justify-content: center; padding: 20px; }
+  #ack.show { display: flex; }
+  .ack-card { background: #fff; border-top: 4px solid var(--gold); border-radius: 10px; max-width: 460px; width: 100%; padding: 30px 26px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.4); }
+  .ack-card h2 { margin: 0 0 8px; font-size: 24px; color: var(--navy); }
+  .ack-card p { color: var(--grey); line-height: 1.55; margin: 0 0 14px; font-size: 15px; }
+  .ack-status { font-size: 12.5px; color: var(--grey); margin: 0 0 18px; min-height: 18px; }
+  .ack-status.done { color: #2D6A3E; font-weight: bold; }
+  .ack-btn { display: inline-block; background: var(--navy); color: #fff; text-decoration: none; padding: 13px 22px; border-radius: 6px; font-weight: bold; font-size: 15px; }
+  .ack-btn:hover { background: #000; }
+</style>
+</head>
+<body>
+
+<div class="topbar"><img src="../assets/logo.png" alt="Live 2 Help Recruitment"></div>
+
+<div class="wrap">
+  <div class="intro">
+    <h1>Join our talent pool</h1>
+    <p>Not seeing the right role today? Upload your CV and tell us what you are looking for. We will keep you in mind when roles come up with our clients, and get in touch when we find a good match.</p>
+    <a class="roles-link" href="/">See all our live roles first</a>
+  </div>
+
+  <div id="errorMessage" role="alert"></div>
+
+  <form id="poolForm" novalidate>
+
+    <div class="section-title">Your Details</div>
+
+    <div class="field">
+      <label for="name">Full name <span class="req">*</span></label>
+      <input type="text" id="name" name="name" autocomplete="name" required>
+    </div>
+    <div class="field">
+      <label for="email">Email address <span class="req">*</span></label>
+      <input type="email" id="email" name="email" autocomplete="email" required>
+    </div>
+    <div class="field">
+      <label for="phone">Phone number <span class="req">*</span></label>
+      <input type="tel" id="phone" name="phone" autocomplete="tel" required>
+    </div>
+    <div class="field">
+      <label for="location">Where are you based? <span class="req">*</span></label>
+      <input type="text" id="location" name="location" autocomplete="address-level2" placeholder="Town or city" required>
+    </div>
+    <div class="field">
+      <label for="cv">Upload your CV <span class="req">*</span></label>
+      <input type="file" id="cv" name="cv" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required>
+      <div class="hint">PDF, DOC or DOCX, up to 5MB</div>
+    </div>
+
+    <hr class="section-divider">
+    <div class="section-title">What You Are Looking For</div>
+
+    <div class="field">
+      <label for="sector">Sector <span class="req">*</span></label>
+      <select id="sector" name="sector" required>
+        <option value="" disabled selected>Choose the sector you want to work in</option>
+        <option>Accountancy &amp; Finance</option>
+        <option>Catering &amp; Hospitality</option>
+        <option>Commercial</option>
+        <option>Construction</option>
+        <option>Corporate</option>
+        <option>Driving</option>
+        <option>Engineering &amp; Technical</option>
+        <option>Health &amp; Social Care</option>
+        <option>Industrial</option>
+        <option>IT &amp; IT Sales</option>
+        <option>Sales</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="jobTitle">Current or most recent job title <span class="req">*</span></label>
+      <input type="text" id="jobTitle" name="jobTitle" autocomplete="organization-title" required>
+    </div>
+    <div class="field">
+      <label for="salaryExpectation">Salary expectation <span class="req">*</span></label>
+      <input type="text" id="salaryExpectation" name="salaryExpectation" placeholder="e.g. £32,000 a year" required>
+    </div>
+    <div class="field">
+      <label for="noticePeriod">Notice period <span class="req">*</span></label>
+      <select id="noticePeriod" name="noticePeriod" required>
+        <option value="" disabled selected>Select an option</option>
+        <option>Immediately available</option>
+        <option>1 week</option>
+        <option>2 weeks</option>
+        <option>1 month</option>
+        <option>2 months</option>
+        <option>3 months or more</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Do you have the right to work in the UK? <span class="req">*</span></label>
+      <div class="radio-group">
+        <label class="option"><input type="radio" name="rightToWork" value="Yes - I have the right to work in the UK"><span>Yes, I have the right to work in the UK</span></label>
+        <label class="option"><input type="radio" name="rightToWork" value="No - I would need sponsorship"><span>No, I would need sponsorship</span></label>
+      </div>
+    </div>
+    <div class="field">
+      <label>Would you relocate for the right role? <span class="req">*</span></label>
+      <div class="radio-group">
+        <label class="option"><input type="radio" name="relocation" value="Yes"><span>Yes</span></label>
+        <label class="option"><input type="radio" name="relocation" value="No"><span>No</span></label>
+        <label class="option"><input type="radio" name="relocation" value="Maybe, depending on the role"><span>Maybe, depending on the role</span></label>
+      </div>
+    </div>
+    <div class="field">
+      <label>What type of work are you open to? <span class="req">*</span></label>
+      <div class="check-group">
+        <label class="option"><input type="checkbox" name="employmentType" value="Permanent"><span>Permanent</span></label>
+        <label class="option"><input type="checkbox" name="employmentType" value="Contract"><span>Contract</span></label>
+        <label class="option"><input type="checkbox" name="employmentType" value="Temporary"><span>Temporary</span></label>
+        <label class="option"><input type="checkbox" name="employmentType" value="Part-time"><span>Part-time</span></label>
+      </div>
+    </div>
+    <div class="field">
+      <label>Working pattern you prefer</label>
+      <div class="check-group">
+        <label class="option"><input type="checkbox" name="workPattern" value="On-site"><span>On-site</span></label>
+        <label class="option"><input type="checkbox" name="workPattern" value="Hybrid"><span>Hybrid</span></label>
+        <label class="option"><input type="checkbox" name="workPattern" value="Remote"><span>Remote</span></label>
+      </div>
+      <div class="hint">Optional</div>
+    </div>
+
+    <div class="hp" aria-hidden="true">
+      <label for="website">Leave this field empty</label>
+      <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
+    </div>
+
+    <hr class="section-divider">
+    <div class="section-title">Your Data</div>
+
+    <div class="consent-box">
+      <p>Live 2 Help Recruitment is the data controller for the details you submit here, including your CV. We will use them to match you with suitable roles and to contact you about them. If a role looks right, we will speak to you before we share your details with an employer. We keep your details for up to 12 months. Before then we will email you to ask if you would like us to keep them, and if we do not hear back we will delete them. You can ask us to delete your details at any time by emailing office@live2helprecruitment.co.uk. Our <a href="https://live2helprecruitment.co.uk/privacy-policy" target="_blank" rel="noopener">privacy policy</a> explains more.</p>
+      <label class="consent-row">
+        <input type="checkbox" id="consent" name="consent">
+        <span>I have read the privacy policy and agree that Live 2 Help Recruitment may hold and use my details, including my CV, for up to 12 months to contact me about suitable roles. <span class="req" style="color:var(--gold)">*</span></span>
+      </label>
+    </div>
+
+    <div id="turnstileBox" style="margin-bottom:18px;"></div>
+
+    <button type="submit" id="submitBtn">Join the talent pool</button>
+    <div class="footer-note">Live 2 Help Recruitment &middot; Anyone &middot; Anywhere &middot; Anytime</div>
+  </form>
+</div>
+
+<div id="ack" role="dialog" aria-modal="true" aria-labelledby="ackTitle">
+  <div class="ack-card">
+    <h2 id="ackTitle">Thank you</h2>
+    <p id="ackBody">We have your details and your CV. We will keep you in mind for roles that match what you are looking for, and one of the team will be in touch when we find one.</p>
+    <p class="ack-status" id="ackStatus" aria-live="polite">Saving your details. Please keep this page open for a few seconds.</p>
+    <a class="ack-btn" href="/">See all our live roles</a>
+  </div>
+</div>
+
+<script>
+  var API = 'https://l2h-api.onrender.com';
+  var SUBMIT_ENDPOINT = API + '/api/talent-pool';
+  // Cloudflare Turnstile site key. Leave empty until the key is created, then paste it here.
+  var TURNSTILE_SITE_KEY = '';
+  var MAX_CV_BYTES = 5 * 1024 * 1024;
+  var loadedAt = Date.now();
+  var saving = false;
+
+  var form = document.getElementById('poolForm');
+  var errorBox = document.getElementById('errorMessage');
+  var submitBtn = document.getElementById('submitBtn');
+  var ack = document.getElementById('ack');
+  var ackStatus = document.getElementById('ackStatus');
+  var turnstileWidget = null;
+
+  if (TURNSTILE_SITE_KEY) {
+    var s = document.createElement('script');
+    s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+    s.async = true; s.defer = true;
+    s.onload = function () {
+      turnstileWidget = window.turnstile.render('#turnstileBox', { sitekey: TURNSTILE_SITE_KEY });
+    };
+    document.head.appendChild(s);
+  }
+
+  function showError(message) {
+    errorBox.textContent = message;
+    errorBox.style.display = 'block';
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Join the talent pool';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function readFileAsBase64(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () { resolve(String(reader.result).split(',')[1]); };
+      reader.onerror = function () { reject(new Error('Could not read the CV file')); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function checked(name) {
+    return Array.prototype.map.call(form.querySelectorAll('input[name="' + name + '"]:checked'), function (i) { return i.value; });
+  }
+  function val(id) { return String(document.getElementById(id).value || '').trim(); }
+
+  window.addEventListener('beforeunload', function (e) {
+    if (saving) { e.preventDefault(); e.returnValue = ''; }
+  });
+
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    errorBox.style.display = 'none';
+
+    var file = document.getElementById('cv').files[0];
+    if (val('name').length < 2) return showError('Please enter your full name.');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(val('email'))) return showError('Please enter a valid email address.');
+    var digits = val('phone').replace(/\D/g, '');
+    if (digits.length < 9 || digits.length > 15 || !/^[0-9+()\s-]+$/.test(val('phone'))) return showError('Please enter a valid phone number.');
+    if (val('location').length < 2) return showError('Please tell us where you are based.');
+    if (!file) return showError('Please upload your CV before submitting.');
+    if (!/\.(pdf|docx?)$/i.test(file.name)) return showError('Your CV must be a PDF, DOC or DOCX file.');
+    if (file.size > MAX_CV_BYTES) return showError('Your CV is larger than 5MB. Please upload a smaller file.');
+    if (!val('sector')) return showError('Please choose a sector.');
+    if (val('jobTitle').length < 2) return showError('Please enter your current or most recent job title.');
+    if (!val('salaryExpectation')) return showError('Please enter your salary expectation.');
+    if (!val('noticePeriod')) return showError('Please choose your notice period.');
+    var rtw = checked('rightToWork')[0], reloc = checked('relocation')[0];
+    if (!rtw) return showError('Please tell us if you have the right to work in the UK.');
+    if (!reloc) return showError('Please tell us if you would relocate.');
+    if (!checked('employmentType').length) return showError('Please choose at least one type of work.');
+    if (!document.getElementById('consent').checked) return showError('Please tick the box to confirm you have read the privacy policy.');
+
+    var token = '';
+    if (TURNSTILE_SITE_KEY) {
+      token = window.turnstile && turnstileWidget !== null ? window.turnstile.getResponse(turnstileWidget) : '';
+      if (!token) return showError('Please complete the check to show you are human.');
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Submitting...';
+
+    // Instant acknowledgement: the candidate sees this straight away while the save finishes behind it.
+    var first = val('name').split(/\s+/)[0];
+    document.getElementById('ackTitle').textContent = 'Thank you, ' + first;
+    ackStatus.className = 'ack-status';
+    ackStatus.textContent = 'Saving your details. Please keep this page open for a few seconds.';
+    ack.classList.add('show');
+    saving = true;
+
+    var payload = {
+      name: val('name'), email: val('email'), phone: val('phone'), location: val('location'),
+      sector: val('sector'), jobTitle: val('jobTitle'), salaryExpectation: val('salaryExpectation'),
+      noticePeriod: val('noticePeriod'), rightToWork: rtw, relocation: reloc,
+      employmentType: checked('employmentType'), workPattern: checked('workPattern'),
+      consent: true, website: val('website'), elapsedMs: Date.now() - loadedAt, turnstileToken: token,
+      src: new URLSearchParams(location.search).get('src') || ''
+    };
+
+    try {
+      payload.cvData = await readFileAsBase64(file);
+      payload.cvFileName = file.name;
+      var ctrl = new AbortController();
+      var timer = setTimeout(function () { ctrl.abort(); }, 120000);
+      var res = await fetch(SUBMIT_ENDPOINT, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload), signal: ctrl.signal
+      });
+      clearTimeout(timer);
+      if (!res.ok) {
+        var msg = '';
+        try { msg = (await res.json()).error || ''; } catch (x) { /* no body */ }
+        throw new Error(msg || 'Submission failed');
+      }
+      saving = false;
+      ackStatus.className = 'ack-status done';
+      ackStatus.textContent = 'All saved. You are now in our talent pool.';
+      if (window.turnstile && turnstileWidget !== null) window.turnstile.reset(turnstileWidget);
+    } catch (err) {
+      saving = false;
+      ack.classList.remove('show');
+      if (window.turnstile && turnstileWidget !== null) window.turnstile.reset(turnstileWidget);
+      var friendly = err && err.message && err.message !== 'Submission failed' && err.name !== 'AbortError' && err.message !== 'Failed to fetch'
+        ? err.message
+        : 'Something went wrong saving your details. Please try again, or email us at office@live2helprecruitment.co.uk.';
+      showError(friendly);
+    }
+  });
+</script>
+</body>
+</html>

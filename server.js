@@ -229,6 +229,7 @@ app.post('/api/login', async (req, res) => {
 const PUBLIC_API = [
   { method: 'POST', re: /^\/api\/login$/ },
   { method: 'POST', re: /^\/api\/applications\/[^/]+$/ },
+  { method: 'POST', re: /^\/api\/talent-pool$/ },
   { method: 'POST', re: /^\/api\/claude$/ },
   { method: 'GET', re: /^\/api\/public\/roles(\/[a-z0-9-]+)?$/ },
   { method: 'GET', re: /^\/api\/health$/ },
@@ -1101,6 +1102,7 @@ async function handleSalesManagerApplication(req, res, form) {
       }, true, { createOnly: true });
       if (saved) await attachCvToPool(poolId, saved);
       await stampPoolSource(poolId, req.body);
+      await mergeTalentPoolOnApplication(poolId, email, phone, roleName);
     } catch (poolErr) {
       console.error('Could not create pool record for application:', poolErr.message);
     }
@@ -1243,6 +1245,7 @@ async function handleCadApplication(req, res, form) {
       }, true, { createOnly: true });
       if (saved) await attachCvToPool(poolId, saved);
       await stampPoolSource(poolId, req.body);
+      await mergeTalentPoolOnApplication(poolId, email, phone, roleName);
     } catch (poolErr) {
       console.error('Could not create pool record for application:', poolErr.message);
     }
@@ -1381,6 +1384,7 @@ app.post('/api/applications/:role', async (req, res) => {
       }, true, { createOnly: true });
       if (saved) await attachCvToPool(poolId, saved);
       await stampPoolSource(poolId, req.body);
+      await mergeTalentPoolOnApplication(poolId, email, phone, roleName);
     } catch (poolErr) {
       console.error('Could not create pool record for application:', poolErr.message);
     }
@@ -3202,9 +3206,13 @@ const POOL_HEADER = [
   'id', 'name', 'email', 'phone', 'company', 'role', 'furthest_stage', 'current_stage',
   'date_added', 'last_updated', 'notes', 'cv_file_id', 'cv_file_name', 'cv_link', 'in_pipeline', 'tags',
   'source', 'consent_date', 'consent_basis', 'review_date', 'erased',
+  'sector', 'job_title', 'location', 'salary_expectation', 'notice_period', 'right_to_work',
+  'relocation', 'work_type', 'seen_by', 'reconsent_sent', 'deletion_flag',
 ];
 const POOL_WIDTH = POOL_HEADER.length;
-const POOL_LAST_COL = 'U';
+const POOL_LAST_COL = 'AF';
+const TALENT_POOL_ROLE = 'Talent Pool';
+const TALENT_POOL_STAGE = 'talent_pool';
 const POOL_CV_FOLDER_NAME = 'Candidate Pool CVs';
 
 // Forward progression only. "rejected" is deliberately not ranked - a rejection
@@ -3285,6 +3293,18 @@ function rowToPoolEntry(row) {
     reviewDate: r[19],
     reviewDue: reviewDueFor(r),
     erased: r[20],
+    sector: r[21],
+    jobTitle: r[22],
+    location: r[23],
+    salaryExpectation: r[24],
+    noticePeriod: r[25],
+    rightToWork: r[26],
+    relocation: r[27],
+    workType: r[28],
+    seenBy: String(r[29] || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean),
+    reconsentSent: r[30],
+    deletionFlag: r[31],
+    isTalentPool: !!r[21],
   };
 }
 
@@ -3307,12 +3327,23 @@ let poolTabReady = false;
 async function ensurePoolTab() {
   if (poolTabReady) return;
   const sheets = getSheetsClient();
-  const ss = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties.title' });
+  const gridFields = 'sheets.properties(sheetId,title,gridProperties)';
+  let ss = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: gridFields });
   const exists = (ss.data.sheets || []).some(s => s.properties.title === POOL_TAB);
   if (!exists) {
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId: SHEET_ID,
       requestBody: { requests: [{ addSheet: { properties: { title: POOL_TAB } } }] },
+    });
+    ss = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: gridFields });
+  }
+  // The tab needs enough columns for every pool field (a new tab starts with 26)
+  const poolSheet = (ss.data.sheets || []).find(s => s.properties.title === POOL_TAB);
+  const haveCols = poolSheet && poolSheet.properties.gridProperties ? poolSheet.properties.gridProperties.columnCount : 0;
+  if (poolSheet && haveCols && haveCols < POOL_WIDTH) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: { requests: [{ appendDimension: { sheetId: poolSheet.properties.sheetId, dimension: 'COLUMNS', length: POOL_WIDTH - haveCols } }] },
     });
   }
   const head = await sheets.spreadsheets.values.get({
@@ -3476,7 +3507,7 @@ async function doReconcile() {
   // Candidates no longer in the pipeline stay in the pool, flagged accordingly
   for (const [id, ex] of byId) {
     if (seen.has(id)) continue;
-    if ((ex.row[14] || '') === 'No' || (ex.row[20] || '')) continue;
+    if ((ex.row[14] || '') === 'No' || (ex.row[20] || '') || ex.row[5] === TALENT_POOL_ROLE) continue;
     const r = padPoolRow(ex.row);
     r[14] = 'No';
     const rowNum = ex.index + 2;
@@ -7316,6 +7347,7 @@ async function runDailyJob(skipBackup) {
   if (!skipBackup) await step('backup', safeBackup);
   await step('tasks', reconcileTasks);
   await step('invoiceChase', checkOverdueInvoices);
+  await step('talentPoolReconsent', talentPoolReconsentCheck);
   return result;
 }
 app.get('/api/cron/daily', cronOnly, async (req, res) => {
@@ -8492,8 +8524,543 @@ app.post('/r/:id', async (req, res) => {
   }
 });
 
+/* ======================================================================
+   Talent pool sign-up (public form on the careers site)
+
+   People who are not applying for a live role can upload a CV and answer a
+   short form. They land in the Candidate Pool as role "Talent Pool", stage
+   "Talent pool", with their sector kept as a tag so the pool search and
+   Find matches can use them.
+
+   - Duplicates: matched on email, then phone. The newest CV is kept.
+   - If the same person later applies for a live role, the talent pool
+     record is merged into the role card (see mergeTalentPoolOnApplication).
+   - Consent is recorded on every record. 12 month retention, with a
+     re-consent email at month 11 and a deletion flag if there is no answer.
+   - Spam controls: hidden field, minimum fill time, rate limits, file
+     checks, and Cloudflare Turnstile when TURNSTILE_SECRET is set.
+   ====================================================================== */
+
+const TALENT_POOL_WORDING_VERSION = 'v1 - 8 Oct 2026';
+const TP_SECTORS = ['Accountancy & Finance', 'Catering & Hospitality', 'Commercial', 'Construction', 'Corporate', 'Driving', 'Engineering & Technical', 'Health & Social Care', 'Industrial', 'IT & IT Sales', 'Sales'];
+const TP_NOTICE = ['Immediately available', '1 week', '2 weeks', '1 month', '2 months', '3 months or more'];
+const TP_RTW = ['Yes - I have the right to work in the UK', 'No - I would need sponsorship'];
+const TP_RELOCATE = ['Yes', 'No', 'Maybe, depending on the role'];
+const TP_EMPLOYMENT = ['Permanent', 'Contract', 'Temporary', 'Part-time'];
+const TP_PATTERN = ['On-site', 'Hybrid', 'Remote'];
+const TP_MAX_CV_BYTES = 5 * 1024 * 1024;
+const TP_RECONSENT_MONTH = 11;
+
+const tpHits = new Map();
+function tpAllow(key, max, windowMs) {
+  const now = Date.now();
+  const list = (tpHits.get(key) || []).filter(t => now - t < windowMs);
+  if (list.length >= max) { tpHits.set(key, list); return false; }
+  list.push(now);
+  tpHits.set(key, list);
+  if (tpHits.size > 5000) {
+    for (const [k, v] of tpHits) if (!v.some(t => now - t < 24 * 3600 * 1000)) tpHits.delete(k);
+  }
+  return true;
+}
+
+function tpClean(v, max) {
+  return String(v == null ? '' : v).replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+function tpClientIp(req) { return String(req.ip || req.get('x-forwarded-for') || '').split(',')[0].trim(); }
+function tpColLetter(i) {
+  let s = '';
+  let n = i + 1;
+  while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+function tpSeenList(r) { return String(r[29] || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean); }
+function tpPhoneKey(p) { const d = String(p || '').replace(/\D/g, ''); return d.length >= 9 ? d.slice(-10) : ''; }
+function tpUkDate(iso) { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1]}` : String(iso || ''); }
+function tpPublicBase() { return (process.env.PUBLIC_API_URL || process.env.RENDER_EXTERNAL_URL || 'https://l2h-api.onrender.com').replace(/\/+$/, ''); }
+function tpMergeTags(existing, add) {
+  const list = String(existing || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (add && !list.some(t => t.toLowerCase() === add.toLowerCase())) list.push(add);
+  return list.join(', ');
+}
+
+function tpCvLooksValid(fileName, b64) {
+  let buf;
+  try { buf = Buffer.from(String(b64), 'base64'); } catch (e) { return false; }
+  if (!buf.length || buf.length > TP_MAX_CV_BYTES) return false;
+  const ext = (String(fileName).match(/\.[A-Za-z0-9]+$/) || [''])[0].toLowerCase();
+  if (ext === '.pdf') return buf.slice(0, 1024).toString('latin1').includes('%PDF-');
+  if (ext === '.docx') return buf[0] === 0x50 && buf[1] === 0x4B;
+  if (ext === '.doc') {
+    const ole = buf[0] === 0xD0 && buf[1] === 0xCF && buf[2] === 0x11 && buf[3] === 0xE0;
+    const zip = buf[0] === 0x50 && buf[1] === 0x4B;
+    const rtf = buf.slice(0, 5).toString('latin1') === '{\\rtf';
+    return ole || zip || rtf;
+  }
+  return false;
+}
+
+function tpValidate(b) {
+  const c = {};
+  c.name = tpClean(b.name, 100);
+  if (c.name.length < 2 || !/[A-Za-zÀ-ɏ]/.test(c.name)) return { error: 'Please enter your full name.' };
+  c.email = tpClean(b.email, 120).toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(c.email)) return { error: 'Please enter a valid email address.' };
+  c.phone = tpClean(b.phone, 30);
+  const digits = c.phone.replace(/\D/g, '');
+  if (!/^[0-9+()\s-]+$/.test(c.phone) || digits.length < 9 || digits.length > 15) return { error: 'Please enter a valid phone number.' };
+  c.location = tpClean(b.location, 100);
+  if (c.location.length < 2) return { error: 'Please tell us where you are based.' };
+  c.sector = TP_SECTORS.includes(b.sector) ? b.sector : '';
+  if (!c.sector) return { error: 'Please choose a sector.' };
+  c.jobTitle = tpClean(b.jobTitle, 100);
+  if (c.jobTitle.length < 2) return { error: 'Please enter your current or most recent job title.' };
+  c.salary = tpClean(b.salaryExpectation, 60);
+  if (!c.salary) return { error: 'Please enter your salary expectation.' };
+  c.notice = TP_NOTICE.includes(b.noticePeriod) ? b.noticePeriod : '';
+  if (!c.notice) return { error: 'Please choose your notice period.' };
+  c.rightToWork = TP_RTW.includes(b.rightToWork) ? b.rightToWork : '';
+  if (!c.rightToWork) return { error: 'Please confirm your right to work in the UK.' };
+  c.relocation = TP_RELOCATE.includes(b.relocation) ? b.relocation : '';
+  if (!c.relocation) return { error: 'Please tell us if you would relocate.' };
+  const emp = Array.isArray(b.employmentType) ? b.employmentType.filter(x => TP_EMPLOYMENT.includes(x)) : [];
+  const pat = Array.isArray(b.workPattern) ? b.workPattern.filter(x => TP_PATTERN.includes(x)) : [];
+  if (!emp.length) return { error: 'Please choose at least one type of work.' };
+  c.workType = [emp.join(', '), pat.join(', ')].filter(Boolean).join(' | ');
+  if (b.consent !== true && b.consent !== 'Yes') return { error: 'Please tick the box to confirm you agree to us holding your details.' };
+  if (!b.cvData || !b.cvFileName) return { error: 'Please upload your CV.' };
+  if (!/\.(pdf|docx?)$/i.test(String(b.cvFileName))) return { error: 'Your CV must be a PDF, DOC or DOCX file.' };
+  if (String(b.cvData).length > MAX_CV_BASE64_LENGTH) return { error: 'Your CV is larger than 5MB. Please upload a smaller file.' };
+  if (!tpCvLooksValid(b.cvFileName, b.cvData)) return { error: 'We could not read that file. Please upload your CV as a PDF, DOC or DOCX under 5MB.' };
+  return { clean: c };
+}
+
+async function tpVerifyTurnstile(token, ip) {
+  const secret = process.env.TURNSTILE_SECRET;
+  if (!secret) return true;
+  if (!token) return false;
+  try {
+    const r = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ secret, response: String(token), remoteip: ip || '' }).toString(),
+      signal: AbortSignal.timeout(8000),
+    });
+    const j = await r.json();
+    return !!j.success;
+  } catch (e) {
+    console.error('Turnstile check could not run:', e.message);
+    return true; // never lose a real candidate because the check service is down
+  }
+}
+
+function tpFindMatches(rows, email, phone) {
+  const e = lc(email);
+  const pk = tpPhoneKey(phone);
+  const out = [];
+  rows.forEach((raw, i) => {
+    const r = padPoolRow(raw);
+    if (!r[0] || r[20]) return;
+    if ((e && lc(r[2]) === e) || (pk && tpPhoneKey(r[3]) === pk)) out.push(i);
+  });
+  return out;
+}
+
+function tpSummaryLine(c, today) {
+  return `Talent pool sign-up on ${tpUkDate(today)}. Sector: ${c.sector}. Job title: ${c.jobTitle}. Location: ${c.location}. Salary expectation: ${c.salary}. Notice: ${c.notice}. Right to work: ${c.rightToWork}. Would relocate: ${c.relocation}. Work type: ${c.workType}.`;
+}
+function tpNotesWith(oldNotes, summary) {
+  const kept = String(oldNotes || '').split(/\n\n/).filter(p => p && !p.startsWith('Talent pool sign-up on '));
+  return [summary].concat(kept).join('\n\n');
+}
+
+function tpApplyDetails(row, c, saved, basis, today, nowIso, srcLabel) {
+  row[21] = c.sector; row[22] = c.jobTitle; row[23] = c.location; row[24] = c.salary; row[25] = c.notice;
+  row[26] = c.rightToWork; row[27] = c.relocation; row[28] = c.workType;
+  row[29] = ''; row[30] = ''; row[31] = '';
+  row[15] = tpMergeTags(row[15], c.sector);
+  row[17] = today; row[18] = basis;
+  if (saved) { row[11] = saved.fileId; row[12] = saved.fileName; row[13] = saved.link || ''; }
+  row[9] = nowIso;
+  if (!row[16] && srcLabel) row[16] = srcLabel;
+}
+
+// Creates, updates or merges the pool row for one sign-up. Everything happens inside the pool lock.
+async function talentPoolUpsert(c, saved, srcLabel) {
+  const today = todayISO();
+  const nowIso = new Date().toISOString();
+  const basis = `Talent pool sign-up (wording ${TALENT_POOL_WORDING_VERSION})`;
+  const summary = tpSummaryLine(c, today);
+  const result = { mode: 'new', id: '', trashFileId: '' };
+  await withPoolLock(async () => {
+    poolRowsCache = null;
+    const sheets = getSheetsClient();
+    const rows = await readPoolRows();
+    const matches = tpFindMatches(rows, c.email, c.phone);
+    const tpIdx = matches.find(i => rows[i][5] === TALENT_POOL_ROLE);
+
+    if (tpIdx !== undefined) {
+      // same person signing up again: keep the newest details and CV
+      const row = padPoolRow(rows[tpIdx]);
+      if (row[11] && saved && row[11] !== saved.fileId) result.trashFileId = row[11];
+      row[1] = c.name; row[2] = c.email; row[3] = c.phone;
+      row[10] = tpNotesWith(row[10], summary);
+      tpApplyDetails(row, c, saved, basis, today, nowIso, srcLabel);
+      const n = tpIdx + 2;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID, range: `'${POOL_TAB}'!A${n}:${POOL_LAST_COL}${n}`,
+        valueInputOption: 'RAW', requestBody: { values: [row] },
+      });
+      result.mode = 'duplicate'; result.id = row[0];
+      return;
+    }
+
+    if (matches.length) {
+      // already in the pool through a role: add the talent pool details to that record, no second card
+      const idx = matches.slice().sort((a, b) => String(rows[b][8] || '').localeCompare(String(rows[a][8] || '')))[0];
+      const row = padPoolRow(rows[idx]);
+      if (!row[2]) row[2] = c.email;
+      if (!row[3]) row[3] = c.phone;
+      row[10] = tpNotesWith(row[10], summary);
+      tpApplyDetails(row, c, saved, basis, today, nowIso, srcLabel);
+      const n = idx + 2;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID, range: `'${POOL_TAB}'!A${n}:${POOL_LAST_COL}${n}`,
+        valueInputOption: 'RAW', requestBody: { values: [row] },
+      });
+      result.mode = 'existing'; result.id = row[0];
+      return;
+    }
+
+    let id = poolIdFor(c.name, TALENT_POOL_ROLE);
+    if (rows.some(r => r && r[0] === id)) id = `${id}-${crypto.randomBytes(2).toString('hex')}`;
+    const row = padPoolRow([]);
+    row[0] = id; row[1] = c.name; row[2] = c.email; row[3] = c.phone; row[4] = '';
+    row[5] = TALENT_POOL_ROLE; row[6] = TALENT_POOL_STAGE; row[7] = TALENT_POOL_STAGE;
+    row[8] = today; row[10] = summary; row[14] = 'Yes';
+    tpApplyDetails(row, c, saved, basis, today, nowIso, srcLabel);
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID, range: `'${POOL_TAB}'!A:${POOL_LAST_COL}`,
+      valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [row] },
+    });
+    result.id = id;
+  });
+  return result;
+}
+
+app.post('/api/talent-pool', async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (tpClean(b.website, 200)) return res.json({ success: true }); // hidden field filled in: a bot, say nothing
+    const ip = tpClientIp(req);
+    if (!tpAllow('ip:' + ip, 15, 60 * 60 * 1000)) return res.status(429).json({ error: 'Too many sign-ups from this connection. Please try again later.' });
+    if (!(Number(b.elapsedMs) >= 2500)) return res.status(400).json({ error: 'That was very quick. Please check your details and submit again.' });
+    const v = tpValidate(b);
+    if (v.error) return res.status(400).json({ error: v.error });
+    const c = v.clean;
+    if (!tpAllow('em:' + c.email, 3, 24 * 3600 * 1000)) return res.status(429).json({ error: 'We already have your details. If you need to change anything, email office@live2helprecruitment.co.uk.' });
+    if (!(await tpVerifyTurnstile(b.turnstileToken, ip))) return res.status(400).json({ error: 'We could not confirm you are human. Please refresh the page and try again.' });
+
+    let saved;
+    try {
+      saved = await saveCandidateCv({ company: '', name: c.name, fileName: b.cvFileName, fileData: b.cvData });
+    } catch (e) {
+      console.error('Talent pool CV could not be saved:', e.message);
+      return res.status(502).json({ error: 'We could not save your CV just now. Please try again in a minute.' });
+    }
+
+    const result = await talentPoolUpsert(c, saved, normaliseSource(b.src, ''));
+    if (result.trashFileId) {
+      getUploadDriveClient().files.update({ fileId: result.trashFileId, requestBody: { trashed: true } })
+        .catch(e => console.error('Older talent pool CV could not be removed:', e.message));
+    }
+    auditLog('website', 'talent_pool_signup', 'pool', c.name, `${c.sector}${result.mode !== 'new' ? ` (${result.mode})` : ''}`);
+    res.json({ success: true });
+  } catch (e) {
+    console.error('POST /api/talent-pool error:', e);
+    res.status(500).json({ error: 'Something went wrong saving your details. Please try again.' });
+  }
+});
+
+// When someone who is in the talent pool applies for a live role, fold the talent pool record into the role card.
+async function mergeTalentPoolOnApplication(poolId, email, phone, roleName) {
+  try {
+    let trash = '';
+    let did = false;
+    await withPoolLock(async () => {
+      poolRowsCache = null;
+      const sheets = getSheetsClient();
+      const rows = await readPoolRows();
+      const appIdx = rows.findIndex(r => r && r[0] === poolId);
+      if (appIdx === -1) return;
+      const matches = tpFindMatches(rows, email, phone).filter(i => i !== appIdx && rows[i][5] === TALENT_POOL_ROLE);
+      if (!matches.length) return;
+      const tpIdx = matches[0];
+      const app = padPoolRow(rows[appIdx]);
+      const tp = padPoolRow(rows[tpIdx]);
+      for (let i = 21; i <= 28; i++) if (!app[i]) app[i] = tp[i];
+      app[29] = tp[29];
+      app[15] = tpMergeTags(app[15], tp[21]);
+      if (!app[11] && tp[11]) { app[11] = tp[11]; app[12] = tp[12]; app[13] = tp[13]; }
+      else if (app[11] && tp[11] && app[11] !== tp[11]) trash = tp[11];
+      const history = `Previously joined the talent pool on ${tpUkDate(tp[8])} (sector: ${tp[21] || 'not given'}). Merged into this role on ${tpUkDate(todayISO())}.`;
+      app[18] = `${app[18] || ''} | ${history}`.replace(/^ \| /, '');
+      app[9] = new Date().toISOString();
+      const an = appIdx + 2;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID, range: `'${POOL_TAB}'!A${an}:${POOL_LAST_COL}${an}`,
+        valueInputOption: 'RAW', requestBody: { values: [app] },
+      });
+      const ss = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties(sheetId,title)' });
+      const tab = (ss.data.sheets || []).find(s => s.properties.title === POOL_TAB);
+      if (!tab) return;
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SHEET_ID,
+        requestBody: { requests: [{ deleteDimension: { range: { sheetId: tab.properties.sheetId, dimension: 'ROWS', startIndex: tpIdx + 1, endIndex: tpIdx + 2 } } }] },
+      });
+      did = true;
+    });
+    if (did) {
+      auditLog('system', 'talent_pool_merged', 'pool', poolId, `Merged into application for ${roleName}`);
+      if (trash) {
+        getUploadDriveClient().files.update({ fileId: trash, requestBody: { trashed: true } })
+          .catch(e => console.error('Older talent pool CV could not be removed:', e.message));
+      }
+    }
+  } catch (e) {
+    console.error('Talent pool merge failed:', e.message);
+  }
+}
+
+// ---- Dashboard: alerts for new sign-ups, growth counter ----
+
+app.get('/api/talent-pool/new', async (req, res) => {
+  try {
+    const me = actorOf(req);
+    const rows = await readPoolRows();
+    const data = rows.map(padPoolRow)
+      .filter(r => r[0] && !r[20] && r[21] && !tpSeenList(r).includes(me))
+      .sort((a, b) => String(b[9]).localeCompare(String(a[9])))
+      .slice(0, 25)
+      .map(rowToPoolEntry);
+    res.json({ data });
+  } catch (e) {
+    console.error('GET /api/talent-pool/new error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/talent-pool/seen', async (req, res) => {
+  try {
+    const me = actorOf(req);
+    const ids = new Set((Array.isArray((req.body || {}).ids) ? req.body.ids : []).map(String));
+    if (!ids.size) return res.json({ ok: true, updated: 0 });
+    let updated = 0;
+    await withPoolLock(async () => {
+      poolRowsCache = null;
+      const rows = await readPoolRows();
+      const data = [];
+      rows.forEach((raw, i) => {
+        const r = padPoolRow(raw);
+        if (!ids.has(r[0])) return;
+        const seen = tpSeenList(r);
+        if (seen.includes(me)) return;
+        seen.push(me);
+        data.push({ range: `'${POOL_TAB}'!${tpColLetter(29)}${i + 2}`, values: [[seen.join(',')]] });
+      });
+      if (data.length) {
+        await getSheetsClient().spreadsheets.values.batchUpdate({
+          spreadsheetId: SHEET_ID, requestBody: { valueInputOption: 'RAW', data },
+        });
+      }
+      updated = data.length;
+    });
+    res.json({ ok: true, updated });
+  } catch (e) {
+    console.error('POST /api/talent-pool/seen error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/talent-pool/stats', async (req, res) => {
+  try {
+    const signups = (await auditTable.list()).filter(a => a.action === 'talent_pool_signup' && !/\((duplicate|existing)\)$/.test(String(a.detail || '')));
+    const now = Date.now();
+    const within = days => signups.filter(a => now - Date.parse(a.timestamp) <= days * 86400000).length;
+    const rows = await readPoolRows();
+    const inPool = rows.map(padPoolRow).filter(r => r[0] && !r[20] && r[5] === TALENT_POOL_ROLE).length;
+    res.json({ total: signups.length, last30: within(30), last7: within(7), inPool });
+  } catch (e) {
+    console.error('GET /api/talent-pool/stats error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---- Re-consent and self-service removal ----
+
+async function tpEraseEntry(id, actorLabel) {
+  const found = await findPoolRowById(id);
+  if (!found || found.row[20]) return false;
+  const row = found.row;
+  try {
+    if (row[11]) await getUploadDriveClient().files.update({ fileId: row[11], requestBody: { trashed: true } });
+  } catch (e) { console.error('Talent pool erase: CV removal failed:', e.message); }
+  try { await purgeMatchData([id]); } catch (e) { console.error('Talent pool erase: match data:', e.message); }
+  const tomb = padPoolRow(row);
+  const tombId = `erased-${crypto.randomBytes(5).toString('hex')}`;
+  for (const i of [2, 3, 10, 11, 12, 13, 15, 17, 18, 19, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]) tomb[i] = '';
+  tomb[0] = tombId; tomb[1] = 'Erased candidate'; tomb[14] = 'No';
+  tomb[20] = todayISO(); tomb[9] = new Date().toISOString();
+  await withPoolLock(async () => {
+    poolRowsCache = null;
+    const rows = await readPoolRows();
+    const idx = rows.findIndex(r => r && r[0] === id);
+    if (idx === -1) return;
+    const n = idx + 2;
+    await getSheetsClient().spreadsheets.values.update({
+      spreadsheetId: SHEET_ID, range: `'${POOL_TAB}'!A${n}:${POOL_LAST_COL}${n}`,
+      valueInputOption: 'RAW', requestBody: { values: [tomb] },
+    });
+  });
+  auditLog(actorLabel, 'candidate_erased', 'pool', `Erased candidate (ref ${tombId})`, 'Talent pool, removed at the candidate request');
+  return true;
+}
+
+function tpToken(id) { return signToken({ p: 'tpc', id, exp: Date.now() + 120 * 86400000 }); }
+function tpReadToken(t) {
+  const p = verifyToken(t);
+  return p && p.p === 'tpc' && p.id ? p : null;
+}
+
+function tpPage(inner) {
+  return `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Live 2 Help Recruitment - talent pool</title>
+<style>body{margin:0;font-family:'Gill Sans MT','Gill Sans',Calibri,sans-serif;background:#F7F6F3;color:#1A1A1A}.top{background:#0B1226;border-bottom:3px solid #C9A84C;padding:22px;text-align:center;color:#C9A84C;letter-spacing:.14em;font-weight:bold}.card{max-width:520px;margin:30px auto;background:#fff;border:1px solid #DDD;border-radius:10px;padding:28px 24px}h1{font-size:22px;margin:0 0 10px}p{color:#444;line-height:1.55}button{display:block;width:100%;padding:14px;margin-top:12px;border-radius:6px;font-size:16px;font-weight:bold;cursor:pointer;border:1px solid #0B1226}.keep{background:#0B1226;color:#fff}.remove{background:#fff;color:#0B1226}.msg{margin-top:16px;font-weight:bold}</style></head><body><div class="top">LIVE 2 HELP RECRUITMENT</div><div class="card">${inner}</div></body></html>`;
+}
+
+app.get('/t/:token', async (req, res) => {
+  try {
+    res.set('Cache-Control', 'no-store');
+    const p = tpReadToken(req.params.token);
+    if (!p) return res.status(400).type('html').send(tpPage('<h1>This link is not valid</h1><p>It may have expired. Please email office@live2helprecruitment.co.uk and we will help.</p>'));
+    const found = await findPoolRowById(p.id);
+    if (!found || found.row[20]) return res.type('html').send(tpPage('<h1>Your details have been removed</h1><p>We no longer hold your details. Nothing more is needed.</p>'));
+    const first = htmlEsc(String(found.row[1] || '').split(/\s+/)[0] || 'there');
+    const joined = htmlEsc(tpUkDate(found.row[17] || found.row[8]));
+    res.type('html').send(tpPage(`<h1>Hi ${first}, shall we keep your details?</h1>
+<p>You joined the Live 2 Help Recruitment talent pool on ${joined}. We keep your details for 12 months so we can tell you about suitable roles.</p>
+<p>Would you like us to keep them for another 12 months?</p>
+<button class="keep" id="keep">Yes, keep my details</button>
+<button class="remove" id="remove">No, please delete my details</button>
+<div class="msg" id="msg"></div>
+<script>
+async function send(action){
+  document.getElementById('keep').disabled = true; document.getElementById('remove').disabled = true;
+  document.getElementById('msg').textContent = 'Saving...';
+  try{
+    const r = await fetch(location.pathname, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action})});
+    const j = await r.json();
+    document.getElementById('msg').textContent = j.message || (r.ok ? 'Done.' : 'Something went wrong.');
+    if(r.ok){ document.getElementById('keep').style.display = 'none'; document.getElementById('remove').style.display = 'none'; }
+    else { document.getElementById('keep').disabled = false; document.getElementById('remove').disabled = false; }
+  }catch(e){
+    document.getElementById('msg').textContent = 'Something went wrong. Please email office@live2helprecruitment.co.uk.';
+    document.getElementById('keep').disabled = false; document.getElementById('remove').disabled = false;
+  }
+}
+document.getElementById('keep').onclick = function(){ send('keep'); };
+document.getElementById('remove').onclick = function(){ send('remove'); };
+</script>`));
+  } catch (e) {
+    console.error('GET /t/:token error:', e.message);
+    res.status(500).type('html').send(tpPage('<h1>Something went wrong</h1><p>Please email office@live2helprecruitment.co.uk.</p>'));
+  }
+});
+
+app.post('/t/:token', async (req, res) => {
+  try {
+    if (!tpAllow('tok:' + tpClientIp(req), 20, 60 * 60 * 1000)) return res.status(429).json({ message: 'Too many attempts. Please try again later.' });
+    const p = tpReadToken(req.params.token);
+    if (!p) return res.status(400).json({ message: 'This link is not valid. Please email office@live2helprecruitment.co.uk.' });
+    const action = String((req.body || {}).action || '');
+    const found = await findPoolRowById(p.id);
+    if (!found || found.row[20]) return res.json({ message: 'Your details have already been removed.' });
+    if (action === 'keep') {
+      await patchPoolRow(p.id, { 17: todayISO(), 18: `Talent pool - re-confirmed by the candidate (wording ${TALENT_POOL_WORDING_VERSION})`, 30: '', 31: '' });
+      auditLog('candidate', 'talent_pool_reconsented', 'pool', found.row[1], 'Kept for another 12 months');
+      return res.json({ message: 'Thank you. We will keep your details for another 12 months.' });
+    }
+    if (action === 'remove') {
+      await tpEraseEntry(p.id, 'candidate');
+      return res.json({ message: 'Done. Your details and CV have been deleted.' });
+    }
+    res.status(400).json({ message: 'Please choose one of the options.' });
+  } catch (e) {
+    console.error('POST /t/:token error:', e.message);
+    res.status(500).json({ message: 'Something went wrong. Please email office@live2helprecruitment.co.uk.' });
+  }
+});
+
+// Daily: email at month 11, flag for deletion after month 12 with no answer
+async function talentPoolReconsentCheck() {
+  poolRowsCache = null;
+  const rows = (await readPoolRows()).map(padPoolRow);
+  const today = todayISO();
+  let sent = 0, flagged = 0, failed = 0;
+  for (const r of rows) {
+    if (!r[0] || r[20] || r[5] !== TALENT_POOL_ROLE) continue;
+    const consent = String(r[17] || r[8] || '').slice(0, 10);
+    if (!consent) continue;
+    const due = addMonthsISO(consent, TP_RECONSENT_MONTH);
+    const expiry = addMonthsISO(consent, 12);
+    if (!due || !expiry) continue;
+    if (today >= expiry) {
+      if (!r[31]) {
+        await tpPatchCells(r[0], { 31: today });
+        flagged++;
+      }
+      continue;
+    }
+    if (today >= due && !r[30] && r[2] && sent < 50) {
+      const first = String(r[1] || '').trim().split(/\s+/)[0] || 'there';
+      const link = `${tpPublicBase()}/t/${tpToken(r[0])}`;
+      try {
+        await emailTransporter.sendMail({
+          from: `"Live 2 Help Recruitment" <${process.env.BREVO_SENDER_EMAIL}>`,
+          replyTo: process.env.BREVO_SENDER_EMAIL,
+          to: r[2],
+          subject: 'Do you still want to be on our talent pool?',
+          text: `Hi ${first},\n\nYou joined the Live 2 Help Recruitment talent pool on ${tpUkDate(consent)}. We only keep your details for 12 months, so before that runs out we would like to check you are happy for us to keep them.\n\nPlease choose here: ${link}\n\nIf we do not hear from you by ${tpUkDate(expiry)}, your record will be marked for deletion and your details and CV will be removed.\n\nKind regards,\nThe Live 2 Help Recruitment team`,
+        });
+        await tpPatchCells(r[0], { 30: today });
+        sent++;
+      } catch (e) {
+        failed++;
+        console.error('Re-consent email failed:', e.message);
+      }
+    }
+  }
+  return { sent, flagged, failed };
+}
+
+// Writes single cells without touching last_updated
+function tpPatchCells(id, cells) {
+  return withPoolLock(async () => {
+    poolRowsCache = null;
+    const rows = await readPoolRows();
+    const idx = rows.findIndex(r => r && r[0] === id);
+    if (idx === -1) return;
+    const data = Object.keys(cells).map(k => ({ range: `'${POOL_TAB}'!${tpColLetter(Number(k))}${idx + 2}`, values: [[cells[k]]] }));
+    await getSheetsClient().spreadsheets.values.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { valueInputOption: 'RAW', data } });
+  });
+}
+
+app.post('/api/talent-pool/reconsent/run', requireAdmin, async (req, res) => {
+  try { res.json(await talentPoolReconsentCheck()); }
+  catch (e) { console.error('Re-consent run failed:', e.message); res.status(500).json({ error: e.message }); }
+});
+
 // Lets the dashboard show which server version is live
-const SERVER_BUILD = '6 Oct 2026 - build 11';
+const SERVER_BUILD = '8 Oct 2026 - build 12';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
