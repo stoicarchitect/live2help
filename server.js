@@ -10185,17 +10185,22 @@ Find the company website, switchboard, sites, size, what they do, the people mos
 
 const rfxDiving = new Set();
 
-// Deep dives use AI credit, so there is a hard daily limit shared by manual and automatic ones
-const RFX_DAILY_DIVE_CAP = parseInt(process.env.ROLE_FINDER_DAILY_DIVES || '5', 10);
-async function rfxDivesToday() {
-  const row = (await settingsTable.list()).find(o => o.id === 'rfx_divesday_' + rfxToday());
-  return parseInt((row && row.value) || '0', 10) || 0;
+// Deep dives use AI credit, so there is a monthly limit shared by manual and automatic ones.
+// No daily limit: they can be used as needed until the month's allowance runs out.
+const RFX_DEFAULT_MONTHLY_DIVES = parseInt(process.env.ROLE_FINDER_MONTHLY_DIVES || '100', 10);
+async function rfxDiveAllowance() {
+  const rows = await settingsTable.list();
+  const used = parseInt((rows.find(o => o.id === 'rfx_dives_' + rfxToday().slice(0, 7)) || {}).value || '0', 10) || 0;
+  let cap = RFX_DEFAULT_MONTHLY_DIVES;
+  try { const sw = JSON.parse((rows.find(o => o.id === 'rfx_sweep') || {}).value || '{}'); if (parseInt(sw.monthlyCap, 10) > 0) cap = parseInt(sw.monthlyCap, 10); } catch (e) { /* default */ }
+  return { used, cap, left: Math.max(0, cap - used) };
 }
 
 async function rfxDeepDive(resultId, actor) {
   if (rfxDiving.has(resultId)) throw new Error('A deep dive for this company is already running');
-  if (rfxDiving.size + await rfxDivesToday() >= RFX_DAILY_DIVE_CAP) {
-    const e = new Error(`Today's limit of ${RFX_DAILY_DIVE_CAP} deep dives has been reached. It resets tomorrow.`);
+  const allow = await rfxDiveAllowance();
+  if (rfxDiving.size + allow.used >= allow.cap) {
+    const e = new Error(`This month's limit of ${allow.cap} deep dives has been reached. It resets on the 1st, or Dan can raise it in Sweep settings.`);
     e.limit = true; throw e;
   }
   rfxDiving.add(resultId);
@@ -10270,10 +10275,9 @@ async function rfxDeepDive(resultId, actor) {
     });
     try {
       const rows = await settingsTable.list();
-      const mk = 'rfx_dives_' + rfxToday().slice(0, 7), dk = 'rfx_divesday_' + rfxToday();
-      const mrow = rows.find(o => o.id === mk), drow = rows.find(o => o.id === dk);
+      const mk = 'rfx_dives_' + rfxToday().slice(0, 7);
+      const mrow = rows.find(o => o.id === mk);
       await settingsTable.upsert({ id: mk, value: String((parseInt((mrow && mrow.value) || '0', 10) || 0) + 1), updated_by: actor || 'system' });
-      await settingsTable.upsert({ id: dk, value: String((parseInt((drow && drow.value) || '0', 10) || 0) + 1), updated_by: actor || 'system' });
     } catch (e) { /* the count is only for the cost estimate */ }
     return { result: rfxPublicResult(saved), dive };
   } catch (e) {
@@ -10343,6 +10347,7 @@ const RFX_SWEEP_DEFAULTS = {
   bands: ['b30', 'b40'],
   includeNoSalary: false,
   listSize: 25,
+  monthlyCap: 100,
   townsPerRun: 20,
   adzunaPerRun: 40,
 };
@@ -10788,8 +10793,8 @@ async function rfxRunSearchesInner({ searchId, actor, auto } = {}) {
   // automatic deep dives: only when switched on, on the highest scoring companies
   let dived = 0;
   if (rfxSources().ai && settings.autoDive && settings.diveCount > 0) {
-    const doneToday = await rfxDivesToday();
-    let budget = Math.max(0, Math.min(settings.diveCount, RFX_DAILY_DIVE_CAP - doneToday));
+    const allow = await rfxDiveAllowance();
+    let budget = Math.max(0, Math.min(settings.diveCount, allow.left));
     const scores = rfxCompanyScores(keep, settings, today);
     const seen = new Set();
     const picks = keep.filter(o => o.status === 'new' && !o.dive_json)
@@ -10853,8 +10858,7 @@ app.get('/api/role-finder/config', async (req, res) => {
     let sweepLast = null;
     try { sweepLast = JSON.parse((rows.find(o => o.id === 'rfx_sweep_last') || {}).value || 'null'); } catch (e) { sweepLast = null; }
     res.json({
-      sources: rfxSources(), paidUsed: paid, paidCap: RFX_PAID_CAP, autoDiveCap: RFX_DAILY_DIVE_CAP,
-      divesToday: parseInt((rows.find(o => o.id === 'rfx_divesday_' + rfxToday()) || {}).value || '0', 10) || 0, diveDailyCap: RFX_DAILY_DIVE_CAP,
+      sources: rfxSources(), paidUsed: paid, paidCap: RFX_PAID_CAP, diveMonthlyCap: (await rfxDiveAllowance()).cap,
       sweep: await rfxSweepSettings(), sweepLast, divesThisMonth: dives,
       regions: Object.keys(RFX_REGIONS), types: RFX_TYPES.map(t => ({ key: t.key, label: t.label })), bands: RFX_BANDS.map(b => ({ key: b.key, label: b.label })),
     });
@@ -10868,11 +10872,12 @@ app.post('/api/role-finder/sweep-settings', requireAdmin, async (req, res) => {
     const next = { ...cur };
     if (b.enabled !== undefined) next.enabled = !!b.enabled;
     if (b.autoDive !== undefined) next.autoDive = !!b.autoDive;
-    if (b.diveCount !== undefined) next.diveCount = Math.max(0, Math.min(RFX_DAILY_DIVE_CAP, parseInt(b.diveCount, 10) || 0));
+    if (b.diveCount !== undefined) next.diveCount = Math.max(0, Math.min(10, parseInt(b.diveCount, 10) || 0));
     if (Array.isArray(b.regions)) next.regions = b.regions.filter(r => RFX_REGIONS[r]);
     if (Array.isArray(b.types)) next.types = b.types.filter(t => RFX_TYPE_LABEL[t]);
     if (Array.isArray(b.bands)) next.bands = b.bands.filter(k => RFX_BANDS.some(x => x.key === k));
     if (b.includeNoSalary !== undefined) next.includeNoSalary = !!b.includeNoSalary;
+    if (b.monthlyCap !== undefined) next.monthlyCap = Math.max(1, Math.min(1000, parseInt(b.monthlyCap, 10) || RFX_DEFAULT_MONTHLY_DIVES));
     if (b.listSize !== undefined) next.listSize = Math.max(5, Math.min(200, parseInt(b.listSize, 10) || 25));
     if (!next.bands.length) return res.status(400).json({ error: 'Choose at least one salary band' });
     const saved = {};
@@ -11232,7 +11237,7 @@ app.get('/api/lead-pipeline/stats', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '16 Oct 2026 - build 22';
+const SERVER_BUILD = '16 Oct 2026 - build 23';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

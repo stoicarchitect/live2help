@@ -14283,6 +14283,11 @@ table.ops-table tr.rfx-row td{vertical-align:top;}
 .rfx-badge.high{background:#E6F2E9;color:#2D6A3E;}.rfx-badge.medium{background:#FBF1D9;color:#8a6a12;}.rfx-badge.low{background:var(--lightbg);color:#888;}
 .rfx-list{font-size:12.5px;color:var(--grey);line-height:1.7;}
 .rfx-list a{color:var(--gold);}
+th.rfx-sort{cursor:pointer;user-select:none;white-space:nowrap;}
+th.rfx-sort:hover{color:var(--gold);}
+th.rfx-sort.on{color:var(--dark);border-bottom:2px solid var(--gold);}
+th.rfx-sort::after{content:attr(data-arrow);font-size:10px;color:var(--gold);font-weight:400;}
+th.rfx-sort.on::before{content:'';}
 .rfx-prog{background:#fff;border:1px solid var(--border);border-left:3px solid var(--gold);border-radius:2px;padding:12px 14px;margin-bottom:14px;font-size:13px;}
 .rfx-prog.ok{border-left-color:#2D6A3E;}
 .rfx-prog.bad{border-left-color:#9B2C22;}
@@ -14466,6 +14471,7 @@ function rfxNorm(s){ return String(s || '').toLowerCase().replace(/&/g,' and ').
           <select id="rfxType" onchange="rfxRender()"><option value="">All role types</option></select>
           <select id="rfxBand" onchange="rfxRender()"><option value="">All salaries</option></select>
           <select id="rfxSearchFilter" onchange="rfxRender()"><option value="">Market sweep and searches</option></select>
+          <select id="rfxSortSel" onchange="const v=this.value.split(':');RFX.sort={key:v[0],dir:parseInt(v[1],10)};rfxRender()"><option value="score:-1">Sort: lead score</option><option value="days:-1">Sort: longest advertised</option><option value="days:1">Sort: newest adverts</option><option value="roles:-1">Sort: most open roles</option><option value="company:1">Sort: company A to Z</option><option value="region:1">Sort: region A to Z</option></select>
           <input id="rfxMinDays" type="number" min="0" placeholder="Min days advertised" style="width:150px;" oninput="rfxRender()">
           <input id="rfxText" placeholder="Filter company, role or place" style="min-width:200px;" oninput="rfxRender()">
           <label class="chk"><input type="checkbox" id="rfxHideKnown" checked onchange="rfxRender()"> Hide existing clients and leads</label>
@@ -14478,7 +14484,7 @@ function rfxNorm(s){ return String(s || '').toLowerCase().replace(/&/g,' and ').
           <button onclick="RFX.sel.clear();rfxRender()">Clear</button></div>
         <div class="ops-table-wrap"><table class="ops-table" style="min-width:1000px;"><thead><tr>
           <th style="width:28px;"><input type="checkbox" id="rfxAll" onclick="rfxSelectAll(this.checked)"></th>
-          <th>Company</th><th>Open roles</th><th>Region</th><th>Longest advertised</th><th>Lead score</th><th style="text-align:right;">Actions</th>
+          <th class="rfx-sort" data-sort="company" onclick="rfxSortBy('company')">Company</th><th class="rfx-sort" data-sort="roles" onclick="rfxSortBy('roles')">Open roles</th><th class="rfx-sort" data-sort="region" onclick="rfxSortBy('region')">Region</th><th class="rfx-sort" data-sort="days" onclick="rfxSortBy('days')">Longest advertised</th><th class="rfx-sort" data-sort="score" onclick="rfxSortBy('score')">Lead score</th><th style="text-align:right;">Actions</th>
         </tr></thead><tbody id="rfxBody"><tr><td colspan="7" class="empty-row">Loading...</td></tr></tbody></table></div>
         <div id="rfxMore" style="margin-top:10px;"></div>
         <div class="note-line">The market sweep searches every chosen region and role type each weekday, one row per company. The lead score favours companies advertising longest, hiring for several roles and paying within your salary bands. Anything you shortlist, add or dismiss never comes back as new: dismissing a company also hides its new adverts for 90 days, and companies that are already clients or leads are kept out automatically. Adverts come from Reed and Adzuna. Anything posted by a recruitment agency is filtered out using the company name, the wording of the advert, the agency block list and the company's Companies House registration. If an agency slips through, use Agency on its row and it is blocked for good. Contact details are only ever business details found in public sources. Check them before adding a lead.</div>
@@ -14611,7 +14617,13 @@ function rfxGroups(){
     g.items.sort((a, b) => (b.days || 0) - (a.days || 0));
     g.top = g.items.find(i => i.has_dive) || g.items[0];
   });
-  return groups.sort((a, b) => (b.score - a.score) || (b.days - a.days));
+  const srt = RFX.sort || {key:'score', dir:-1};
+  const val = g => srt.key === 'company' ? String(g.company || '').toLowerCase() : srt.key === 'region' ? [...g.regions].join(', ').toLowerCase() : srt.key === 'roles' ? g.items.length : srt.key === 'days' ? g.days : g.score;
+  return groups.sort((a, b) => {
+    const x = val(a), y = val(b);
+    const c = typeof x === 'string' ? x.localeCompare(y) : x - y;
+    return (c * srt.dir) || (b.score - a.score) || (b.days - a.days);
+  });
 }
 
 function rfxRender(){
@@ -14675,11 +14687,30 @@ function rfxRender(){
   }).join('') : `<tr><td colspan="7" class="empty-row">${all.length ? 'Nothing matches these filters.' : 'No adverts yet. Press Search now to run the first market sweep.'}</td></tr>`;
   const more = document.getElementById('rfxMore');
   more.innerHTML = groups.length > shown.length ? `<button class="cancel" style="padding:9px 14px;border:1px solid var(--border);background:#fff;border-radius:2px;font-family:inherit;font-size:13px;cursor:pointer;" onclick="RFX.showAll=true;rfxRender()">Show all ${groups.length} companies</button>` : '';
+  rfxSortMarks();
   const bulk = document.getElementById('rfxBulk');
   bulk.classList.toggle('on', RFX.sel.size > 0);
   document.getElementById('rfxBulkCount').textContent = RFX.sel.size + ' compan' + (RFX.sel.size === 1 ? 'y' : 'ies') + ' selected';
   const allBox = document.getElementById('rfxAll');
   if(allBox) allBox.checked = shown.length > 0 && shown.every(g => RFX.sel.has(g.key));
+}
+
+function rfxSortBy(key){
+  const cur = RFX.sort || {key:'score', dir:-1};
+  // text columns start A to Z, number columns start highest first; a second click reverses
+  RFX.sort = cur.key === key ? {key, dir: -cur.dir} : {key, dir: (key === 'company' || key === 'region') ? 1 : -1};
+  rfxRender();
+}
+
+function rfxSortMarks(){
+  const cur = RFX.sort || {key:'score', dir:-1};
+  const sel = document.getElementById('rfxSortSel');
+  if(sel){ const v = cur.key + ':' + cur.dir; if([...sel.options].some(o => o.value === v)) sel.value = v; }
+  document.querySelectorAll('th.rfx-sort').forEach(th => {
+    const on = th.dataset.sort === cur.key;
+    th.classList.toggle('on', on);
+    th.dataset.arrow = on ? (cur.dir > 0 ? (th.dataset.sort === 'company' || th.dataset.sort === 'region' ? ' A-Z' : ' lowest first') : (th.dataset.sort === 'company' || th.dataset.sort === 'region' ? ' Z-A' : ' highest first')) : '';
+  });
 }
 
 function rfxExpand(k){ RFX.expanded.has(k) ? RFX.expanded.delete(k) : RFX.expanded.add(k); rfxRender(); }
@@ -14770,8 +14801,10 @@ function rfxOpenSettings(){
     <div class="simple-form">
       <div class="rfx-confirm" style="margin-top:16px;"><input type="checkbox" id="rfxSwOn" ${sw.enabled ? 'checked' : ''}><span><b>Automatic daily search</b><br><span class="rfx-sub">Searches the job boards every weekday morning. The job board searches are free.</span></span></div>
       <div class="rfx-confirm"><input type="checkbox" id="rfxSwDive" ${sw.autoDive ? 'checked' : ''}><span><b>Automatic deep dives</b> on the top
-        <select id="rfxSwDiveN" style="width:auto;padding:3px 6px;display:inline-block;">${[1,2,3,4,5].map(n => `<option ${Number(sw.diveCount) === n ? 'selected' : ''}>${n}</option>`).join('')}</select> companies each morning<br>
-        <span class="rfx-sub">This is the only part that uses AI credit: roughly 15p to 30p per deep dive. There is a limit of ${esc(c.diveDailyCap || 5)} deep dives a day in total, shared between automatic ones and ones run by hand, so the most it can cost is about £${((c.diveDailyCap || 5) * 0.3 * 22).toFixed(0)} a month. Deep dives this month so far: ${dives} (about £${(dives * 0.15).toFixed(2)} to £${(dives * 0.3).toFixed(2)}). Manual deep dives from the list always work.</span></span></div>
+        <select id="rfxSwDiveN" style="width:auto;padding:3px 6px;display:inline-block;">${[1,2,3,4,5,8,10].map(n => `<option ${Number(sw.diveCount) === n ? 'selected' : ''}>${n}</option>`).join('')}</select> companies each morning<br>
+        <span class="rfx-sub">This is the only part that uses AI credit: roughly 15p to 30p per deep dive. Automatic and manual deep dives share the monthly limit below. Deep dives this month so far: ${dives} (about £${(dives * 0.15).toFixed(2)} to £${(dives * 0.3).toFixed(2)}).</span></span></div>
+      <label>Monthly deep dive limit (automatic and manual together, no daily limit)</label>
+      <div style="display:flex;align-items:center;gap:10px;"><input type="number" id="rfxSwCap" min="1" max="1000" value="${esc(sw.monthlyCap || c.diveMonthlyCap || 100)}" style="width:120px;" oninput="document.getElementById('rfxSwCapCost').textContent='Most it can cost: about £' + ((parseInt(this.value,10)||0) * 0.3).toFixed(0) + ' a month'"><span class="rfx-sub" id="rfxSwCapCost">Most it can cost: about £${((sw.monthlyCap || c.diveMonthlyCap || 100) * 0.3).toFixed(0)} a month</span></div>
       <label>Salary bands</label>
       <div class="rfx-chips">${(c.bands || []).map(b => box('rfxSwBand', b.key, b.label, (sw.bands || []).includes(b.key))).join('')}
         <label><input type="checkbox" id="rfxSwNoSal" ${sw.includeNoSalary ? 'checked' : ''}> Include adverts with no salary</label></div>
@@ -14791,7 +14824,7 @@ async function rfxSaveSettings(){
   const body = {
     enabled: document.getElementById('rfxSwOn').checked, autoDive: document.getElementById('rfxSwDive').checked,
     diveCount: b2Val('rfxSwDiveN'), bands: vals('rfxSwBand'), regions: vals('rfxSwRegion'), types: vals('rfxSwType'),
-    includeNoSalary: document.getElementById('rfxSwNoSal').checked, listSize: b2Val('rfxSwList'),
+    includeNoSalary: document.getElementById('rfxSwNoSal').checked, listSize: b2Val('rfxSwList'), monthlyCap: b2Val('rfxSwCap'),
   };
   if(!body.bands.length){ showToast('Choose at least one salary band'); return; }
   if(!body.regions.length || !body.types.length){ showToast('Choose at least one region and one role type'); return; }
@@ -14956,7 +14989,7 @@ async function rfxConfirmDive(){
   const body = document.getElementById('rfxDiveBody');
   body.innerHTML = '<div style="padding:30px 0;"><span class="rfx-spin"></span>Checking today\'s allowance...</div>';
   try{ RFX.config = await b2Api('/api/role-finder/config'); }catch(e){ /* show what we have */ }
-  const used = (RFX.config && RFX.config.divesToday) || 0, cap = (RFX.config && RFX.config.diveDailyCap) || 5;
+  const used = (RFX.config && RFX.config.divesThisMonth) || 0, cap = (RFX.config && RFX.config.diveMonthlyCap) || 100;
   const left = Math.max(0, cap - used);
   const again = r.has_dive;
   body.innerHTML = `
@@ -14972,8 +15005,8 @@ async function rfxConfirmDive(){
     </div>
     <div class="rfx-sec">Cost and allowance</div>
     <div class="rfx-list">Uses AI credit, roughly 15p to 30p, and takes one to two minutes.<br>
-      <b>${used} of ${cap}</b> deep dives used today${left ? ', ' + left + ' left.' : '. Today\'s limit has been reached, so this cannot run until tomorrow.'}
-      ${again ? '<br>This company already has a deep dive. Running it again replaces it and counts towards today\'s limit.' : ''}</div>
+      <b>${used} of ${cap}</b> deep dives used this month${left ? ', ' + left + ' left.' : '. This month\'s limit has been reached, so this cannot run until the 1st unless Dan raises the limit.'}
+      ${again ? '<br>This company already has a deep dive. Running it again replaces it and counts towards this month\'s limit.' : ''}</div>
     <div class="simple-form"><div class="actions">
       <button class="cancel" onclick="${again ? 'rfxRenderDive()' : "closeModal('rfxDiveModal')"}">Cancel</button>
       <button class="save" ${left ? '' : 'disabled style="opacity:.5;cursor:not-allowed;"'} onclick="rfxRunDive()">Yes, run the deep dive</button>
@@ -15343,7 +15376,7 @@ async function lpxSaveNew(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '16 Oct 2026 - build 22';
+var PAGE_BUILD = '16 Oct 2026 - build 23';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -15354,12 +15387,12 @@ function buildTagApply(){
     tag.style.cssText = 'font-size:10.5px;color:#999;margin-left:10px;white-space:nowrap;';
     chip.appendChild(tag);
   }
-  tag.textContent = 'Page build 22';
+  tag.textContent = 'Page build 23';
   tag.title = 'Page: ' + PAGE_BUILD;
   b2Api('/api/version').then(function(j){
-    tag.textContent = 'Page build 22 | Server ' + serverBuildLabel(j.build);
+    tag.textContent = 'Page build 23 | Server ' + serverBuildLabel(j.build);
     tag.title = 'Page: ' + PAGE_BUILD + ' | Server: ' + j.build;
-  }).catch(function(){ tag.textContent = 'Page build 22 | Server older'; });
+  }).catch(function(){ tag.textContent = 'Page build 23 | Server older'; });
 }
 (function(){
   const _si = signIn;
