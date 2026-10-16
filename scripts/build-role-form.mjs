@@ -1,9 +1,10 @@
 // Builds a role-linked application form from a definition file.
 //
-//   node scripts/build-role-form.mjs forms/senior-controls-engineer-r007.json
+//   node scripts/build-role-form.mjs forms/r007.json
 //   node scripts/build-role-form.mjs --all
 //
-// Writes apply/<slug>/index.html. Every form posts to /api/applications/<slug>, and the
+// Writes apply/<slug>/index.html, where the slug is just the role reference (r007), so the
+// client's job title is never in the address. The page title follows the role's public title live. Every form posts to /api/applications/<slug>, and the
 // server ties the application to the role by the reference ID at the end of the slug
 // (r007 = role R007 on the Roles tab), so the server never needs changing for a new form.
 // Salary: the form shows "Competitive salary" and then checks the Roles tab live, so once a
@@ -87,7 +88,7 @@ function buildForm(def, logo) {
     keys.add(q.key);
     if (['select', 'radio', 'checkbox'].includes(q.type) && !(q.options || []).length) throw new Error(`${q.key} needs options`);
   });
-  if (!/-r\d{3,}$/.test(def.slug)) throw new Error('The slug must end with the role reference, e.g. -r007');
+  if (!/^r\d{3,}$/.test(def.slug)) throw new Error('The slug must be the role reference only, e.g. r007, so the job title is never in the link');
   const qConfig = all.map(q => ({ id: `q_${q.key}`, label: q.sheet || q.label, type: q.type, required: q.required !== false }));
 
   return `<!DOCTYPE html>
@@ -208,7 +209,7 @@ function buildForm(def, logo) {
   <div id="formArea">
     <section class="intro">
       <div class="meta">${esc(def.location)} &middot; ${esc(def.employment || 'Permanent')} &middot; <span id="salaryText">Competitive salary</span></div>
-      <h1>${esc(def.title)}</h1>
+      <h1 id="roleTitle">${esc(def.title)}</h1>
       <p>${esc(def.intro)}</p>
       <ul>
         ${(def.bullets || []).map(b => `<li>${esc(b)}</li>`).join('\n        ')}
@@ -346,6 +347,11 @@ ${def.sections.map(s => `      <fieldset>
           document.getElementById('formArea').style.display = 'none';
           document.getElementById('closedBox').style.display = 'block';
           return;
+        }
+        // the public title from the Roles tab always wins, so renaming a role updates the form
+        if (j.title){
+          document.getElementById('roleTitle').textContent = j.title;
+          document.title = 'Apply - ' + j.title;
         }
         var sal = money(j.salary);
         if (sal){
@@ -489,6 +495,16 @@ function main() {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'index.html'), html);
     console.log(`Built apply/${def.slug}/index.html`);
+    // older title-based addresses forward to the neutral one so links already shared still work
+    (def.oldSlugs || []).forEach(o => {
+      const od = path.join(ROOT, 'apply', o);
+      fs.mkdirSync(od, { recursive: true });
+      fs.writeFileSync(path.join(od, 'index.html'), `<!DOCTYPE html><html lang="en-GB"><head><meta charset="UTF-8"><meta name="robots" content="noindex"><title>Live 2 Help Recruitment</title>
+<meta http-equiv="refresh" content="0; url=/apply/${def.slug}/"><script>location.replace('/apply/${def.slug}/' + location.search);</script></head>
+<body><p><a href="/apply/${def.slug}/">Continue to the application form</a></p></body></html>
+`);
+      console.log(`Redirect apply/${o}/ -> apply/${def.slug}/`);
+    });
   });
 }
 

@@ -1280,7 +1280,7 @@ async function handleCadApplication(req, res, form) {
    from AA. Headings are written the first time each question is answered.
    Because the form knows its vacancy, the company, hiring manager and vacancy are filled in
    automatically, so these applicants land straight in the right pipeline. */
-const ROLE_FORM_SLUG_RE = /-(r\d{3,})$/;
+const ROLE_FORM_SLUG_RE = /(?:^|-)(r\d{3,})$/; // e.g. /apply/r007/ (older: title-r007)
 const RF_STANDARD = ['Application ID', 'Date Applied', 'Name', 'Email', 'Phone', 'Current Employment Status', 'Notice Period'];
 const RF_TAIL = { 15: 'Salary Expectation', 16: 'Additional Info', 17: 'Company', 18: 'Contact', 19: 'Status', 20: 'Notes',
   21: 'Privacy Notice Accepted', 22: 'Consent Date', 23: 'Wording Version', 24: 'Talent Pool Consent', 25: 'CV Link' };
@@ -1297,8 +1297,17 @@ const RF_LAST = rfColLetter(RF_MAX_COLS - 1);
 
 function isRoleFormSlug(slug) { return ROLE_FORM_SLUG_RE.test(String(slug || '').toLowerCase()); }
 function roleFormTabRole(role) {
-  // the part after "Applications - ", e.g. "Senior Controls Engineer R007"
-  return `${String(role.public_title || role.role || '').trim()} ${String(role.ref || '').trim()}`.trim();
+  // the part after "Applications - ", e.g. "Senior Controls Engineer R007" (internal role name, never the public title)
+  return `${String(role.role || '').trim()} ${String(role.ref || '').trim()}`.trim();
+}
+// The tab is found by its reference, so renaming the role or its public title never splits applications across two tabs
+async function resolveRoleFormTab(role) {
+  const ref = String(role.ref || '').trim().toUpperCase();
+  const sheets = getSheetsClient();
+  const ss = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties.title' });
+  const hit = (ss.data.sheets || []).map(t => t.properties.title)
+    .find(t => t.startsWith('Applications - ') && ref && t.toUpperCase().endsWith(' ' + ref));
+  return hit ? hit.slice('Applications - '.length) : roleFormTabRole(role);
 }
 function isRoleFormTabRole(name) { return / R\d{3,}$/.test(String(name || '').trim()); }
 
@@ -1388,7 +1397,7 @@ async function handleRoleFormApplication(req, res, slug) {
     });
     if (answers.some(a => a.required && !a.value)) return res.status(400).json({ error: 'Please answer every required question' });
 
-    const formRole = roleFormTabRole(role);           // tab name part, includes the ref
+    const formRole = await resolveRoleFormTab(role);  // tab name part, includes the ref
     const tabName = `Applications - ${formRole}`;
     const vacancy = String(role.role || '').trim();   // what the pipeline shows
     const publicTitle = String(role.public_title || role.role || '').trim();
@@ -4316,9 +4325,9 @@ let roleRefsChecking = null;
 let roleRefsCheckedAt = 0;
 
 function formatRoleRef(n) { return 'R' + String(n).padStart(3, '0'); }
+// Form addresses use the reference only (/apply/r007/), so the client's job title is never in the link
 function roleFormSlugFor(r) {
-  const base = slugifyRole(r.public_title || r.role);
-  return r.ref ? `${base}-${String(r.ref).toLowerCase()}` : base;
+  return r.ref ? String(r.ref).toLowerCase() : slugifyRole(r.public_title || r.role);
 }
 
 async function ensureRoleRefs(force) {
@@ -4332,7 +4341,16 @@ async function ensureRoleRefs(force) {
       .map((r, i) => ({ r, i }))
       .filter(x => !ROLE_REF_RE.test(String(x.r.ref || '').trim()) && !String(x.r.id).startsWith('__'))
       .sort((a, b) => String(a.r.date_opened || '').localeCompare(String(b.r.date_opened || '')) || a.i - b.i);
-    if (!missing.length) return;
+    // forms first published as title-r007 move to the neutral r007 address
+    const moved = all.filter(r => {
+      const m = String(r.form_slug || '').toLowerCase().match(/-(r\d{3,})$/);
+      return m && String(r.ref || '').toLowerCase() === m[1];
+    });
+    if (moved.length) {
+      const ids = new Set(moved.map(r => r.id));
+      await rolesTable.updateWhere(o => ids.has(o.id), o => { o.form_slug = String(o.ref).toLowerCase(); return o; });
+    }
+    if (!missing.length) { if (moved.length) publicRolesCache = { at: 0, list: null }; return; }
     const give = new Map();
     missing.forEach(x => { max += 1; give.set(x.r.id, formatRoleRef(max)); });
     await rolesTable.updateWhere(o => give.has(o.id), o => {
@@ -9650,7 +9668,7 @@ app.post('/api/talent-pool/reconsent/run', requireAdmin, async (req, res) => {
 });
 
 // Lets the dashboard show which server version is live
-const SERVER_BUILD = '16 Oct 2026 - build 17';
+const SERVER_BUILD = '16 Oct 2026 - build 18';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

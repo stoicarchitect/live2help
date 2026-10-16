@@ -2745,7 +2745,7 @@ function renderBoard(){
   const editBtn = document.getElementById('roleEditBtn');
   const formBtn = document.getElementById('roleFormBtn');
   if(editBtn) editBtn.style.display = roleRec && roleRec.stored ? 'inline-block' : 'none';
-  if(formBtn) formBtn.style.display = roleRec && roleRec.form_slug && /-r\d{3,}$/.test(roleRec.form_slug) ? 'inline-block' : 'none';
+  if(formBtn) formBtn.style.display = roleRec && roleRec.form_slug && /(^|-)r\d{3,}$/.test(roleRec.form_slug) ? 'inline-block' : 'none';
   if(aggregate){ renderAggregateBoard(); return; }
   addBtn.style.display = 'inline-block';
 
@@ -6124,7 +6124,7 @@ function renderRoles(){
       <td>${r.active} active / ${r.total} total</td>
       <td><div class="row-actions">
         <button onclick="rolesOpenBoard('${esc(r.id)}')"${hasBoard ? '' : ' title="No candidates yet"'}>Pipeline</button>
-        ${r.form_slug && /-r\d{3,}$/.test(r.form_slug) ? `<button onclick="rolesCopyFormLink('${esc(r.id)}')" title="${esc(roleFormUrl(r))}">Form link</button>` : ''}
+        ${r.form_slug && /(^|-)r\d{3,}$/.test(r.form_slug) ? `<button onclick="rolesCopyFormLink('${esc(r.id)}')" title="${esc(roleFormUrl(r))}">Form link</button>` : ''}
         <button onclick="openRoleModal('${esc(r.id)}')">Edit</button>
         <button onclick="duplicateRole('${esc(r.id)}')">Duplicate</button>
         <button onclick="poolMatchOpen('${esc(r.id)}')">Find matches</button>
@@ -11877,7 +11877,7 @@ function duplicateRole(id){
   document.getElementById('rmDuplicateRow').style.display = 'none';
   // a form tied to the original role's reference stays with that role; the copy gets its own
   const fs = document.getElementById('rmFormSlug');
-  if(/-r\d{3,}$/.test(fs.value.trim())) fs.value = '';
+  if(/(^|-)r\d{3,}$/.test(fs.value.trim())) fs.value = '';
   const roleInput = document.getElementById('rmRole');
   roleInput.focus();
   roleInput.select();
@@ -11917,9 +11917,9 @@ function rmEffectiveSlug(){
   const typed = document.getElementById('rmFormSlug').value.trim();
   if(typed) return slugOf(typed);
   const base = slugOf(document.getElementById('rmPublicTitle').value.trim() || document.getElementById('rmRole').value.trim());
-  // roles with a reference get a form of their own: title plus ref, e.g. senior-controls-engineer-r007
+  // roles with a reference get a form of their own at a neutral address, e.g. /apply/r007/
   const r = (typeof editingRoleId !== 'undefined' && editingRoleId) ? mergedRoles().find(x => x.id === editingRoleId) : null;
-  return r && r.ref && base ? base + '-' + String(r.ref).toLowerCase() : base;
+  return r && r.ref ? String(r.ref).toLowerCase() : base;
 }
 function rmCheckForm(){
   clearTimeout(rmCheckTimer);
@@ -14223,7 +14223,7 @@ async function tpReviewed(id){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '16 Oct 2026 - build 17';
+var PAGE_BUILD = '16 Oct 2026 - build 18';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -14234,12 +14234,12 @@ function buildTagApply(){
     tag.style.cssText = 'font-size:10.5px;color:#999;margin-left:10px;white-space:nowrap;';
     chip.appendChild(tag);
   }
-  tag.textContent = 'Page build 17';
+  tag.textContent = 'Page build 18';
   tag.title = 'Page: ' + PAGE_BUILD;
   b2Api('/api/version').then(function(j){
-    tag.textContent = 'Page build 17 | Server ' + serverBuildLabel(j.build);
+    tag.textContent = 'Page build 18 | Server ' + serverBuildLabel(j.build);
     tag.title = 'Page: ' + PAGE_BUILD + ' | Server: ' + j.build;
-  }).catch(function(){ tag.textContent = 'Page build 17 | Server older'; });
+  }).catch(function(){ tag.textContent = 'Page build 18 | Server older'; });
 }
 (function(){
   const _si = signIn;

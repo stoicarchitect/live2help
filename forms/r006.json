@@ -1,11 +1,11 @@
 {
-  "slug": "lead-engineer-drive-system-specialist-r006",
+  "slug": "r006",
   "roleId": "role-iconsys-lead-engineer-drive-system-specialist",
   "ref": "R006",
-  "title": "Lead Engineer - Drive System Specialist",
+  "title": "Engineering Lead",
   "location": "Telford",
   "employment": "Permanent",
-  "intro": "A leading systems integrator in Telford is looking for a Lead Engineer with deep drive systems expertise. Reporting to the Director of Engineering and Innovation, you will be accountable for the engineering delivery of projects, lead and mentor teams of engineers, and own the functional safety lifecycle.",
+  "intro": "A leading systems integrator in Telford is looking for an experienced engineering lead with deep drive systems expertise. Reporting to the Director of Engineering and Innovation, you will be accountable for the engineering delivery of projects, lead and mentor teams of engineers, and own the functional safety lifecycle.",
   "bullets": [
     "Own the functional safety lifecycle and the Technical Construction File on projects",
     "Supervise and motivate project engineering teams, including external resources",
@@ -280,5 +280,8 @@
       ]
     }
   ],
-  "also": "This role would also suit Manufacturing Engineering Supervisors, Engineering Team Leaders and Principal or Senior Controls Engineers ready to lead a team."
+  "also": "This role would also suit Manufacturing Engineering Supervisors, Engineering Team Leaders and Principal or Senior Controls Engineers ready to lead a team.",
+  "oldSlugs": [
+    "lead-engineer-drive-system-specialist-r006"
+  ]
 }

@@ -1,11 +1,11 @@
 {
-  "slug": "senior-controls-engineer-r007",
+  "slug": "r007",
   "roleId": "role-iconsys-senior-controls-engineer",
   "ref": "R007",
   "title": "Senior Controls Engineer",
   "location": "Telford",
   "employment": "Permanent",
-  "intro": "A leading systems integrator in Telford is looking for a Senior Controls Engineer to design and deliver control systems from concept through to site acceptance. Reporting to the Controls Manager, you will turn client requirements into robust designs and software, and help develop less experienced engineers.",
+  "intro": "A leading systems integrator in Telford is looking for an experienced controls engineer to design and deliver control systems from concept through to site acceptance. Reporting to the Controls Manager, you will turn client requirements into robust designs and software, and help develop less experienced engineers.",
   "bullets": [
     "Understand client requirements and produce electrical and controls concept designs",
     "Hand over to the hardware design team and review the designs produced",
@@ -253,5 +253,8 @@
       ]
     }
   ],
-  "also": "This role would also suit New Product Design Engineers, Electrical Design Engineers and Automation Engineers with strong controls software experience."
+  "also": "This role would also suit New Product Design Engineers, Electrical Design Engineers and Automation Engineers with strong controls software experience.",
+  "oldSlugs": [
+    "senior-controls-engineer-r007"
+  ]
 }

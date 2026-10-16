@@ -1,11 +1,11 @@
 {
-  "slug": "purchasing-stores-controller-r008",
+  "slug": "r008",
   "roleId": "role-iconsys-purchasing-stores-controller",
   "ref": "R008",
   "title": "Purchasing & Stores Controller",
   "location": "Telford",
   "employment": "Permanent",
-  "intro": "An engineering business in Telford is looking for a hands-on Purchasing & Stores Controller. Reporting to the Head of Procurement, you will make sure stock is received, controlled and available to the manufacturing team, while handling day to day purchasing and supplier contact.",
+  "intro": "An engineering business in Telford is looking for a hands-on stores and purchasing professional. Reporting to the Head of Procurement, you will make sure stock is received, controlled and available to the manufacturing team, while handling day to day purchasing and supplier contact.",
   "bullets": [
     "Raise and expedite purchase orders and manage supplier communication",
     "Run the stores counter, receiving, booking in and locating deliveries",
@@ -231,5 +231,8 @@
       ]
     }
   ],
-  "also": "This role would also suit Stock Controllers, Storekeepers, Inventory Controllers and Purchasing Assistants who enjoy a hands-on role."
+  "also": "This role would also suit Stock Controllers, Storekeepers, Inventory Controllers and Purchasing Assistants who enjoy a hands-on role.",
+  "oldSlugs": [
+    "purchasing-stores-controller-r008"
+  ]
 }

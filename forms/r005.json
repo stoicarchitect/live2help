@@ -1,11 +1,11 @@
 {
-  "slug": "applications-engineer-drives-specialist-r005",
+  "slug": "r005",
   "roleId": "role-iconsys-applications-engineer-drives-specialist",
   "ref": "R005",
   "title": "Applications Engineer (Drives Specialist)",
   "location": "Telford",
   "employment": "Permanent",
-  "intro": "A leading systems integrator in Telford is looking for an Applications Engineer with a drives specialism. You will sit between sales and engineering, turning customer specifications into well-scoped technical solutions, accurate costings and clear, persuasive proposals.",
+  "intro": "A leading systems integrator in Telford is looking for an engineer with a drives specialism to sit between sales and engineering, turning customer specifications into well-scoped technical solutions, accurate costings and clear, persuasive proposals.",
   "bullets": [
     "Configure technical solutions from end customer specifications",
     "Estimate the resources and equipment each solution needs",
@@ -267,5 +267,8 @@
       ]
     }
   ],
-  "also": "This role would also suit Technical Engineers, Technical Sales or Pre-sales Engineers, Proposals or Estimating Engineers, and Controls Engineers ready to move into a customer-facing role."
+  "also": "This role would also suit Technical Engineers, Technical Sales or Pre-sales Engineers, Proposals or Estimating Engineers, and Controls Engineers ready to move into a customer-facing role.",
+  "oldSlugs": [
+    "applications-engineer-drives-specialist-r005"
+  ]
 }
