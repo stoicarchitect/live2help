@@ -1755,6 +1755,39 @@ const CLIENT_TAB = 'Dashboard';
 const CLIENT_RANGE = `${CLIENT_TAB}!A2:J`;
 const LEAD_CLIENT_TAB = 'Lead Clients';
 const LEAD_CLIENT_RANGE = `${LEAD_CLIENT_TAB}!A2:J`;
+
+// The real Google sheet (tab) ID for a tab name. Row deletes must target the right tab:
+// deleting with a fixed sheetId of 0 hits whichever tab was created first, not the one meant.
+const tabIdCache = new Map();
+async function sheetIdForTab(spreadsheetId, title) {
+  const key = spreadsheetId + '|' + title;
+  if (tabIdCache.has(key)) return tabIdCache.get(key);
+  const sheets = getSheetsClient();
+  const ss = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets.properties(sheetId,title)' });
+  const tab = (ss.data.sheets || []).find(t => t.properties.title === title);
+  if (!tab) throw new Error(`The "${title}" tab was not found`);
+  tabIdCache.set(key, tab.properties.sheetId);
+  return tab.properties.sheetId;
+}
+
+// Remove every Lead Clients row for a company (used once it becomes an active client)
+async function removeLeadRowsForCompany(company) {
+  const want = String(company || '').trim().toLowerCase();
+  if (!want) return 0;
+  const rows = await readLeadClientRows();
+  const idx = [];
+  rows.forEach((r, i) => { if (String(r[1] || '').trim().toLowerCase() === want) idx.push(i); });
+  if (!idx.length) return 0;
+  const sheetId = await sheetIdForTab(CLIENT_SHEET_ID, LEAD_CLIENT_TAB);
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: CLIENT_SHEET_ID,
+    requestBody: { requests: idx.sort((a, b) => b - a).map(i => ({
+      deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: i + 1, endIndex: i + 2 } },
+    })) },
+  });
+  return idx.length;
+}
 const INVOICES_TAB = 'Invoices';
 const INVOICES_RANGE = `${INVOICES_TAB}!A2:O`;
 const KPI_TARGETS_TAB = 'KPI Targets';
@@ -1858,6 +1891,9 @@ app.post('/api/clients', async (req, res) => {
       requestBody: { values: [clientToRow(newClient)] },
     });
 
+    // Once a company is a client it comes off the Lead Clients tab
+    try { await removeLeadRowsForCompany(company); } catch (le) { console.error('Could not tidy the Lead Clients tab:', le.message); }
+
     // Create the client's Drive folders (including its folder in Candidates Submissions).
     // The client is already saved, so a Drive problem never blocks adding them.
     let folders = { ok: false };
@@ -1896,6 +1932,7 @@ app.delete('/api/clients/:company', async (req, res) => {
       return res.status(404).json({ error: 'No clients found for that company' });
     }
     
+    const clientTabId = await sheetIdForTab(CLIENT_SHEET_ID, CLIENT_TAB);
     for (let i = indicesToDelete.length - 1; i >= 0; i--) {
       await sheets.spreadsheets.batchUpdate({
         spreadsheetId: CLIENT_SHEET_ID,
@@ -1903,7 +1940,7 @@ app.delete('/api/clients/:company', async (req, res) => {
           requests: [{
             deleteDimension: {
               range: {
-                sheetId: 0,
+                sheetId: clientTabId,
                 dimension: 'ROWS',
                 startIndex: indicesToDelete[i] - 1,
                 endIndex: indicesToDelete[i],
@@ -1929,7 +1966,10 @@ app.delete('/api/clients/:company', async (req, res) => {
 app.get('/api/lead-clients', async (req, res) => {
   try {
     const rows = await readLeadClientRows();
-    const clients = rows.filter(r => r[1]).map(r => rowToClient(r));
+    // a company that is already an active client is no longer a lead
+    let active = new Set();
+    try { active = new Set((await readClientRows()).map(r => String(r[1] || '').trim().toLowerCase()).filter(Boolean)); } catch (e) { /* show all leads */ }
+    const clients = rows.filter(r => r[1] && !active.has(String(r[1]).trim().toLowerCase())).map(r => rowToClient(r));
     res.json({ data: clients });
   } catch (e) {
     console.error('GET /api/lead-clients error:', e.message);
@@ -1994,13 +2034,14 @@ app.delete('/api/lead-clients/:company/:contactName', async (req, res) => {
       return res.status(404).json({ error: 'Lead client not found' });
     }
     
+    const leadTabId = await sheetIdForTab(CLIENT_SHEET_ID, LEAD_CLIENT_TAB);
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId: CLIENT_SHEET_ID,
       requestBody: {
         requests: [{
           deleteDimension: {
             range: {
-              sheetId: 0,
+              sheetId: leadTabId,
               dimension: 'ROWS',
               startIndex: rowIndex + 1,
               endIndex: rowIndex + 2,
@@ -3227,13 +3268,14 @@ app.delete('/api/tasks/:id', async (req, res) => {
     }
     
     const sheets = getSheetsClient();
+    const tasksTabId = await sheetIdForTab(SHEET_ID, TASKS_TAB);
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId: SHEET_ID,
       requestBody: {
         requests: [{
           deleteRange: {
             range: {
-              sheetId: 0,
+              sheetId: tasksTabId,
               startRowIndex: rowIndex + 1,
               endRowIndex: rowIndex + 2
             },
@@ -3416,13 +3458,14 @@ app.delete('/api/cold-calls/:id', async (req, res) => {
       return res.status(404).json({ error: 'Cold call not found' });
     }
     
+    const coldTabId = await sheetIdForTab(CLIENT_SHEET_ID, COLD_CALLS_TAB);
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId: CLIENT_SHEET_ID,
       requestBody: {
         requests: [{
           deleteRange: {
             range: {
-              sheetId: 0,
+              sheetId: coldTabId,
               startRowIndex: idx + 1,
               endRowIndex: idx + 2
             },
@@ -9566,7 +9609,7 @@ app.post('/api/talent-pool/reconsent/run', requireAdmin, async (req, res) => {
 });
 
 // Lets the dashboard show which server version is live
-const SERVER_BUILD = '16 Oct 2026 - build 15';
+const SERVER_BUILD = '16 Oct 2026 - build 16';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
