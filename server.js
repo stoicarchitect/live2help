@@ -11326,11 +11326,11 @@ async function cmpReedAgencyTown(town) {
 }
 
 // Companies House: active employment agencies registered in the chosen postcode areas (weekly)
-async function cmpDiscoverCompaniesHouse(settings, summary) {
+async function cmpDiscoverCompaniesHouse(settings, summary, force) {
   if (!rfxSources().companiesHouse) return [];
   const rows = await settingsTable.list();
   const last = (rows.find(o => o.id === 'cmp_ch_last') || {}).value || '';
-  if (last && Date.now() - Date.parse(last) < 7 * 86400000) return [];
+  if (!force && last && Date.now() - Date.parse(last) < 7 * 86400000) return [];
   const found = new Map();
   const pcRe = new RegExp('^(' + settings.compPostcodes.map(p => p.replace(/[^A-Z]/gi, '').toUpperCase()).join('|') + ')\\d', 'i');
   for (const town of settings.compTowns) {
@@ -11374,8 +11374,8 @@ function cmpFreeMatch(ad, directs) {
   return best;
 }
 
-async function cmpRun(settings, summary, roleFinderResults) {
-  if (!settings.compEnabled) return;
+async function cmpRun(settings, summary, roleFinderResults, opts = {}) {
+  if (!settings.compEnabled && !opts.manual) return;
   rfxProg({ phase: 'Competitor Watch: local agency adverts', current: '', pct: 96 });
   const today = rfxToday();
   const towns = settings.compTowns;
@@ -11383,7 +11383,15 @@ async function cmpRun(settings, summary, roleFinderResults) {
   if (rfxSources().reed) {
     for (const town of towns) {
       rfxProg({ current: town });
-      try { ads.push(...(await cmpReedAgencyTown(town)).map(a => ({ ...a, _town: town }))); }
+      try {
+        const got = (await cmpReedAgencyTown(town)).map(a => ({ ...a, _town: town }));
+        ads.push(...got);
+        if (rfxProgress) {
+          rfxProgress.adverts += got.length;
+          got.forEach(a => { if (!rfxProgress.recent.some(r => r.company === a.agency)) { rfxProgress.recent.unshift({ company: a.agency, role: a.role, location: a.location }); if (rfxProgress.recent.length > 18) rfxProgress.recent.pop(); } });
+          rfxProgress.companies = new Set(ads.map(a => rfxNormCompany(a.agency))).size;
+        }
+      }
       catch (e) {
         if (rfxAuthFailure(e)) { summary.errors.push('Competitor Watch: Reed rejected the API key.'); break; }
         summary.errors.push(`Competitors (Reed ${town}): ${e.message}`);
@@ -11415,7 +11423,7 @@ async function cmpRun(settings, summary, roleFinderResults) {
   };
   for (const name of CMP_PINNED) { const c = await addComp({ name, source: 'Pinned' }); if (c && c.pinned !== 'yes') { c.pinned = 'yes'; await cmpTable.upsert(c); } }
   rfxProg({ phase: 'Competitor Watch: Companies House agencies', current: settings.compPostcodes.join(', ') });
-  for (const c of await cmpDiscoverCompaniesHouse(settings, summary)) await addComp({ ...c, source: 'Companies House' });
+  for (const c of await cmpDiscoverCompaniesHouse(settings, summary, opts.manual)) await addComp({ ...c, source: 'Companies House' });
 
   // the adverts, merged with what is stored
   rfxProg({ phase: 'Competitor Watch: matching adverts to clients', current: '' });
@@ -11530,6 +11538,47 @@ async function rfxCountAi(actor) {
 
 /* ---------- routes ---------- */
 
+/* ---------- Security: screen watermark and other deterrents (build 26) ---------- */
+const SEC_DEFAULTS = { watermark: true, blockPrint: true, blockCopy: true, blurOnLeave: true, idleMinutes: 30, applyToAdmin: false };
+async function secSettings() {
+  try { return { ...SEC_DEFAULTS, ...JSON.parse(((await settingsTable.list()).find(o => o.id === 'security') || {}).value || '{}') }; }
+  catch (e) { return { ...SEC_DEFAULTS }; }
+}
+app.get('/api/security-settings', async (req, res) => {
+  try { res.json(await secSettings()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/security-settings', requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const next = await secSettings();
+    ['watermark', 'blockPrint', 'blockCopy', 'blurOnLeave', 'applyToAdmin'].forEach(k => { if (b[k] !== undefined) next[k] = !!b[k]; });
+    if (b.idleMinutes !== undefined) next.idleMinutes = Math.max(0, Math.min(480, parseInt(b.idleMinutes, 10) || 0));
+    await settingsTable.upsert({ id: 'security', value: JSON.stringify(next), updated_by: actorOf(req) });
+    auditLog(auditActorOf(req), 'updated', 'security_settings', 'Screen protection', JSON.stringify(next));
+    res.json({ ok: true, data: next });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Search competitors now (shares the search lock and progress panel with Role Finder)
+async function cmpRunNow(actor) {
+  rfxProgress = { startedAt: rfxNow(), updatedAt: rfxNow(), phase: 'Competitor Watch: getting ready', current: '', pct: 3, step: 0, stepsBefore: 0, adverts: 0, companies: 0, recent: [], errors: [], done: false, by: actor || 'system' };
+  const summary = { errors: [] };
+  rfxProgress.errors = summary.errors;
+  try {
+    const settings = await cmpSettings();
+    if (!rfxSources().reed && !rfxSources().companiesHouse) throw new Error('Add the Reed or Companies House key on Render first.');
+    const results = await rfxResultsTable.list();
+    await cmpRun(settings, summary, results, { manual: true });
+    rfxProg({ phase: 'Finished', current: '', pct: 100, done: true, result: { newCount: summary.newCompetitorAdverts || 0, agencies: summary.newCompetitors || 0, deepDives: 0, competitor: true, total: summary.competitorAdverts || 0 } });
+    return summary;
+  } catch (e) { rfxProg({ phase: 'Failed', error: e.message, done: true }); throw e; }
+}
+
+app.post('/api/competitors/run', async (req, res) => {
+  try { res.json(await runCronJob('roleFinder', () => cmpRunNow(actorOf(req)))); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/competitors/overview', async (req, res) => {
   try {
     const [comps, ads, settings] = await Promise.all([cmpTable.list(), cmpAdsTable.list(), cmpSettings()]);
@@ -11624,7 +11673,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '16 Oct 2026 - build 24';
+const SERVER_BUILD = '16 Oct 2026 - build 26';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

@@ -14855,8 +14855,8 @@ async function rfxRun(searchId){
   }catch(e){ showToast('Could not start the search: ' + e.message); }
 }
 
-function rfxRenderProgress(p, running){
-  const host = document.getElementById('rfxProgress');
+function rfxRenderProgress(p, running, hostId){
+  const host = document.getElementById(hostId || 'rfxProgress');
   if(!host) return;
   if(!p){ host.innerHTML = ''; return; }
   const failed = p.phase === 'Failed' || (!running && p.error);
@@ -14869,9 +14869,9 @@ function rfxRenderProgress(p, running){
   if(failed) head = `<b style="color:#9B2C22;">The search failed</b> <span class="rfx-sub" style="display:inline;">after ${took}</span>`;
   else if(done) head = `<b style="color:#2D6A3E;">Search finished</b> <span class="rfx-sub" style="display:inline;">in ${took}</span>`;
   else head = `<span class="rfx-spin"></span><b>${esc(p.phase || 'Searching')}</b> <span class="rfx-sub" style="display:inline;">${esc(p.pct || 0)}% - running for ${took}</span>`;
-  const result = p.result ? `${p.result.newCount} new direct employer adverts, ${p.result.agencies} agency adverts filtered out${p.result.deepDives ? ', ' + p.result.deepDives + ' deep dives done' : ''}.` : '';
+  const result = p.result && p.result.competitor ? `${p.result.newCount} new agency adverts, ${p.result.agencies} new agencies found, ${p.result.total} adverts tracked in total.` : p.result ? `${p.result.newCount} new direct employer adverts, ${p.result.agencies} agency adverts filtered out${p.result.deepDives ? ', ' + p.result.deepDives + ' deep dives done' : ''}.` : '';
   host.innerHTML = `<div class="rfx-prog ${failed ? 'bad' : done ? 'ok' : ''}">
-    <div class="hd"><div>${head}</div>${done ? '<a class="tpl-link" onclick="RFX.progressShown=false;rfxRenderProgress(null)">Close</a>' : ''}</div>
+    <div class="hd"><div>${head}</div>${done ? `<a class="tpl-link" onclick="rfxRenderProgress(null, false, '${hostId || 'rfxProgress'}')">Close</a>` : ''}</div>
     <div class="bar"><div style="width:${failed ? 100 : Math.max(2, p.pct || 0)}%"></div></div>
     ${!done && p.current ? `<div class="rfx-sub">Now: ${esc(p.current)}</div>` : ''}
     ${failed && p.error ? `<div class="rfx-check bad">${esc(p.error)}</div>` : ''}
@@ -15407,7 +15407,7 @@ tr.cmp-row.sel td{background:#FBF6E8;}
    and the clients behind them
    ============================================================ */
 
-const CMP = {data:null, agency:'', loaded:false};
+const CMP = {data:null, agency:'', loaded:false, polling:null};
 
 (function(){
   const tabs = document.getElementById('tabs');
@@ -15426,10 +15426,12 @@ const CMP = {data:null, agency:'', loaded:false};
         <div><h2>Competitor Watch</h2><div class="sub" id="cmpSummary">Local agencies, what they are advertising and the clients behind their roles.</div></div>
         <div class="head-actions">
           <button class="cancel" id="cmpAreasBtn" style="padding:9px 14px;border:1px solid var(--border);background:#fff;border-radius:2px;font-family:inherit;font-size:13px;cursor:pointer;" onclick="cmpOpenAreas()">Areas</button>
-          <button class="gold-btn" onclick="cmpOpenAdd()">+ Add competitor</button>
+          <button class="cancel" style="padding:9px 14px;border:1px solid var(--border);background:#fff;border-radius:2px;font-family:inherit;font-size:13px;cursor:pointer;" onclick="cmpOpenAdd()">+ Add competitor</button>
+          <button class="gold-btn" id="cmpRunBtn" onclick="cmpRunNow()">Search competitors now</button>
         </div>
       </div>
       <div class="view-body">
+        <div id="cmpProgress"></div>
         <div class="tile-grid" id="cmpTiles"></div>
         <div class="section-title">Agencies</div>
         <div class="ops-table-wrap"><table class="ops-table" style="min-width:980px;"><thead><tr>
@@ -15469,6 +15471,7 @@ async function cmpLoad(){
     CMP.loaded = true;
     document.getElementById('cmpAreasBtn').style.display = signedInUser && signedInUser.admin ? '' : 'none';
     cmpRender();
+    if(!CMP.polling){ try{ const st = await b2Api('/api/role-finder/status'); if(st.running) cmpPoll(); }catch(e){} }
   }catch(e){ document.getElementById('cmpBody').innerHTML = `<tr><td colspan="9" class="empty-row">Could not load: ${esc(e.message)}</td></tr>`; }
 }
 
@@ -15543,6 +15546,33 @@ function cmpRender(){
       <td style="max-width:340px;">${cmpConfPill(a)}</td>
       <td><div class="rfx-actions">${acts}</div></td></tr>`;
   }).join('') : '<tr><td colspan="6" class="empty-row">No adverts match these filters.</td></tr>';
+}
+
+async function cmpRunNow(){
+  try{
+    const j = await b2Post('/api/competitors/run', {});
+    if(j.running && !j.started) showToast('A search is already running, showing its progress');
+    rfxRenderProgress({phase:'Starting', pct:1, adverts:0, companies:0, recent:[], errors:[], startedAt:new Date().toISOString()}, true, 'cmpProgress');
+    cmpPoll();
+  }catch(e){ showToast('Could not start: ' + e.message); }
+}
+
+function cmpPoll(){
+  const btn = document.getElementById('cmpRunBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="rfx-spin"></span>Searching';
+  clearInterval(CMP.polling);
+  const tick = async () => {
+    try{
+      const st = await b2Api('/api/role-finder/status');
+      rfxRenderProgress(st.progress || (st.last && st.last.error ? {phase:'Failed', error: st.last.error, startedAt: st.last.startedAt, errors:[]} : null), st.running, 'cmpProgress');
+      if(st.running) return;
+      clearInterval(CMP.polling); CMP.polling = null;
+      btn.disabled = false; btn.textContent = 'Search competitors now';
+      cmpLoad();
+    }catch(e){ /* keep trying */ }
+  };
+  tick();
+  CMP.polling = setInterval(tick, 3000);
 }
 
 function cmpPickAgency(id){ CMP.agency = CMP.agency === id ? '' : id; cmpRender(); document.getElementById('cmpAdsTitle').scrollIntoView({behavior:'smooth', block:'start'}); }
@@ -15658,9 +15688,163 @@ async function cmpSaveAreas(){
 </script>
 
 
+<style>
+/* ===== Screen protection (build 26) ===== */
+#secWatermark{position:fixed;inset:0;pointer-events:none;z-index:2147483000;display:none;background-repeat:repeat;}
+html.sec-wm #secWatermark{display:block;}
+html.sec-nocopy body{-webkit-user-select:none;user-select:none;}
+html.sec-nocopy input, html.sec-nocopy textarea, html.sec-nocopy select, html.sec-nocopy [contenteditable]{-webkit-user-select:text;user-select:text;}
+html.sec-blurred #app, html.sec-blurred .modal-overlay{filter:blur(14px);}
+#secShield{position:fixed;inset:0;z-index:2147482000;display:none;align-items:center;justify-content:center;background:rgba(26,26,26,.35);color:#fff;font-size:15px;letter-spacing:1px;cursor:pointer;}
+html.sec-blurred #secShield{display:flex;}
+#secIdle{position:fixed;bottom:20px;right:20px;z-index:2147482500;background:#1A1A1A;color:#fff;border-left:3px solid var(--gold);padding:12px 16px;font-size:13px;display:none;border-radius:2px;}
+@media print{ html.sec-noprint body *{display:none !important;} html.sec-noprint body::after{content:'Printing is disabled for the Live 2 Help dashboard.';display:block;padding:40px;font-size:18px;} }
+</style>
+<div id="secWatermark"></div>
+<div id="secShield" onclick="secUnblur()">Dashboard hidden while you are away. Click to continue.</div>
+<div id="secIdle"></div>
+
+<div class="modal-overlay" id="secModal">
+  <div class="modal rfx-mid"><div class="modal-inner">
+    <button class="modal-close" onclick="closeModal('secModal')">&times;</button>
+    <div id="secModalBody"></div>
+  </div></div>
+</div>
+
+<script>
+/* ============================================================
+   Screen protection (build 26)
+   A website cannot block screenshots or screen recording, so these
+   make leaks traceable and harder: a personal watermark, no printing,
+   no bulk copying, blur when the window loses focus, idle sign-out.
+   ============================================================ */
+
+const SEC = {cfg:null, on:false, idleTimer:null, warnTimer:null, wmTimer:null, last:Date.now()};
+
+function secApplies(){
+  if(!SEC.cfg || typeof signedInUser === 'undefined' || !signedInUser) return false;
+  return !signedInUser.admin || SEC.cfg.applyToAdmin;
+}
+
+function secWatermark(){
+  const u = signedInUser || {};
+  const now = new Date();
+  const text = `${u.name || u.key || ''} - ${now.toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'})} ${now.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'})} - Live 2 Help confidential`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="460" height="230"><text x="20" y="130" transform="rotate(-24 230 115)" font-family="Lato,Arial,sans-serif" font-size="15" fill="rgb(120,120,120)" fill-opacity="0.16">${text.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</text></svg>`;
+  document.getElementById('secWatermark').style.backgroundImage = `url("data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}")`;
+}
+
+function secApply(){
+  const root = document.documentElement;
+  const on = secApplies();
+  SEC.on = on;
+  const c = SEC.cfg || {};
+  root.classList.toggle('sec-wm', on && !!c.watermark);
+  root.classList.toggle('sec-noprint', on && !!c.blockPrint);
+  root.classList.toggle('sec-nocopy', on && !!c.blockCopy);
+  if(!on || !c.blurOnLeave) root.classList.remove('sec-blurred');
+  clearInterval(SEC.wmTimer);
+  if(on && c.watermark){ secWatermark(); SEC.wmTimer = setInterval(secWatermark, 60000); }
+  secIdleReset();
+}
+
+async function secLoad(){
+  try{ SEC.cfg = await b2Api('/api/security-settings'); }catch(e){ SEC.cfg = null; }
+  secApply();
+  const chip = document.getElementById('userChip');
+  if(chip && signedInUser && signedInUser.admin && !document.getElementById('secBtn')){
+    const b = document.createElement('button');
+    b.id = 'secBtn'; b.textContent = 'Security'; b.onclick = secOpen;
+    const logout = [...chip.querySelectorAll('button')].find(x => /log out/i.test(x.textContent));
+    chip.insertBefore(b, logout || null);
+  }
+}
+
+/* copying, right click and print shortcuts */
+document.addEventListener('copy', e => {
+  if(!SEC.on || !SEC.cfg || !SEC.cfg.blockCopy) return;
+  const t = e.target;
+  if(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  e.preventDefault();
+  showToast('Copying from the dashboard is switched off');
+});
+document.addEventListener('contextmenu', e => {
+  if(!SEC.on || !SEC.cfg || !SEC.cfg.blockCopy) return;
+  const t = e.target;
+  if(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  e.preventDefault();
+});
+document.addEventListener('keydown', e => {
+  if(!SEC.on || !SEC.cfg || !SEC.cfg.blockPrint) return;
+  if((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P')){ e.preventDefault(); showToast('Printing is switched off'); }
+});
+
+/* blur when the window loses focus */
+function secBlur(){ if(SEC.on && SEC.cfg && SEC.cfg.blurOnLeave) document.documentElement.classList.add('sec-blurred'); }
+function secUnblur(){ document.documentElement.classList.remove('sec-blurred'); }
+window.addEventListener('blur', secBlur);
+document.addEventListener('visibilitychange', () => { if(document.hidden) secBlur(); });
+window.addEventListener('focus', () => { if(!document.hidden) setTimeout(secUnblur, 150); });
+
+/* idle sign-out */
+function secIdleReset(){
+  SEC.last = Date.now();
+  clearTimeout(SEC.idleTimer); clearTimeout(SEC.warnTimer);
+  document.getElementById('secIdle').style.display = 'none';
+  const mins = SEC.on && SEC.cfg ? parseInt(SEC.cfg.idleMinutes, 10) || 0 : 0;
+  if(!mins) return;
+  const ms = mins * 60000;
+  SEC.warnTimer = setTimeout(() => {
+    const box = document.getElementById('secIdle');
+    box.textContent = 'You will be signed out in 1 minute because the dashboard has not been used. Move the mouse or press a key to stay signed in.';
+    box.style.display = 'block';
+  }, Math.max(0, ms - 60000));
+  SEC.idleTimer = setTimeout(() => { if(typeof signOut === 'function') signOut(); else location.reload(); }, ms);
+}
+let secThrottle = 0;
+['mousemove','keydown','click','scroll','touchstart'].forEach(ev => document.addEventListener(ev, () => {
+  if(Date.now() - secThrottle < 5000) return;
+  secThrottle = Date.now();
+  if(SEC.on) secIdleReset();
+}, {passive:true}));
+
+/* settings (Dan) */
+function secOpen(){
+  const c = SEC.cfg || {};
+  const row = (id, on, title, sub) => `<div class="rfx-confirm" style="margin-top:10px;"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><span><b>${title}</b><br><span class="rfx-sub">${sub}</span></span></div>`;
+  document.getElementById('secModalBody').innerHTML = `
+    <h2>Screen protection</h2>
+    <div class="role-sub">No website can block screenshots or screen recording. These make leaks traceable and harder.</div>
+    <div class="simple-form">
+      ${row('secWm', c.watermark, 'Personal watermark', 'A faint name, date and time across every screen, so any screenshot or photo shows who took it and when.')}
+      ${row('secPr', c.blockPrint, 'Block printing', 'Printing the dashboard comes out blank.')}
+      ${row('secCp', c.blockCopy, 'Block copying', 'Text cannot be selected or copied, apart from typing fields. Right click is switched off.')}
+      ${row('secBl', c.blurOnLeave, 'Blur when away', 'The dashboard blurs when the window loses focus, which also catches some screen capture tools.')}
+      <label>Sign out after this many minutes without use (0 for never)</label><input type="number" id="secIdleMin" min="0" max="480" value="${esc(c.idleMinutes == null ? 30 : c.idleMinutes)}" style="width:120px;">
+      ${row('secAdm', c.applyToAdmin, 'Apply to Dan as well', 'Off means these only apply to other team members.')}
+      <div class="actions"><button class="cancel" onclick="closeModal('secModal')">Cancel</button><button class="save" onclick="secSave()">Save</button></div>
+    </div>`;
+  document.getElementById('secModal').classList.add('visible');
+}
+
+async function secSave(){
+  const v = id => document.getElementById(id).checked;
+  try{
+    const j = await b2Post('/api/security-settings', {watermark: v('secWm'), blockPrint: v('secPr'), blockCopy: v('secCp'), blurOnLeave: v('secBl'), applyToAdmin: v('secAdm'), idleMinutes: b2Val('secIdleMin')});
+    SEC.cfg = j.data; secApply(); closeModal('secModal'); showToast('Screen protection saved');
+  }catch(e){ showToast('Could not save: ' + e.message); }
+}
+
+(function(){
+  const _si = signIn;
+  signIn = function(user){ _si(user); secLoad(); };
+  if(typeof signedInUser !== 'undefined' && signedInUser) secLoad();
+})();
+</script>
+
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '16 Oct 2026 - build 25';
+var PAGE_BUILD = '16 Oct 2026 - build 26';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -15671,12 +15855,12 @@ function buildTagApply(){
     tag.style.cssText = 'font-size:10.5px;color:#999;margin-left:10px;white-space:nowrap;';
     chip.appendChild(tag);
   }
-  tag.textContent = 'Page build 25';
+  tag.textContent = 'Page build 26';
   tag.title = 'Page: ' + PAGE_BUILD;
   b2Api('/api/version').then(function(j){
-    tag.textContent = 'Page build 25 | Server ' + serverBuildLabel(j.build);
+    tag.textContent = 'Page build 26 | Server ' + serverBuildLabel(j.build);
     tag.title = 'Page: ' + PAGE_BUILD + ' | Server: ' + j.build;
-  }).catch(function(){ tag.textContent = 'Page build 25 | Server older'; });
+  }).catch(function(){ tag.textContent = 'Page build 26 | Server older'; });
 }
 (function(){
   const _si = signIn;
