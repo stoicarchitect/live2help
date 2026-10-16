@@ -21,6 +21,8 @@ google.options({
   retryConfig: {
     retry: 5,
     retryDelay: 2000,
+    // a quota refusal (429) means nothing was written, so writes are safe to retry too
+    httpMethodsToRetry: ['GET', 'HEAD', 'PUT', 'POST', 'OPTIONS', 'DELETE'],
     statusCodesToRetry: [[429, 429], [500, 599]],
   },
 });
@@ -4175,11 +4177,18 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
     ready = true;
   }
 
+  // A very short read cache keeps busy pages and loops inside Google's per-minute read quota.
+  // Every write through this table clears it, so reads after a write are always fresh.
+  let cache = null;
+  const invalidate = () => { cache = null; };
   async function readRows() {
     await ensure();
+    if (cache && Date.now() - cache.at < 3000) return cache.rows.map(r => r.slice());
     const sheets = getSheetsClient();
     const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tab}'!A2:${lastCol}` });
-    return r.data.values || [];
+    const rows = r.data.values || [];
+    cache = { at: Date.now(), rows };
+    return rows.map(x => x.slice());
   }
 
   const pad = row => {
@@ -4199,6 +4208,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
       const rows = await readRows();
       const idx = rows.findIndex(r => r && r[0] === obj.id);
       const row = toRow(obj);
+      invalidate();
       if (idx === -1) {
         await sheets.spreadsheets.values.append({
           spreadsheetId: SHEET_ID, range: `'${tab}'!A:${lastCol}`, valueInputOption: 'RAW',
@@ -4218,6 +4228,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
   function append(obj) {
     return lock(async () => {
       await ensure();
+      invalidate();
       const sheets = getSheetsClient();
       await sheets.spreadsheets.values.append({
         spreadsheetId: SHEET_ID, range: `'${tab}'!A:${lastCol}`, valueInputOption: 'RAW',
@@ -4234,6 +4245,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
       const idx = rows.findIndex(r => r && r[0] === id);
       if (idx === -1) return false;
       const n = idx + 2;
+      invalidate();
       await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: `'${tab}'!A${n}:${lastCol}${n}` });
       return true;
     });
@@ -4253,6 +4265,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
         }
       });
       if (data.length) {
+        invalidate();
         await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { valueInputOption: 'RAW', data } });
       }
       return data.length;
@@ -4295,7 +4308,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
       } catch (e) { console.error(`DELETE ${path} error:`, e.message); res.status(500).json({ error: e.message }); }
     });
   }
-  return { list, listAll, upsert, append, remove, updateWhere, ensure };
+  return { list, listAll, upsert, append, remove, updateWhere, ensure, invalidate };
 }
 
 /* ---------- Users (personal passwords, stored as hashes only) ---------- */
@@ -10588,6 +10601,7 @@ async function rfxWriteAllResults(objs) {
   const sheets = getSheetsClient();
   const last = rfxColLetter(RFX_RESULT_HEADER.length);
   const rows = objs.map(o => RFX_RESULT_HEADER.map(h => (o[h] == null ? '' : String(o[h]).slice(0, 48000))));
+  rfxResultsTable.invalidate();
   await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: `'${RFX_RESULTS_TAB}'!A2:${last}` });
   for (let i = 0; i < rows.length; i += 400) {
     const chunk = rows.slice(i, i + 400);
@@ -10596,6 +10610,7 @@ async function rfxWriteAllResults(objs) {
       valueInputOption: 'RAW', requestBody: { values: chunk },
     });
   }
+  rfxResultsTable.invalidate();
 }
 
 let rfxRunState = { running: false };
@@ -11098,6 +11113,10 @@ app.post('/api/role-finder/run', async (req, res) => {
 
 app.get('/api/role-finder/status', async (req, res) => {
   try {
+    if (rfxProgress) {
+      const progress = { ...rfxProgress }; delete progress._seen;
+      return res.json({ running: !!cronRunning.roleFinder, last: progress.error ? { error: progress.error, startedAt: progress.startedAt } : null, progress });
+    }
     const row = (await settingsTable.list()).find(o => o.id === 'cron_roleFinder');
     let s = null;
     try { s = row ? JSON.parse(row.value) : null; } catch (e) { s = null; }
@@ -11404,29 +11423,42 @@ async function cmpRun(settings, summary, roleFinderResults, opts = {}) {
   });
 
   // the agencies themselves
-  const comps = await cmpTable.list();
-  const byNorm = new Map(comps.map(c => [rfxNormCompany(c.name), c]));
+  const comps = await cmpTable.listAll();
+  const byNorm = new Map(comps.filter(c => c.id).map(c => [rfxNormCompany(c.name), c]));
+  let compsChanged = false;
   const addComp = async (fields) => {
     const n = rfxNormCompany(fields.name);
     if (!n) return null;
     const ex = byNorm.get(n);
     if (ex) {
-      let changed = false;
-      ['company_number', 'postcode', 'address'].forEach(k => { if (!ex[k] && fields[k]) { ex[k] = fields[k]; changed = true; } });
-      if (changed) await cmpTable.upsert(ex);
+      ['company_number', 'postcode', 'address'].forEach(k => { if (!ex[k] && fields[k]) { ex[k] = fields[k]; compsChanged = true; } });
       return ex;
     }
-    const c = await cmpTable.upsert({ id: rfxId('cp'), added_at: rfxNow(), added_by: 'system', pinned: '', hidden: '', notes: '', website: '', ...fields });
+    const c = { id: rfxId('cp'), added_at: rfxNow(), added_by: 'system', pinned: '', hidden: '', notes: '', website: '', company_number: '', postcode: '', address: '', ...fields };
     byNorm.set(n, c);
+    compsChanged = true;
     summary.newCompetitors = (summary.newCompetitors || 0) + 1;
     return c;
   };
-  for (const name of CMP_PINNED) { const c = await addComp({ name, source: 'Pinned' }); if (c && c.pinned !== 'yes') { c.pinned = 'yes'; await cmpTable.upsert(c); } }
+  for (const name of CMP_PINNED) { const c = await addComp({ name, source: 'Pinned' }); if (c && c.pinned !== 'yes') { c.pinned = 'yes'; compsChanged = true; } }
   rfxProg({ phase: 'Competitor Watch: Companies House agencies', current: settings.compPostcodes.join(', ') });
   for (const c of await cmpDiscoverCompaniesHouse(settings, summary, opts.manual)) await addComp({ ...c, source: 'Companies House' });
 
   // the adverts, merged with what is stored
   rfxProg({ phase: 'Competitor Watch: matching adverts to clients', current: '' });
+  const saveComps = async () => {
+    if (!compsChanged) return;
+    await cmpTable.ensure();
+    const header = ['id', 'name', 'website', 'company_number', 'postcode', 'address', 'source', 'pinned', 'hidden', 'notes', 'added_at', 'added_by'];
+    const last = rfxColLetter(header.length);
+    const rowsOut = [...byNorm.values()].map(c => header.map(h => (c[h] == null ? '' : String(c[h]))));
+    const sheets = getSheetsClient();
+    cmpTable.invalidate();
+    await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: `'Competitors'!A2:${last}` });
+    if (rowsOut.length) await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `'Competitors'!A2:${last}${rowsOut.length + 1}`, valueInputOption: 'RAW', requestBody: { values: rowsOut } });
+    cmpTable.invalidate();
+    compsChanged = false;
+  };
   const existing = await cmpAdsTable.list();
   const byKey = new Map(existing.map(a => [a.key, a]));
   const directs = roleFinderResults.filter(o => o.status !== 'agency' && o.company);
@@ -11473,15 +11505,18 @@ async function cmpRun(settings, summary, roleFinderResults, opts = {}) {
     const l = latest.get(o.id), b = before.get(o.id);
     if (l) ['client', 'client_confidence', 'client_reason', 'client_website', 'client_at', 'client_by', 'status', 'result_id'].forEach(f => { if (!b || l[f] !== b[f]) o[f] = l[f]; });
   });
+  await saveComps();
   await cmpAdsTable.ensure();
   const sheets = getSheetsClient();
   const last = rfxColLetter(CMP_AD_HEADER.length);
   const rowsOut = keep.map(o => CMP_AD_HEADER.map(h => (o[h] == null ? '' : String(o[h]))));
+  cmpAdsTable.invalidate();
   await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: `'Competitor Adverts'!A2:${last}` });
   for (let i = 0; i < rowsOut.length; i += 400) {
     const chunk = rowsOut.slice(i, i + 400);
     await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `'Competitor Adverts'!A${i + 2}:${last}${i + 1 + chunk.length}`, valueInputOption: 'RAW', requestBody: { values: chunk } });
   }
+  cmpAdsTable.invalidate();
   summary.competitorAdverts = keep.length;
   summary.newCompetitorAdverts = newAds;
 }
@@ -11673,7 +11708,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '16 Oct 2026 - build 26';
+const SERVER_BUILD = '16 Oct 2026 - build 27';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
