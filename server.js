@@ -11358,9 +11358,28 @@ const CMP_DEFAULTS = {
 };
 const CMP_PINNED = ['Brampton Recruitment', 'RCM Recruitment'];
 
+const CMP_HEADER = ['id', 'name', 'website', 'company_number', 'postcode', 'address', 'source', 'pinned', 'hidden', 'notes', 'added_at', 'added_by', 'sic', 'accounts_type', 'size', 'company_created', 'watch_urls', 'watch_status'];
+// Job pages watched for the pinned competitors from the start (they do not advertise on Reed)
+const CMP_DEFAULT_PAGES = {
+  'rcm recruitment': ['https://www.rcmrecruitment.co.uk/job-board'],
+  'brampton recruitment': ['https://www.cv-library.co.uk/list-jobs/251995/Brampton-Recruitment-Ltd'],
+};
+// Names that look like a recruitment business (Companies House lists many one-person contractor companies under the same codes)
+const CMP_AGENCY_NAME_RE = /\b(recruit\w*|staff\w*|personnel|resourc\w*|employment|talent|appointments|selection|workforce|careers?|jobs|headhunt\w*|search)\b/i;
+function cmpSizeOf(accountsType, status) {
+  const t = String(accountsType || '').toLowerCase();
+  if (status && status !== 'active') return 'Closed';
+  if (t === 'dormant') return 'Dormant';
+  if (/group/.test(t)) return 'Large';
+  if (/^full$|medium/.test(t)) return 'Medium';
+  if (/small|total-exemption|partial-exemption|audit-exemption/.test(t)) return 'Small';
+  if (/micro/.test(t)) return 'Micro';
+  return '';
+}
+
 const cmpTable = makeSimpleTable({
   tab: 'Competitors',
-  header: ['id', 'name', 'website', 'company_number', 'postcode', 'address', 'source', 'pinned', 'hidden', 'notes', 'added_at', 'added_by'],
+  header: CMP_HEADER,
   path: '/api/competitors',
   label: 'Competitor',
   auditType: 'competitor',
@@ -11369,7 +11388,7 @@ const cmpTable = makeSimpleTable({
 
 const CMP_AD_HEADER = ['id', 'competitor_id', 'agency', 'source_id', 'role', 'location', 'salary', 'sal_min', 'sal_max', 'posted_date',
   'first_seen', 'last_seen', 'url', 'description', 'role_type', 'client', 'client_confidence', 'client_reason', 'client_website',
-  'client_at', 'client_by', 'status', 'result_id', 'key'];
+  'client_at', 'client_by', 'status', 'result_id', 'key', 'channel'];
 const cmpAdsTable = makeSimpleTable({ tab: 'Competitor Adverts', header: CMP_AD_HEADER, path: null, label: 'Competitor advert' });
 
 async function cmpSettings() {
@@ -11427,7 +11446,10 @@ async function cmpDiscoverCompaniesHouse(settings, summary, force) {
       ((j && j.items) || []).forEach(c => {
         const a = c.registered_office_address || {};
         if (!pcRe.test(String(a.postal_code || '').replace(/\s+/g, ''))) return;
+        const sic = (c.sic_codes || []).map(String);
+        if (!sic.includes('78200') && !CMP_AGENCY_NAME_RE.test(c.company_name || '')) return;
         found.set(c.company_number, {
+          sic: sic.join(','), company_created: c.date_of_creation || '',
           name: String(c.company_name || '').toLowerCase().replace(/\b\w/g, x => x.toUpperCase()).replace(/\bLtd\b/i, 'Ltd'),
           company_number: c.company_number, postcode: a.postal_code || '',
           address: [a.address_line_1, a.locality, a.postal_code].filter(Boolean).join(', '),
@@ -11438,6 +11460,138 @@ async function cmpDiscoverCompaniesHouse(settings, summary, force) {
   }
   await settingsTable.upsert({ id: 'cmp_ch_last', value: rfxNow(), updated_by: 'system' });
   return [...found.values()];
+}
+
+/* ---------- reading a competitor's own job pages (free) ----------
+   Works with most agency job boards: it reads structured job data (JobPosting) where the site
+   provides it, otherwise it picks out links to individual jobs, follows "next page" links, and
+   opens each new job once to read its location, salary and description. */
+function cmpAbs(href, base) { try { return new URL(href.replace(/&amp;/g, '&'), base).toString(); } catch (e) { return ''; } }
+function cmpTitleFromSlug(u) {
+  try {
+    const parts = new URL(u).pathname.split('/').filter(Boolean);
+    let slug = parts[parts.length - 1] || '';
+    if (/^\d+$/.test(slug) && parts.length > 1) slug = parts[parts.length - 2];
+    slug = slug.replace(/\.(html?|aspx?|php)$/i, '').replace(/[-_]+\d{4,}$/, '');
+    return slug.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/\b\w/g, c => c.toUpperCase());
+  } catch (e) { return ''; }
+}
+function cmpJsonLdJobs(html, base) {
+  const out = [];
+  const blocks = html.match(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi) || [];
+  const visit = o => {
+    if (!o || typeof o !== 'object') return;
+    if (Array.isArray(o)) return o.forEach(visit);
+    const t = [].concat(o['@type'] || []);
+    if (t.includes('JobPosting')) {
+      const loc = [].concat(o.jobLocation || [])[0] || {};
+      const addr = (loc.address) || {};
+      const sal = o.baseSalary && o.baseSalary.value ? o.baseSalary.value : {};
+      out.push({
+        title: rfxStrip(o.title || ''), url: cmpAbs(o.url || base, base),
+        location: [addr.addressLocality, addr.addressRegion].filter(Boolean).join(', ') || (typeof o.jobLocation === 'string' ? o.jobLocation : ''),
+        salary: sal.minValue || sal.value ? rfxSalary(sal.minValue || sal.value, sal.maxValue || sal.value) : '',
+        sal_min: sal.minValue || sal.value || '', sal_max: sal.maxValue || sal.value || '',
+        posted: String(o.datePosted || '').slice(0, 10), description: rfxStrip(o.description || '').slice(0, 800),
+        client: o.hiringOrganization && o.hiringOrganization.name ? String(o.hiringOrganization.name) : '',
+      });
+    }
+    ['@graph', 'itemListElement', 'item'].forEach(k => { if (o[k]) visit(o[k]); });
+  };
+  blocks.forEach(b => { try { visit(JSON.parse(b.replace(/^<script[^>]*>/i, '').replace(/<\/script>$/i, '').trim())); } catch (e) { /* not valid JSON */ } });
+  return out.filter(j => j.title);
+}
+const CMP_GENERIC_LINK = /^(view|apply|read more|more|details|view job|view details|find out more|learn more|apply now|see more)$/i;
+function cmpLinkJobs(html, base, listPath) {
+  const out = new Map();
+  const host = new URL(base).host;
+  const re = /<a\s[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = re.exec(html))) {
+    const u = cmpAbs(m[1], base);
+    if (!u) continue;
+    let p;
+    try { p = new URL(u); } catch (e) { continue; }
+    if (p.host !== host) continue;
+    const path = p.pathname.toLowerCase();
+    if (path === listPath || !/(\/job|\/jobs\/|vacanc|\/position|\/role\/|job-detail|jobid|job_id|\/career)/.test(path + p.search.toLowerCase())) continue;
+    if (/(\/page\/\d+|apply|login|register|alert|search|sector|categor|\/location\/|upload|cv|submit|privacy|cookie|contact|candidates?$|clients?$|job-board\/?$|jobs\/?$)/.test(path)) continue;
+    let text = rfxStrip(m[2]).replace(/\s+/g, ' ').trim();
+    if (!text || text.length < 4 || text.length > 110 || CMP_GENERIC_LINK.test(text)) text = cmpTitleFromSlug(u);
+    if (!text) continue;
+    const key = p.origin + p.pathname;
+    if (!out.has(key)) out.set(key, { title: text, url: u, location: '', salary: '', posted: '', description: '' });
+  }
+  return [...out.values()];
+}
+function cmpNextPage(html, base, seen) {
+  const re = /<a\s[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = re.exec(html))) {
+    const text = rfxStrip(m[2]).toLowerCase();
+    const tag = m[0].toLowerCase();
+    if (/next|&raquo;|»|›/.test(text) || /rel=["']next["']|class=["'][^"']*next/.test(tag)) {
+      const u = cmpAbs(m[1], base);
+      if (u && !seen.has(u)) return u;
+    }
+  }
+  return '';
+}
+async function cmpGet(url) {
+  const r = await rfxFetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', Accept: 'text/html,application/xhtml+xml', 'Accept-Language': 'en-GB,en;q=0.9' }, redirect: 'follow' }, 15000);
+  if (!r.ok) throw new Error(`the page returned ${r.status}${r.status === 403 ? ' (the site blocks automatic reading)' : ''}`);
+  return (await r.text()).slice(0, 1500000);
+}
+function cmpDetailBits(html) {
+  const text = rfxStrip(html);
+  const loc = (text.match(/\b(?:Location|Based in|Job location)\s*[:\-]\s*([A-Z][A-Za-z .,'-]{2,40})/) || [])[1] || '';
+  const sal = (text.match(/£\s?\d[\d,.]*\s?k?(?:\s?(?:-|to)\s?£?\s?\d[\d,.]*\s?k?)?(?:\s?(?:per annum|p\.a\.|pa|per hour|ph|an hour))?/i) || [])[0] || '';
+  const desc = (text.match(/(?:Job Description|Description|About the role|The role)\s*[:\-]?\s*([\s\S]{40,700})/i) || [])[1] || '';
+  return { location: loc.replace(/\s+(Salary|Job|Type|Contract|Sector).*$/i, '').trim(), salary: sal.trim(), description: desc.trim() };
+}
+async function cmpReadJobPages(urls, knownUrls, summary, label) {
+  const jobs = [], status = {};
+  for (const start of urls) {
+    const seen = new Set();
+    let url = start, pages = 0, found = 0;
+    try {
+      const listPath = new URL(start).pathname.toLowerCase();
+      while (url && pages < 8) {
+        seen.add(url);
+        const html = await cmpGet(url);
+        pages++;
+        let got = cmpJsonLdJobs(html, url);
+        if (!got.length) got = cmpLinkJobs(html, url, listPath);
+        got.forEach(j => { if (!jobs.some(x => x.url === j.url)) { jobs.push(j); found++; } });
+        url = cmpNextPage(html, url, seen);
+        await rfxSleep(400);
+      }
+      status[start] = { at: rfxNow(), found, pages, error: found ? '' : 'No jobs could be read from this page' };
+    } catch (e) {
+      status[start] = { at: rfxNow(), found, pages, error: e.message };
+      summary.errors.push(`${label} job page: ${e.message}`);
+    }
+  }
+  // open each job once (new ones only) for location, salary and description
+  let opened = 0;
+  for (const j of jobs) {
+    if (knownUrls.has(j.url) || (j.location && j.description) || opened >= 30) continue;
+    opened++;
+    try {
+      const html = await cmpGet(j.url);
+      const ld = cmpJsonLdJobs(html, j.url)[0];
+      const bits = cmpDetailBits(html);
+      j.location = j.location || (ld && ld.location) || bits.location;
+      j.salary = j.salary || (ld && ld.salary) || bits.salary;
+      j.sal_min = j.sal_min || (ld && ld.sal_min) || '';
+      j.sal_max = j.sal_max || (ld && ld.sal_max) || '';
+      j.posted = j.posted || (ld && ld.posted) || '';
+      j.description = j.description || (ld && ld.description) || bits.description;
+      if (ld && ld.client && !/undisclosed|confidential|our client/i.test(ld.client)) j.client = ld.client;
+    } catch (e) { /* the list entry is still kept */ }
+    await rfxSleep(300);
+  }
+  return { jobs, status };
 }
 
 // Free client match: the same role advertised directly by an employer in the same town
@@ -11471,7 +11625,7 @@ async function cmpRun(settings, summary, roleFinderResults, opts = {}) {
     for (const town of towns) {
       rfxProg({ current: town });
       try {
-        const got = (await cmpReedAgencyTown(town)).map(a => ({ ...a, _town: town }));
+        const got = (await cmpReedAgencyTown(town)).map(a => ({ ...a, _town: town, channel: 'Reed' }));
         ads.push(...got);
         if (rfxProgress) {
           rfxProgress.adverts += got.length;
@@ -11487,7 +11641,7 @@ async function cmpRun(settings, summary, roleFinderResults, opts = {}) {
   }
   // agency adverts the market sweep already found in these towns
   roleFinderResults.filter(o => o.status === 'agency' && o.company && cmpTownOf(o.location, towns)).forEach(o => {
-    ads.push({ agency: o.company, source_id: o.source_id, role: o.role, location: o.location, salary: o.salary, sal_min: o.sal_min, sal_max: o.sal_max, posted_date: o.posted_date, url: o.url, description: o.description || '' });
+    ads.push({ channel: o.source || 'Reed', agency: o.company, source_id: o.source_id, role: o.role, location: o.location, salary: o.salary, sal_min: o.sal_min, sal_max: o.sal_max, posted_date: o.posted_date, url: o.url, description: o.description || '' });
   });
 
   // the agencies themselves
@@ -11509,15 +11663,33 @@ async function cmpRun(settings, summary, roleFinderResults, opts = {}) {
     return c;
   };
   for (const name of CMP_PINNED) { const c = await addComp({ name, source: 'Pinned' }); if (c && c.pinned !== 'yes') { c.pinned = 'yes'; compsChanged = true; } }
-  rfxProg({ phase: 'Competitor Watch: Companies House agencies', current: settings.compPostcodes.join(', ') });
-  for (const c of await cmpDiscoverCompaniesHouse(settings, summary, opts.manual)) await addComp({ ...c, source: 'Companies House' });
+  // competitors' own job pages (their website, CV-Library and similar)
+  for (const c of byNorm.values()) {
+    const def = CMP_DEFAULT_PAGES[rfxNormCompany(c.name)];
+    if (!c.watch_urls && def && c.pinned === 'yes') { c.watch_urls = def.join('\n'); compsChanged = true; }
+  }
+  const existingAds = await cmpAdsTable.list();
+  const knownUrls = new Set(existingAds.filter(a => a.description || a.location).map(a => a.url));
+  for (const c of byNorm.values()) {
+    const urls = String(c.watch_urls || '').split(/\s+/).filter(u => /^https?:\/\//i.test(u));
+    if (!urls.length) continue;
+    rfxProg({ phase: 'Competitor Watch: reading job pages', current: c.name });
+    const r = await cmpReadJobPages(urls, knownUrls, summary, c.name);
+    c.watch_status = JSON.stringify(r.status);
+    compsChanged = true;
+    r.jobs.forEach(j => ads.push({
+      _comp: c, channel: 'Website', agency: c.name, source_id: j.url, role: j.title, location: j.location || '', salary: j.salary || '',
+      sal_min: j.sal_min || '', sal_max: j.sal_max || '', posted_date: j.posted || '', url: j.url, description: j.description || '', _client: j.client || '',
+    }));
+    if (rfxProgress) rfxProgress.adverts += r.jobs.length;
+  }
 
   // the adverts, merged with what is stored
   rfxProg({ phase: 'Competitor Watch: matching adverts to clients', current: '' });
   const saveComps = async () => {
     if (!compsChanged) return;
     await cmpTable.ensure();
-    const header = ['id', 'name', 'website', 'company_number', 'postcode', 'address', 'source', 'pinned', 'hidden', 'notes', 'added_at', 'added_by'];
+    const header = CMP_HEADER;
     const last = rfxColLetter(header.length);
     const rowsOut = [...byNorm.values()].map(c => header.map(h => (c[h] == null ? '' : String(c[h]))));
     const sheets = getSheetsClient();
@@ -11527,13 +11699,13 @@ async function cmpRun(settings, summary, roleFinderResults, opts = {}) {
     cmpTable.invalidate();
     compsChanged = false;
   };
-  const existing = await cmpAdsTable.list();
+  const existing = existingAds;
   const byKey = new Map(existing.map(a => [a.key, a]));
   const directs = roleFinderResults.filter(o => o.status !== 'agency' && o.company);
   let newAds = 0;
   for (const a of ads) {
     // the pinned names are matched loosely ("Brampton Recruitment Ltd" is Brampton Recruitment)
-    let comp = [...byNorm.values()].find(c => { const n = rfxNormCompany(c.name), m = rfxNormCompany(a.agency); return n === m || (c.pinned === 'yes' && (m.startsWith(n) || n.startsWith(m))); });
+    let comp = a._comp || [...byNorm.values()].find(c => { const n = rfxNormCompany(c.name), m = rfxNormCompany(a.agency); return n === m || (c.pinned === 'yes' && (m.startsWith(n) || n.startsWith(m))); });
     if (!comp) comp = await addComp({ name: a.agency, source: 'Reed adverts' });
     if (!comp) continue;
     const key = `${rfxNormCompany(comp.name)}|${rfxNormText(a.role)}|${rfxNormText(String(a.location).split(',')[0])}`;
@@ -11542,15 +11714,17 @@ async function cmpRun(settings, summary, roleFinderResults, opts = {}) {
       old.last_seen = today;
       if (a.posted_date && (!old.posted_date || a.posted_date < old.posted_date)) old.posted_date = a.posted_date;
       if (!old.description && a.description) old.description = a.description;
+      if (!old.channel) old.channel = a.channel || 'Reed';
       continue;
     }
     const ad = {
       id: rfxId('ca'), competitor_id: comp.id, agency: comp.name, source_id: a.source_id, role: a.role, location: a.location, salary: a.salary,
       sal_min: a.sal_min, sal_max: a.sal_max, posted_date: a.posted_date, first_seen: today, last_seen: today, url: a.url,
       description: String(a.description || '').slice(0, 800), role_type: rfxClassify(a.role), client: '', client_confidence: '', client_reason: '',
-      client_website: '', client_at: '', client_by: '', status: 'new', result_id: '', key,
+      client_website: '', client_at: '', client_by: '', status: 'new', result_id: '', key, channel: a.channel || 'Reed',
     };
-    const m = cmpFreeMatch(ad, directs);
+    if (a._client) { ad.client = a._client; ad.client_confidence = 'confirmed'; ad.client_reason = 'Named on the agency\'s own job page'; ad.client_at = rfxNow(); ad.client_by = 'job page'; }
+    const m = ad.client ? null : cmpFreeMatch(ad, directs);
     if (m) { ad.client = m.client; ad.client_confidence = m.confidence; ad.client_reason = m.reason; ad.client_at = rfxNow(); ad.client_by = 'free match'; }
     byKey.set(key, ad);
     newAds++;
@@ -11573,6 +11747,32 @@ async function cmpRun(settings, summary, roleFinderResults, opts = {}) {
     const l = latest.get(o.id), b = before.get(o.id);
     if (l) ['client', 'client_confidence', 'client_reason', 'client_website', 'client_at', 'client_by', 'status', 'result_id'].forEach(f => { if (!b || l[f] !== b[f]) o[f] = l[f]; });
   });
+  // tidy: only agencies with live adverts are kept (pinned ones, ones added by hand, with notes or job pages always stay)
+  const adCount = {};
+  for (const a of keep) if ((rfxDaysBetween(a.last_seen, today) || 0) <= 4) adCount[a.competitor_id] = (adCount[a.competitor_id] || 0) + 1;
+  for (const [n, c] of [...byNorm.entries()]) {
+    if (c.pinned === 'yes' || c.source === 'Added by hand' || c.notes || c.watch_urls || adCount[c.id]) continue;
+    byNorm.delete(n); compsChanged = true; summary.removedCompetitors = (summary.removedCompetitors || 0) + 1;
+  }
+  // company size from Companies House accounts, for agencies that are advertising (40 a run)
+  if (rfxSources().companiesHouse) {
+    const need = [...byNorm.values()].filter(c => !c.accounts_type && (adCount[c.id] || c.pinned === 'yes')).slice(0, 40);
+    let done = 0;
+    for (const c of need) {
+      rfxProg({ phase: 'Competitor Watch: company size', current: `${++done} of ${need.length}: ${c.name}` });
+      try {
+        const prof = c.company_number ? await rfxChProfile(c.company_number) : await rfxChFind(c.name);
+        if (!prof) { c.accounts_type = 'not found'; compsChanged = true; continue; }
+        c.company_number = c.company_number || prof.number;
+        c.accounts_type = prof.accounts || 'none filed';
+        c.size = cmpSizeOf(prof.accounts, prof.status);
+        c.sic = c.sic || prof.sic;
+        c.company_created = c.company_created || prof.created;
+        if (!c.address) c.address = prof.address;
+        compsChanged = true;
+      } catch (e) { /* try again next run */ }
+    }
+  }
   await saveComps();
   await cmpAdsTable.ensure();
   const sheets = getSheetsClient();
@@ -11705,6 +11905,7 @@ app.get('/api/competitors/overview', async (req, res) => {
         salMin: sals.length ? Math.min(...sals.map(s => s.min)) : 0,
         salMax: sals.length ? Math.max(...sals.map(s => s.max)) : 0,
         clientsKnown: new Set(liveAds.filter(a => a.client).map(a => rfxNormCompany(a.client))).size,
+        everAdvertised: mine.length,
       };
     });
     const ctx = await rfxContext().catch(() => null);
@@ -11776,7 +11977,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '16 Oct 2026 - build 28';
+const SERVER_BUILD = '16 Oct 2026 - build 29';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
