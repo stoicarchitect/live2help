@@ -873,8 +873,8 @@
     display:flex;gap:20px;flex-wrap:wrap;justify-content:center;
   }
   .splash-btn{
-    padding:18px 40px;border:1.5px solid transparent;border-radius:2px;font-size:14px;
-    font-family:inherit;cursor:pointer;transition:all .2s;min-width:220px;letter-spacing:1px;
+    padding:18px 34px;border:1.5px solid transparent;border-radius:2px;font-size:14px;
+    font-family:inherit;cursor:pointer;transition:all .2s;min-width:200px;letter-spacing:1px;
   }
   .splash-btn.candidates{
     background:transparent;color:var(--white);font-weight:500;border-color:#555;
@@ -1073,6 +1073,7 @@
     <button class="splash-btn overview" onclick="chooseHome()">Overview</button>
     <button class="splash-btn candidates" onclick="chooseDashboard('candidates')">View Candidates</button>
     <button class="splash-btn clients" onclick="chooseDashboard('clients')">Manage Clients</button>
+    <button class="splash-btn candidates sales" onclick="chooseSales()">Sales</button>
   </div>
 </div>
 
@@ -5286,6 +5287,13 @@ document.addEventListener('DOMContentLoaded', function(){
 // Build 19 fix: these two were called but missing, which stopped the splash buttons and the lines below from running
 function setSplashLogo(){
   try{ const src = document.getElementById('brandLogoImg'); const img = document.getElementById('splashLogoImg'); if(src && img && !img.src) img.src = src.src; }catch(e){}
+}
+// Sales: straight into Business Development (Role Finder first)
+function chooseSales(){
+  document.getElementById('splashScreen').classList.add('hidden');
+  document.getElementById('app').classList.add('visible');
+  document.body.classList.add('app-on');
+  if(typeof openGroup === 'function') openGroup('bizdev'); else switchTab('roleFinder');
 }
 function chooseDashboard(tab){
   document.getElementById('splashScreen').classList.add('hidden');
@@ -15652,7 +15660,7 @@ async function cmpSaveAreas(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '16 Oct 2026 - build 24';
+var PAGE_BUILD = '16 Oct 2026 - build 25';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -15663,12 +15671,12 @@ function buildTagApply(){
     tag.style.cssText = 'font-size:10.5px;color:#999;margin-left:10px;white-space:nowrap;';
     chip.appendChild(tag);
   }
-  tag.textContent = 'Page build 24';
+  tag.textContent = 'Page build 25';
   tag.title = 'Page: ' + PAGE_BUILD;
   b2Api('/api/version').then(function(j){
-    tag.textContent = 'Page build 24 | Server ' + serverBuildLabel(j.build);
+    tag.textContent = 'Page build 25 | Server ' + serverBuildLabel(j.build);
     tag.title = 'Page: ' + PAGE_BUILD + ' | Server: ' + j.build;
-  }).catch(function(){ tag.textContent = 'Page build 24 | Server older'; });
+  }).catch(function(){ tag.textContent = 'Page build 25 | Server older'; });
 }
 (function(){
   const _si = signIn;
