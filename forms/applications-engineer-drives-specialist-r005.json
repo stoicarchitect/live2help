@@ -1,0 +1,271 @@
+{
+  "slug": "applications-engineer-drives-specialist-r005",
+  "roleId": "role-iconsys-applications-engineer-drives-specialist",
+  "ref": "R005",
+  "title": "Applications Engineer (Drives Specialist)",
+  "location": "Telford",
+  "employment": "Permanent",
+  "intro": "A leading systems integrator in Telford is looking for an Applications Engineer with a drives specialism. You will sit between sales and engineering, turning customer specifications into well-scoped technical solutions, accurate costings and clear, persuasive proposals.",
+  "bullets": [
+    "Configure technical solutions from end customer specifications",
+    "Estimate the resources and equipment each solution needs",
+    "Prepare high quality quotations, proposals and system topologies",
+    "Act as the technical link between the sales and engineering teams",
+    "Attend customer sites and meetings when required, in the UK and overseas"
+  ],
+  "outro": "This form takes around 15 minutes. Specific examples help us put the strongest candidates forward.",
+  "about": [
+    {
+      "key": "location",
+      "label": "Where do you live, and roughly how long would your journey to Telford take?",
+      "sheet": "Home location and journey time to Telford",
+      "type": "text",
+      "hint": "For example: TF3, about 15 minutes by car"
+    },
+    {
+      "key": "rightToWork",
+      "label": "Do you have the right to work in the UK?",
+      "sheet": "Right to work in the UK",
+      "type": "radio",
+      "options": [
+        "Yes",
+        "No"
+      ]
+    },
+    {
+      "key": "travel",
+      "label": "The role includes visits to customer sites in the UK and occasionally overseas. Are you comfortable with this?",
+      "sheet": "Comfortable with UK and overseas travel",
+      "type": "radio",
+      "options": [
+        "Yes",
+        "Yes, UK only",
+        "No"
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "legend": "Qualifications and background",
+      "questions": [
+        {
+          "key": "currentTitleType",
+          "label": "Which best describes your current or most recent role?",
+          "sheet": "Current role type",
+          "type": "select",
+          "options": [
+            "Applications Engineer",
+            "Technical Engineer",
+            "Technical Sales or Pre-sales Engineer",
+            "Proposals or Estimating Engineer",
+            "Controls or Automation Engineer",
+            "Field Service or Commissioning Engineer",
+            "Other"
+          ]
+        },
+        {
+          "key": "qualification",
+          "label": "What is your highest engineering qualification?",
+          "sheet": "Highest engineering qualification",
+          "type": "select",
+          "options": [
+            "Degree in electrical, electronic or mechatronic engineering",
+            "Degree in another engineering discipline",
+            "HNC or HND",
+            "Level 6 apprenticeship",
+            "Other or none"
+          ]
+        },
+        {
+          "key": "currentRole",
+          "label": "What is your current or most recent job title and employer?",
+          "sheet": "Current or most recent job title and employer",
+          "type": "text"
+        },
+        {
+          "key": "yearsApplications",
+          "label": "How many years have you worked in applications, pre-sales or systems integration engineering?",
+          "sheet": "Years in applications, pre-sales or systems integration",
+          "type": "select",
+          "options": [
+            "Less than 1 year",
+            "1 - 2 years",
+            "3 - 5 years",
+            "5 - 10 years",
+            "10 years or more"
+          ]
+        },
+        {
+          "key": "verticals",
+          "label": "Which industries or vertical markets have your technical solutions been for?",
+          "sheet": "Industries and vertical markets",
+          "type": "text",
+          "hint": "For example: food and drink, automotive, materials handling, water, pharmaceutical"
+        }
+      ]
+    },
+    {
+      "legend": "Drives and automation experience",
+      "questions": [
+        {
+          "key": "techAreas",
+          "label": "Which of these have you worked with?",
+          "sheet": "Technical areas worked with",
+          "type": "checkbox",
+          "hint": "Tick all that apply",
+          "options": [
+            "AC drives (VSDs)",
+            "DC drives",
+            "Servo drives",
+            "PLC",
+            "SCADA / HMI",
+            "MES / MIS networks",
+            "Fieldbus protocols",
+            "Mechanical drives",
+            "Robotics",
+            "Safety systems",
+            "Industry 4.0"
+          ]
+        },
+        {
+          "key": "motorSizing",
+          "label": "Can you size motors and drives from first principles?",
+          "sheet": "Sizes motors and drives from first principles",
+          "type": "select",
+          "options": [
+            "Yes, from first principles, regularly",
+            "Yes, mainly using manufacturer sizing software",
+            "Some experience",
+            "No, but I am keen to learn"
+          ]
+        },
+        {
+          "key": "drivePlatforms",
+          "label": "Which drive and automation manufacturers or platforms do you know best?",
+          "sheet": "Drive and automation platforms known best",
+          "type": "text",
+          "hint": "For example: ABB, Siemens, Danfoss, Rockwell, Control Techniques, Yaskawa"
+        },
+        {
+          "key": "solutionExample",
+          "label": "Describe a technical solution you configured from a customer specification. What did the customer need, how did you scope it, and what was the outcome?",
+          "sheet": "Example of configuring a solution from a customer specification",
+          "type": "textarea"
+        },
+        {
+          "key": "topologies",
+          "label": "Have you prepared system topologies, architecture drawings or technical material to support a proposal?",
+          "sheet": "Prepared system topologies and proposal material",
+          "type": "select",
+          "options": [
+            "Yes, as a regular part of my role",
+            "Yes, occasionally",
+            "I have contributed to them",
+            "No, but I am keen to learn"
+          ]
+        }
+      ]
+    },
+    {
+      "legend": "Quotations and proposals",
+      "questions": [
+        {
+          "key": "quotations",
+          "label": "How much experience do you have preparing quotations, costings and technical specifications?",
+          "sheet": "Experience preparing quotations, costings and specifications",
+          "type": "select",
+          "options": [
+            "It is a core part of my current role",
+            "I do it occasionally",
+            "I have supported others with it",
+            "None yet"
+          ]
+        },
+        {
+          "key": "estimateConfidence",
+          "label": "On a scale of 1 to 10, how confident are you estimating the resources and equipment a project needs?",
+          "sheet": "Confidence (1-10) estimating resources and equipment",
+          "type": "scale",
+          "ends": [
+            "1 - Need guidance",
+            "10 - Fully independent"
+          ]
+        },
+        {
+          "key": "salesEngineering",
+          "label": "Tell us about a time you were the link between sales and engineering. How did you make sure what was sold could actually be delivered?",
+          "sheet": "Example of bridging sales and engineering",
+          "type": "textarea"
+        },
+        {
+          "key": "commercial",
+          "label": "How do you balance a technically strong solution with a competitive price? Give an example where commercial drivers changed your design.",
+          "sheet": "Balancing technical and commercial drivers",
+          "type": "textarea"
+        },
+        {
+          "key": "explainSolution",
+          "label": "How do you make sure a proposal explains a technical solution clearly, and captures exactly what is (and is not) in the scope of supply?",
+          "sheet": "Approach to clear proposals and scope of supply",
+          "type": "textarea"
+        },
+        {
+          "key": "msOffice",
+          "label": "Which of these tools are you confident using?",
+          "sheet": "Confident with MS Office tools",
+          "type": "checkbox",
+          "hint": "Tick all that apply",
+          "options": [
+            "Word",
+            "Excel",
+            "PowerPoint",
+            "Outlook",
+            "Visio"
+          ]
+        }
+      ]
+    },
+    {
+      "legend": "Ways of working",
+      "questions": [
+        {
+          "key": "meetings",
+          "label": "Which of these have you attended or led with customers?",
+          "sheet": "Customer meetings attended or led",
+          "type": "checkbox",
+          "hint": "Tick all that apply",
+          "options": [
+            "Site surveys",
+            "Tender meetings",
+            "Project review meetings",
+            "Technical presentations",
+            "None yet"
+          ]
+        },
+        {
+          "key": "iso",
+          "label": "Have you worked to ISO 9001 quality procedures?",
+          "sheet": "Worked to ISO 9001 procedures",
+          "type": "radio",
+          "options": [
+            "Yes",
+            "Not formally, but similar processes",
+            "No"
+          ]
+        },
+        {
+          "key": "deadlines",
+          "label": "The role sometimes needs work outside normal hours to meet tender deadlines. Is that workable for you?",
+          "sheet": "Able to work outside normal hours for deadlines",
+          "type": "radio",
+          "options": [
+            "Yes",
+            "Yes, with notice",
+            "No"
+          ]
+        }
+      ]
+    }
+  ],
+  "also": "This role would also suit Technical Engineers, Technical Sales or Pre-sales Engineers, Proposals or Estimating Engineers, and Controls Engineers ready to move into a customer-facing role."
+}

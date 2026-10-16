@@ -233,6 +233,7 @@ const PUBLIC_API = [
   { method: 'POST', re: /^\/api\/funnel-lead$/ },
   { method: 'POST', re: /^\/api\/claude$/ },
   { method: 'GET', re: /^\/api\/public\/roles(\/[a-z0-9-]+)?$/ },
+  { method: 'GET', re: /^\/api\/public\/forms\/[a-z0-9-]+$/ },
   { method: 'GET', re: /^\/api\/health$/ },
 ];
 let cronWarned = false;
@@ -1269,8 +1270,248 @@ async function handleCadApplication(req, res, form) {
   }
 }
 
+/* ---------- Role-linked application forms (from 16 Oct 2026) ----------
+   One handler for every form built from the shared form template. A form posts its
+   answers as a list of { key, label, value }, so a new form never needs server changes.
+   Each form is tied to ONE vacancy by the role's reference ID at the end of its address
+   (/apply/senior-controls-engineer-r007/), so two clients can have the same job title.
+   Sheet tab: "Applications - [Public title] [REF]". Columns A-G and P-Z keep the standard
+   layout the dashboard reads; the first eight role questions use H-O and the rest run on
+   from AA. Headings are written the first time each question is answered.
+   Because the form knows its vacancy, the company, hiring manager and vacancy are filled in
+   automatically, so these applicants land straight in the right pipeline. */
+const ROLE_FORM_SLUG_RE = /-(r\d{3,})$/;
+const RF_STANDARD = ['Application ID', 'Date Applied', 'Name', 'Email', 'Phone', 'Current Employment Status', 'Notice Period'];
+const RF_TAIL = { 15: 'Salary Expectation', 16: 'Additional Info', 17: 'Company', 18: 'Contact', 19: 'Status', 20: 'Notes',
+  21: 'Privacy Notice Accepted', 22: 'Consent Date', 23: 'Wording Version', 24: 'Talent Pool Consent', 25: 'CV Link' };
+const RF_FIRST_SLOTS = [7, 8, 9, 10, 11, 12, 13, 14];
+const RF_MAX_COLS = 104; // A to CZ
+const RF_MAX_ANSWERS = 60;
+
+function rfColLetter(i) {
+  let n = i + 1, s = '';
+  while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+const RF_LAST = rfColLetter(RF_MAX_COLS - 1);
+
+function isRoleFormSlug(slug) { return ROLE_FORM_SLUG_RE.test(String(slug || '').toLowerCase()); }
+function roleFormTabRole(role) {
+  // the part after "Applications - ", e.g. "Senior Controls Engineer R007"
+  return `${String(role.public_title || role.role || '').trim()} ${String(role.ref || '').trim()}`.trim();
+}
+function isRoleFormTabRole(name) { return / R\d{3,}$/.test(String(name || '').trim()); }
+
+async function findRoleForForm(slug, roleId) {
+  await ensureRoleRefs();
+  const roles = await rolesTable.list();
+  const s = String(slug || '').toLowerCase();
+  const m = s.match(ROLE_FORM_SLUG_RE);
+  const ref = m ? m[1].toUpperCase() : '';
+  return roles.find(r => ref && String(r.ref || '').toUpperCase() === ref)
+    || roles.find(r => String(r.form_slug || '').toLowerCase() === s)
+    || (roleId ? roles.find(r => r.id === roleId) : null)
+    || null;
+}
+function roleIsTakingApplications(role) {
+  const st = String(role.status || 'open').trim().toLowerCase();
+  return st === 'open' || st === 'hold';
+}
+
+const rfTabLocks = new Map();
+function rfLock(tab, fn) {
+  const prev = rfTabLocks.get(tab) || Promise.resolve();
+  const run = prev.then(fn, fn);
+  rfTabLocks.set(tab, run.catch(() => {}));
+  return run;
+}
+
+// Make sure the tab exists with the standard headings, then return its heading row
+async function ensureRoleFormTab(tabName) {
+  const sheets = getSheetsClient();
+  const ss = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties(sheetId,title,gridProperties)' });
+  const existing = (ss.data.sheets || []).find(t => t.properties.title === tabName);
+  if (!existing) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: { requests: [{ addSheet: { properties: { title: tabName, gridProperties: { frozenRowCount: 1, columnCount: RF_MAX_COLS } } } }] },
+    });
+  } else {
+    const cols = (existing.properties.gridProperties && existing.properties.gridProperties.columnCount) || 0;
+    if (cols && cols < RF_MAX_COLS) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SHEET_ID,
+        requestBody: { requests: [{ appendDimension: { sheetId: existing.properties.sheetId, dimension: 'COLUMNS', length: RF_MAX_COLS - cols } }] },
+      });
+    }
+  }
+  const head = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tabName}'!A1:${RF_LAST}1` });
+  const h = (head.data.values && head.data.values[0]) || [];
+  while (h.length < RF_MAX_COLS) h.push('');
+  return h.map(v => String(v == null ? '' : v));
+}
+
+function rfCleanText(v, max) {
+  return String(v == null ? '' : v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').trim().slice(0, max);
+}
+
+async function handleRoleFormApplication(req, res, slug) {
+  try {
+    const b = req.body || {};
+    const { name, email, phone, cvData, cvFileName, consentApplication, consentPool } = b;
+    if (b.website) return res.json({ success: true }); // honeypot
+    if (!name || !email || !phone) return res.status(400).json({ error: 'Missing required fields' });
+    if (!/^\S+@\S+\.\S+$/.test(String(email))) return res.status(400).json({ error: 'Please enter a valid email address' });
+    if (consentApplication !== true && consentApplication !== 'Yes') return res.status(400).json({ error: 'Privacy notice must be accepted' });
+    if (!cvData || !cvFileName) return res.status(400).json({ error: 'CV is required' });
+    if (!/\.(pdf|docx?)$/i.test(String(cvFileName))) return res.status(400).json({ error: 'CV must be a PDF, DOC or DOCX file' });
+    if (String(cvData).length > MAX_CV_BASE64_LENGTH) return res.status(400).json({ error: 'CV is larger than 5MB' });
+    if (!b.employmentStatus || !b.noticePeriod || !String(b.salaryExpectation || '').trim()) {
+      return res.status(400).json({ error: 'Please answer every required question' });
+    }
+
+    const role = await findRoleForForm(slug, b.roleId);
+    if (!role) return res.status(404).json({ error: 'This application form is not linked to a live role' });
+    if (!roleIsTakingApplications(role)) return res.status(410).json({ error: 'This role is no longer taking applications' });
+
+    // Tidy the answers: labels become the Sheet headings
+    const answers = [];
+    const seenLabels = new Set();
+    (Array.isArray(b.answers) ? b.answers : []).slice(0, RF_MAX_ANSWERS).forEach(a => {
+      if (!a) return;
+      const label = rfCleanText(a.label, 250);
+      if (!label || seenLabels.has(label.toLowerCase())) return;
+      if (RF_STANDARD.concat(Object.values(RF_TAIL)).some(x => x.toLowerCase() === label.toLowerCase())) return;
+      seenLabels.add(label.toLowerCase());
+      const v = Array.isArray(a.value) ? a.value.map(x => rfCleanText(x, 300)).filter(Boolean).join(', ') : rfCleanText(a.value, 6000);
+      answers.push({ label, value: v, required: !!a.required });
+    });
+    if (answers.some(a => a.required && !a.value)) return res.status(400).json({ error: 'Please answer every required question' });
+
+    const formRole = roleFormTabRole(role);           // tab name part, includes the ref
+    const tabName = `Applications - ${formRole}`;
+    const vacancy = String(role.role || '').trim();   // what the pipeline shows
+    const publicTitle = String(role.public_title || role.role || '').trim();
+
+    const sheets = getSheetsClient();
+    const applicationId = `${slugifyRole(formRole)}-${Date.now()}`;
+    const dateApplied = new Date().toISOString();
+    const poolConsent = (consentPool === true || consentPool === 'Yes') ? 'Yes' : 'No';
+    const cleanName = String(name).trim().replace(/\s+/g, ' ').replace(/['"\\]/g, '');
+
+    let saved = null;
+    try {
+      saved = await saveCandidateCv({ company: '', name, fileName: cvFileName, fileData: cvData });
+    } catch (cvErr) {
+      console.error(`CV could not be saved for application from ${cleanName}:`, cvErr.message);
+    }
+
+    await rfLock(tabName, async () => {
+      const header = await ensureRoleFormTab(tabName);
+      let headerChanged = false;
+      RF_STANDARD.forEach((t, i) => { if (header[i] !== t) { header[i] = t; headerChanged = true; } });
+      Object.entries(RF_TAIL).forEach(([i, t]) => { if (header[i] !== t) { header[i] = t; headerChanged = true; } });
+
+      const colFor = label => {
+        const lower = label.toLowerCase();
+        let c = header.findIndex((h, i) => (RF_FIRST_SLOTS.includes(i) || i >= 26) && h.toLowerCase() === lower);
+        if (c !== -1) return c;
+        c = RF_FIRST_SLOTS.find(i => !header[i]);
+        if (c === undefined) { c = header.findIndex((h, i) => i >= 26 && !h); }
+        if (c === -1 || c === undefined) return -1;
+        header[c] = label; headerChanged = true;
+        return c;
+      };
+
+      const row = new Array(RF_MAX_COLS).fill('');
+      row[0] = applicationId; row[1] = dateApplied; row[2] = cleanName; row[3] = rfCleanText(email, 200); row[4] = rfCleanText(phone, 60);
+      row[5] = rfCleanText(b.employmentStatus, 200); row[6] = rfCleanText(b.noticePeriod, 200);
+      row[15] = rfCleanText(b.salaryExpectation, 300); row[16] = rfCleanText(b.additionalInfo, 3000);
+      row[17] = String(role.company || '').trim(); row[18] = String(role.contact || '').trim(); row[19] = 'applied';
+      row[21] = 'Yes'; row[22] = dateApplied; row[23] = APPLICATION_WORDING_VERSION;
+      row[24] = poolConsent; row[25] = saved ? saved.link : '';
+      const overflow = [];
+      answers.forEach(a => { const c = colFor(a.label); if (c === -1) overflow.push(`${a.label}: ${a.value}`); else row[c] = a.value; });
+      if (overflow.length) row[16] = [row[16], ...overflow].filter(Boolean).join('\n\n').slice(0, 45000);
+
+      if (headerChanged) {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SHEET_ID, range: `'${tabName}'!A1:${RF_LAST}1`,
+          valueInputOption: 'RAW', requestBody: { values: [header] },
+        });
+      }
+      let last = row.length; while (last > 26 && !row[last - 1]) last--;
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SHEET_ID, range: `'${tabName}'!A:${RF_LAST}`,
+        valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [row.slice(0, last)] },
+      });
+    });
+
+    // Tie the applicant to the vacancy so the pipeline shows the real role name, not the form tab
+    if (vacancy && vacancy !== formRole) {
+      try {
+        await applicantRolesTable.upsert({ id: applicationId, assigned_role: vacancy, form_role: formRole, name: cleanName });
+        dropApplicantRolesCache();
+      } catch (e) { console.error('Could not link the application to its vacancy:', e.message); }
+    }
+
+    try {
+      const poolId = poolIdFor(cleanName, vacancy);
+      await upsertPoolEntry({
+        name: cleanName, role: vacancy, company: String(role.company || '').trim(), stage: 'applied', source: 'application',
+        email, phone, dateAdded: dateApplied, consentDate: dateApplied.slice(0, 10),
+        consentBasis: poolConsent === 'Yes' ? 'Application form - talent pool' : 'Application form - this role only',
+      }, true, { createOnly: true });
+      if (saved) await attachCvToPool(poolId, saved);
+      await stampPoolSource(poolId, b);
+      await mergeTalentPoolOnApplication(poolId, email, phone, vacancy);
+    } catch (poolErr) {
+      console.error('Could not create pool record for application:', poolErr.message);
+    }
+
+    res.json({ success: true, applicationId });
+    sendApplicationAck({ name: cleanName, email, roleName: publicTitle });
+  } catch (err) {
+    console.error('POST /api/applications (role form) error:', err);
+    res.status(500).json({ error: 'Failed to save application' });
+  }
+}
+
+// Live details for a role-linked form: lets the form show the salary once it is on the
+// Roles tab (otherwise "Competitive salary"), and close itself when the role is filled or lost.
+// Never returns the client's name.
+app.get('/api/public/forms/:slug', async (req, res) => {
+  try {
+    const role = await findRoleForForm(req.params.slug);
+    res.set('Cache-Control', 'public, max-age=60');
+    if (!role) return res.json({ found: false, open: true, salary: '' });
+    res.json({
+      found: true,
+      open: roleIsTakingApplications(role),
+      ref: role.ref || '',
+      title: String(role.public_title || role.role || '').trim(),
+      location: String(role.location || '').trim(),
+      salary: String(role.salary_band || '').trim(),
+    });
+  } catch (e) {
+    console.error('GET /api/public/forms error:', e.message);
+    res.json({ found: false, open: true, salary: '' });
+  }
+});
+
 // Header-driven screening fields for tabs that do not use the Transport Coordinator layout
 async function getScreeningFieldsForRole(role) {
+  if (isRoleFormTabRole(role)) {
+    const sheets = getSheetsClient();
+    const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'Applications - ${role}'!A1:${RF_LAST}1` });
+    const header = (r.data.values && r.data.values[0]) || [];
+    const labels = { 2: 'Candidate Name', 3: 'Email', 4: 'Phone' };
+    const cols = [2, 3, 4, 5, 6];
+    RF_FIRST_SLOTS.forEach(c => { if (header[c]) cols.push(c); });
+    cols.push(15, 16);
+    for (let c = 26; c < header.length; c++) if (String(header[c] || '').trim()) cols.push(c);
+    return cols.map(c => ({ key: `col${c}`, label: String(labels[c] || header[c] || `Question ${c}`).trim(), col: c }));
+  }
   if (!SALES_MANAGER_ROLE_NAMES.has(role) && !CAD_ROLE_NAMES.has(role)) return null;
   const sheets = getSheetsClient();
   const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'Applications - ${role}'!A1:AN1` });
@@ -1285,6 +1526,7 @@ app.post('/api/applications/:role', async (req, res) => {
   res.on('finish', () => { if (res.statusCode < 400) scheduleReconcile(); });
   try {
     const { role } = req.params;
+    if (isRoleFormSlug(role)) return await handleRoleFormApplication(req, res, role);
     if (SALES_MANAGER_FORMS[role]) return await handleSalesManagerApplication(req, res, SALES_MANAGER_FORMS[role]);
     if (CAD_FORMS[role]) return await handleCadApplication(req, res, CAD_FORMS[role]);
     const {
@@ -1942,10 +2184,11 @@ app.post('/api/invoices', requireDan, async (req, res) => {
     const sheets = getSheetsClient();
     const today = new Date();
     const { rate, fee } = calculatePlacementFee(salary);
+    const termsDays = await paymentTermsDaysFor(company);
     const newInvoice = {
       number: generateInvoiceNumber(today),
       date: toISODate(today),
-      dueDate: toISODate(addDays(today, 30)),
+      dueDate: toISODate(addDays(today, termsDays)),
       company,
       role: role || '',
       candidateName,
@@ -2101,7 +2344,7 @@ app.get('/api/invoices/:number/pdf', async (req, res) => {
     doc.font('Helvetica-Bold').fontSize(9).fillColor(GOLD).text('DUE DATE', 400, colY + 40);
     doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text(formatDateUK(inv.dueDate), 400, colY + 54);
     doc.font('Helvetica-Bold').fontSize(9).fillColor(GOLD).text('PAYMENT TERMS', 400, colY + 80);
-    doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text('30 days', 400, colY + 94);
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text(`${invoiceTermsDays(inv)} days`, 400, colY + 94);
 
     doc.moveTo(50, 260).lineTo(545, 260).strokeColor(BORDER).lineWidth(1).stroke();
 
@@ -3971,8 +4214,13 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
         const clean = {};
         header.forEach(h => { if (b[h] !== undefined) clean[h] = b[h]; });
         const existing = (await list()).find(o => o.id === b.id);
-        const saved = await upsert({ ...(existing || {}), ...clean });
-        if (path === '/api/roles') { publicRolesCache = { at: 0, list: null }; }
+        let saved = await upsert({ ...(existing || {}), ...clean });
+        if (path === '/api/roles') {
+          publicRolesCache = { at: 0, list: null };
+          // a new role gets its reference (and form address) straight away
+          await ensureRoleRefs(true);
+          saved = (await list()).find(o => o.id === saved.id) || saved;
+        }
         if (auditType) auditLog(auditActorOf(req), existing ? 'updated' : 'created', auditType, auditName ? auditName(saved) : saved.id, '');
         res.json({ ok: true, data: saved });
       } catch (e) { console.error(`POST ${path} error:`, e.message); res.status(500).json({ error: e.message }); }
@@ -4003,12 +4251,57 @@ usersTable = makeSimpleTable({
 
 const rolesTable = makeSimpleTable({
   tab: 'Roles',
-  header: ['id', 'company', 'role', 'contact', 'salary_band', 'fee_percent', 'status', 'date_opened', 'date_closed', 'notes', 'positions', 'requirements', 'public_title', 'form_slug', 'show_on_careers', 'location', 'public_content'],
+  header: ['id', 'company', 'role', 'contact', 'salary_band', 'fee_percent', 'status', 'date_opened', 'date_closed', 'notes', 'positions', 'requirements', 'public_title', 'form_slug', 'show_on_careers', 'location', 'public_content', 'ref'],
   path: '/api/roles',
   label: 'Role',
   auditType: 'role',
   auditName: o => `${o.role} - ${o.company}`,
+  beforeList: () => ensureRoleRefs(),
 });
+
+/* ---------- Role reference IDs (R001, R002 ...) ----------
+   Every role gets a short, permanent reference kept in the "ref" column of the Roles tab.
+   It never changes once given, so application forms can be tied to one vacancy even when
+   two clients have roles with the same title. The ref is used in the form address
+   (/apply/senior-controls-engineer-r007/) and in the form's Sheet tab name, never the
+   client's name, so the client stays hidden from applicants.
+   Roles opened on or after FORM_REF_CUTOVER also get their form address filled in
+   automatically (title + ref) when it is left blank. Older roles keep their existing forms. */
+const FORM_REF_CUTOVER = '2026-10-16';
+const ROLE_REF_RE = /^R(\d{3,})$/;
+let roleRefsChecking = null;
+let roleRefsCheckedAt = 0;
+
+function formatRoleRef(n) { return 'R' + String(n).padStart(3, '0'); }
+function roleFormSlugFor(r) {
+  const base = slugifyRole(r.public_title || r.role);
+  return r.ref ? `${base}-${String(r.ref).toLowerCase()}` : base;
+}
+
+async function ensureRoleRefs(force) {
+  if (!force && Date.now() - roleRefsCheckedAt < 20 * 1000) return;
+  if (roleRefsChecking) return roleRefsChecking;
+  roleRefsChecking = (async () => {
+    const all = await rolesTable.listAll();
+    let max = 0;
+    all.forEach(r => { const m = String(r.ref || '').trim().match(ROLE_REF_RE); if (m) max = Math.max(max, parseInt(m[1], 10)); });
+    const missing = all
+      .map((r, i) => ({ r, i }))
+      .filter(x => !ROLE_REF_RE.test(String(x.r.ref || '').trim()) && !String(x.r.id).startsWith('__'))
+      .sort((a, b) => String(a.r.date_opened || '').localeCompare(String(b.r.date_opened || '')) || a.i - b.i);
+    if (!missing.length) return;
+    const give = new Map();
+    missing.forEach(x => { max += 1; give.set(x.r.id, formatRoleRef(max)); });
+    await rolesTable.updateWhere(o => give.has(o.id), o => {
+      o.ref = give.get(o.id);
+      if (!String(o.form_slug || '').trim() && String(o.date_opened || '').slice(0, 10) >= FORM_REF_CUTOVER) o.form_slug = roleFormSlugFor(o);
+      return o;
+    });
+    publicRolesCache = { at: 0, list: null };
+  })().then(() => { roleRefsCheckedAt = Date.now(); }, e => { console.error('Could not give roles their reference IDs:', e.message); })
+    .finally(() => { roleRefsChecking = null; });
+  return roleRefsChecking;
+}
 
 /* ---------- Role notes (free-text notes tied to a role; the tab is created automatically) ---------- */
 
@@ -4020,6 +4313,28 @@ const roleNotesTable = makeSimpleTable({
   auditType: 'role note',
   auditName: o => `${o.role} - ${o.company}`,
 });
+
+/* ---------- Client payment terms (14 or 30 days per client; the tab is created automatically) ----------
+   Clients with no saved terms stay on 30 days, which is what the original signed T&Cs say.
+   New clients are saved with 14 days from the Add Client form. */
+const DEFAULT_PAYMENT_TERMS_DAYS = 30;
+const clientTermsTable = makeSimpleTable({
+  tab: 'Client Terms',
+  header: ['id', 'company', 'payment_terms_days', 'updated_by', 'updated_at'],
+  path: '/api/client-terms',
+  label: 'Client terms',
+  auditType: 'client terms',
+  auditName: o => `${o.company} - ${o.payment_terms_days} days`,
+});
+function clientTermsKey(company) { return 'terms-' + slugifyRole(company); }
+async function paymentTermsDaysFor(company) {
+  try {
+    const hit = (await clientTermsTable.list()).find(t => t.id === clientTermsKey(company));
+    const d = hit ? parseInt(hit.payment_terms_days, 10) : NaN;
+    if (d === 14 || d === 30) return d;
+  } catch (e) { console.error('Could not read client payment terms:', e.message); }
+  return DEFAULT_PAYMENT_TERMS_DAYS;
+}
 
 /* ---------- Placements and guarantee tracker ----------
    A placement is any Dashboard candidate at Start Date or later. The Placements
@@ -7441,10 +7756,17 @@ async function reconcileTasks() {
 }
 
 /* ---------- Invoice chasing ---------- */
+// Terms on an invoice are read from its own dates, so older 30 day invoices keep saying 30 days
+function invoiceTermsDays(inv) {
+  const a = Date.parse(String((inv && inv.date) || '').slice(0, 10));
+  const b = Date.parse(String((inv && inv.dueDate) || '').slice(0, 10));
+  const d = Math.round((b - a) / 86400000);
+  return d === 14 || d === 30 ? d : DEFAULT_PAYMENT_TERMS_DAYS;
+}
 function chaseDraft(inv, level) {
   const fee = `£${Number(inv.amount).toLocaleString('en-GB')}`;
   if (level === 1) return `Hi,\n\nA quick reminder that invoice ${inv.number} for ${fee} (${inv.candidateName}, ${inv.role}) was due on ${formatDateUK(inv.dueDate)} and we have not yet seen payment. If it has already gone out, please ignore this and let me know the date. If anything is holding it up, tell me and I will sort it.\n\nKind regards,\nDan`;
-  if (level === 2) return `Hi,\n\nInvoice ${inv.number} for ${fee} is now a week overdue. Our terms are payment within 14 days, so I need a payment date from you today please. Could you confirm when this will be cleared?\n\nKind regards,\nDan`;
+  if (level === 2) return `Hi,\n\nInvoice ${inv.number} for ${fee} is now a week overdue. Our terms are payment within ${invoiceTermsDays(inv)} days, so I need a payment date from you today please. Could you confirm when this will be cleared?\n\nKind regards,\nDan`;
   return `Hi,\n\nInvoice ${inv.number} for ${fee} remains unpaid more than two weeks after the due date. Please arrange payment immediately. Unless we receive payment or a firm payment date within 3 working days we will have to apply the late payment provisions in our terms and in the Late Payment of Commercial Debts legislation.\n\nKind regards,\nDan`;
 }
 
@@ -9244,7 +9566,7 @@ app.post('/api/talent-pool/reconsent/run', requireAdmin, async (req, res) => {
 });
 
 // Lets the dashboard show which server version is live
-const SERVER_BUILD = '8 Oct 2026 - build 14';
+const SERVER_BUILD = '16 Oct 2026 - build 15';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

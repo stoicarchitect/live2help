@@ -1,0 +1,235 @@
+{
+  "slug": "purchasing-stores-controller-r008",
+  "roleId": "role-iconsys-purchasing-stores-controller",
+  "ref": "R008",
+  "title": "Purchasing & Stores Controller",
+  "location": "Telford",
+  "employment": "Permanent",
+  "intro": "An engineering business in Telford is looking for a hands-on Purchasing & Stores Controller. Reporting to the Head of Procurement, you will make sure stock is received, controlled and available to the manufacturing team, while handling day to day purchasing and supplier contact.",
+  "bullets": [
+    "Raise and expedite purchase orders and manage supplier communication",
+    "Run the stores counter, receiving, booking in and locating deliveries",
+    "Pick and issue components and keep workshop consumables stocked",
+    "Carry out stock checks and resolve discrepancies",
+    "Arrange UK and overseas transport, and drive the forklift and company van as needed"
+  ],
+  "outro": "This is an active, on your feet role based in the stores and workshop, including manual handling of parcels up to 30kg (training is provided). This form takes around 12 minutes.",
+  "about": [
+    {
+      "key": "location",
+      "label": "Where do you live, and roughly how long would your journey to Telford take?",
+      "sheet": "Home location and journey time to Telford",
+      "type": "text",
+      "hint": "For example: TF3, about 15 minutes by car"
+    },
+    {
+      "key": "rightToWork",
+      "label": "Do you have the right to work in the UK?",
+      "sheet": "Right to work in the UK",
+      "type": "radio",
+      "options": [
+        "Yes",
+        "No"
+      ]
+    },
+    {
+      "key": "drivingLicence",
+      "label": "Do you hold a full UK driving licence, and are you happy to drive the company van on errands and deliveries?",
+      "sheet": "Full UK driving licence and happy to drive the van",
+      "type": "radio",
+      "options": [
+        "Yes, and happy to drive the van",
+        "Yes, but I would rather not drive the van",
+        "No"
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "legend": "Qualifications and practical requirements",
+      "questions": [
+        {
+          "key": "gcse",
+          "label": "Do you have GCSE Maths and English at grade C / 4 or above (or equivalent)?",
+          "sheet": "GCSE Maths and English at C / 4 or above",
+          "type": "radio",
+          "options": [
+            "Yes, both",
+            "One of them",
+            "No"
+          ]
+        },
+        {
+          "key": "forklift",
+          "label": "What is your forklift experience?",
+          "sheet": "Forklift experience",
+          "type": "select",
+          "options": [
+            "I hold a current forklift certificate",
+            "Experienced, but my certificate has lapsed",
+            "Some experience, no certificate",
+            "No forklift experience"
+          ]
+        },
+        {
+          "key": "physical",
+          "label": "The role involves being on your feet for much of the day and lifting parcels of up to 30kg. Is that comfortable for you?",
+          "sheet": "Comfortable on feet and lifting up to 30kg",
+          "type": "radio",
+          "options": [
+            "Yes",
+            "Yes, with training",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "legend": "Stores and purchasing experience",
+      "questions": [
+        {
+          "key": "currentTitleType",
+          "label": "Which best describes your current or most recent role?",
+          "sheet": "Current role type",
+          "type": "select",
+          "options": [
+            "Stock Controller",
+            "Stores Controller or Storekeeper",
+            "Inventory Controller",
+            "Purchasing Assistant or Buyer",
+            "Warehouse Operative",
+            "Other"
+          ]
+        },
+        {
+          "key": "currentRole",
+          "label": "What is your current or most recent job title and employer?",
+          "sheet": "Current or most recent job title and employer",
+          "type": "text"
+        },
+        {
+          "key": "storesYears",
+          "label": "How many years of stores or warehouse experience do you have?",
+          "sheet": "Years of stores or warehouse experience",
+          "type": "select",
+          "options": [
+            "None",
+            "Less than 1 year",
+            "1 - 3 years",
+            "3 - 5 years",
+            "5 years or more"
+          ]
+        },
+        {
+          "key": "purchasingYears",
+          "label": "How many years of purchasing experience do you have?",
+          "sheet": "Years of purchasing experience",
+          "type": "select",
+          "options": [
+            "None",
+            "Less than 1 year",
+            "1 - 3 years",
+            "3 - 5 years",
+            "5 years or more"
+          ]
+        },
+        {
+          "key": "purchasingTasks",
+          "label": "Which of these have you done as part of your job?",
+          "sheet": "Purchasing and stores tasks done",
+          "type": "checkbox",
+          "hint": "Tick all that apply",
+          "options": [
+            "Raising purchase orders",
+            "Expediting late orders",
+            "Supplier communication and relationships",
+            "Booking in and locating deliveries",
+            "Picking and issuing components",
+            "Stock checks and resolving discrepancies",
+            "Returns and non-conforming product",
+            "Arranging UK transport",
+            "Arranging overseas transport",
+            "Maintaining surplus stock records",
+            "Managing test equipment calibration",
+            "Stock and department reporting"
+          ]
+        },
+        {
+          "key": "stockCounting",
+          "label": "Which stock counting methods have you used?",
+          "sheet": "Stock counting methods used",
+          "type": "checkbox",
+          "hint": "Tick all that apply",
+          "options": [
+            "Regular cycle or perpetual counts",
+            "Annual stocktake",
+            "Spot checks",
+            "None yet"
+          ]
+        },
+        {
+          "key": "systems",
+          "label": "Which stock, ERP or purchasing systems have you used?",
+          "sheet": "Stock, ERP or purchasing systems used",
+          "type": "text",
+          "hint": "For example: Sage, SAP, Microsoft Dynamics, a bespoke system"
+        },
+        {
+          "key": "couriers",
+          "label": "Which couriers, hauliers or freight forwarders have you booked with, and have you prepared paperwork for overseas shipments?",
+          "sheet": "Couriers and overseas shipping experience",
+          "type": "text",
+          "hint": "For example: DHL, UPS, a pallet network; commercial invoices"
+        },
+        {
+          "key": "excel",
+          "label": "How would you rate your Excel skills?",
+          "sheet": "Excel level",
+          "type": "select",
+          "options": [
+            "Advanced (formulas, lookups, pivot tables)",
+            "Intermediate (sorting, filtering, simple formulas)",
+            "Basic",
+            "None"
+          ]
+        }
+      ]
+    },
+    {
+      "legend": "How you work",
+      "questions": [
+        {
+          "key": "discrepancy",
+          "label": "A stock check shows 20 fewer of a part than the system says. Walk us through what you would do.",
+          "sheet": "Approach to a stock discrepancy",
+          "type": "textarea"
+        },
+        {
+          "key": "reorder",
+          "label": "How have you set or managed reorder levels so consumables never run out but stock is not overbought?",
+          "sheet": "Managing reorder levels for consumables",
+          "type": "textarea"
+        },
+        {
+          "key": "prioritise",
+          "label": "The workshop needs an urgent shortage picked while a large delivery arrives and a supplier calls about a late order. How do you prioritise?",
+          "sheet": "Prioritising competing stores demands",
+          "type": "textarea"
+        },
+        {
+          "key": "nonConforming",
+          "label": "A delivery arrives with the wrong part and some damaged items. What do you do, step by step?",
+          "sheet": "Handling wrong or damaged deliveries",
+          "type": "textarea"
+        },
+        {
+          "key": "supplierLate",
+          "label": "A supplier tells you a part the workshop needs this week is now three weeks late. How do you handle it?",
+          "sheet": "Handling a late supplier order",
+          "type": "textarea"
+        }
+      ]
+    }
+  ],
+  "also": "This role would also suit Stock Controllers, Storekeepers, Inventory Controllers and Purchasing Assistants who enjoy a hands-on role."
+}
