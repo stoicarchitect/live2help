@@ -82,6 +82,33 @@ jobs:
           echo "The daily job did not report a result within 5 minutes"
           exit 1
 
+      - name: Start the Role Finder search
+        run: |
+          echo "START=$(date -u -d '60 seconds ago' +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_ENV"
+          curl -sS --fail-with-body --max-time 60 --retry 3 --retry-all-errors --retry-delay 10 \
+            -H "x-cron-key: $CRON_SECRET" "$BASE_URL/api/cron/role-finder"
+          echo
+
+      - name: Check the Role Finder result
+        continue-on-error: true
+        run: |
+          for i in $(seq 1 120); do
+            out=$(curl -sS --max-time 30 --retry 3 --retry-all-errors --retry-delay 5 \
+              -H "x-cron-key: $CRON_SECRET" "$BASE_URL/api/cron/status")
+            fin=$(echo "$out" | jq -r '.roleFinder.finishedAt // ""')
+            if [ -n "$fin" ] && [[ "$fin" > "$START" ]]; then
+              echo "$out" | jq '.roleFinder'
+              ok=$(echo "$out" | jq -r '.roleFinder.ok')
+              if [ "$ok" = "true" ]; then exit 0; fi
+              echo "The Role Finder search reported a problem. See the details above."
+              exit 1
+            fi
+            echo "Waiting for the Role Finder search to finish ($i)"
+            sleep 10
+          done
+          echo "The Role Finder search did not report a result within 20 minutes"
+          exit 1
+
       - name: Invoice reminders
         run: |
           curl -sS --fail-with-body --max-time 120 --retry 3 --retry-all-errors --retry-delay 15 \

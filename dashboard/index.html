@@ -5283,6 +5283,16 @@ document.addEventListener('DOMContentLoaded', function(){
   }
 });
 
+// Build 19 fix: these two were called but missing, which stopped the splash buttons and the lines below from running
+function setSplashLogo(){
+  try{ const src = document.getElementById('brandLogoImg'); const img = document.getElementById('splashLogoImg'); if(src && img && !img.src) img.src = src.src; }catch(e){}
+}
+function chooseDashboard(tab){
+  document.getElementById('splashScreen').classList.add('hidden');
+  document.getElementById('app').classList.add('visible');
+  document.body.classList.add('app-on');
+  switchTab(tab || 'candidates');
+}
 setSplashLogo();
 initializeClientModals();
 loadClients();
@@ -14221,9 +14231,906 @@ async function tpReviewed(id){
 })();
 </script>
 
+<style>
+/* ===== Business Development: Role Finder and Lead Pipeline (build 19) ===== */
+#roleFinderView,#leadPipelineView{display:none;flex:1;flex-direction:column;min-height:0;}
+#roleFinderView.visible,#leadPipelineView.visible{display:flex;}
+.rfx-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;}
+.rfx-bar select,.rfx-bar input{padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12.5px;background:#fff;color:var(--dark);}
+.rfx-bar label.chk{font-size:12.5px;color:var(--grey);display:flex;align-items:center;gap:6px;cursor:pointer;}
+.rfx-setup{background:#FBF1D9;border:1px solid #ecd9a4;border-left:3px solid var(--gold);padding:12px 14px;margin-bottom:14px;font-size:12.5px;color:#6b5414;line-height:1.6;border-radius:2px;}
+.rfx-setup b{color:var(--dark);}
+.rfx-pill{display:inline-block;padding:2px 7px;border-radius:2px;font-size:10.5px;margin:3px 4px 0 0;background:var(--lightbg);color:var(--dark);white-space:nowrap;}
+.rfx-pill.client{background:#E4EBF5;color:#274b7a;}
+.rfx-pill.lead{background:#E6F2E9;color:#2D6A3E;}
+.rfx-pill.dive{background:#1A1A1A;color:var(--gold);}
+.rfx-pill.warn{background:#F7E3E1;color:#9B2C22;}
+.rfx-pill.short{background:#FBF1D9;color:#8a6a12;}
+.rfx-days{font-weight:600;color:var(--dark);font-size:14px;}
+.rfx-days.hot{color:#9B2C22;}
+.rfx-sub{font-size:11.5px;color:#999;margin-top:2px;}
+table.ops-table tr.rfx-row td{vertical-align:top;}
+.rfx-actions{display:flex;gap:5px;justify-content:flex-end;flex-wrap:wrap;}
+.rfx-actions button{padding:5px 9px;font-size:11px;border:1px solid var(--border);background:#fff;color:var(--grey);cursor:pointer;border-radius:2px;font-family:inherit;white-space:nowrap;}
+.rfx-actions button:hover{background:var(--lightbg);}
+.rfx-actions button.gold{background:var(--gold);border-color:var(--gold);color:#fff;font-weight:600;}
+.rfx-bulk{display:none;position:sticky;top:0;z-index:5;background:var(--dark);color:#fff;padding:9px 14px;margin-bottom:10px;border-radius:2px;font-size:12.5px;align-items:center;gap:10px;}
+.rfx-bulk.on{display:flex;}
+.rfx-bulk button{padding:5px 10px;font-size:11.5px;border:1px solid #555;background:transparent;color:#fff;cursor:pointer;border-radius:2px;font-family:inherit;}
+.rfx-bulk button.gold{background:var(--gold);border-color:var(--gold);color:var(--dark);font-weight:600;}
+.modal.rfx-wide{max-width:900px;}
+.modal.rfx-mid{max-width:620px;}
+.rfx-sec{margin:18px 0 8px;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--gold);font-weight:600;}
+.rfx-kv{display:grid;grid-template-columns:150px 1fr;gap:6px 12px;font-size:13px;color:var(--grey);}
+.rfx-kv b{color:#999;font-weight:400;font-size:12px;}
+.rfx-kv a,.rfx-person a{color:var(--gold);}
+.rfx-brief{background:#1A1A1A;color:#eee;border-left:3px solid var(--gold);padding:14px 16px;border-radius:2px;font-size:13px;line-height:1.6;}
+.rfx-brief b{color:var(--gold);font-weight:600;display:block;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin-top:8px;}
+.rfx-brief b:first-child{margin-top:0;}
+.rfx-people{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;}
+.rfx-person{border:1px solid var(--border);border-top:3px solid var(--gold);border-radius:2px;padding:12px;font-size:12.5px;color:var(--grey);background:#fff;}
+.rfx-person .nm{font-size:14px;color:var(--dark);font-weight:600;}
+.rfx-person .tt{font-size:12px;color:#777;margin-bottom:6px;}
+.rfx-person .why{font-size:11.5px;color:#999;margin:6px 0;}
+.rfx-person .ln{margin:3px 0;word-break:break-all;}
+.rfx-person .btns{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+.rfx-person .btns button{padding:5px 9px;font-size:11px;border:1px solid var(--border);background:#fff;cursor:pointer;border-radius:2px;font-family:inherit;color:var(--grey);}
+.rfx-person .btns button.gold{background:var(--gold);border-color:var(--gold);color:#fff;font-weight:600;}
+.rfx-badge{display:inline-block;font-size:10px;padding:1px 6px;border-radius:2px;margin-left:5px;vertical-align:middle;}
+.rfx-badge.found{background:#E6F2E9;color:#2D6A3E;}
+.rfx-badge.pattern{background:#FBF1D9;color:#8a6a12;}
+.rfx-badge.guess{background:#F7E3E1;color:#9B2C22;}
+.rfx-badge.high{background:#E6F2E9;color:#2D6A3E;}.rfx-badge.medium{background:#FBF1D9;color:#8a6a12;}.rfx-badge.low{background:var(--lightbg);color:#888;}
+.rfx-list{font-size:12.5px;color:var(--grey);line-height:1.7;}
+.rfx-list a{color:var(--gold);}
+.rfx-spin{display:inline-block;width:14px;height:14px;border:2px solid #ddd;border-top-color:var(--gold);border-radius:50%;animation:rfxspin .8s linear infinite;vertical-align:middle;margin-right:8px;}
+@keyframes rfxspin{to{transform:rotate(360deg);}}
+.rfx-check{font-size:12px;margin-top:6px;}
+.rfx-check.ok{color:#2D6A3E;}.rfx-check.bad{color:#9B2C22;}
+.rfx-confirm{display:flex;gap:8px;align-items:flex-start;background:var(--lightbg);border-left:3px solid var(--gold);padding:10px 12px;margin-top:14px;font-size:12.5px;color:var(--dark);}
+.rfx-confirm input{width:auto !important;margin-top:2px;}
+.rfx-search-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;border:1px solid var(--border);border-radius:2px;padding:10px 12px;margin-bottom:8px;font-size:12.5px;}
+.rfx-search-row .nm{font-weight:600;color:var(--dark);font-size:13.5px;}
+.rfx-search-row.off{opacity:.55;}
+.rfx-chips{display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;}
+.rfx-chips label{font-size:12.5px;color:var(--grey);display:flex;align-items:center;gap:6px;margin:0 !important;}
+.rfx-chips input{width:auto !important;}
+.modal textarea.rfx-ta{width:100%;min-height:64px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13px;}
+/* pipeline board */
+.lpx-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:10px;align-items:flex-start;}
+.lpx-col{flex:1 0 172px;max-width:320px;background:var(--lightbg);border-radius:2px;min-height:120px;display:flex;flex-direction:column;}
+.lpx-col.drop{outline:2px dashed var(--gold);}
+.lpx-col h4{font-size:12px;font-weight:600;color:var(--dark);padding:10px 12px;border-bottom:2px solid var(--gold);display:flex;justify-content:space-between;}
+.lpx-col h4 span{background:var(--dark);color:var(--gold);border-radius:10px;padding:0 7px;font-size:11px;}
+.lpx-col.lost h4{border-bottom-color:#c9837b;}
+.lpx-col.converted h4{border-bottom-color:#2D6A3E;}
+.lpx-cards{padding:8px;display:flex;flex-direction:column;gap:8px;}
+.lpx-card{background:#fff;border:1px solid var(--border);border-left:3px solid var(--gold);border-radius:2px;padding:10px;cursor:pointer;font-size:12px;color:var(--grey);}
+.lpx-card:hover{box-shadow:0 2px 8px rgba(0,0,0,.08);}
+.lpx-card .co{font-size:13px;color:var(--dark);font-weight:600;margin-bottom:2px;}
+.lpx-card .due{color:#9B2C22;font-weight:600;}
+.lpx-card.client{border-left-color:#2D6A3E;}
+.lpx-more{font-size:12px;color:var(--gold);cursor:pointer;padding:6px 12px;}
+.lpx-hist{font-size:12px;color:var(--grey);line-height:1.7;}
+@media (max-width:760px){
+  .rfx-kv{grid-template-columns:1fr;}
+  .lpx-col{flex-basis:78vw;}
+}
+</style>
+
+<div class="modal-overlay" id="rfxDiveModal">
+  <div class="modal rfx-wide"><div class="modal-inner">
+    <button class="modal-close" onclick="closeModal('rfxDiveModal')">&times;</button>
+    <div id="rfxDiveBody"></div>
+  </div></div>
+</div>
+
+<div class="modal-overlay" id="rfxAddModal">
+  <div class="modal rfx-mid"><div class="modal-inner">
+    <button class="modal-close" onclick="closeModal('rfxAddModal')">&times;</button>
+    <h2>Check and add to Lead Clients</h2>
+    <div class="role-sub" id="rfxAddSub"></div>
+    <div class="simple-form">
+      <label>Company</label><input id="rfxAddCompany">
+      <div class="two-col">
+        <div><label>Contact name</label><input id="rfxAddName"></div>
+        <div><label>Job title</label><input id="rfxAddTitle"></div>
+      </div>
+      <label>Email</label>
+      <div style="display:flex;gap:6px;"><input id="rfxAddEmail" oninput="rfxEmailChanged()"><button type="button" class="gold-btn" style="padding:8px 12px;font-size:12px;" onclick="rfxCheckEmail()">Check</button></div>
+      <div class="rfx-check" id="rfxAddEmailCheck"></div>
+      <div class="two-col">
+        <div><label>Phone</label><input id="rfxAddPhone"></div>
+        <div><label>Website</label><input id="rfxAddWebsite"></div>
+      </div>
+      <div class="two-col">
+        <div><label>Address</label><input id="rfxAddAddress"></div>
+        <div><label>Postcode</label><input id="rfxAddPostcode"></div>
+      </div>
+      <label>Notes for the call</label><textarea class="rfx-ta" id="rfxAddNotes"></textarea>
+      <div class="rfx-chips"><label><input type="checkbox" id="rfxAddTask" checked> Create a call task for</label><input type="date" id="rfxAddTaskDate" style="width:auto;padding:6px 8px;" onclick="try{this.showPicker()}catch(e){}"></div>
+      <label class="rfx-confirm"><input type="checkbox" id="rfxAddVerified"> <span>I have checked these details are correct. The email status will be saved as checked by me.</span></label>
+      <div class="actions"><button class="cancel" onclick="closeModal('rfxAddModal')">Cancel</button><button class="save" id="rfxAddSave" onclick="rfxSaveLead()">Add to Lead Clients</button></div>
+    </div>
+  </div></div>
+</div>
+
+<div class="modal-overlay" id="rfxSearchModal">
+  <div class="modal rfx-mid"><div class="modal-inner">
+    <button class="modal-close" onclick="closeModal('rfxSearchModal')">&times;</button>
+    <h2>Saved searches</h2>
+    <div class="role-sub">Each active search runs every weekday morning. Ella can add as many as she likes.</div>
+    <div id="rfxSearchList" style="margin-top:14px;"></div>
+    <div class="rfx-sec" id="rfxSearchFormTitle">New search</div>
+    <div class="simple-form">
+      <input type="hidden" id="rfxSId">
+      <label>Search name</label><input id="rfxSName" placeholder="e.g. Engineering roles - West Midlands">
+      <label>Job titles or keywords (one search per comma)</label><input id="rfxSKeywords" placeholder="e.g. CAD Technician, Design Engineer, Maintenance Engineer">
+      <label>Leave out titles containing (comma separated)</label><input id="rfxSExclude" placeholder="e.g. trainee, apprentice, graduate">
+      <div class="two-col">
+        <div><label>Location (blank for the whole UK)</label><input id="rfxSLocation" placeholder="e.g. Telford or Birmingham"></div>
+        <div><label>Within (miles)</label><input type="number" min="0" id="rfxSDistance" placeholder="25"></div>
+      </div>
+      <div class="two-col">
+        <div><label>Salary from (&pound;)</label><input type="number" min="0" id="rfxSSalMin" placeholder="25000"></div>
+        <div><label>Salary to (&pound;)</label><input type="number" min="0" id="rfxSSalMax"></div>
+      </div>
+      <div class="two-col">
+        <div><label>Advertised at least (days)</label><input type="number" min="0" id="rfxSMinDays" placeholder="0"></div>
+        <div><label>Advertised at most (days)</label><input type="number" min="1" id="rfxSMaxDays" placeholder="60"></div>
+      </div>
+      <label>Sources and options</label>
+      <div class="rfx-chips">
+        <label><input type="checkbox" id="rfxSAdzuna" checked> Adzuna</label>
+        <label><input type="checkbox" id="rfxSReed" checked> Reed</label>
+        <label><input type="checkbox" id="rfxSDirect" checked> Direct employers only</label>
+        <label><input type="checkbox" id="rfxSActive" checked> Active</label>
+      </div>
+      <label>Automatic deep dives each morning (longest advertised first)</label>
+      <select id="rfxSAuto" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;"><option value="0">None</option><option value="1">1</option><option value="3" selected>3</option><option value="5">5</option></select>
+      <div class="actions"><button class="cancel" onclick="rfxNewSearchForm()">Clear</button><button class="save" onclick="rfxSaveSearch()">Save search</button></div>
+    </div>
+  </div></div>
+</div>
+
+<div class="modal-overlay" id="lpxModal">
+  <div class="modal rfx-mid"><div class="modal-inner">
+    <button class="modal-close" onclick="closeModal('lpxModal')">&times;</button>
+    <div id="lpxModalBody"></div>
+  </div></div>
+</div>
+
+<script>
+/* ============================================================
+   Business Development: Role Finder and Lead Pipeline (build 19)
+   ============================================================ */
+
+const RFX = {results:[], searches:[], config:null, today:'', sel:new Set(), loaded:false, polling:null, current:null, dive:null, addFor:null};
+const LPX = {list:[], stats:null, showLost:false, dragId:null, current:null};
+const LPX_STAGE_LABEL = {identified:'Identified', contacted:'Contacted', interested:'Interested', meeting:'Meeting Booked', terms:'Terms Sent', converted:'Converted to Client', lost:'Lost', archived:'Archived'};
+const LPX_BOARD = ['identified','contacted','interested','meeting','terms','converted'];
+
+function rfxFmt(d){ if(!d) return ''; const x = new Date(String(d).length <= 10 ? d + 'T00:00:00' : d); return isNaN(x) ? String(d) : x.toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'}); }
+function rfxAgo(iso){ if(!iso) return 'never'; const m = Math.round((Date.now() - Date.parse(iso)) / 60000); if(m < 1) return 'just now'; if(m < 60) return m + ' min ago'; const h = Math.round(m / 60); if(h < 24) return h + ' hours ago'; return rfxFmt(iso); }
+function rfxNextWorkingDay(){ const d = new Date(); do { d.setDate(d.getDate() + 1); } while(d.getDay() === 0 || d.getDay() === 6); return d.toISOString().slice(0,10); }
+function rfxLink(u, label){ if(!u) return ''; const href = /^https?:/i.test(u) ? u : 'https://' + u; return `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(label || u)}</a>`; }
+function rfxNorm(s){ return String(s || '').toLowerCase().replace(/&/g,' and ').replace(/[^a-z0-9 ]+/g,' ').replace(/\b(the|ltd|limited|plc|llp|uk|group|holdings|co|company)\b/g,' ').replace(/\s+/g,' ').trim(); }
+
+/* ---------- navigation ---------- */
+
+(function(){
+  const tabs = document.getElementById('tabs');
+  const fl = tabs && tabs.querySelector('.tab-btn[data-tab="funnelLeads"]');
+  const add = (key, label) => {
+    const b = document.createElement('button');
+    b.className = 'tab-btn gh'; b.dataset.tab = key; b.textContent = label;
+    b.onclick = () => switchTab(key);
+    tabs.appendChild(b);
+  };
+  if(tabs){ add('roleFinder', 'Role Finder'); add('leadPipeline', 'Lead Pipeline'); }
+  const host = document.getElementById('funnelLeadsView');
+  if(host && host.parentNode){
+    const rf = document.createElement('div');
+    rf.id = 'roleFinderView';
+    rf.innerHTML = `
+      <div class="view-head">
+        <div><h2>Role Finder</h2><div class="sub" id="rfxSummary">Direct employers advertising now, longest advertised first.</div></div>
+        <div class="head-actions">
+          <button class="cancel" style="padding:9px 14px;border:1px solid var(--border);background:#fff;border-radius:2px;font-family:inherit;font-size:13px;cursor:pointer;" onclick="rfxOpenSearches()">Saved searches</button>
+          <button class="gold-btn" id="rfxRunBtn" onclick="rfxRun()">Search now</button>
+        </div>
+      </div>
+      <div class="view-body">
+        <div id="rfxSetup"></div>
+        <div class="tile-grid" id="rfxTiles"></div>
+        <div class="rfx-bar">
+          <select id="rfxStatus" onchange="rfxRender()"><option value="new">To work</option><option value="shortlisted">Shortlisted</option><option value="added">Added to leads</option><option value="dismissed">Dismissed</option><option value="agency">Filtered agencies</option><option value="all">Everything</option></select>
+          <select id="rfxSearchFilter" onchange="rfxRender()"><option value="">All searches</option></select>
+          <input id="rfxMinDays" type="number" min="0" placeholder="Min days advertised" style="width:150px;" oninput="rfxRender()">
+          <input id="rfxText" placeholder="Filter company, role or place" style="min-width:200px;" oninput="rfxRender()">
+          <label class="chk"><input type="checkbox" id="rfxHideKnown" checked onchange="rfxRender()"> Hide existing clients and leads</label>
+          <label class="chk"><input type="checkbox" id="rfxDiveOnly" onchange="rfxRender()"> Deep dive ready only</label>
+        </div>
+        <div class="rfx-bulk" id="rfxBulk"><span id="rfxBulkCount"></span>
+          <button class="gold" onclick="rfxBulk('shortlisted')">Shortlist</button>
+          <button onclick="rfxBulk('dismissed')">Dismiss</button>
+          <button onclick="rfxBulk('new')">Move back to To work</button>
+          <button onclick="RFX.sel.clear();rfxRender()">Clear</button></div>
+        <div class="ops-table-wrap"><table class="ops-table" style="min-width:1000px;"><thead><tr>
+          <th style="width:28px;"><input type="checkbox" id="rfxAll" onclick="rfxSelectAll(this.checked)"></th>
+          <th>Company</th><th>Role</th><th>Salary</th><th>Advertised</th><th>Source</th><th style="text-align:right;">Actions</th>
+        </tr></thead><tbody id="rfxBody"><tr><td colspan="7" class="empty-row">Loading...</td></tr></tbody></table></div>
+        <div class="note-line">Adverts come from Adzuna and Reed. Anything posted by a recruitment agency is filtered out using the company name, the wording of the advert, the agency block list and the company's Companies House registration. If an agency slips through, use Agency on its row and it is blocked for good. Contact details are only ever business details found in public sources. Check them before adding a lead.</div>
+      </div>`;
+    host.parentNode.appendChild(rf);
+    const lp = document.createElement('div');
+    lp.id = 'leadPipelineView';
+    lp.innerHTML = `
+      <div class="view-head">
+        <div><h2>Lead Pipeline</h2><div class="sub" id="lpxSummary">Every lead client, from first find to signed terms.</div></div>
+        <div class="head-actions">
+          <input id="lpxText" placeholder="Filter companies" oninput="lpxRender()" style="padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13px;">
+          <button class="gold-btn" onclick="lpxOpenNew()">+ Add lead</button>
+        </div>
+      </div>
+      <div class="view-body">
+        <div class="tile-grid" id="lpxTiles"></div>
+        <div class="lpx-board" id="lpxBoard"></div>
+        <div class="lpx-more" id="lpxLostToggle" onclick="LPX.showLost=!LPX.showLost;lpxRender()"></div>
+        <div class="lpx-board" id="lpxLostBoard" style="display:none;"></div>
+        <div class="note-line">Drag a card to move it between stages, or open it to log a call, convert it to a client or record an opt-out. Companies on the Lead Clients tab appear here automatically, and their Cold Call Tracker history shows on each card. Leads with no activity for 12 months are archived automatically.</div>
+      </div>`;
+    host.parentNode.appendChild(lp);
+  }
+  if(typeof TAB_GROUPS !== 'undefined'){
+    const at = TAB_GROUPS.findIndex(g => g.key === 'clients');
+    TAB_GROUPS.splice(at + 1, 0, {key:'bizdev', label:'Business Development', tabs:['roleFinder','leadPipeline']});
+    if(typeof signedInUser !== 'undefined' && signedInUser && typeof renderGroupBar === 'function') renderGroupBar();
+  }
+  const _st = switchTab;
+  switchTab = function(tab){
+    _st(tab);
+    document.getElementById('roleFinderView').classList.toggle('visible', tab === 'roleFinder');
+    document.getElementById('leadPipelineView').classList.toggle('visible', tab === 'leadPipeline');
+    if(tab === 'roleFinder') rfxLoad();
+    if(tab === 'leadPipeline') lpxLoad();
+  };
+})();
+
+/* ---------- Role Finder: loading and listing ---------- */
+
+async function rfxLoad(){
+  try{
+    const [cfg, res, srch, st] = await Promise.all([
+      b2Api('/api/role-finder/config'), b2Api('/api/role-finder/results'), b2Api('/api/role-finder/searches'), b2Api('/api/role-finder/status'),
+    ]);
+    RFX.config = cfg; RFX.results = res.data || []; RFX.today = res.today; RFX.searches = b2List(srch); RFX.status = st; RFX.loaded = true;
+    rfxRenderSetup(); rfxRender();
+    if(st.running) rfxPoll();
+  }catch(e){
+    document.getElementById('rfxBody').innerHTML = `<tr><td colspan="7" class="empty-row">Could not load Role Finder: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+function rfxRenderSetup(){
+  const s = (RFX.config && RFX.config.sources) || {};
+  const missing = [];
+  if(!s.adzuna) missing.push('<b>Adzuna</b> (ADZUNA_APP_ID and ADZUNA_APP_KEY, free at developer.adzuna.com)');
+  if(!s.reed) missing.push('<b>Reed</b> (REED_API_KEY, free at reed.co.uk/developers)');
+  if(!s.companiesHouse) missing.push('<b>Companies House</b> (COMPANIES_HOUSE_API_KEY, free at developer.company-information.service.gov.uk)');
+  let html = '';
+  if(missing.length && signedInUser && signedInUser.admin) html += `<div class="rfx-setup">To switch on every source, add these keys on Render: ${missing.join('; ')}. Each one starts working as soon as it is saved.</div>`;
+  else if(!s.adzuna && !s.reed) html += `<div class="rfx-setup">The job board connections are not switched on yet. Ask Dan to add the Adzuna and Reed keys.</div>`;
+  if(!RFX.searches.length) html += `<div class="rfx-setup">No saved searches yet. Use <b>Saved searches</b> to add the job titles, area and salary you want to target, then press <b>Search now</b>.</div>`;
+  document.getElementById('rfxSetup').innerHTML = html;
+  const sel = document.getElementById('rfxSearchFilter');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">All searches</option>' + RFX.searches.map(x => `<option value="${esc(x.id)}">${esc(x.name || x.keywords)}</option>`).join('');
+  sel.value = cur;
+  const last = RFX.status && RFX.status.last;
+  const lastRun = [last && last.finishedAt, ...RFX.searches.map(x => x.last_run)].filter(Boolean).sort().pop();
+  document.getElementById('rfxSummary').textContent = 'Direct employers advertising now, longest advertised first. Last search: ' +
+    (RFX.status && RFX.status.running ? 'running now' : lastRun ? rfxAgo(lastRun) : 'never') + '.';
+}
+
+function rfxFiltered(){
+  const status = document.getElementById('rfxStatus').value;
+  const sid = document.getElementById('rfxSearchFilter').value;
+  const minDays = parseInt(document.getElementById('rfxMinDays').value, 10) || 0;
+  const text = document.getElementById('rfxText').value.trim().toLowerCase();
+  const hideKnown = document.getElementById('rfxHideKnown').checked;
+  const diveOnly = document.getElementById('rfxDiveOnly').checked;
+  return RFX.results.filter(r => {
+    if(status !== 'all' && r.status !== status) return false;
+    if(sid && !String(r.search_ids).split(',').includes(sid)) return false;
+    if(minDays && (r.days == null || r.days < minDays)) return false;
+    if(text && !(`${r.company} ${r.role} ${r.location}`.toLowerCase().includes(text))) return false;
+    if(hideKnown && status === 'new' && (r.is_client || r.is_lead || r.suppressed)) return false;
+    if(diveOnly && !r.has_dive) return false;
+    return true;
+  }).sort((a, b) => (b.days == null ? -1 : b.days) - (a.days == null ? -1 : a.days));
+}
+
+function rfxRender(){
+  if(!RFX.loaded) return;
+  const list = rfxFiltered();
+  const all = RFX.results;
+  const todo = all.filter(r => r.status === 'new' && !r.is_client && !r.is_lead && !r.suppressed);
+  const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0,10);
+  const longest = todo.reduce((m, r) => Math.max(m, r.days || 0), 0);
+  document.getElementById('rfxTiles').innerHTML = [
+    {n: all.filter(r => r.first_seen === RFX.today && r.status === 'new').length, l:'New today'},
+    {n: todo.length, l:'To work', warn: todo.length > 0},
+    {n: todo.filter(r => r.days >= 21).length, l:'Advertised 3 weeks or more'},
+    {n: longest ? longest + ' days' : '-', l:'Longest advertised'},
+    {n: all.filter(r => r.status === 'shortlisted').length, l:'Shortlisted'},
+    {n: all.filter(r => r.status === 'added' && (r.last_seen || '') >= weekAgo).length, l:'Added to leads'},
+    {n: all.filter(r => r.status === 'agency').length, l:'Agency adverts filtered'},
+  ].map(t => `<div class="tile static ${t.warn ? 'warn' : ''}"><div class="n">${esc(t.n)}</div><div class="l">${t.l}</div></div>`).join('');
+  const counts = {};
+  all.forEach(r => { const k = rfxNorm(r.company); counts[k] = (counts[k] || 0) + 1; });
+  RFX.sel.forEach(id => { if(!list.some(r => r.id === id)) RFX.sel.delete(id); });
+  document.getElementById('rfxBody').innerHTML = list.length ? list.slice(0, 400).map(r => {
+    const others = (counts[rfxNorm(r.company)] || 1) - 1;
+    const pills = [
+      r.is_client ? '<span class="rfx-pill client">Client</span>' : '',
+      r.is_lead ? '<span class="rfx-pill lead">Already a lead</span>' : '',
+      r.suppressed ? '<span class="rfx-pill warn">Opted out</span>' : '',
+      r.has_dive ? '<span class="rfx-pill dive">Deep dive ready</span>' : '',
+      r.dive_status === 'running' ? '<span class="rfx-pill">Deep dive running</span>' : '',
+      r.status === 'shortlisted' ? '<span class="rfx-pill short">Shortlisted</span>' : '',
+      others > 0 ? `<span class="rfx-pill">+${others} other role${others > 1 ? 's' : ''}</span>` : '',
+      r.status === 'agency' ? `<span class="rfx-pill warn">${esc(r.agency_reason || 'Agency')}</span>` : '',
+      r.status === 'dismissed' && r.dismiss_reason ? `<span class="rfx-pill">${esc(r.dismiss_reason)}</span>` : '',
+    ].join('');
+    const hot = r.days != null && r.days >= 21;
+    const acts = r.status === 'agency'
+      ? `<button onclick="rfxSet('${esc(r.id)}','new')">Not an agency</button>`
+      : `<button class="gold" onclick="rfxOpenDive('${esc(r.id)}')">${r.has_dive ? 'View deep dive' : 'Deep dive'}</button>
+         ${r.status !== 'added' ? `<button onclick="rfxOpenAdd('${esc(r.id)}')">Add lead</button>` : ''}
+         ${r.status === 'new' ? `<button onclick="rfxSet('${esc(r.id)}','shortlisted')">Shortlist</button>` : ''}
+         ${r.status !== 'dismissed' && r.status !== 'added' ? `<button onclick="rfxDismiss('${esc(r.id)}')">Dismiss</button>` : `<button onclick="rfxSet('${esc(r.id)}','new')">Restore</button>`}
+         <button onclick="rfxAgency('${esc(r.id)}')" title="This is a recruitment agency: hide it for good">Agency</button>`;
+    return `<tr class="rfx-row">
+      <td><input type="checkbox" ${RFX.sel.has(r.id) ? 'checked' : ''} onclick="rfxToggle('${esc(r.id)}', this.checked)"></td>
+      <td class="strong">${esc(r.company || 'Not named')}<div>${pills}</div></td>
+      <td>${esc(r.role)}<div class="rfx-sub">${esc(r.location)}</div></td>
+      <td>${esc(r.salary || '-')}</td>
+      <td><span class="rfx-days ${hot ? 'hot' : ''}">${r.days == null ? '-' : r.days + ' days'}</span><div class="rfx-sub">${r.posted_date ? 'since ' + esc(rfxFmt(r.posted_date)) : ''}</div></td>
+      <td>${r.url ? rfxLink(r.url, r.source) : esc(r.source)}</td>
+      <td><div class="rfx-actions">${acts}</div></td></tr>`;
+  }).join('') : `<tr><td colspan="7" class="empty-row">${all.length ? 'Nothing matches these filters.' : 'No adverts yet. Add a saved search and press Search now.'}</td></tr>`;
+  const bulk = document.getElementById('rfxBulk');
+  bulk.classList.toggle('on', RFX.sel.size > 0);
+  document.getElementById('rfxBulkCount').textContent = RFX.sel.size + ' selected';
+  const allBox = document.getElementById('rfxAll');
+  if(allBox) allBox.checked = list.length > 0 && list.slice(0, 400).every(r => RFX.sel.has(r.id));
+}
+
+function rfxToggle(id, on){ on ? RFX.sel.add(id) : RFX.sel.delete(id); rfxRender(); }
+function rfxSelectAll(on){ rfxFiltered().slice(0, 400).forEach(r => on ? RFX.sel.add(r.id) : RFX.sel.delete(r.id)); rfxRender(); }
+
+function rfxLocal(id, patch){ const r = RFX.results.find(x => x.id === id); if(r) Object.assign(r, patch); }
+
+async function rfxSet(id, status, reason){
+  try{
+    const was = (RFX.results.find(x => x.id === id) || {}).status;
+    await b2Post('/api/role-finder/results/' + encodeURIComponent(id), {status, dismiss_reason: reason || ''});
+    if(was === 'agency'){ showToast('Unblocked. Its adverts are back in To work.'); rfxLoad(); return; }
+    rfxLocal(id, {status, dismiss_reason: reason || ''});
+    if(status === 'new'){ const r = RFX.results.find(x => x.id === id); if(r){ r.agency_flag = ''; } }
+    rfxRender();
+  }catch(e){ showToast('Could not update: ' + e.message); }
+}
+
+function rfxDismiss(id){
+  const reason = prompt('Reason for dismissing (optional), e.g. too small, wrong sector, already spoke to them');
+  if(reason === null) return;
+  rfxSet(id, 'dismissed', reason);
+}
+
+async function rfxBulk(status){
+  const ids = [...RFX.sel];
+  if(!ids.length) return;
+  let reason = '';
+  if(status === 'dismissed'){ reason = prompt('Reason for dismissing these (optional)'); if(reason === null) return; }
+  try{
+    await b2Post('/api/role-finder/bulk', {ids, status, reason});
+    ids.forEach(id => rfxLocal(id, {status, dismiss_reason: status === 'dismissed' ? reason : ''}));
+    RFX.sel.clear(); rfxRender(); showToast(ids.length + ' updated');
+  }catch(e){ showToast('Could not update: ' + e.message); }
+}
+
+async function rfxAgency(id){
+  const r = RFX.results.find(x => x.id === id);
+  if(!r || !confirm(`Mark ${r.company} as a recruitment agency? All its adverts will be hidden now and in future searches.`)) return;
+  try{
+    const j = await b2Post('/api/role-finder/results/' + encodeURIComponent(id) + '/agency', {});
+    RFX.results.filter(x => rfxNorm(x.company) === rfxNorm(r.company)).forEach(x => { x.status = 'agency'; x.agency_reason = 'Marked as agency'; });
+    rfxRender(); showToast(`${r.company} blocked (${j.hidden} advert${j.hidden === 1 ? '' : 's'} hidden)`);
+  }catch(e){ showToast('Could not block: ' + e.message); }
+}
+
+/* ---------- Role Finder: running searches ---------- */
+
+async function rfxRun(searchId){
+  const btn = document.getElementById('rfxRunBtn');
+  try{
+    const j = await b2Post('/api/role-finder/run', {searchId: searchId || ''});
+    if(j.running && !j.started) showToast('A search is already running');
+    else showToast('Searching the job boards. Results appear here when it finishes.');
+    btn.disabled = true; btn.innerHTML = '<span class="rfx-spin"></span>Searching';
+    rfxPoll();
+  }catch(e){ showToast('Could not start the search: ' + e.message); }
+}
+
+function rfxPoll(){
+  const btn = document.getElementById('rfxRunBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="rfx-spin"></span>Searching';
+  clearInterval(RFX.polling);
+  RFX.polling = setInterval(async () => {
+    try{
+      const st = await b2Api('/api/role-finder/status');
+      if(st.running) return;
+      clearInterval(RFX.polling); RFX.polling = null;
+      btn.disabled = false; btn.textContent = 'Search now';
+      const r = st.last && st.last.result;
+      if(st.last && st.last.error) showToast('Search failed: ' + st.last.error);
+      else if(r) showToast(`Search finished: ${r.newCount || 0} new direct employer adverts, ${r.agencies || 0} agency adverts filtered${r.deepDives ? ', ' + r.deepDives + ' deep dives done' : ''}${r.errors && r.errors.length ? '. Some sources had problems: ' + r.errors[0] : ''}`);
+      rfxLoad();
+    }catch(e){ /* keep trying */ }
+  }, 6000);
+}
+
+/* ---------- Role Finder: saved searches ---------- */
+
+function rfxOpenSearches(){
+  rfxRenderSearchList();
+  rfxNewSearchForm();
+  document.getElementById('rfxSearchModal').classList.add('visible');
+}
+
+function rfxRenderSearchList(){
+  const host = document.getElementById('rfxSearchList');
+  host.innerHTML = RFX.searches.length ? RFX.searches.map(s => `<div class="rfx-search-row ${s.active === 'no' ? 'off' : ''}">
+    <div><div class="nm">${esc(s.name || s.keywords)}${s.active === 'no' ? ' (paused)' : ''}</div>
+      <div class="rfx-sub">${esc(s.keywords)}${s.location ? ' - ' + esc(s.location) + (s.distance_miles ? ' within ' + esc(s.distance_miles) + ' miles' : '') : ' - whole UK'}${s.salary_min ? ' - from ' + esc(Number(s.salary_min).toLocaleString('en-GB')) : ''}${s.min_days ? ' - at least ' + esc(s.min_days) + ' days' : ''}</div>
+      <div class="rfx-sub">Last run ${esc(s.last_run ? rfxAgo(s.last_run) : 'never')}${s.last_found ? ', ' + esc(s.last_found) + ' adverts found' : ''}</div></div>
+    <div class="rfx-actions"><button class="gold" onclick="closeModal('rfxSearchModal');rfxRun('${esc(s.id)}')">Run</button><button onclick="rfxEditSearch('${esc(s.id)}')">Edit</button><button onclick="rfxDeleteSearch('${esc(s.id)}')">Delete</button></div></div>`).join('')
+    : '<div class="rfx-sub">No saved searches yet.</div>';
+}
+
+function rfxNewSearchForm(){
+  ['rfxSId','rfxSName','rfxSKeywords','rfxSExclude','rfxSLocation','rfxSSalMin','rfxSSalMax','rfxSMinDays'].forEach(id => b2Set(id, ''));
+  b2Set('rfxSDistance', '25'); b2Set('rfxSMaxDays', '60'); b2Set('rfxSAuto', '3');
+  ['rfxSAdzuna','rfxSReed','rfxSDirect','rfxSActive'].forEach(id => { document.getElementById(id).checked = true; });
+  document.getElementById('rfxSearchFormTitle').textContent = 'New search';
+}
+
+function rfxEditSearch(id){
+  const s = RFX.searches.find(x => x.id === id);
+  if(!s) return;
+  b2Set('rfxSId', s.id); b2Set('rfxSName', s.name); b2Set('rfxSKeywords', s.keywords); b2Set('rfxSExclude', s.exclude);
+  b2Set('rfxSLocation', s.location); b2Set('rfxSDistance', s.distance_miles); b2Set('rfxSSalMin', s.salary_min); b2Set('rfxSSalMax', s.salary_max);
+  b2Set('rfxSMinDays', s.min_days); b2Set('rfxSMaxDays', s.max_days || '60'); b2Set('rfxSAuto', s.auto_deep_dive || '0');
+  const src = String(s.sources || 'adzuna,reed');
+  document.getElementById('rfxSAdzuna').checked = src.includes('adzuna');
+  document.getElementById('rfxSReed').checked = src.includes('reed');
+  document.getElementById('rfxSDirect').checked = s.direct_only !== 'no';
+  document.getElementById('rfxSActive').checked = s.active !== 'no';
+  document.getElementById('rfxSearchFormTitle').textContent = 'Edit search';
+}
+
+async function rfxSaveSearch(){
+  const keywords = b2Val('rfxSKeywords').trim();
+  if(!keywords){ showToast('Add at least one job title or keyword'); return; }
+  const sources = [document.getElementById('rfxSAdzuna').checked ? 'adzuna' : '', document.getElementById('rfxSReed').checked ? 'reed' : ''].filter(Boolean).join(',');
+  if(!sources){ showToast('Pick at least one source'); return; }
+  const id = b2Val('rfxSId') || b2Id('rs');
+  const old = RFX.searches.find(x => x.id === id) || {};
+  const body = {
+    ...old, id, name: b2Val('rfxSName').trim() || keywords.split(',')[0].trim(), keywords, exclude: b2Val('rfxSExclude').trim(),
+    location: b2Val('rfxSLocation').trim(), distance_miles: b2Val('rfxSDistance'), salary_min: b2Val('rfxSSalMin'), salary_max: b2Val('rfxSSalMax'),
+    min_days: b2Val('rfxSMinDays'), max_days: b2Val('rfxSMaxDays'), sources,
+    direct_only: document.getElementById('rfxSDirect').checked ? 'yes' : 'no', auto_deep_dive: b2Val('rfxSAuto'),
+    active: document.getElementById('rfxSActive').checked ? 'yes' : 'no', owner: old.owner || (signedInUser && signedInUser.key) || '',
+    created_at: old.created_at || new Date().toISOString(),
+  };
+  try{
+    const j = await b2Post('/api/role-finder/searches', body);
+    const i = RFX.searches.findIndex(x => x.id === id);
+    if(i >= 0) RFX.searches[i] = j.data; else RFX.searches.push(j.data);
+    rfxRenderSearchList(); rfxNewSearchForm(); rfxRenderSetup();
+    showToast('Search saved. Press Run to try it now.');
+  }catch(e){ showToast('Could not save: ' + e.message); }
+}
+
+async function rfxDeleteSearch(id){
+  const s = RFX.searches.find(x => x.id === id);
+  if(!s || !confirm(`Delete the search "${s.name || s.keywords}"? Adverts already found stay in the list.`)) return;
+  try{ await b2Del('/api/role-finder/searches', id); RFX.searches = RFX.searches.filter(x => x.id !== id); rfxRenderSearchList(); rfxRenderSetup(); }
+  catch(e){ showToast('Could not delete: ' + e.message); }
+}
+
+/* ---------- Role Finder: deep dive ---------- */
+
+async function rfxOpenDive(id){
+  const r = RFX.results.find(x => x.id === id);
+  if(!r) return;
+  RFX.current = r; RFX.dive = null;
+  const body = document.getElementById('rfxDiveBody');
+  document.getElementById('rfxDiveModal').classList.add('visible');
+  if(r.has_dive){
+    body.innerHTML = '<div style="padding:30px 0;"><span class="rfx-spin"></span>Loading...</div>';
+    try{ const j = await b2Api('/api/role-finder/results/' + encodeURIComponent(id)); RFX.dive = j.dive; rfxRenderDive(); }
+    catch(e){ body.innerHTML = `<div class="empty-row">Could not load: ${esc(e.message)}</div>`; }
+  } else rfxRunDive();
+}
+
+async function rfxRunDive(){
+  const r = RFX.current;
+  const body = document.getElementById('rfxDiveBody');
+  body.innerHTML = `<h2>${esc(r.company)}</h2><div class="role-sub">${esc(r.role)} - ${esc(r.location)}</div>
+    <div style="padding:26px 0;font-size:13px;color:var(--grey);line-height:1.8;"><span class="rfx-spin"></span>Researching the company. This usually takes one to two minutes.<br>
+    Checking Companies House, searching the web for the hiring team, scanning the company website for published contact details and writing the gatekeeper brief.</div>`;
+  rfxLocal(r.id, {dive_status:'running'}); rfxRender();
+  try{
+    const j = await b2Post('/api/role-finder/results/' + encodeURIComponent(r.id) + '/deep-dive', {});
+    rfxLocal(r.id, {...j.result});
+    RFX.current = RFX.results.find(x => x.id === r.id) || r;
+    RFX.dive = j.dive; rfxRender();
+    if(document.getElementById('rfxDiveModal').classList.contains('visible') && RFX.current.id === r.id) rfxRenderDive();
+    else showToast('Deep dive ready for ' + r.company);
+  }catch(e){
+    rfxLocal(r.id, {dive_status:'failed'}); rfxRender();
+    body.innerHTML += `<div class="rfx-check bad">The deep dive did not finish: ${esc(e.message)}</div><div class="actions" style="margin-top:12px;"><button class="gold-btn" onclick="rfxRunDive()">Try again</button></div>`;
+  }
+}
+
+function rfxEmailBadge(s){
+  if(!s) return '';
+  const cls = /found|published/.test(s) ? 'found' : s === 'pattern' ? 'pattern' : 'guess';
+  const label = s === 'pattern' ? 'company pattern' : s === 'guess' ? 'guess - check' : s;
+  return `<span class="rfx-badge ${cls}">${esc(label)}</span>`;
+}
+
+function rfxRenderDive(){
+  const r = RFX.current, d = RFX.dive;
+  const body = document.getElementById('rfxDiveBody');
+  if(!d){ rfxRunDive(); return; }
+  const c = d.company || {};
+  const g = d.gatekeeper || {};
+  const hunter = RFX.config && RFX.config.sources && RFX.config.sources.hunter;
+  const people = (d.people || []).map((p, i) => `<div class="rfx-person">
+      <div class="nm">${esc(p.name)} ${p.confidence ? `<span class="rfx-badge ${esc(p.confidence)}">${esc(p.confidence)}</span>` : ''}</div>
+      <div class="tt">${esc(p.title)}</div>
+      ${p.email ? `<div class="ln">${esc(p.email)} ${rfxEmailBadge(p.email_status)}</div>` : '<div class="ln rfx-sub">No email found</div>'}
+      ${p.phone ? `<div class="ln">${esc(p.phone)}</div>` : ''}
+      ${p.linkedin_url ? `<div class="ln">${rfxLink(p.linkedin_url, 'LinkedIn profile')}</div>` : `<div class="ln">${rfxLink('https://www.linkedin.com/search/results/people/?keywords=' + encodeURIComponent(p.name + ' ' + r.company), 'Search LinkedIn')}</div>`}
+      ${p.relevance ? `<div class="why">${esc(p.relevance)}</div>` : ''}
+      ${p.source_url ? `<div class="why">Source: ${rfxLink(p.source_url, 'link')}</div>` : ''}
+      <div class="btns"><button class="gold" onclick="rfxOpenAdd('${esc(r.id)}', ${i})">Use this contact</button>
+      ${hunter && c.domain ? `<button onclick="rfxPaidLookup(${i})">Paid email lookup</button>` : ''}</div>
+    </div>`).join('');
+  const emails = (d.emails || []).map(e => `${esc(e.email)}${e.on_domain ? '' : ' <span class="rfx-sub">(not on company domain)</span>'} <span class="rfx-sub">- ${String(e.source).startsWith('http') ? rfxLink(e.source, 'source') : esc(e.source)}</span>`).join('<br>');
+  const phones = (d.phones || []).map(p => `${esc(p.phone)} <span class="rfx-sub">- ${String(p.source).startsWith('http') ? rfxLink(p.source, 'source') : esc(p.source)}</span>`).join('<br>');
+  const others = (d.other_roles || []).map(o => `${o.url ? rfxLink(o.url, o.role) : esc(o.role)} <span class="rfx-sub">${esc(o.location || '')}${o.days != null ? ' - ' + o.days + ' days' : ''}</span>`).join('<br>');
+  body.innerHTML = `
+    <h2>${esc(r.company)}</h2>
+    <div class="role-sub">${esc(r.role)} - ${esc(r.location)}${r.days != null ? ' - advertised ' + r.days + ' days' : ''}${r.salary ? ' - ' + esc(r.salary) : ''} ${r.url ? ' - ' + rfxLink(r.url, 'view advert') : ''}</div>
+    ${g.ask_for || g.opener ? `<div class="rfx-sec">Gatekeeper brief</div><div class="rfx-brief">
+      ${g.ask_for ? `<b>Ask for</b>${esc(g.ask_for)}` : ''}
+      ${g.opener ? `<b>Opening line</b>${esc(g.opener)}` : ''}
+      ${g.route ? `<b>Best route in</b>${esc(g.route)}` : ''}
+      ${g.notes ? `<b>Notes</b>${esc(g.notes)}` : ''}
+      ${c.switchboard ? `<b>Switchboard</b>${esc(c.switchboard)}` : ''}</div>` : ''}
+    <div class="rfx-sec">People to contact</div>
+    ${people ? `<div class="rfx-people">${people}</div>` : '<div class="rfx-sub">No named contacts were found. Try the switchboard and ask for the HR or hiring manager for this role, or search LinkedIn.</div>'}
+    <div class="rfx-sub" style="margin-top:8px;">Email labels: <span class="rfx-badge found">found</span> published on the website or online, <span class="rfx-badge pattern">company pattern</span> built from the company's own email format, <span class="rfx-badge guess">guess - check</span> the most common format only. Always check before adding.</div>
+    <div class="rfx-sec">Company</div>
+    <div class="rfx-kv">
+      <b>Website</b><div>${c.website ? rfxLink(c.website) : '-'}${c.website && !c.mail_domain_ok ? ' <span class="rfx-sub">(domain does not appear to accept email)</span>' : ''}</div>
+      <b>Switchboard</b><div>${esc(c.switchboard || '-')}</div>
+      <b>Head office</b><div>${esc(c.head_office || (d.ch && d.ch.address) || '-')}</div>
+      ${c.sites && c.sites.length ? `<b>Other sites</b><div>${c.sites.map(esc).join('<br>')}</div>` : ''}
+      <b>Size</b><div>${esc(c.size || '-')}</div>
+      <b>Industry</b><div>${esc(c.industry || '-')}</div>
+      <b>About</b><div>${esc(c.summary || '-')}</div>
+      ${c.hiring_signals && c.hiring_signals.length ? `<b>Hiring signals</b><div>${c.hiring_signals.map(esc).join('<br>')}</div>` : ''}
+      ${d.ch ? `<b>Companies House</b><div>${rfxLink(d.ch.link, d.ch.name + ' (' + d.ch.number + ')')} - ${esc(d.ch.status)}, since ${esc(rfxFmt(d.ch.created))}${d.ch.sic ? ', SIC ' + esc(d.ch.sic) : ''}${d.ch.accounts ? ', ' + esc(d.ch.accounts) + ' accounts' : ''}</div>` : ''}
+      ${d.officers && d.officers.length ? `<b>Officers</b><div>${d.officers.map(o => esc(o.name) + ' <span class="rfx-sub">' + esc(o.role) + (o.occupation ? ', ' + esc(o.occupation) : '') + '</span>').join('<br>')}</div>` : ''}
+      ${others ? `<b>Other live roles</b><div>${others}</div>` : ''}
+    </div>
+    ${emails ? `<div class="rfx-sec">Emails found</div><div class="rfx-list">${emails}</div>` : ''}
+    ${phones ? `<div class="rfx-sec">Phone numbers found</div><div class="rfx-list">${phones}</div>` : ''}
+    ${d.pattern ? `<div class="rfx-sub" style="margin-top:8px;">Email format: ${esc(d.pattern.pattern)} (${esc(d.pattern.evidence)})</div>` : ''}
+    ${d.sources && d.sources.length ? `<div class="rfx-sec">Sources</div><div class="rfx-list">${d.sources.slice(0, 12).map(s => /^https?:/i.test(s) ? rfxLink(s) : esc(s)).join('<br>')}</div>` : ''}
+    ${d.notes && d.notes.length ? `<div class="rfx-check bad" style="margin-top:10px;">${d.notes.map(esc).join('<br>')}</div>` : ''}
+    <div class="rfx-sub" style="margin-top:12px;">Deep dive ${esc(rfxAgo(d.at))}${d.by ? ' by ' + esc(d.by === 'system' ? 'the morning search' : userLabel(d.by)) : ''}.</div>
+    <div class="simple-form"><div class="actions">
+      <button class="cancel" onclick="rfxRunDive()">Run the deep dive again</button>
+      ${r.status !== 'added' ? `<button class="save" onclick="rfxOpenAdd('${esc(r.id)}')">Add to Lead Clients</button>` : '<button class="save" onclick="closeModal(\'rfxDiveModal\');switchTab(\'leadPipeline\')">Open Lead Pipeline</button>'}
+    </div></div>`;
+}
+
+async function rfxPaidLookup(i){
+  const p = RFX.dive && RFX.dive.people && RFX.dive.people[i];
+  const c = RFX.dive && RFX.dive.company;
+  if(!p || !c) return;
+  const cfg = RFX.config || {};
+  if(!confirm(`Use one paid lookup to find ${p.name}'s email? (${cfg.paidUsed || 0} of ${cfg.paidCap || 0} used this month)`)) return;
+  try{
+    const j = await b2Post('/api/role-finder/enrich', {name: p.name, domain: c.domain || c.website});
+    RFX.config.paidUsed = j.used;
+    if(j.email){
+      p.email = j.email; p.email_status = j.status === 'valid' ? 'found (paid lookup, verified)' : 'found (paid lookup)';
+      if(j.phone && !p.phone) p.phone = j.phone;
+      rfxRenderDive(); showToast('Email found: ' + j.email);
+    } else showToast('The lookup did not find an email for ' + p.name);
+  }catch(e){ showToast(e.message); }
+}
+
+/* ---------- Role Finder: check and add ---------- */
+
+function rfxOpenAdd(id, personIndex){
+  const r = RFX.results.find(x => x.id === id);
+  if(!r) return;
+  RFX.addFor = r;
+  const d = RFX.current && RFX.current.id === id ? RFX.dive : null;
+  const c = (d && d.company) || {};
+  const p = d && personIndex != null ? (d.people || [])[personIndex] : (d && (d.people || [])[0]) || null;
+  document.getElementById('rfxAddSub').textContent = `${r.role}${r.location ? ' - ' + r.location : ''}${r.days != null ? ' - advertised ' + r.days + ' days' : ''}`;
+  b2Set('rfxAddCompany', r.company);
+  b2Set('rfxAddName', p ? p.name : ''); b2Set('rfxAddTitle', p ? String(p.title || '').replace(/\s*\(Companies House\)$/, '') : '');
+  b2Set('rfxAddEmail', p ? p.email || '' : ''); b2Set('rfxAddPhone', (p && p.phone) || c.switchboard || '');
+  b2Set('rfxAddWebsite', c.website || '');
+  const addr = c.head_office || (d && d.ch && d.ch.address) || '';
+  const pc = (addr.match(/[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\s*$/i) || [''])[0];
+  b2Set('rfxAddAddress', pc ? addr.slice(0, addr.length - pc.length).replace(/[,\s]+$/, '') : addr); b2Set('rfxAddPostcode', pc.trim());
+  const g = (d && d.gatekeeper) || {};
+  b2Set('rfxAddNotes', [g.opener ? 'Opener: ' + g.opener : '', g.route ? 'Route: ' + g.route : ''].filter(Boolean).join('\n'));
+  b2Set('rfxAddTaskDate', rfxNextWorkingDay());
+  document.getElementById('rfxAddTask').checked = true;
+  document.getElementById('rfxAddVerified').checked = false;
+  const st = p && p.email_status;
+  document.getElementById('rfxAddEmailCheck').innerHTML = st ? `Suggested email is ${rfxEmailBadge(st)}. Check it before confirming.` : '';
+  RFX.addEmailStatus = st || '';
+  document.getElementById('rfxAddModal').classList.add('visible');
+}
+
+function rfxEmailChanged(){ RFX.addEmailStatus = 'entered by hand'; document.getElementById('rfxAddEmailCheck').textContent = ''; }
+
+async function rfxCheckEmail(){
+  const email = b2Val('rfxAddEmail').trim();
+  const out = document.getElementById('rfxAddEmailCheck');
+  if(!email){ out.textContent = ''; return; }
+  out.innerHTML = '<span class="rfx-spin"></span>Checking';
+  try{
+    const j = await b2Post('/api/role-finder/check-email', {email});
+    if(j.suppressed){ out.className = 'rfx-check bad'; out.textContent = 'This email is on the suppression list (opted out). Do not contact.'; return; }
+    if(!j.format){ out.className = 'rfx-check bad'; out.textContent = 'This does not look like a valid email address.'; return; }
+    out.className = 'rfx-check ' + (j.domainAcceptsEmail ? 'ok' : 'bad');
+    out.textContent = j.domainAcceptsEmail ? 'Format is fine and the company domain accepts email. The mailbox itself cannot be confirmed for free, so a guess still needs checking.' : 'The domain does not appear to accept email. Check the address.';
+  }catch(e){ out.className = 'rfx-check bad'; out.textContent = 'Could not check: ' + e.message; }
+}
+
+async function rfxSaveLead(){
+  const r = RFX.addFor;
+  if(!r) return;
+  if(!document.getElementById('rfxAddVerified').checked){ showToast('Tick the box to confirm you have checked the details'); return; }
+  const company = b2Val('rfxAddCompany').trim();
+  if(!company){ showToast('Company is required'); return; }
+  const btn = document.getElementById('rfxAddSave');
+  btn.disabled = true;
+  const body = {
+    verified: true, company, contact_name: b2Val('rfxAddName').trim(), job_title: b2Val('rfxAddTitle').trim(),
+    email: b2Val('rfxAddEmail').trim(), email_status: 'checked by ' + ((signedInUser && signedInUser.name) || 'team') + (RFX.addEmailStatus ? ' (' + RFX.addEmailStatus + ')' : ''),
+    phone: b2Val('rfxAddPhone').trim(), website: b2Val('rfxAddWebsite').trim(), address: b2Val('rfxAddAddress').trim(),
+    postcode: b2Val('rfxAddPostcode').trim(), notes: b2Val('rfxAddNotes').trim(),
+  };
+  try{
+    await b2Post('/api/role-finder/results/' + encodeURIComponent(r.id) + '/add-lead', body);
+    if(document.getElementById('rfxAddTask').checked){
+      const who = body.contact_name ? body.contact_name + (body.job_title ? ' (' + body.job_title + ')' : '') : 'the hiring manager';
+      try{
+        await fetch(`${API_BASE}/api/tasks`, {method:'POST', headers:{'Content-Type':'application/json', 'X-User-Role': (signedInUser && signedInUser.key) || ''},
+          body: JSON.stringify({title: `Call ${company} about their ${r.role} vacancy`, priority:'high', dueDate: b2Val('rfxAddTaskDate') || rfxNextWorkingDay(),
+            context: `Ask for ${who}. ${body.phone ? 'Phone ' + body.phone + '. ' : ''}${body.email ? 'Email ' + body.email + '. ' : ''}Advertised ${r.days != null ? r.days + ' days' : ''}. ${body.notes}`.trim()})});
+      }catch(e){ showToast('Lead added, but the task could not be created'); }
+    }
+    RFX.results.filter(x => rfxNorm(x.company) === rfxNorm(r.company) && x.status !== 'agency').forEach(x => { x.status = 'added'; x.is_lead = true; });
+    closeModal('rfxAddModal'); closeModal('rfxDiveModal'); rfxRender();
+    showToast(`${company} added to Lead Clients and the Lead Pipeline`);
+  }catch(e){ showToast('Could not add: ' + e.message); }
+  finally{ btn.disabled = false; }
+}
+
+/* ---------- Lead Pipeline ---------- */
+
+async function lpxLoad(){
+  try{
+    const [p, s] = await Promise.all([b2Api('/api/lead-pipeline'), b2Api('/api/lead-pipeline/stats').catch(() => null)]);
+    LPX.list = p.data || []; LPX.stats = s; lpxRender();
+  }catch(e){ document.getElementById('lpxBoard').innerHTML = `<div class="empty-row">Could not load the pipeline: ${esc(e.message)}</div>`; }
+}
+
+function lpxCard(l){
+  const today = new Date().toISOString().slice(0,10);
+  const due = l.next_followup && l.next_followup <= today;
+  return `<div class="lpx-card ${l.is_client ? 'client' : ''}" draggable="true" ondragstart="LPX.dragId='${esc(l.id)}'" onclick="lpxOpen('${esc(l.id)}')">
+    <div class="co">${esc(l.company)}</div>
+    ${l.contact_name ? `<div>${esc(l.contact_name)}${l.job_title ? ', ' + esc(l.job_title) : ''}</div>` : ''}
+    <div class="rfx-sub">${l.calls ? l.calls + ' contact' + (l.calls === 1 ? '' : 's') + (l.last_call ? ', last ' + esc(rfxFmt(l.last_call)) : '') : 'Not contacted yet'}</div>
+    ${l.next_followup ? `<div class="rfx-sub ${due ? 'due' : ''}">Follow up ${esc(rfxFmt(l.next_followup))}</div>` : ''}
+    ${l.live_roles && l.live_roles.length ? `<div class="rfx-sub">${l.live_roles.length} live advert${l.live_roles.length === 1 ? '' : 's'}</div>` : ''}
+    ${l.source ? `<span class="rfx-pill">${esc(l.source)}</span>` : ''}${l.stage === 'lost' && l.lost_reason ? `<span class="rfx-pill warn">${esc(l.lost_reason)}</span>` : ''}
+  </div>`;
+}
+
+function lpxColumn(stage, list){
+  return `<div class="lpx-col ${stage}" ondragover="event.preventDefault();this.classList.add('drop')" ondragleave="this.classList.remove('drop')" ondrop="this.classList.remove('drop');lpxDrop('${stage}')">
+    <h4>${LPX_STAGE_LABEL[stage]} <span>${list.length}</span></h4><div class="lpx-cards">${list.map(lpxCard).join('')}</div></div>`;
+}
+
+function lpxRender(){
+  const text = (document.getElementById('lpxText').value || '').trim().toLowerCase();
+  const list = LPX.list.filter(l => !text || `${l.company} ${l.contact_name}`.toLowerCase().includes(text))
+    .sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+  const s = LPX.stats;
+  const open = LPX.list.filter(l => ['identified','contacted','interested','meeting','terms'].includes(l.stage));
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById('lpxTiles').innerHTML = [
+    {n: open.length, l:'Open leads'},
+    {n: LPX.list.filter(l => l.next_followup && l.next_followup <= today && !['converted','lost','archived'].includes(l.stage)).length, l:'Follow-ups due', warn:true},
+    {n: s ? s.leadsThisWeek : '-', l:'Leads added this week'},
+    {n: LPX.list.filter(l => ['meeting','terms'].includes(l.stage)).length, l:'Meetings and terms out'},
+    {n: s ? s.conversion.converted + '%' : '-', l:'Lead to client rate'},
+    {n: s ? s.fromRoleFinder : '-', l:'Leads from Role Finder'},
+    {n: s ? s.convertedFromRoleFinder : '-', l:'Clients won from Role Finder'},
+  ].map(t => `<div class="tile static ${t.warn && t.n ? 'warn' : ''}"><div class="n">${esc(t.n)}</div><div class="l">${t.l}</div></div>`).join('');
+  document.getElementById('lpxBoard').innerHTML = LPX_BOARD.map(st => lpxColumn(st, list.filter(l => l.stage === st))).join('');
+  const lost = list.filter(l => l.stage === 'lost' || l.stage === 'archived');
+  document.getElementById('lpxLostToggle').textContent = lost.length ? (LPX.showLost ? 'Hide' : 'Show') + ` lost and archived (${lost.length})` : '';
+  const lb = document.getElementById('lpxLostBoard');
+  lb.style.display = LPX.showLost && lost.length ? 'flex' : 'none';
+  lb.innerHTML = LPX.showLost ? lpxColumn('lost', lost.filter(l => l.stage === 'lost')) + lpxColumn('archived', lost.filter(l => l.stage === 'archived')) : '';
+  document.getElementById('lpxSummary').textContent = `${LPX.list.length} lead client${LPX.list.length === 1 ? '' : 's'} - every company from Lead Clients and Role Finder, from first find to signed terms.`;
+}
+
+async function lpxSave(l, patch){
+  const body = {company: l.company, ...patch};
+  if(l.virtual){ ['contact_name','job_title','email','phone','address','source','notes'].forEach(k => { if(body[k] === undefined && l[k]) body[k] = l[k]; }); }
+  const j = await b2Post('/api/lead-pipeline', body);
+  Object.assign(l, j.data, {virtual:false});
+  return l;
+}
+
+async function lpxDrop(stage){
+  const l = LPX.list.find(x => x.id === LPX.dragId);
+  LPX.dragId = null;
+  if(!l || l.stage === stage) return;
+  if(stage === 'converted'){ lpxOpen(l.id); showToast('Use Convert to client to make them a client'); return; }
+  try{ await lpxSave(l, {stage}); lpxRender(); showToast(`${l.company} moved to ${LPX_STAGE_LABEL[stage]}`); }
+  catch(e){ showToast('Could not move: ' + e.message); }
+}
+
+function lpxOpen(id){
+  const l = LPX.list.find(x => x.id === id);
+  if(!l) return;
+  LPX.current = l;
+  const hist = String(l.history || '').split('\n').filter(Boolean).reverse().map(h => { const [d, st, who] = h.split('|'); return `${esc(rfxFmt(d))} - ${esc(LPX_STAGE_LABEL[st] || st)}${who ? ' (' + esc(userLabel(who)) + ')' : ''}`; }).join('<br>');
+  const contacts = (l.contacts || []).filter(c => c.name || c.email).map(c => `${esc(c.name || '')}${c.title ? ', ' + esc(c.title) : ''} ${c.email ? '<a href="mailto:' + esc(c.email) + '">' + esc(c.email) + '</a>' : ''} ${c.phone ? '<a href="tel:' + esc(c.phone) + '">' + esc(c.phone) + '</a>' : ''}`).join('<br>');
+  document.getElementById('lpxModalBody').innerHTML = `
+    <h2>${esc(l.company)}</h2>
+    <div class="role-sub">${esc(LPX_STAGE_LABEL[l.stage] || l.stage)}${l.source ? ' - from ' + esc(l.source) : ''}${l.role_seen ? ' - saw: ' + esc(l.role_seen) : ''}</div>
+    <div class="simple-form">
+      <label>Stage</label>
+      <select id="lpxStage" onchange="document.getElementById('lpxLostWrap').style.display=this.value==='lost'?'block':'none'" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;">
+        ${LPX_STAGES_FOR_SELECT().map(s => `<option value="${s}" ${l.stage === s ? 'selected' : ''}>${LPX_STAGE_LABEL[s]}</option>`).join('')}</select>
+      <div id="lpxLostWrap" style="display:${l.stage === 'lost' ? 'block' : 'none'};"><label>Reason lost</label><input id="lpxLost" value="${esc(l.lost_reason || '')}" placeholder="e.g. Use another agency, no budget, filled internally"></div>
+      <div class="two-col"><div><label>Main contact</label><input id="lpxName" value="${esc(l.contact_name || '')}"></div><div><label>Job title</label><input id="lpxTitle" value="${esc(l.job_title || '')}"></div></div>
+      <div class="two-col"><div><label>Email</label><input id="lpxEmail" value="${esc(l.email || '')}"></div><div><label>Phone</label><input id="lpxPhone" value="${esc(l.phone || '')}"></div></div>
+      <div class="two-col"><div><label>Website</label><input id="lpxWeb" value="${esc(l.website || '')}"></div><div><label>Address</label><input id="lpxAddr" value="${esc(l.address || '')}"></div></div>
+      <label>Notes</label><textarea class="rfx-ta" id="lpxNotes">${esc(l.notes || '')}</textarea>
+      ${contacts ? `<label>Contacts on Lead Clients</label><div class="rfx-list">${contacts}</div>` : ''}
+      <label>Activity</label><div class="rfx-list">${l.calls ? `${l.calls} logged contact${l.calls === 1 ? '' : 's'}, last ${esc(rfxFmt(l.last_call))}${l.last_outcome ? ' (' + esc(l.last_outcome) + ')' : ''}` : 'No calls logged yet'}${l.next_followup ? `<br>Next follow-up ${esc(rfxFmt(l.next_followup))}` : ''}${l.live_roles && l.live_roles.length ? '<br>Live adverts: ' + l.live_roles.map(esc).join(', ') : ''}</div>
+      ${hist ? `<label>Stage history</label><div class="lpx-hist">${hist}</div>` : ''}
+      <div class="actions"><button class="cancel" onclick="lpxLogCall()">Log a call</button><button class="save" onclick="lpxSaveModal()">Save</button></div>
+      <div class="actions" style="margin-top:8px;">
+        ${l.is_client ? '<button class="cancel" disabled>Already a client</button>' : '<button class="save" style="background:#2D6A3E;border-color:#2D6A3E;" onclick="lpxConvert()">Convert to client</button>'}
+        <button class="cancel" style="color:var(--danger);border-color:var(--danger);" onclick="lpxSuppress()">Opted out - do not contact</button>
+      </div>
+    </div>`;
+  document.getElementById('lpxModal').classList.add('visible');
+}
+
+function LPX_STAGES_FOR_SELECT(){ return ['identified','contacted','interested','meeting','terms','lost','archived']; }
+
+async function lpxSaveModal(){
+  const l = LPX.current;
+  if(!l) return;
+  const patch = {stage: b2Val('lpxStage'), lost_reason: b2Val('lpxLost'), contact_name: b2Val('lpxName'), job_title: b2Val('lpxTitle'),
+    email: b2Val('lpxEmail'), phone: b2Val('lpxPhone'), website: b2Val('lpxWeb'), address: b2Val('lpxAddr'), notes: b2Val('lpxNotes')};
+  try{ await lpxSave(l, patch); closeModal('lpxModal'); lpxLoad(); showToast('Lead saved'); }
+  catch(e){ showToast('Could not save: ' + e.message); }
+}
+
+async function lpxLogCall(){
+  const l = LPX.current;
+  if(!l) return;
+  closeModal('lpxModal');
+  if(l.stage === 'identified'){ try{ await lpxSave(l, {stage:'contacted'}); }catch(e){ /* not essential */ } }
+  await openAddColdCallModal();
+  const sel = document.getElementById('coldCallCompany');
+  if(sel && ![...sel.options].some(o => o.value === l.company)){ const o = document.createElement('option'); o.value = l.company; o.textContent = l.company; sel.appendChild(o); }
+  if(sel){ sel.value = l.company; if(sel.onchange) sel.onchange.call(sel); }
+  const names = document.getElementById('coldCallContactNames');
+  if(names && l.contact_name){
+    if(names.tagName === 'SELECT' && ![...names.options].some(o => o.value === l.contact_name)){ const o = document.createElement('option'); o.value = l.contact_name; o.textContent = l.contact_name; names.appendChild(o); }
+    if(names.tagName === 'SELECT' && names.multiple){ [...names.options].forEach(o => { o.selected = o.value === l.contact_name; }); }
+    else names.value = l.contact_name;
+  }
+}
+
+async function lpxConvert(){
+  const l = LPX.current;
+  if(!l) return;
+  const email = b2Val('lpxEmail').trim() || l.email;
+  if(!email){ showToast('Add the main contact email first, then convert'); return; }
+  if(!confirm(`Convert ${l.company} to an active client? Their client record and Drive folders will be created.`)) return;
+  try{
+    await b2Post('/api/clients', {company: l.company, contactName: b2Val('lpxName') || l.contact_name, jobTitle: b2Val('lpxTitle') || l.job_title, email,
+      phone: b2Val('lpxPhone') || l.phone, address: b2Val('lpxAddr') || l.address, postcode: '', notes: b2Val('lpxNotes') || l.notes});
+    await lpxSave(l, {stage:'converted', email});
+    closeModal('lpxModal'); lpxLoad(); showToast(`${l.company} is now a client`);
+  }catch(e){ showToast('Could not convert: ' + e.message); }
+}
+
+async function lpxSuppress(){
+  const l = LPX.current;
+  if(!l) return;
+  const reason = prompt(`Record that ${l.company} asked not to be contacted. Reason (optional):`, 'Asked not to be contacted');
+  if(reason === null) return;
+  try{
+    await b2Post('/api/lead-pipeline/suppress', {company: l.company, email: b2Val('lpxEmail') || l.email, reason});
+    closeModal('lpxModal'); lpxLoad(); showToast(`${l.company} suppressed. They will not appear in Role Finder again.`);
+  }catch(e){ showToast('Could not record: ' + e.message); }
+}
+
+function lpxOpenNew(){
+  LPX.current = null;
+  document.getElementById('lpxModalBody').innerHTML = `
+    <h2>Add a lead</h2><div class="role-sub">For a company found outside Role Finder. It goes in at Identified.</div>
+    <div class="simple-form">
+      <label>Company</label><input id="lpxNCompany">
+      <div class="two-col"><div><label>Contact name</label><input id="lpxNName"></div><div><label>Job title</label><input id="lpxNTitle"></div></div>
+      <div class="two-col"><div><label>Email</label><input id="lpxNEmail"></div><div><label>Phone</label><input id="lpxNPhone"></div></div>
+      <label>Where it came from</label><input id="lpxNSource" placeholder="e.g. LinkedIn, referral, networking event">
+      <label>Notes</label><textarea class="rfx-ta" id="lpxNNotes"></textarea>
+      <div class="actions"><button class="cancel" onclick="closeModal('lpxModal')">Cancel</button><button class="save" onclick="lpxSaveNew()">Add lead</button></div>
+    </div>`;
+  document.getElementById('lpxModal').classList.add('visible');
+}
+
+async function lpxSaveNew(){
+  const company = b2Val('lpxNCompany').trim();
+  if(!company){ showToast('Company is required'); return; }
+  const body = {company, stage:'identified', contact_name: b2Val('lpxNName').trim(), job_title: b2Val('lpxNTitle').trim(), email: b2Val('lpxNEmail').trim(),
+    phone: b2Val('lpxNPhone').trim(), source: b2Val('lpxNSource').trim() || 'Manual', notes: b2Val('lpxNNotes').trim()};
+  try{
+    await b2Post('/api/lead-pipeline', body);
+    if(body.email){
+      try{ await b2Post('/api/lead-clients', {company, contactName: body.contact_name, jobTitle: body.job_title, email: body.email, phone: body.phone, notes: body.notes}); }catch(e){ /* the pipeline record is enough */ }
+    }
+    closeModal('lpxModal'); lpxLoad(); showToast(company + ' added');
+  }catch(e){ showToast('Could not add: ' + e.message); }
+}
+</script>
+
+
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '16 Oct 2026 - build 18';
+var PAGE_BUILD = '16 Oct 2026 - build 19';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -14234,12 +15141,12 @@ function buildTagApply(){
     tag.style.cssText = 'font-size:10.5px;color:#999;margin-left:10px;white-space:nowrap;';
     chip.appendChild(tag);
   }
-  tag.textContent = 'Page build 18';
+  tag.textContent = 'Page build 19';
   tag.title = 'Page: ' + PAGE_BUILD;
   b2Api('/api/version').then(function(j){
-    tag.textContent = 'Page build 18 | Server ' + serverBuildLabel(j.build);
+    tag.textContent = 'Page build 19 | Server ' + serverBuildLabel(j.build);
     tag.title = 'Page: ' + PAGE_BUILD + ' | Server: ' + j.build;
-  }).catch(function(){ tag.textContent = 'Page build 18 | Server older'; });
+  }).catch(function(){ tag.textContent = 'Page build 19 | Server older'; });
 }
 (function(){
   const _si = signIn;
