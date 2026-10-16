@@ -10348,6 +10348,9 @@ const RFX_SWEEP_DEFAULTS = {
   includeNoSalary: false,
   listSize: 25,
   monthlyCap: 100,
+  compEnabled: true,
+  compTowns: ['Telford', 'Shrewsbury', 'Wolverhampton', 'Oswestry', 'Bridgnorth', 'Ludlow', 'Market Drayton', 'Whitchurch'],
+  compPostcodes: ['TF', 'SY', 'WV'],
   townsPerRun: 20,
   adzunaPerRun: 40,
 };
@@ -10788,6 +10791,10 @@ async function rfxRunSearchesInner({ searchId, actor, auto } = {}) {
   for (const s of searches) {
     await rfxSearchesTable.upsert({ ...s, last_run: rfxNow(), last_found: String(summary.perSearch[s.id] || 0) });
   }
+  if (runSweep) {
+    try { await cmpRun(await cmpSettings(), summary, keep); }
+    catch (e) { summary.errors.push('Competitor Watch: ' + e.message); }
+  }
   if (runSweep) await settingsTable.upsert({ id: 'rfx_sweep_last', value: JSON.stringify({ at: rfxNow(), found: summary.perSearch.sweep || 0, towns: summary.townsSearched || 0 }), updated_by: actor || 'system' });
 
   // automatic deep dives: only when switched on, on the highest scoring companies
@@ -10877,6 +10884,10 @@ app.post('/api/role-finder/sweep-settings', requireAdmin, async (req, res) => {
     if (Array.isArray(b.types)) next.types = b.types.filter(t => RFX_TYPE_LABEL[t]);
     if (Array.isArray(b.bands)) next.bands = b.bands.filter(k => RFX_BANDS.some(x => x.key === k));
     if (b.includeNoSalary !== undefined) next.includeNoSalary = !!b.includeNoSalary;
+    if (b.compEnabled !== undefined) next.compEnabled = !!b.compEnabled;
+    const list = v => (Array.isArray(v) ? v : String(v || '').split(',')).map(x => String(x).trim()).filter(Boolean).slice(0, 25);
+    if (b.compTowns !== undefined) next.compTowns = list(b.compTowns);
+    if (b.compPostcodes !== undefined) next.compPostcodes = list(b.compPostcodes).map(x => x.toUpperCase().replace(/[^A-Z]/g, '')).filter(Boolean);
     if (b.monthlyCap !== undefined) next.monthlyCap = Math.max(1, Math.min(1000, parseInt(b.monthlyCap, 10) || RFX_DEFAULT_MONTHLY_DIVES));
     if (b.listSize !== undefined) next.listSize = Math.max(5, Math.min(200, parseInt(b.listSize, 10) || 25));
     if (!next.bands.length) return res.status(400).json({ error: 'Choose at least one salary band' });
@@ -11051,7 +11062,8 @@ app.post('/api/role-finder/results/:id/add-lead', async (req, res) => {
     const actor = actorOf(req);
     const lead = await lpxUpsertForCompany(company, {
       stage: 'identified', contact_name: b.contact_name || '', job_title: b.job_title || '', email, email_status: b.email_status || 'checked',
-      phone: b.phone || '', website: b.website || '', address: b.address || '', source: 'Role Finder', result_id: o.id,
+      phone: b.phone || '', website: b.website || '', address: b.address || '',
+      source: String(o.source || '').startsWith('Competitor: ') ? 'From competitor: ' + o.source.slice(12) : 'Role Finder', result_id: o.id,
       role_seen: `${o.role}${o.location ? ' - ' + o.location : ''}`, notes: b.notes || '', owner: actor,
     }, actor);
     const leadRows = await readLeadClientRows();
@@ -11063,7 +11075,7 @@ app.post('/api/role-finder/results/:id/add-lead', async (req, res) => {
         requestBody: { values: [clientToRow({
           timestamp: now, company, address: b.address || '', postcode: b.postcode || '', contactName: b.contact_name || '',
           jobTitle: b.job_title || '', email, phone: b.phone || '', folderCreated: 'No',
-          notes: [`Found by Role Finder: ${o.role}${o.location ? ', ' + o.location : ''}${o.posted_date ? ', advertised since ' + o.posted_date : ''}`, b.notes || ''].filter(Boolean).join('. '),
+          notes: [String(o.source || '').startsWith('Competitor: ') ? `Client of ${o.source.slice(12)} (recruitment agency), seen advertising ${o.role}${o.location ? ', ' + o.location : ''}` : '', `Found by Role Finder: ${o.role}${o.location ? ', ' + o.location : ''}${o.posted_date ? ', advertised since ' + o.posted_date : ''}`, b.notes || ''].filter(Boolean).join('. '),
         })] },
       });
     }
@@ -11237,7 +11249,382 @@ app.get('/api/lead-pipeline/stats', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '16 Oct 2026 - build 23';
+
+/* ======================================================================
+   COMPETITOR WATCH (build 24)
+
+   Tracks recruitment agencies in the chosen local areas (default Telford,
+   Shropshire and Wolverhampton): who they are, what they are advertising,
+   and a best guess at the real client behind each advert, so those clients
+   can be approached directly.
+
+   Agencies are found three ways: Reed adverts posted by agencies around the
+   chosen towns, Companies House (active employment agencies with an office
+   in the chosen postcode areas, checked weekly) and any added by hand.
+   Brampton Recruitment and RCM Recruitment are pinned from the start.
+   ====================================================================== */
+
+const CMP_DEFAULTS = {
+  compEnabled: true,
+  compTowns: ['Telford', 'Shrewsbury', 'Wolverhampton', 'Oswestry', 'Bridgnorth', 'Ludlow', 'Market Drayton', 'Whitchurch'],
+  compPostcodes: ['TF', 'SY', 'WV'],
+};
+const CMP_PINNED = ['Brampton Recruitment', 'RCM Recruitment'];
+
+const cmpTable = makeSimpleTable({
+  tab: 'Competitors',
+  header: ['id', 'name', 'website', 'company_number', 'postcode', 'address', 'source', 'pinned', 'hidden', 'notes', 'added_at', 'added_by'],
+  path: '/api/competitors',
+  label: 'Competitor',
+  auditType: 'competitor',
+  auditName: o => o.name,
+});
+
+const CMP_AD_HEADER = ['id', 'competitor_id', 'agency', 'source_id', 'role', 'location', 'salary', 'sal_min', 'sal_max', 'posted_date',
+  'first_seen', 'last_seen', 'url', 'description', 'role_type', 'client', 'client_confidence', 'client_reason', 'client_website',
+  'client_at', 'client_by', 'status', 'result_id', 'key'];
+const cmpAdsTable = makeSimpleTable({ tab: 'Competitor Adverts', header: CMP_AD_HEADER, path: null, label: 'Competitor advert' });
+
+async function cmpSettings() {
+  const s = await rfxSweepSettings();
+  return { ...s, compTowns: (s.compTowns && s.compTowns.length ? s.compTowns : CMP_DEFAULTS.compTowns), compPostcodes: (s.compPostcodes && s.compPostcodes.length ? s.compPostcodes : CMP_DEFAULTS.compPostcodes) };
+}
+
+function cmpTownOf(location, towns) {
+  const l = String(location || '').toLowerCase();
+  return towns.find(t => l.includes(t.toLowerCase())) || '';
+}
+
+async function cmpReedAgencyTown(town) {
+  const out = [];
+  const auth = 'Basic ' + Buffer.from(process.env.REED_API_KEY + ':').toString('base64');
+  let keywords = '';
+  for (let skip = 0; skip < 300; skip += 100) {
+    const p = new URLSearchParams({ locationName: town, distanceFromLocation: '10', postedByRecruitmentAgency: 'true', resultsToTake: '100', resultsToSkip: String(skip) });
+    if (keywords) p.set('keywords', keywords);
+    let r = await rfxFetch(`https://www.reed.co.uk/api/1.0/search?${p}`, { headers: { Authorization: auth, Accept: 'application/json' } });
+    if (r.status === 400 && !keywords) {
+      keywords = 'manager engineer technician administrator operative';
+      p.set('keywords', keywords);
+      r = await rfxFetch(`https://www.reed.co.uk/api/1.0/search?${p}`, { headers: { Authorization: auth, Accept: 'application/json' } });
+    }
+    if (!r.ok) throw new Error(`Reed returned ${r.status}`);
+    const j = await r.json();
+    const list = j.results || [];
+    for (const x of list) {
+      const m = String(x.date || '').match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+      out.push({
+        agency: x.employerName || '', source_id: String(x.jobId || ''), role: rfxStrip(x.jobTitle || ''), location: x.locationName || town,
+        salary: rfxSalary(x.minimumSalary, x.maximumSalary), sal_min: x.minimumSalary || '', sal_max: x.maximumSalary || '',
+        posted_date: m ? `${m[3]}-${m[2]}-${m[1]}` : '', url: x.jobUrl || '', description: rfxStrip(x.jobDescription || '').slice(0, 800),
+      });
+    }
+    await rfxSleep(250);
+    if (list.length < 100) break;
+  }
+  return out;
+}
+
+// Companies House: active employment agencies registered in the chosen postcode areas (weekly)
+async function cmpDiscoverCompaniesHouse(settings, summary) {
+  if (!rfxSources().companiesHouse) return [];
+  const rows = await settingsTable.list();
+  const last = (rows.find(o => o.id === 'cmp_ch_last') || {}).value || '';
+  if (last && Date.now() - Date.parse(last) < 7 * 86400000) return [];
+  const found = new Map();
+  const pcRe = new RegExp('^(' + settings.compPostcodes.map(p => p.replace(/[^A-Z]/gi, '').toUpperCase()).join('|') + ')\\d', 'i');
+  for (const town of settings.compTowns) {
+    try {
+      const p = new URLSearchParams({ company_status: 'active', sic_codes: RFX_AGENCY_SIC.join(','), location: town, size: '100' });
+      const j = await rfxCh('/advanced-search/companies?' + p);
+      ((j && j.items) || []).forEach(c => {
+        const a = c.registered_office_address || {};
+        if (!pcRe.test(String(a.postal_code || '').replace(/\s+/g, ''))) return;
+        found.set(c.company_number, {
+          name: String(c.company_name || '').toLowerCase().replace(/\b\w/g, x => x.toUpperCase()).replace(/\bLtd\b/i, 'Ltd'),
+          company_number: c.company_number, postcode: a.postal_code || '',
+          address: [a.address_line_1, a.locality, a.postal_code].filter(Boolean).join(', '),
+        });
+      });
+    } catch (e) { summary.errors.push(`Competitors (Companies House ${town}): ${e.message}`); }
+    await rfxSleep(200);
+  }
+  await settingsTable.upsert({ id: 'cmp_ch_last', value: rfxNow(), updated_by: 'system' });
+  return [...found.values()];
+}
+
+// Free client match: the same role advertised directly by an employer in the same town
+function cmpFreeMatch(ad, directs) {
+  const role = rfxNormText(ad.role);
+  const town = rfxNormText(String(ad.location).split(',')[0]);
+  const s = rfxSalaryNums(ad);
+  let best = null;
+  for (const d of directs) {
+    if (rfxNormText(String(d.location).split(',')[0]) !== town) continue;
+    const sameRole = rfxNormText(d.role) === role;
+    const words = role.split(' ').filter(w => w.length > 3);
+    const overlap = words.length ? words.filter(w => rfxNormText(d.role).includes(w)).length / words.length : 0;
+    if (!sameRole && overlap < 0.75) continue;
+    const ds = rfxSalaryNums(d);
+    const salOk = s.min && ds.min ? Math.abs(s.min - ds.min) <= 2000 || (s.max >= ds.min && s.min <= ds.max) : false;
+    const conf = sameRole && salOk ? 'confirmed' : sameRole ? 'likely' : 'possible';
+    const rank = { confirmed: 3, likely: 2, possible: 1 }[conf];
+    if (!best || rank > best.rank) best = { rank, client: d.company, confidence: conf, reason: `${sameRole ? 'Same job title' : 'Very similar job title'} advertised directly by ${d.company} in ${d.location}${salOk ? ' with a matching salary' : ''}` };
+  }
+  return best;
+}
+
+async function cmpRun(settings, summary, roleFinderResults) {
+  if (!settings.compEnabled) return;
+  rfxProg({ phase: 'Competitor Watch: local agency adverts', current: '', pct: 96 });
+  const today = rfxToday();
+  const towns = settings.compTowns;
+  const ads = [];
+  if (rfxSources().reed) {
+    for (const town of towns) {
+      rfxProg({ current: town });
+      try { ads.push(...(await cmpReedAgencyTown(town)).map(a => ({ ...a, _town: town }))); }
+      catch (e) {
+        if (rfxAuthFailure(e)) { summary.errors.push('Competitor Watch: Reed rejected the API key.'); break; }
+        summary.errors.push(`Competitors (Reed ${town}): ${e.message}`);
+      }
+    }
+  }
+  // agency adverts the market sweep already found in these towns
+  roleFinderResults.filter(o => o.status === 'agency' && o.company && cmpTownOf(o.location, towns)).forEach(o => {
+    ads.push({ agency: o.company, source_id: o.source_id, role: o.role, location: o.location, salary: o.salary, sal_min: o.sal_min, sal_max: o.sal_max, posted_date: o.posted_date, url: o.url, description: o.description || '' });
+  });
+
+  // the agencies themselves
+  const comps = await cmpTable.list();
+  const byNorm = new Map(comps.map(c => [rfxNormCompany(c.name), c]));
+  const addComp = async (fields) => {
+    const n = rfxNormCompany(fields.name);
+    if (!n) return null;
+    const ex = byNorm.get(n);
+    if (ex) {
+      let changed = false;
+      ['company_number', 'postcode', 'address'].forEach(k => { if (!ex[k] && fields[k]) { ex[k] = fields[k]; changed = true; } });
+      if (changed) await cmpTable.upsert(ex);
+      return ex;
+    }
+    const c = await cmpTable.upsert({ id: rfxId('cp'), added_at: rfxNow(), added_by: 'system', pinned: '', hidden: '', notes: '', website: '', ...fields });
+    byNorm.set(n, c);
+    summary.newCompetitors = (summary.newCompetitors || 0) + 1;
+    return c;
+  };
+  for (const name of CMP_PINNED) { const c = await addComp({ name, source: 'Pinned' }); if (c && c.pinned !== 'yes') { c.pinned = 'yes'; await cmpTable.upsert(c); } }
+  rfxProg({ phase: 'Competitor Watch: Companies House agencies', current: settings.compPostcodes.join(', ') });
+  for (const c of await cmpDiscoverCompaniesHouse(settings, summary)) await addComp({ ...c, source: 'Companies House' });
+
+  // the adverts, merged with what is stored
+  rfxProg({ phase: 'Competitor Watch: matching adverts to clients', current: '' });
+  const existing = await cmpAdsTable.list();
+  const byKey = new Map(existing.map(a => [a.key, a]));
+  const directs = roleFinderResults.filter(o => o.status !== 'agency' && o.company);
+  let newAds = 0;
+  for (const a of ads) {
+    // the pinned names are matched loosely ("Brampton Recruitment Ltd" is Brampton Recruitment)
+    let comp = [...byNorm.values()].find(c => { const n = rfxNormCompany(c.name), m = rfxNormCompany(a.agency); return n === m || (c.pinned === 'yes' && (m.startsWith(n) || n.startsWith(m))); });
+    if (!comp) comp = await addComp({ name: a.agency, source: 'Reed adverts' });
+    if (!comp) continue;
+    const key = `${rfxNormCompany(comp.name)}|${rfxNormText(a.role)}|${rfxNormText(String(a.location).split(',')[0])}`;
+    const old = byKey.get(key);
+    if (old) {
+      old.last_seen = today;
+      if (a.posted_date && (!old.posted_date || a.posted_date < old.posted_date)) old.posted_date = a.posted_date;
+      if (!old.description && a.description) old.description = a.description;
+      continue;
+    }
+    const ad = {
+      id: rfxId('ca'), competitor_id: comp.id, agency: comp.name, source_id: a.source_id, role: a.role, location: a.location, salary: a.salary,
+      sal_min: a.sal_min, sal_max: a.sal_max, posted_date: a.posted_date, first_seen: today, last_seen: today, url: a.url,
+      description: String(a.description || '').slice(0, 800), role_type: rfxClassify(a.role), client: '', client_confidence: '', client_reason: '',
+      client_website: '', client_at: '', client_by: '', status: 'new', result_id: '', key,
+    };
+    const m = cmpFreeMatch(ad, directs);
+    if (m) { ad.client = m.client; ad.client_confidence = m.confidence; ad.client_reason = m.reason; ad.client_at = rfxNow(); ad.client_by = 'free match'; }
+    byKey.set(key, ad);
+    newAds++;
+  }
+  // existing adverts with no client yet get another free match attempt
+  for (const ad of byKey.values()) {
+    if (ad.client) continue;
+    const m = cmpFreeMatch(ad, directs);
+    if (m) { ad.client = m.client; ad.client_confidence = m.confidence; ad.client_reason = m.reason; ad.client_at = rfxNow(); ad.client_by = 'free match'; }
+  }
+  // keep adverts while live; anything not seen for 30 days has closed (kept longer once worked)
+  const keep = [...byKey.values()].filter(a => {
+    const age = rfxDaysBetween(a.last_seen || a.first_seen, today) || 0;
+    return a.status === 'lead' ? age <= 180 : age <= 30;
+  });
+  // a person may have changed something while this ran: their changes win
+  const latest = new Map((await cmpAdsTable.list()).map(x => [x.id, x]));
+  const before = new Map(existing.map(x => [x.id, x]));
+  keep.forEach(o => {
+    const l = latest.get(o.id), b = before.get(o.id);
+    if (l) ['client', 'client_confidence', 'client_reason', 'client_website', 'client_at', 'client_by', 'status', 'result_id'].forEach(f => { if (!b || l[f] !== b[f]) o[f] = l[f]; });
+  });
+  await cmpAdsTable.ensure();
+  const sheets = getSheetsClient();
+  const last = rfxColLetter(CMP_AD_HEADER.length);
+  const rowsOut = keep.map(o => CMP_AD_HEADER.map(h => (o[h] == null ? '' : String(o[h]))));
+  await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: `'Competitor Adverts'!A2:${last}` });
+  for (let i = 0; i < rowsOut.length; i += 400) {
+    const chunk = rowsOut.slice(i, i + 400);
+    await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `'Competitor Adverts'!A${i + 2}:${last}${i + 1 + chunk.length}`, valueInputOption: 'RAW', requestBody: { values: chunk } });
+  }
+  summary.competitorAdverts = keep.length;
+  summary.newCompetitorAdverts = newAds;
+}
+
+/* ---------- AI: best guess at the real client behind an agency advert ---------- */
+
+const CMP_CLIENT_TOOL = {
+  name: 'record_client_guess',
+  description: 'Record the most likely employer behind the agency advert.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      client: { type: 'string', description: 'Most likely employer name, or empty if there is nothing to go on' },
+      confidence: { type: 'string', enum: ['likely', 'possible', 'unknown'] },
+      website: { type: 'string' },
+      reasons: { type: 'string', description: 'The clues that point to this employer, in one or two sentences' },
+      alternatives: { type: 'array', items: { type: 'string' }, description: 'Other employers it could be' },
+    },
+    required: ['client', 'confidence', 'reasons'],
+  },
+};
+
+async function cmpFindClient(ad) {
+  if (!API_KEY) throw new Error('The AI key is not set on the server');
+  const prompt = `A UK recruitment agency (${ad.agency}) is advertising this vacancy without naming the employer. Work out the most likely employer.
+
+Role: ${ad.role}
+Location: ${ad.location}
+Salary: ${ad.salary || 'not given'}
+Advert link: ${ad.url || 'none'}
+Advert text: ${ad.description || 'not available'}
+
+Use the clues: the industry and products described, site location, shift patterns, company size, benefits, unusual phrases. Search the web for employers in or near ${ad.location} that fit, and for the same job advertised directly by an employer. Give your single best match, even if you are not sure, with honest confidence: "likely" when several clues fit one employer, "possible" when it is an informed guess, "unknown" only when there is nothing at all to go on. British English, no em dashes.`;
+  const tools = [CMP_CLIENT_TOOL, { type: 'web_search_20250305', name: 'web_search', max_uses: 4, user_location: { type: 'approximate', country: 'GB', timezone: 'Europe/London' } }];
+  const messages = [{ role: 'user', content: prompt }];
+  let force = false;
+  for (let i = 0; i < 5; i++) {
+    const data = await rfxAnthropic({ model: RFX_MODEL, max_tokens: 1500, tools, messages, tool_choice: force ? { type: 'tool', name: CMP_CLIENT_TOOL.name } : { type: 'auto' } });
+    const rec = (data.content || []).find(b => b.type === 'tool_use' && b.name === CMP_CLIENT_TOOL.name);
+    if (rec && rec.input) return rfxClean(rec.input);
+    messages.push({ role: 'assistant', content: data.content || [] });
+    if (data.stop_reason === 'pause_turn') continue;
+    messages.push({ role: 'user', content: 'Now call record_client_guess with your best match.' });
+    force = true;
+  }
+  throw new Error('The search did not finish. Try again.');
+}
+
+async function rfxCountAi(actor) {
+  const mk = 'rfx_dives_' + rfxToday().slice(0, 7);
+  const row = (await settingsTable.list()).find(o => o.id === mk);
+  await settingsTable.upsert({ id: mk, value: String((parseInt((row && row.value) || '0', 10) || 0) + 1), updated_by: actor || 'system' });
+}
+
+/* ---------- routes ---------- */
+
+app.get('/api/competitors/overview', async (req, res) => {
+  try {
+    const [comps, ads, settings] = await Promise.all([cmpTable.list(), cmpAdsTable.list(), cmpSettings()]);
+    const today = rfxToday();
+    const d = n => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+    const live = a => (rfxDaysBetween(a.last_seen, today) || 0) <= 4;
+    const out = comps.filter(c => c.hidden !== 'yes').map(c => {
+      const mine = ads.filter(a => a.competitor_id === c.id);
+      const liveAds = mine.filter(live);
+      const types = {};
+      liveAds.forEach(a => { const t = RFX_TYPE_LABEL[a.role_type] || 'Other'; types[t] = (types[t] || 0) + 1; });
+      const sals = liveAds.map(a => rfxSalaryNums(a)).filter(s => s.min);
+      return {
+        ...c,
+        live: liveAds.length,
+        newThisWeek: mine.filter(a => a.first_seen >= d(7)).length,
+        last30: mine.filter(a => a.first_seen >= d(30)).length,
+        prev30: mine.filter(a => a.first_seen < d(30) && a.first_seen >= d(60)).length,
+        avgDays: liveAds.length ? Math.round(liveAds.reduce((t, a) => t + (rfxDaysBetween(a.posted_date || a.first_seen, today) || 0), 0) / liveAds.length) : 0,
+        sectors: Object.entries(types).sort((a, b) => b[1] - a[1]).slice(0, 3).map(x => x[0]),
+        salMin: sals.length ? Math.min(...sals.map(s => s.min)) : 0,
+        salMax: sals.length ? Math.max(...sals.map(s => s.max)) : 0,
+        clientsKnown: new Set(liveAds.filter(a => a.client).map(a => rfxNormCompany(a.client))).size,
+      };
+    });
+    const ctx = await rfxContext().catch(() => null);
+    const adsOut = ads.map(a => ({
+      ...a, days: rfxDaysBetween(a.posted_date || a.first_seen, today), live: live(a), role_type_label: RFX_TYPE_LABEL[a.role_type] || '',
+      client_is_client: !!(ctx && a.client && ctx.clients.has(rfxNormCompany(a.client))),
+      client_is_lead: !!(ctx && a.client && ctx.leads.has(rfxNormCompany(a.client))),
+    }));
+    res.json({ competitors: out, adverts: adsOut, towns: settings.compTowns, postcodes: settings.compPostcodes, enabled: settings.compEnabled, today });
+  } catch (e) { console.error('GET competitors:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/competitors/adverts/:id/find-client', async (req, res) => {
+  try {
+    const ad = (await cmpAdsTable.list()).find(a => a.id === req.params.id);
+    if (!ad) return res.status(404).json({ error: 'Advert not found' });
+    const allow = await rfxDiveAllowance();
+    if (allow.used >= allow.cap) return res.status(429).json({ error: `This month's limit of ${allow.cap} AI searches has been reached.` });
+    const g = await cmpFindClient(ad);
+    await rfxCountAi(actorOf(req));
+    const saved = await cmpAdsTable.upsert({
+      ...ad, client: g.client || '', client_confidence: g.client ? (g.confidence === 'unknown' ? 'possible' : g.confidence) : '',
+      client_reason: [g.reasons, g.alternatives && g.alternatives.length ? 'Other possibilities: ' + g.alternatives.join(', ') : ''].filter(Boolean).join(' '),
+      client_website: g.website || '', client_at: rfxNow(), client_by: actorOf(req),
+    });
+    res.json({ ok: true, data: saved });
+  } catch (e) { console.error('Find client failed:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Ella can type or confirm the client herself
+app.post('/api/competitors/adverts/:id', async (req, res) => {
+  try {
+    const ad = (await cmpAdsTable.list()).find(a => a.id === req.params.id);
+    if (!ad) return res.status(404).json({ error: 'Advert not found' });
+    const b = req.body || {};
+    const next = { ...ad };
+    if (b.client !== undefined) { next.client = String(b.client).trim(); next.client_confidence = next.client ? (b.client_confidence || 'confirmed') : ''; next.client_reason = b.client_reason || (next.client ? 'Set by ' + titleCase(actorOf(req)) : ''); next.client_at = rfxNow(); next.client_by = actorOf(req); }
+    if (b.status !== undefined) next.status = String(b.status);
+    res.json({ ok: true, data: await cmpAdsTable.upsert(next) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Turn the client into a Role Finder company, so the usual deep dive and add-lead steps work on it
+app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
+  try {
+    const ad = (await cmpAdsTable.list()).find(a => a.id === req.params.id);
+    if (!ad) return res.status(404).json({ error: 'Advert not found' });
+    if (!ad.client) return res.status(400).json({ error: 'Find or enter the client first' });
+    const n = rfxNormCompany(ad.client);
+    const list = await rfxResultsTable.list();
+    let r = list.find(x => x.id === ad.result_id) || list.find(x => rfxNormCompany(x.company) === n && x.status !== 'agency');
+    if (!r) {
+      r = await rfxResultsTable.upsert({
+        id: rfxId('rf'), search_ids: 'competitor', source: 'Competitor: ' + ad.agency, source_id: ad.source_id, company: ad.client, role: ad.role,
+        location: ad.location, salary: ad.salary, posted_date: ad.posted_date, first_seen: rfxToday(), last_seen: rfxToday(), url: ad.url,
+        description: `Advertised by ${ad.agency} (recruitment agency). ${ad.description || ''}`.slice(0, 800), status: 'new', dismiss_reason: '',
+        agency_flag: '', agency_reason: '', company_number: '', sic: '', dive_status: '', dive_json: '', dive_at: '', lead_id: '', handled_by: actorOf(req),
+        notes: `Client of ${ad.agency} (${ad.client_confidence} match)`, key: `${n}|${rfxNormText(ad.role)}|${rfxNormText(String(ad.location).split(',')[0])}`,
+        role_type: ad.role_type, region: rfxRegionOf(ad.location, 'West Midlands'), sal_min: ad.sal_min, sal_max: ad.sal_max,
+      });
+    }
+    await cmpAdsTable.upsert({ ...ad, result_id: r.id });
+    const ctx = await rfxContext().catch(() => null);
+    const p = rfxPublicResult(r);
+    p.days = rfxDaysBetween(r.posted_date, rfxToday());
+    if (ctx) { p.is_client = ctx.clients.has(n); p.is_lead = ctx.leads.has(n); p.suppressed = ctx.suppressedCompanies.has(n); }
+    res.json({ ok: true, result: p });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+
+const SERVER_BUILD = '16 Oct 2026 - build 24';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

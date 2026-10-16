@@ -15005,7 +15005,7 @@ async function rfxConfirmDive(){
     </div>
     <div class="rfx-sec">Cost and allowance</div>
     <div class="rfx-list">Uses AI credit, roughly 15p to 30p, and takes one to two minutes.<br>
-      <b>${used} of ${cap}</b> deep dives used this month${left ? ', ' + left + ' left.' : '. This month\'s limit has been reached, so this cannot run until the 1st unless Dan raises the limit.'}
+      <b>${used} of ${cap}</b> AI searches used this month (deep dives and competitor client finds share the limit)${left ? ', ' + left + ' left.' : '. This month\'s limit has been reached, so this cannot run until the 1st unless Dan raises the limit.'}
       ${again ? '<br>This company already has a deep dive. Running it again replaces it and counts towards this month\'s limit.' : ''}</div>
     <div class="simple-form"><div class="actions">
       <button class="cancel" onclick="${again ? 'rfxRenderDive()' : "closeModal('rfxDiveModal')"}">Cancel</button>
@@ -15374,9 +15374,285 @@ async function lpxSaveNew(){
 </script>
 
 
+<style>
+#competitorsView{display:none;flex:1;flex-direction:column;min-height:0;}
+#competitorsView.visible{display:flex;}
+tr.cmp-row{cursor:pointer;}
+tr.cmp-row.sel td{background:#FBF6E8;}
+.cmp-trend.up{color:#9B2C22;font-weight:600;}
+.cmp-trend.down{color:#2D6A3E;font-weight:600;}
+.rfx-pill.conf-confirmed{background:#E6F2E9;color:#2D6A3E;}
+.rfx-pill.conf-likely{background:#FBF1D9;color:#8a6a12;}
+.rfx-pill.conf-possible{background:var(--lightbg);color:#777;}
+</style>
+
+<div class="modal-overlay" id="cmpModal">
+  <div class="modal rfx-mid"><div class="modal-inner">
+    <button class="modal-close" onclick="closeModal('cmpModal')">&times;</button>
+    <div id="cmpModalBody"></div>
+  </div></div>
+</div>
+
+<script>
+/* ============================================================
+   Competitor Watch (build 24): local agencies, their live roles
+   and the clients behind them
+   ============================================================ */
+
+const CMP = {data:null, agency:'', loaded:false};
+
+(function(){
+  const tabs = document.getElementById('tabs');
+  if(tabs){
+    const b = document.createElement('button');
+    b.className = 'tab-btn gh'; b.dataset.tab = 'competitors'; b.textContent = 'Competitors';
+    b.onclick = () => switchTab('competitors');
+    tabs.appendChild(b);
+  }
+  const host = document.getElementById('funnelLeadsView');
+  if(host && host.parentNode){
+    const v = document.createElement('div');
+    v.id = 'competitorsView';
+    v.innerHTML = `
+      <div class="view-head">
+        <div><h2>Competitor Watch</h2><div class="sub" id="cmpSummary">Local agencies, what they are advertising and the clients behind their roles.</div></div>
+        <div class="head-actions">
+          <button class="cancel" id="cmpAreasBtn" style="padding:9px 14px;border:1px solid var(--border);background:#fff;border-radius:2px;font-family:inherit;font-size:13px;cursor:pointer;" onclick="cmpOpenAreas()">Areas</button>
+          <button class="gold-btn" onclick="cmpOpenAdd()">+ Add competitor</button>
+        </div>
+      </div>
+      <div class="view-body">
+        <div class="tile-grid" id="cmpTiles"></div>
+        <div class="section-title">Agencies</div>
+        <div class="ops-table-wrap"><table class="ops-table" style="min-width:980px;"><thead><tr>
+          <th>Agency</th><th>Live adverts</th><th>New this week</th><th>Trend (30 days)</th><th>Average days open</th><th>Main sectors</th><th>Salary range</th><th>Clients identified</th><th style="text-align:right;">Actions</th>
+        </tr></thead><tbody id="cmpBody"><tr><td colspan="9" class="empty-row">Loading...</td></tr></tbody></table></div>
+        <div class="section-title" id="cmpAdsTitle">Live agency adverts</div>
+        <div class="rfx-bar">
+          <select id="cmpAgency" onchange="CMP.agency=this.value;cmpRender()"><option value="">All agencies</option></select>
+          <select id="cmpClient" onchange="cmpRender()"><option value="">All adverts</option><option value="unknown">Client not found yet</option><option value="known">Client identified</option><option value="confirmed">Confirmed matches</option></select>
+          <input id="cmpText" placeholder="Filter role, client or place" style="min-width:200px;" oninput="cmpRender()">
+          <label class="chk"><input type="checkbox" id="cmpLive" checked onchange="cmpRender()"> Live adverts only</label>
+          <label class="chk"><input type="checkbox" id="cmpHideDone" checked onchange="cmpRender()"> Hide not relevant</label>
+        </div>
+        <div class="ops-table-wrap"><table class="ops-table" style="min-width:1050px;"><thead><tr>
+          <th>Agency</th><th>Role</th><th>Salary</th><th>Days open</th><th>Client behind it</th><th style="text-align:right;">Actions</th>
+        </tr></thead><tbody id="cmpAdsBody"></tbody></table></div>
+        <div class="note-line">Agencies are found from Reed adverts posted by agencies around the chosen towns, Companies House (active employment agencies registered in the chosen postcode areas, checked weekly) and any you add. The client behind each advert is matched for free first, by finding the same role advertised directly by an employer in the same town. Find the client uses AI and the web for a best guess, counting towards the monthly AI limit. Labels: Confirmed (same role, town and salary advertised directly), Likely (strong clues), Possible (an informed guess). Check before relying on a guess.</div>
+      </div>`;
+    host.parentNode.appendChild(v);
+  }
+  if(typeof TAB_GROUPS !== 'undefined'){
+    const g = TAB_GROUPS.find(x => x.key === 'bizdev');
+    if(g && !g.tabs.includes('competitors')) g.tabs.push('competitors');
+  }
+  const _st = switchTab;
+  switchTab = function(tab){
+    _st(tab);
+    const v = document.getElementById('competitorsView');
+    if(v) v.classList.toggle('visible', tab === 'competitors');
+    if(tab === 'competitors') cmpLoad();
+  };
+})();
+
+async function cmpLoad(){
+  try{
+    CMP.data = await b2Api('/api/competitors/overview');
+    CMP.loaded = true;
+    document.getElementById('cmpAreasBtn').style.display = signedInUser && signedInUser.admin ? '' : 'none';
+    cmpRender();
+  }catch(e){ document.getElementById('cmpBody').innerHTML = `<tr><td colspan="9" class="empty-row">Could not load: ${esc(e.message)}</td></tr>`; }
+}
+
+function cmpConfPill(a){
+  if(!a.client) return '<span class="rfx-sub">Not found yet</span>';
+  const label = {confirmed:'Confirmed', likely:'Likely', possible:'Possible'}[a.client_confidence] || a.client_confidence || 'Set';
+  return `<b style="color:var(--dark);">${esc(a.client)}</b> <span class="rfx-pill conf-${esc(a.client_confidence)}">${esc(label)}</span>
+    ${a.client_is_client ? '<span class="rfx-pill client">Our client</span>' : ''}${a.client_is_lead ? '<span class="rfx-pill lead">Already a lead</span>' : ''}
+    ${a.client_reason ? `<div class="rfx-sub">${esc(a.client_reason)}</div>` : ''}`;
+}
+
+function cmpRender(){
+  if(!CMP.loaded) return;
+  const d = CMP.data;
+  const comps = (d.competitors || []).slice().sort((a, b) => (b.pinned === 'yes') - (a.pinned === 'yes') || b.live - a.live || a.name.localeCompare(b.name));
+  const ads = d.adverts || [];
+  const liveAds = ads.filter(a => a.live);
+  document.getElementById('cmpSummary').textContent = `Agencies around ${(d.towns || []).join(', ')} (postcodes ${(d.postcodes || []).join(', ')}). ${d.enabled ? 'Checked every weekday with the market sweep.' : 'Automatic checking is switched off.'}`;
+  document.getElementById('cmpTiles').innerHTML = [
+    {n: comps.length, l:'Agencies tracked'},
+    {n: comps.filter(c => c.live > 0).length, l:'Advertising now'},
+    {n: liveAds.length, l:'Live agency adverts'},
+    {n: ads.filter(a => a.first_seen >= new Date(Date.now() - 7 * 86400000).toISOString().slice(0,10)).length, l:'New adverts this week'},
+    {n: new Set(liveAds.filter(a => a.client).map(a => a.client.toLowerCase())).size, l:'Clients identified', warn:true},
+    {n: liveAds.filter(a => a.client_is_client).length, l:'Adverts for our own clients', warn:true},
+  ].map(t => `<div class="tile static ${t.warn && t.n ? 'warn' : ''}"><div class="n">${esc(t.n)}</div><div class="l">${t.l}</div></div>`).join('');
+  const money = n => n ? '£' + Math.round(n / 1000) + 'k' : '';
+  document.getElementById('cmpBody').innerHTML = comps.length ? comps.map(c => {
+    const diff = c.last30 - c.prev30;
+    const trend = !c.last30 && !c.prev30 ? '-' : diff > 0 ? `<span class="cmp-trend up">Up ${diff}</span>` : diff < 0 ? `<span class="cmp-trend down">Down ${-diff}</span>` : 'Steady';
+    return `<tr class="cmp-row ${CMP.agency === c.id ? 'sel' : ''}" onclick="cmpPickAgency('${esc(c.id)}')">
+      <td class="strong">${esc(c.name)}<div>${c.pinned === 'yes' ? '<span class="rfx-pill short">Main competitor</span>' : ''}<span class="rfx-pill">${esc(c.source || '')}</span></div>${c.address ? `<div class="rfx-sub">${esc(c.address)}</div>` : ''}</td>
+      <td><span class="rfx-days">${c.live}</span></td><td>${c.newThisWeek}</td><td>${trend}<div class="rfx-sub">${c.last30} in the last 30 days</div></td>
+      <td>${c.live ? c.avgDays + ' days' : '-'}</td><td>${esc(c.sectors.join(', ') || '-')}</td>
+      <td>${c.salMin ? money(c.salMin) + (c.salMax > c.salMin ? ' - ' + money(c.salMax) : '') : '-'}</td><td>${c.clientsKnown}</td>
+      <td><div class="rfx-actions"><button onclick="event.stopPropagation();cmpHide('${esc(c.id)}')">Hide</button></div></td></tr>`;
+  }).join('') : '<tr><td colspan="9" class="empty-row">No agencies yet. They appear after the next search, or add one by hand.</td></tr>';
+
+  const sel = document.getElementById('cmpAgency');
+  const cur = CMP.agency;
+  sel.innerHTML = '<option value="">All agencies</option>' + comps.map(c => `<option value="${esc(c.id)}">${esc(c.name)} (${c.live})</option>`).join('');
+  sel.value = cur;
+  const cf = document.getElementById('cmpClient').value;
+  const text = document.getElementById('cmpText').value.trim().toLowerCase();
+  const liveOnly = document.getElementById('cmpLive').checked;
+  const hideDone = document.getElementById('cmpHideDone').checked;
+  const list = ads.filter(a => {
+    if(CMP.agency && a.competitor_id !== CMP.agency) return false;
+    if(liveOnly && !a.live) return false;
+    if(hideDone && a.status === 'dismissed') return false;
+    if(cf === 'unknown' && a.client) return false;
+    if(cf === 'known' && !a.client) return false;
+    if(cf === 'confirmed' && a.client_confidence !== 'confirmed') return false;
+    if(text && !`${a.role} ${a.client} ${a.location} ${a.agency}`.toLowerCase().includes(text)) return false;
+    return true;
+  }).sort((a, b) => (b.days || 0) - (a.days || 0));
+  const agencyName = CMP.agency && (comps.find(c => c.id === CMP.agency) || {}).name;
+  document.getElementById('cmpAdsTitle').innerHTML = (agencyName ? esc(agencyName) + ': adverts' : 'Live agency adverts') + ` <span class="rfx-sub" style="display:inline;">(${list.length})</span>` + (agencyName ? ' <a class="tpl-link" onclick="cmpPickAgency(\'\')">Show all agencies</a>' : '');
+  document.getElementById('cmpAdsBody').innerHTML = list.length ? list.slice(0, 400).map(a => {
+    const id = esc(a.id);
+    const acts = a.status === 'dismissed' ? `<button onclick="cmpSetStatus('${id}','new')">Restore</button>` :
+      `${a.client ? '' : `<button class="gold" onclick="cmpConfirmFind('${id}')">Find the client</button>`}
+       ${a.client && !a.client_is_client ? `<button class="gold" onclick="cmpClientAction('${id}','dive')">Deep dive client</button><button onclick="cmpClientAction('${id}','add')">Add lead</button>` : ''}
+       <button onclick="cmpSetClient('${id}')">${a.client ? 'Change client' : 'Enter client'}</button>
+       ${a.client ? `<button onclick="cmpConfirmFind('${id}')" title="Ask the AI again">Re-check</button>` : ''}
+       <button onclick="cmpSetStatus('${id}','dismissed')">Not relevant</button>`;
+    return `<tr class="rfx-row">
+      <td class="strong">${esc(a.agency)}</td>
+      <td>${a.url ? rfxLink(a.url, a.role) : esc(a.role)}<div class="rfx-sub">${esc(a.location)}${a.role_type_label ? ' - ' + esc(a.role_type_label) : ''}</div></td>
+      <td>${esc(a.salary || '-')}</td>
+      <td><span class="rfx-days ${a.days >= 21 ? 'hot' : ''}">${a.days == null ? '-' : a.days + ' days'}</span></td>
+      <td style="max-width:340px;">${cmpConfPill(a)}</td>
+      <td><div class="rfx-actions">${acts}</div></td></tr>`;
+  }).join('') : '<tr><td colspan="6" class="empty-row">No adverts match these filters.</td></tr>';
+}
+
+function cmpPickAgency(id){ CMP.agency = CMP.agency === id ? '' : id; cmpRender(); document.getElementById('cmpAdsTitle').scrollIntoView({behavior:'smooth', block:'start'}); }
+function cmpAd(id){ return ((CMP.data && CMP.data.adverts) || []).find(a => a.id === id); }
+
+async function cmpConfirmFind(id){
+  const a = cmpAd(id);
+  if(!a) return;
+  document.getElementById('cmpModalBody').innerHTML = '<div style="padding:30px 0;"><span class="rfx-spin"></span>Checking this month\'s allowance...</div>';
+  document.getElementById('cmpModal').classList.add('visible');
+  let cfg = null;
+  try{ cfg = await b2Api('/api/role-finder/config'); }catch(e){ /* show what we can */ }
+  const used = (cfg && cfg.divesThisMonth) || 0, cap = (cfg && cfg.diveMonthlyCap) || 100, left = Math.max(0, cap - used);
+  document.getElementById('cmpModalBody').innerHTML = `
+    <h2>Find the client behind this advert?</h2>
+    <div class="role-sub">${esc(a.agency)} - ${esc(a.role)} - ${esc(a.location)}</div>
+    <div class="rfx-sec">What it will do</div>
+    <div class="rfx-list">- Read the clues in the advert: industry, products, site, shifts, benefits and wording<br>
+      - Search the web for local employers that fit, and for the same role advertised directly<br>
+      - Give its single best match with a confidence level and the reasons, plus any other possibilities</div>
+    <div class="rfx-sec">Cost and allowance</div>
+    <div class="rfx-list">Uses AI credit, roughly 5p to 15p, and takes under a minute.<br><b>${used} of ${cap}</b> AI searches used this month${left ? ', ' + left + ' left.' : '. The monthly limit has been reached.'}</div>
+    <div class="simple-form"><div class="actions">
+      <button class="cancel" onclick="closeModal('cmpModal')">Cancel</button>
+      <button class="save" ${left ? '' : 'disabled style="opacity:.5;cursor:not-allowed;"'} onclick="cmpFind('${esc(id)}')">Yes, find the client</button>
+    </div></div>`;
+}
+
+async function cmpFind(id){
+  const a = cmpAd(id);
+  document.getElementById('cmpModalBody').innerHTML = `<h2>Finding the client</h2><div class="role-sub">${esc(a.agency)} - ${esc(a.role)}</div><div style="padding:24px 0;"><span class="rfx-spin"></span>Reading the advert and searching the web. Usually under a minute.</div>`;
+  try{
+    const j = await b2Post('/api/competitors/adverts/' + encodeURIComponent(id) + '/find-client', {});
+    Object.assign(a, j.data);
+    closeModal('cmpModal'); cmpRender();
+    showToast(a.client ? `Best match: ${a.client} (${a.client_confidence})` : 'No likely employer found for this one');
+    cmpLoad();
+  }catch(e){ document.getElementById('cmpModalBody').innerHTML += `<div class="rfx-check bad">Could not finish: ${esc(e.message)}</div>`; }
+}
+
+async function cmpSetClient(id){
+  const a = cmpAd(id);
+  const v = prompt('Client company name (leave blank to clear):', a.client || '');
+  if(v === null) return;
+  try{ const j = await b2Post('/api/competitors/adverts/' + encodeURIComponent(id), {client: v.trim(), client_confidence: 'confirmed'}); Object.assign(a, j.data); cmpRender(); showToast(v.trim() ? 'Client saved' : 'Client cleared'); }
+  catch(e){ showToast('Could not save: ' + e.message); }
+}
+
+async function cmpSetStatus(id, status){
+  const a = cmpAd(id);
+  try{ const j = await b2Post('/api/competitors/adverts/' + encodeURIComponent(id), {status}); Object.assign(a, j.data); cmpRender(); }
+  catch(e){ showToast('Could not update: ' + e.message); }
+}
+
+async function cmpClientAction(id, what){
+  const a = cmpAd(id);
+  try{
+    const j = await b2Post('/api/competitors/adverts/' + encodeURIComponent(id) + '/to-role-finder', {});
+    const r = j.result;
+    const i = RFX.results.findIndex(x => x.id === r.id);
+    if(i >= 0) RFX.results[i] = Object.assign(RFX.results[i], r); else RFX.results.push(r);
+    a.result_id = r.id;
+    if(what === 'dive') rfxOpenDive(r.id);
+    else { RFX.current = r; RFX.dive = null; if(r.has_dive){ try{ const d = await b2Api('/api/role-finder/results/' + encodeURIComponent(r.id)); RFX.dive = d.dive; }catch(e){} } rfxOpenAdd(r.id); }
+  }catch(e){ showToast(e.message); }
+}
+
+async function cmpHide(id){
+  const c = ((CMP.data && CMP.data.competitors) || []).find(x => x.id === id);
+  if(!c || !confirm(`Hide ${c.name} from Competitor Watch? Its adverts stop showing.`)) return;
+  try{ const { live, newThisWeek, last30, prev30, avgDays, sectors, salMin, salMax, clientsKnown, ...rest } = c; await b2Post('/api/competitors', {...rest, hidden:'yes'}); cmpLoad(); }
+  catch(e){ showToast('Could not hide: ' + e.message); }
+}
+
+function cmpOpenAdd(){
+  document.getElementById('cmpModalBody').innerHTML = `
+    <h2>Add a competitor</h2><div class="role-sub">Its Reed adverts are picked up from the next search.</div>
+    <div class="simple-form">
+      <label>Agency name (as it appears on job boards)</label><input id="cmpNName">
+      <label>Website (optional)</label><input id="cmpNWeb">
+      <label>Notes (optional)</label><input id="cmpNNotes" placeholder="e.g. strong in engineering, lost Iconsys to them">
+      <div class="actions"><button class="cancel" onclick="closeModal('cmpModal')">Cancel</button><button class="save" onclick="cmpSaveNew()">Add</button></div>
+    </div>`;
+  document.getElementById('cmpModal').classList.add('visible');
+}
+
+async function cmpSaveNew(){
+  const name = b2Val('cmpNName').trim();
+  if(!name){ showToast('Name is required'); return; }
+  try{ await b2Post('/api/competitors', {id: b2Id('cp'), name, website: b2Val('cmpNWeb').trim(), notes: b2Val('cmpNNotes').trim(), source:'Added by hand', added_at:new Date().toISOString(), added_by:(signedInUser && signedInUser.key) || ''}); closeModal('cmpModal'); cmpLoad(); showToast(name + ' added'); }
+  catch(e){ showToast('Could not add: ' + e.message); }
+}
+
+function cmpOpenAreas(){
+  const d = CMP.data || {};
+  document.getElementById('cmpModalBody').innerHTML = `
+    <h2>Competitor areas</h2><div class="role-sub">Which agencies Competitor Watch tracks. Checked with the weekday market sweep.</div>
+    <div class="simple-form">
+      <div class="rfx-confirm" style="margin-top:14px;"><input type="checkbox" id="cmpAOn" ${d.enabled ? 'checked' : ''}><span><b>Check competitors every weekday</b><br><span class="rfx-sub">Free: uses Reed and Companies House only. Finding clients with AI is always by hand.</span></span></div>
+      <label>Towns (comma separated)</label><input id="cmpATowns" value="${esc((d.towns || []).join(', '))}">
+      <label>Postcode areas for Companies House (comma separated)</label><input id="cmpAPcs" value="${esc((d.postcodes || []).join(', '))}">
+      <div class="actions"><button class="cancel" onclick="closeModal('cmpModal')">Cancel</button><button class="save" onclick="cmpSaveAreas()">Save</button></div>
+    </div>`;
+  document.getElementById('cmpModal').classList.add('visible');
+}
+
+async function cmpSaveAreas(){
+  try{
+    await b2Post('/api/role-finder/sweep-settings', {compEnabled: document.getElementById('cmpAOn').checked, compTowns: b2Val('cmpATowns'), compPostcodes: b2Val('cmpAPcs')});
+    closeModal('cmpModal'); cmpLoad(); showToast('Saved. New areas are searched from the next search.');
+  }catch(e){ showToast('Could not save: ' + e.message); }
+}
+</script>
+
+
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '16 Oct 2026 - build 23';
+var PAGE_BUILD = '16 Oct 2026 - build 24';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -15387,12 +15663,12 @@ function buildTagApply(){
     tag.style.cssText = 'font-size:10.5px;color:#999;margin-left:10px;white-space:nowrap;';
     chip.appendChild(tag);
   }
-  tag.textContent = 'Page build 23';
+  tag.textContent = 'Page build 24';
   tag.title = 'Page: ' + PAGE_BUILD;
   b2Api('/api/version').then(function(j){
-    tag.textContent = 'Page build 23 | Server ' + serverBuildLabel(j.build);
+    tag.textContent = 'Page build 24 | Server ' + serverBuildLabel(j.build);
     tag.title = 'Page: ' + PAGE_BUILD + ' | Server: ' + j.build;
-  }).catch(function(){ tag.textContent = 'Page build 23 | Server older'; });
+  }).catch(function(){ tag.textContent = 'Page build 24 | Server older'; });
 }
 (function(){
   const _si = signIn;
