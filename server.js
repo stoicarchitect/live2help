@@ -10435,6 +10435,24 @@ async function rfxAdzunaRegion(region, type, minSalary) {
 
 const RFX_TYPE_KEYWORD = { health: 'care', catering: 'chef', driving: 'driver', construction: 'construction', accountancy: 'accountant', commercial: 'buyer', engineering: 'engineer', industrial: 'production', itsales: 'sales', corporate: 'manager' };
 
+/* ---------- live progress, so the page can show what the search is doing ---------- */
+let rfxProgress = null;
+function rfxProg(patch) { if (rfxProgress) Object.assign(rfxProgress, patch, { updatedAt: rfxNow() }); }
+function rfxProgFound(jobs) {
+  if (!rfxProgress) return;
+  rfxProgress.adverts += jobs.length;
+  const seen = rfxProgress._seen || (rfxProgress._seen = new Set());
+  jobs.forEach(j => {
+    const n = rfxNormCompany(j.company);
+    if (!n || seen.has(n)) return;
+    seen.add(n);
+    rfxProgress.companies = seen.size;
+    rfxProgress.recent.unshift({ company: j.company, role: j.role, location: j.location });
+    if (rfxProgress.recent.length > 18) rfxProgress.recent.pop();
+  });
+}
+function rfxAuthFailure(e) { return /returned (401|403)/.test(String(e && e.message)); }
+
 async function rfxSweepJobs(settings, summary) {
   const jobs = [];
   const minBand = Math.min(...RFX_BANDS.filter(b => settings.bands.includes(b.key)).map(b => b.min).concat([RFX_SALARY_FLOOR]));
@@ -10443,53 +10461,78 @@ async function rfxSweepJobs(settings, summary) {
   let ptr = {};
   try { ptr = JSON.parse((rows.find(o => o.id === 'rfx_sweep_ptr') || {}).value || '{}'); } catch (e) { ptr = {}; }
 
-  // Reed: rotate through the towns of the chosen regions
+  const keepJob = j => {
+    j.role_type = rfxClassify(j.role, j._type);
+    if (!settings.types.includes(j.role_type)) return false;
+    const band = rfxInBands(j, settings.bands);
+    if (band === null) return settings.includeNoSalary;
+    return band;
+  };
   const towns = settings.regions.flatMap(r => (RFX_REGIONS[r] || []));
+  const pairs = [];
+  settings.regions.forEach(r => settings.types.forEach(t => { const ty = RFX_TYPES.find(x => x.key === t); if (ty && (ty.adzuna || ty.adzunaWords)) pairs.push([r, ty]); }));
+  const reedN = rfxSources().reed ? Math.min(settings.townsPerRun, towns.length) : 0;
+  const adzN = rfxSources().adzuna && settings.adzunaPerRun > 0 ? Math.min(settings.adzunaPerRun, pairs.length) : 0;
+  const totalSteps = Math.max(1, reedN + adzN + (rfxProgress ? rfxProgress.stepsBefore || 0 : 0));
+  const step = (label) => {
+    if (!rfxProgress) return;
+    rfxProgress.step++;
+    rfxProg({ current: label, pct: Math.min(70, 5 + Math.round(rfxProgress.step / totalSteps * 65)) });
+  };
+
+  // Reed: rotate through the towns of the chosen regions
   if (rfxSources().reed && towns.length) {
-    const n = Math.min(settings.townsPerRun, towns.length);
+    const n = reedN;
+    rfxProg({ phase: 'Searching Reed town by town', stepTotal: totalSteps });
     let i = (ptr.town || 0) % towns.length;
     let keywordMode = !!ptr.reedKeywords;
     for (let k = 0; k < n; k++, i = (i + 1) % towns.length) {
       const town = towns[i];
+      step(`${town} (${RFX_TOWN_REGION[town.toLowerCase()]})`);
+      const batch = [];
       try {
         if (!keywordMode) {
-          try { (await rfxReedTown(town, minSalary)).forEach(j => jobs.push({ ...j, _region: RFX_TOWN_REGION[town.toLowerCase()] })); continue; }
+          try { (await rfxReedTown(town, minSalary)).forEach(j => batch.push({ ...j, _region: RFX_TOWN_REGION[town.toLowerCase()] })); }
           catch (e) { if (!e.needsKeywords) throw e; keywordMode = true; }
         }
-        for (const t of settings.types) {
-          if (!RFX_TYPE_KEYWORD[t]) continue;
-          (await rfxReedTown(town, minSalary, RFX_TYPE_KEYWORD[t])).forEach(j => jobs.push({ ...j, _type: t, _region: RFX_TOWN_REGION[town.toLowerCase()] }));
+        if (keywordMode) {
+          for (const t of settings.types) {
+            if (!RFX_TYPE_KEYWORD[t]) continue;
+            (await rfxReedTown(town, minSalary, RFX_TYPE_KEYWORD[t])).forEach(j => batch.push({ ...j, _type: t, _region: RFX_TOWN_REGION[town.toLowerCase()] }));
+          }
         }
-      } catch (e) { summary.errors.push(`Sweep ${town} (Reed): ${e.message}`); }
+      } catch (e) {
+        if (rfxAuthFailure(e)) { summary.errors.push('Reed rejected the API key. Check REED_API_KEY on Render.'); break; }
+        summary.errors.push(`Sweep ${town} (Reed): ${e.message}`);
+      }
+      const kept = batch.filter(keepJob);
+      jobs.push(...kept);
+      rfxProgFound(kept);
     }
     ptr.town = i; ptr.reedKeywords = keywordMode;
     summary.townsSearched = n;
   }
 
   // Adzuna: rotate through region and role type pairs
-  const pairs = [];
-  settings.regions.forEach(r => settings.types.forEach(t => { const ty = RFX_TYPES.find(x => x.key === t); if (ty && (ty.adzuna || ty.adzunaWords)) pairs.push([r, ty]); }));
-  if (rfxSources().adzuna && pairs.length && settings.adzunaPerRun > 0) {
-    const n = Math.min(settings.adzunaPerRun, pairs.length);
+  if (adzN && pairs.length) {
+    const n = adzN;
+    rfxProg({ phase: 'Searching Adzuna region by region' });
     let i = (ptr.adz || 0) % pairs.length;
     for (let k = 0; k < n; k++, i = (i + 1) % pairs.length) {
       const [region, type] = pairs[i];
-      try { jobs.push(...await rfxAdzunaRegion(region, type, minSalary)); }
-      catch (e) { summary.errors.push(`Sweep ${region} ${type.label} (Adzuna): ${e.message}`); if (/429|401|403/.test(e.message)) break; }
+      step(`${region}, ${type.label}`);
+      try { const kept = (await rfxAdzunaRegion(region, type, minSalary)).filter(keepJob); jobs.push(...kept); rfxProgFound(kept); }
+      catch (e) {
+        summary.errors.push(rfxAuthFailure(e) ? 'Adzuna rejected the keys or the plan has run out of calls. Check the Adzuna account.' : `Sweep ${region} ${type.label} (Adzuna): ${e.message}`);
+        if (/429|401|403/.test(e.message)) break;
+      }
       await rfxSleep(200);
     }
     ptr.adz = i;
   }
   await settingsTable.upsert({ id: 'rfx_sweep_ptr', value: JSON.stringify(ptr), updated_by: 'system' });
 
-  // keep only the role types and salary bands that are switched on
-  return jobs.filter(j => {
-    j.role_type = rfxClassify(j.role, j._type);
-    if (!settings.types.includes(j.role_type)) return false;
-    const band = rfxInBands(j, settings.bands);
-    if (band === null) return settings.includeNoSalary;
-    return band;
-  });
+  return jobs;
 }
 
 /* ---------- Lead Score: which companies Ella should call first ---------- */
@@ -10550,7 +10593,19 @@ async function rfxWriteAllResults(objs) {
 let rfxRunState = { running: false };
 const RFX_MAX_OPEN = 5000;
 
-async function rfxRunSearches({ searchId, actor, auto } = {}) {
+async function rfxRunSearches(opts = {}) {
+  rfxProgress = { startedAt: rfxNow(), updatedAt: rfxNow(), phase: 'Getting ready', current: '', pct: 2, step: 0, stepsBefore: 0, adverts: 0, companies: 0, recent: [], errors: [], done: false, by: opts.actor || 'system' };
+  try {
+    const result = await rfxRunSearchesInner(opts);
+    rfxProg({ phase: result && result.skipped ? result.skipped : 'Finished', current: '', pct: 100, done: true, result: { newCount: result.newCount || 0, agencies: result.agencies || 0, deepDives: result.deepDives || 0 } });
+    return result;
+  } catch (e) {
+    rfxProg({ phase: 'Failed', error: e.message, done: true });
+    throw e;
+  }
+}
+
+async function rfxRunSearchesInner({ searchId, actor, auto } = {}) {
   const today = rfxToday();
   const settings = await rfxSweepSettings();
   if (auto) {
@@ -10567,6 +10622,7 @@ async function rfxRunSearches({ searchId, actor, auto } = {}) {
   const dismissed = await rfxDismissedMap();
   const ctx = await rfxContext().catch(() => ({ clients: new Set(), leads: new Set(), suppressedCompanies: new Set(), suppressedEmails: new Set() }));
   const summary = { searches: searches.length, sweep: runSweep, fetched: 0, newCount: 0, updated: 0, agencies: 0, autoHandled: 0, errors: [], perSearch: {} };
+  if (rfxProgress) { rfxProgress.errors = summary.errors; rfxProgress.stepsBefore = searches.length; }
   const fresh = new Map();
 
   const addJob = (j, sid, s) => {
@@ -10591,7 +10647,9 @@ async function rfxRunSearches({ searchId, actor, auto } = {}) {
     return true;
   };
 
+  if (searches.length) rfxProg({ phase: 'Running saved searches' });
   for (const s of searches) {
+    if (rfxProgress) { rfxProgress.step++; rfxProg({ current: s.name || s.keywords, pct: Math.min(70, 5 + rfxProgress.step * 3) }); }
     const phrases = rfxPhrases(s.keywords);
     const wantSources = String(s.sources || 'adzuna,reed').toLowerCase();
     let count = 0;
@@ -10600,6 +10658,7 @@ async function rfxRunSearches({ searchId, actor, auto } = {}) {
       if (src.adzuna && wantSources.includes('adzuna')) { try { jobs.push(...await rfxAdzuna(s, phrase)); } catch (e) { summary.errors.push(`${s.name || phrase} (Adzuna): ${e.message}`); } }
       if (src.reed && wantSources.includes('reed')) { try { jobs.push(...await rfxReed(s, phrase)); } catch (e) { summary.errors.push(`${s.name || phrase} (Reed): ${e.message}`); } }
       jobs.forEach(j => { if (addJob(j, s.id, s)) count++; });
+      rfxProgFound(jobs);
     }
     summary.perSearch[s.id] = count;
   }
@@ -10613,6 +10672,7 @@ async function rfxRunSearches({ searchId, actor, auto } = {}) {
     } catch (e) { summary.errors.push('Market sweep: ' + e.message); }
   }
 
+  rfxProg({ phase: 'Matching against clients, leads and earlier results', current: `${fresh.size} adverts`, pct: 71 });
   // merge with what is already stored: anything already actioned keeps its status, so it never comes back as new
   const existing = await rfxResultsTable.list();
   const byKey = new Map(existing.map(x => [x.key || x.id, x]));
@@ -10664,18 +10724,25 @@ async function rfxRunSearches({ searchId, actor, auto } = {}) {
 
   // Companies House: catch agencies registered as employment businesses (longest-advertised companies first)
   if (rfxSources().companiesHouse) {
-    const order = [...companiesToCheck.values()].sort((a, b) => String(a[0].posted_date || '9').localeCompare(String(b[0].posted_date || '9')));
-    let checked = 0;
-    for (const objs of order) {
-      if (checked++ >= 200) break;
-      const ch = await rfxChFind(objs[0].company);
-      if (!ch) continue;
-      const isAgency = ch.sic.split(',').some(s => RFX_AGENCY_SIC.includes(s));
-      objs.forEach(o => {
-        o.company_number = ch.number; o.sic = ch.sic;
-        if (isAgency) { o.agency_flag = 'yes'; o.agency_reason = 'Registered as an employment agency (Companies House)'; o.status = 'agency'; summary.agencies++; summary.newCount--; }
-      });
-    }
+    const order = [...companiesToCheck.values()].sort((a, b) => String(a[0].posted_date || '9').localeCompare(String(b[0].posted_date || '9'))).slice(0, 200);
+    let checked = 0, next = 0;
+    rfxProg({ phase: 'Checking new companies on Companies House', current: `0 of ${order.length}`, pct: 72 });
+    const worker = async () => {
+      while (next < order.length) {
+        const objs = order[next++];
+        let ch = null;
+        try { ch = await rfxChFind(objs[0].company); } catch (e) { ch = null; }
+        checked++;
+        rfxProg({ current: `${checked} of ${order.length}: ${objs[0].company}`, pct: 72 + Math.round(checked / Math.max(1, order.length) * 22) });
+        if (!ch) continue;
+        const isAgency = ch.sic.split(',').some(s => RFX_AGENCY_SIC.includes(s));
+        objs.forEach(o => {
+          o.company_number = ch.number; o.sic = ch.sic;
+          if (isAgency) { o.agency_flag = 'yes'; o.agency_reason = 'Registered as an employment agency (Companies House)'; o.status = 'agency'; summary.agencies++; summary.newCount--; }
+        });
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
   }
 
   // tidy: actioned adverts are kept while the advert is still live, so they never come back as new
@@ -10709,7 +10776,9 @@ async function rfxRunSearches({ searchId, actor, auto } = {}) {
     const l = latest.get(o.id), b = before.get(o.id);
     if (l) userFields.forEach(f => { if (l[f] !== undefined && (!b || l[f] !== b[f])) o[f] = l[f]; });
   });
+  rfxProg({ phase: 'Saving results', current: '', pct: 95 });
   await rfxWriteAllResults(keep);
+  rfxProg({ saved: true, newSoFar: summary.newCount });
 
   for (const s of searches) {
     await rfxSearchesTable.upsert({ ...s, last_run: rfxNow(), last_found: String(summary.perSearch[s.id] || 0) });
@@ -10729,6 +10798,7 @@ async function rfxRunSearches({ searchId, actor, auto } = {}) {
       .filter(o => { const c = rfxNormCompany(o.company); if (seen.has(c)) return false; seen.add(c); return true; })
       .slice(0, budget);
     for (const p of picks) {
+      rfxProg({ phase: 'Automatic deep dives', current: p.company, pct: 97 });
       try { await rfxDeepDive(p.id, 'system'); dived++; }
       catch (e) { summary.errors.push(`Deep dive ${p.company}: ${e.message}`); }
     }
@@ -11014,7 +11084,9 @@ app.get('/api/role-finder/status', async (req, res) => {
     const row = (await settingsTable.list()).find(o => o.id === 'cron_roleFinder');
     let s = null;
     try { s = row ? JSON.parse(row.value) : null; } catch (e) { s = null; }
-    res.json({ running: !!cronRunning.roleFinder, last: s });
+    let progress = null;
+    if (rfxProgress) { progress = { ...rfxProgress }; delete progress._seen; }
+    res.json({ running: !!cronRunning.roleFinder, last: s, progress });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -11160,7 +11232,7 @@ app.get('/api/lead-pipeline/stats', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '16 Oct 2026 - build 21';
+const SERVER_BUILD = '16 Oct 2026 - build 22';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

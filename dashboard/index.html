@@ -14283,6 +14283,14 @@ table.ops-table tr.rfx-row td{vertical-align:top;}
 .rfx-badge.high{background:#E6F2E9;color:#2D6A3E;}.rfx-badge.medium{background:#FBF1D9;color:#8a6a12;}.rfx-badge.low{background:var(--lightbg);color:#888;}
 .rfx-list{font-size:12.5px;color:var(--grey);line-height:1.7;}
 .rfx-list a{color:var(--gold);}
+.rfx-prog{background:#fff;border:1px solid var(--border);border-left:3px solid var(--gold);border-radius:2px;padding:12px 14px;margin-bottom:14px;font-size:13px;}
+.rfx-prog.ok{border-left-color:#2D6A3E;}
+.rfx-prog.bad{border-left-color:#9B2C22;}
+.rfx-prog .hd{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;}
+.rfx-prog .bar{height:6px;background:var(--lightbg);border-radius:3px;overflow:hidden;margin-bottom:6px;}
+.rfx-prog .bar div{height:100%;background:var(--gold);transition:width .6s ease;}
+.rfx-prog.ok .bar div{background:#2D6A3E;}
+.rfx-prog.bad .bar div{background:#9B2C22;}
 .rfx-spin{display:inline-block;width:14px;height:14px;border:2px solid #ddd;border-top-color:var(--gold);border-radius:50%;animation:rfxspin .8s linear infinite;vertical-align:middle;margin-right:8px;}
 @keyframes rfxspin{to{transform:rotate(360deg);}}
 .rfx-check{font-size:12px;margin-top:6px;}
@@ -14450,6 +14458,7 @@ function rfxNorm(s){ return String(s || '').toLowerCase().replace(/&/g,' and ').
       </div>
       <div class="view-body">
         <div id="rfxSetup"></div>
+        <div id="rfxProgress"></div>
         <div class="tile-grid" id="rfxTiles"></div>
         <div class="rfx-bar">
           <select id="rfxStatus" onchange="RFX.showAll=false;RFX.sel.clear();rfxRender()"><option value="new">To work</option><option value="shortlisted">Shortlisted</option><option value="added">Added to leads</option><option value="dismissed">Dismissed</option><option value="agency">Filtered agencies</option><option value="all">Everything</option></select>
@@ -14511,14 +14520,14 @@ function rfxNorm(s){ return String(s || '').toLowerCase().replace(/&/g,' and ').
 
 /* ---------- Role Finder: loading and listing ---------- */
 
-async function rfxLoad(){
+async function rfxLoad(afterRun){
   try{
     const [cfg, res, srch, st] = await Promise.all([
       b2Api('/api/role-finder/config'), b2Api('/api/role-finder/results'), b2Api('/api/role-finder/searches'), b2Api('/api/role-finder/status'),
     ]);
     RFX.config = cfg; RFX.results = res.data || []; RFX.today = res.today; RFX.searches = b2List(srch); RFX.status = st; RFX.loaded = true;
     rfxRenderSetup(); rfxRender();
-    if(st.running) rfxPoll();
+    if(st.running && !afterRun) rfxPoll();
   }catch(e){
     document.getElementById('rfxBody').innerHTML = `<tr><td colspan="7" class="empty-row">Could not load Role Finder: ${esc(e.message)}</td></tr>`;
   }
@@ -14796,32 +14805,65 @@ async function rfxSaveSettings(){
 /* ---------- Role Finder: running searches ---------- */
 
 async function rfxRun(searchId){
-  const btn = document.getElementById('rfxRunBtn');
   try{
     const j = await b2Post('/api/role-finder/run', {searchId: searchId || ''});
-    if(j.running && !j.started) showToast('A search is already running');
-    else showToast('Searching the job boards. Results appear here when it finishes.');
-    btn.disabled = true; btn.innerHTML = '<span class="rfx-spin"></span>Searching';
+    if(j.running && !j.started) showToast('A search is already running, showing its progress');
+    RFX.progressShown = true; RFX.reloadedAfterSave = false;
+    rfxRenderProgress({phase:'Starting', pct:1, adverts:0, companies:0, recent:[], errors:[], startedAt:new Date().toISOString()}, true);
     rfxPoll();
   }catch(e){ showToast('Could not start the search: ' + e.message); }
+}
+
+function rfxRenderProgress(p, running){
+  const host = document.getElementById('rfxProgress');
+  if(!host) return;
+  if(!p){ host.innerHTML = ''; return; }
+  const failed = p.phase === 'Failed' || (!running && p.error);
+  const done = !running;
+  const mins = Math.max(0, Math.round((Date.now() - Date.parse(p.startedAt)) / 1000));
+  const took = mins < 60 ? mins + ' seconds' : Math.floor(mins / 60) + ' min ' + (mins % 60) + ' s';
+  const recent = (p.recent || []).slice(0, 18).map(r => `<span class="rfx-pill" title="${esc(r.role)} - ${esc(r.location)}">${esc(r.company)}</span>`).join('');
+  const errs = (p.errors || []).slice(0, 4).map(e => `<div>${esc(e)}</div>`).join('');
+  let head;
+  if(failed) head = `<b style="color:#9B2C22;">The search failed</b> <span class="rfx-sub" style="display:inline;">after ${took}</span>`;
+  else if(done) head = `<b style="color:#2D6A3E;">Search finished</b> <span class="rfx-sub" style="display:inline;">in ${took}</span>`;
+  else head = `<span class="rfx-spin"></span><b>${esc(p.phase || 'Searching')}</b> <span class="rfx-sub" style="display:inline;">${esc(p.pct || 0)}% - running for ${took}</span>`;
+  const result = p.result ? `${p.result.newCount} new direct employer adverts, ${p.result.agencies} agency adverts filtered out${p.result.deepDives ? ', ' + p.result.deepDives + ' deep dives done' : ''}.` : '';
+  host.innerHTML = `<div class="rfx-prog ${failed ? 'bad' : done ? 'ok' : ''}">
+    <div class="hd"><div>${head}</div>${done ? '<a class="tpl-link" onclick="RFX.progressShown=false;rfxRenderProgress(null)">Close</a>' : ''}</div>
+    <div class="bar"><div style="width:${failed ? 100 : Math.max(2, p.pct || 0)}%"></div></div>
+    ${!done && p.current ? `<div class="rfx-sub">Now: ${esc(p.current)}</div>` : ''}
+    ${failed && p.error ? `<div class="rfx-check bad">${esc(p.error)}</div>` : ''}
+    ${done && result ? `<div class="rfx-sub" style="color:var(--dark);">${result}</div>` : ''}
+    <div class="rfx-sub" style="margin-top:4px;"><b style="color:var(--dark);">${esc(p.adverts || 0)}</b> matching adverts from <b style="color:var(--dark);">${esc(p.companies || 0)}</b> companies found${!done ? ' so far (before agency and duplicate checks)' : ''}</div>
+    ${recent && !done ? `<div style="margin-top:6px;">${recent}</div>` : ''}
+    ${errs ? `<div class="rfx-check bad" style="margin-top:6px;">${errs}</div>` : ''}
+  </div>`;
 }
 
 function rfxPoll(){
   const btn = document.getElementById('rfxRunBtn');
   btn.disabled = true; btn.innerHTML = '<span class="rfx-spin"></span>Searching';
+  RFX.progressShown = true;
   clearInterval(RFX.polling);
-  RFX.polling = setInterval(async () => {
+  const tick = async () => {
     try{
       const st = await b2Api('/api/role-finder/status');
+      if(st.progress && st.progress.saved && !RFX.reloadedAfterSave && st.running){ RFX.reloadedAfterSave = true; rfxLoadResults(); }
+      rfxRenderProgress(st.progress || (st.last && st.last.error ? {phase:'Failed', error: st.last.error, startedAt: st.last.startedAt, errors:[]} : null), st.running);
       if(st.running) return;
       clearInterval(RFX.polling); RFX.polling = null;
       btn.disabled = false; btn.textContent = 'Search now';
-      const r = st.last && st.last.result;
-      if(st.last && st.last.error) showToast('Search failed: ' + st.last.error);
-      else if(r) showToast(`Search finished: ${r.newCount || 0} new direct employer adverts, ${r.agencies || 0} agency adverts filtered${r.deepDives ? ', ' + r.deepDives + ' deep dives done' : ''}${r.errors && r.errors.length ? '. Some sources had problems: ' + r.errors[0] : ''}`);
-      rfxLoad();
+      RFX.reloadedAfterSave = false;
+      rfxLoad(true);
     }catch(e){ /* keep trying */ }
-  }, 6000);
+  };
+  tick();
+  RFX.polling = setInterval(tick, 3000);
+}
+
+async function rfxLoadResults(){
+  try{ const res = await b2Api('/api/role-finder/results'); RFX.results = res.data || []; RFX.today = res.today; rfxRender(); }catch(e){ /* the next refresh will catch up */ }
 }
 
 /* ---------- Role Finder: saved searches ---------- */
@@ -15301,7 +15343,7 @@ async function lpxSaveNew(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '16 Oct 2026 - build 21';
+var PAGE_BUILD = '16 Oct 2026 - build 22';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -15312,12 +15354,12 @@ function buildTagApply(){
     tag.style.cssText = 'font-size:10.5px;color:#999;margin-left:10px;white-space:nowrap;';
     chip.appendChild(tag);
   }
-  tag.textContent = 'Page build 21';
+  tag.textContent = 'Page build 22';
   tag.title = 'Page: ' + PAGE_BUILD;
   b2Api('/api/version').then(function(j){
-    tag.textContent = 'Page build 21 | Server ' + serverBuildLabel(j.build);
+    tag.textContent = 'Page build 22 | Server ' + serverBuildLabel(j.build);
     tag.title = 'Page: ' + PAGE_BUILD + ' | Server: ' + j.build;
-  }).catch(function(){ tag.textContent = 'Page build 21 | Server older'; });
+  }).catch(function(){ tag.textContent = 'Page build 22 | Server older'; });
 }
 (function(){
   const _si = signIn;
