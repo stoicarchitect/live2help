@@ -14761,8 +14761,8 @@ function rfxOpenSettings(){
     <div class="simple-form">
       <div class="rfx-confirm" style="margin-top:16px;"><input type="checkbox" id="rfxSwOn" ${sw.enabled ? 'checked' : ''}><span><b>Automatic daily search</b><br><span class="rfx-sub">Searches the job boards every weekday morning. The job board searches are free.</span></span></div>
       <div class="rfx-confirm"><input type="checkbox" id="rfxSwDive" ${sw.autoDive ? 'checked' : ''}><span><b>Automatic deep dives</b> on the top
-        <select id="rfxSwDiveN" style="width:auto;padding:3px 6px;display:inline-block;">${[1,2,3,5,8,10].map(n => `<option ${Number(sw.diveCount) === n ? 'selected' : ''}>${n}</option>`).join('')}</select> companies each morning<br>
-        <span class="rfx-sub">This is the only part that uses AI credit: roughly 15p to 30p per deep dive. 5 a day is about £15 to £30 a month. Deep dives this month so far: ${dives} (about £${(dives * 0.15).toFixed(2)} to £${(dives * 0.3).toFixed(2)}). Manual deep dives from the list always work.</span></span></div>
+        <select id="rfxSwDiveN" style="width:auto;padding:3px 6px;display:inline-block;">${[1,2,3,4,5].map(n => `<option ${Number(sw.diveCount) === n ? 'selected' : ''}>${n}</option>`).join('')}</select> companies each morning<br>
+        <span class="rfx-sub">This is the only part that uses AI credit: roughly 15p to 30p per deep dive. There is a limit of ${esc(c.diveDailyCap || 5)} deep dives a day in total, shared between automatic ones and ones run by hand, so the most it can cost is about £${((c.diveDailyCap || 5) * 0.3 * 22).toFixed(0)} a month. Deep dives this month so far: ${dives} (about £${(dives * 0.15).toFixed(2)} to £${(dives * 0.3).toFixed(2)}). Manual deep dives from the list always work.</span></span></div>
       <label>Salary bands</label>
       <div class="rfx-chips">${(c.bands || []).map(b => box('rfxSwBand', b.key, b.label, (sw.bands || []).includes(b.key))).join('')}
         <label><input type="checkbox" id="rfxSwNoSal" ${sw.includeNoSalary ? 'checked' : ''}> Include adverts with no salary</label></div>
@@ -14906,7 +14906,36 @@ async function rfxOpenDive(id){
     body.innerHTML = '<div style="padding:30px 0;"><span class="rfx-spin"></span>Loading...</div>';
     try{ const j = await b2Api('/api/role-finder/results/' + encodeURIComponent(id)); RFX.dive = j.dive; rfxRenderDive(); }
     catch(e){ body.innerHTML = `<div class="empty-row">Could not load: ${esc(e.message)}</div>`; }
-  } else rfxRunDive();
+  } else rfxConfirmDive();
+}
+
+async function rfxConfirmDive(){
+  const r = RFX.current;
+  const body = document.getElementById('rfxDiveBody');
+  body.innerHTML = '<div style="padding:30px 0;"><span class="rfx-spin"></span>Checking today\'s allowance...</div>';
+  try{ RFX.config = await b2Api('/api/role-finder/config'); }catch(e){ /* show what we have */ }
+  const used = (RFX.config && RFX.config.divesToday) || 0, cap = (RFX.config && RFX.config.diveDailyCap) || 5;
+  const left = Math.max(0, cap - used);
+  const again = r.has_dive;
+  body.innerHTML = `
+    <h2>${again ? 'Run the deep dive again?' : 'Run a deep dive?'}</h2>
+    <div class="role-sub">${esc(r.company)} - ${esc(r.role)}${r.location ? ' - ' + esc(r.location) : ''}</div>
+    <div class="rfx-sec">What it will do</div>
+    <div class="rfx-list">
+      - Look the company up on Companies House (registration, size, directors)<br>
+      - Search the web and the company's own website for who is likely responsible for this hire<br>
+      - Collect published business emails and phone numbers, and work out the company's email format<br>
+      - Write a gatekeeper brief: who to ask for, an opening line and the best route in<br>
+      - Save it all to this company so anyone can view it again for free
+    </div>
+    <div class="rfx-sec">Cost and allowance</div>
+    <div class="rfx-list">Uses AI credit, roughly 15p to 30p, and takes one to two minutes.<br>
+      <b>${used} of ${cap}</b> deep dives used today${left ? ', ' + left + ' left.' : '. Today\'s limit has been reached, so this cannot run until tomorrow.'}
+      ${again ? '<br>This company already has a deep dive. Running it again replaces it and counts towards today\'s limit.' : ''}</div>
+    <div class="simple-form"><div class="actions">
+      <button class="cancel" onclick="${again ? 'rfxRenderDive()' : "closeModal('rfxDiveModal')"}">Cancel</button>
+      <button class="save" ${left ? '' : 'disabled style="opacity:.5;cursor:not-allowed;"'} onclick="rfxRunDive()">Yes, run the deep dive</button>
+    </div></div>`;
 }
 
 async function rfxRunDive(){
@@ -14925,7 +14954,7 @@ async function rfxRunDive(){
     else showToast('Deep dive ready for ' + r.company);
   }catch(e){
     rfxLocal(r.id, {dive_status:'failed'}); rfxRender();
-    body.innerHTML += `<div class="rfx-check bad">The deep dive did not finish: ${esc(e.message)}</div><div class="actions" style="margin-top:12px;"><button class="gold-btn" onclick="rfxRunDive()">Try again</button></div>`;
+    body.innerHTML += `<div class="rfx-check bad">The deep dive did not finish: ${esc(e.message)}</div><div class="actions" style="margin-top:12px;"><button class="gold-btn" onclick="rfxConfirmDive()">Try again</button></div>`;
   }
 }
 
@@ -14939,7 +14968,7 @@ function rfxEmailBadge(s){
 function rfxRenderDive(){
   const r = RFX.current, d = RFX.dive;
   const body = document.getElementById('rfxDiveBody');
-  if(!d){ rfxRunDive(); return; }
+  if(!d){ rfxConfirmDive(); return; }
   const c = d.company || {};
   const g = d.gatekeeper || {};
   const hunter = RFX.config && RFX.config.sources && RFX.config.sources.hunter;
@@ -14990,7 +15019,7 @@ function rfxRenderDive(){
     ${d.notes && d.notes.length ? `<div class="rfx-check bad" style="margin-top:10px;">${d.notes.map(esc).join('<br>')}</div>` : ''}
     <div class="rfx-sub" style="margin-top:12px;">Deep dive ${esc(rfxAgo(d.at))}${d.by ? ' by ' + esc(d.by === 'system' ? 'the morning search' : userLabel(d.by)) : ''}.</div>
     <div class="simple-form"><div class="actions">
-      <button class="cancel" onclick="rfxRunDive()">Run the deep dive again</button>
+      <button class="cancel" onclick="rfxConfirmDive()">Run the deep dive again</button>
       ${r.status !== 'added' ? `<button class="save" onclick="rfxOpenAdd('${esc(r.id)}')">Add to Lead Clients</button>` : '<button class="save" onclick="closeModal(\'rfxDiveModal\');switchTab(\'leadPipeline\')">Open Lead Pipeline</button>'}
     </div></div>`;
 }
@@ -15272,7 +15301,7 @@ async function lpxSaveNew(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '16 Oct 2026 - build 20';
+var PAGE_BUILD = '16 Oct 2026 - build 21';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -15283,12 +15312,12 @@ function buildTagApply(){
     tag.style.cssText = 'font-size:10.5px;color:#999;margin-left:10px;white-space:nowrap;';
     chip.appendChild(tag);
   }
-  tag.textContent = 'Page build 20';
+  tag.textContent = 'Page build 21';
   tag.title = 'Page: ' + PAGE_BUILD;
   b2Api('/api/version').then(function(j){
-    tag.textContent = 'Page build 20 | Server ' + serverBuildLabel(j.build);
+    tag.textContent = 'Page build 21 | Server ' + serverBuildLabel(j.build);
     tag.title = 'Page: ' + PAGE_BUILD + ' | Server: ' + j.build;
-  }).catch(function(){ tag.textContent = 'Page build 20 | Server older'; });
+  }).catch(function(){ tag.textContent = 'Page build 21 | Server older'; });
 }
 (function(){
   const _si = signIn;

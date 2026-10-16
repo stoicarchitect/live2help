@@ -10185,8 +10185,19 @@ Find the company website, switchboard, sites, size, what they do, the people mos
 
 const rfxDiving = new Set();
 
+// Deep dives use AI credit, so there is a hard daily limit shared by manual and automatic ones
+const RFX_DAILY_DIVE_CAP = parseInt(process.env.ROLE_FINDER_DAILY_DIVES || '5', 10);
+async function rfxDivesToday() {
+  const row = (await settingsTable.list()).find(o => o.id === 'rfx_divesday_' + rfxToday());
+  return parseInt((row && row.value) || '0', 10) || 0;
+}
+
 async function rfxDeepDive(resultId, actor) {
   if (rfxDiving.has(resultId)) throw new Error('A deep dive for this company is already running');
+  if (rfxDiving.size + await rfxDivesToday() >= RFX_DAILY_DIVE_CAP) {
+    const e = new Error(`Today's limit of ${RFX_DAILY_DIVE_CAP} deep dives has been reached. It resets tomorrow.`);
+    e.limit = true; throw e;
+  }
   rfxDiving.add(resultId);
   try {
     const all = await rfxResultsTable.list();
@@ -10258,9 +10269,11 @@ async function rfxDeepDive(resultId, actor) {
       agency_flag: agencyBySic ? 'yes' : r.agency_flag, agency_reason: agencyBySic ? 'Registered as an employment agency (Companies House)' : r.agency_reason,
     });
     try {
-      const mk = 'rfx_dives_' + rfxToday().slice(0, 7);
-      const row = (await settingsTable.list()).find(o => o.id === mk);
-      await settingsTable.upsert({ id: mk, value: String((parseInt((row && row.value) || '0', 10) || 0) + 1), updated_by: actor || 'system' });
+      const rows = await settingsTable.list();
+      const mk = 'rfx_dives_' + rfxToday().slice(0, 7), dk = 'rfx_divesday_' + rfxToday();
+      const mrow = rows.find(o => o.id === mk), drow = rows.find(o => o.id === dk);
+      await settingsTable.upsert({ id: mk, value: String((parseInt((mrow && mrow.value) || '0', 10) || 0) + 1), updated_by: actor || 'system' });
+      await settingsTable.upsert({ id: dk, value: String((parseInt((drow && drow.value) || '0', 10) || 0) + 1), updated_by: actor || 'system' });
     } catch (e) { /* the count is only for the cost estimate */ }
     return { result: rfxPublicResult(saved), dive };
   } catch (e) {
@@ -10706,8 +10719,8 @@ async function rfxRunSearches({ searchId, actor, auto } = {}) {
   // automatic deep dives: only when switched on, on the highest scoring companies
   let dived = 0;
   if (rfxSources().ai && settings.autoDive && settings.diveCount > 0) {
-    const doneToday = parseInt(((await settingsTable.list()).find(o => o.id === 'rfx_auto_' + today) || {}).value || '0', 10) || 0;
-    let budget = Math.max(0, Math.min(settings.diveCount, RFX_AUTO_DIVE_CAP) - doneToday);
+    const doneToday = await rfxDivesToday();
+    let budget = Math.max(0, Math.min(settings.diveCount, RFX_DAILY_DIVE_CAP - doneToday));
     const scores = rfxCompanyScores(keep, settings, today);
     const seen = new Set();
     const picks = keep.filter(o => o.status === 'new' && !o.dive_json)
@@ -10719,7 +10732,6 @@ async function rfxRunSearches({ searchId, actor, auto } = {}) {
       try { await rfxDeepDive(p.id, 'system'); dived++; }
       catch (e) { summary.errors.push(`Deep dive ${p.company}: ${e.message}`); }
     }
-    if (dived) await settingsTable.upsert({ id: 'rfx_auto_' + today, value: String(doneToday + dived), updated_by: 'system' });
   }
   summary.deepDives = dived;
 
@@ -10771,7 +10783,8 @@ app.get('/api/role-finder/config', async (req, res) => {
     let sweepLast = null;
     try { sweepLast = JSON.parse((rows.find(o => o.id === 'rfx_sweep_last') || {}).value || 'null'); } catch (e) { sweepLast = null; }
     res.json({
-      sources: rfxSources(), paidUsed: paid, paidCap: RFX_PAID_CAP, autoDiveCap: RFX_AUTO_DIVE_CAP,
+      sources: rfxSources(), paidUsed: paid, paidCap: RFX_PAID_CAP, autoDiveCap: RFX_DAILY_DIVE_CAP,
+      divesToday: parseInt((rows.find(o => o.id === 'rfx_divesday_' + rfxToday()) || {}).value || '0', 10) || 0, diveDailyCap: RFX_DAILY_DIVE_CAP,
       sweep: await rfxSweepSettings(), sweepLast, divesThisMonth: dives,
       regions: Object.keys(RFX_REGIONS), types: RFX_TYPES.map(t => ({ key: t.key, label: t.label })), bands: RFX_BANDS.map(b => ({ key: b.key, label: b.label })),
     });
@@ -10785,7 +10798,7 @@ app.post('/api/role-finder/sweep-settings', requireAdmin, async (req, res) => {
     const next = { ...cur };
     if (b.enabled !== undefined) next.enabled = !!b.enabled;
     if (b.autoDive !== undefined) next.autoDive = !!b.autoDive;
-    if (b.diveCount !== undefined) next.diveCount = Math.max(0, Math.min(RFX_AUTO_DIVE_CAP, parseInt(b.diveCount, 10) || 0));
+    if (b.diveCount !== undefined) next.diveCount = Math.max(0, Math.min(RFX_DAILY_DIVE_CAP, parseInt(b.diveCount, 10) || 0));
     if (Array.isArray(b.regions)) next.regions = b.regions.filter(r => RFX_REGIONS[r]);
     if (Array.isArray(b.types)) next.types = b.types.filter(t => RFX_TYPE_LABEL[t]);
     if (Array.isArray(b.bands)) next.bands = b.bands.filter(k => RFX_BANDS.some(x => x.key === k));
@@ -10904,7 +10917,7 @@ app.post('/api/role-finder/results/:id/agency', async (req, res) => {
 
 app.post('/api/role-finder/results/:id/deep-dive', async (req, res) => {
   try { res.json({ ok: true, ...(await rfxDeepDive(req.params.id, actorOf(req))) }); }
-  catch (e) { console.error('Deep dive failed:', e.message); res.status(500).json({ error: e.message }); }
+  catch (e) { if (!e.limit) console.error('Deep dive failed:', e.message); res.status(e.limit ? 429 : 500).json({ error: e.message }); }
 });
 
 // Paid fallback: one capped lookup for a named person at a domain
@@ -11147,7 +11160,7 @@ app.get('/api/lead-pipeline/stats', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '16 Oct 2026 - build 20';
+const SERVER_BUILD = '16 Oct 2026 - build 21';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
