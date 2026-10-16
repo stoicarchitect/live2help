@@ -4200,6 +4200,19 @@ app.get('/api/candidate-pool/:id/cv/file', async (req, res) => {
    (SHEET_ID) that is created on first use, with full list / upsert / delete.
    ====================================================================== */
 
+// Make sure a tab has enough rows and columns before a big write (Sheets will not grow a tab on its own for updates)
+async function sheetsEnsureGrid(spreadsheetId, title, minRows, minCols) {
+  const sheets = getSheetsClient();
+  const ss = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets.properties(sheetId,title,gridProperties)' });
+  const t = ((ss.data && ss.data.sheets) || []).find(x => x.properties && x.properties.title === title);
+  if (!t) return;
+  const gp = t.properties.gridProperties || {};
+  const reqs = [];
+  if (gp.rowCount != null && gp.rowCount < minRows) reqs.push({ appendDimension: { sheetId: t.properties.sheetId, dimension: 'ROWS', length: minRows - gp.rowCount + 500 } });
+  if (gp.columnCount != null && gp.columnCount < minCols) reqs.push({ appendDimension: { sheetId: t.properties.sheetId, dimension: 'COLUMNS', length: minCols - gp.columnCount } });
+  if (reqs.length) await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: reqs } });
+}
+
 // Sheet column letter for a column number (1 = A, 27 = AA)
 function rfxColLetter(n) {
   let out = '';
@@ -4226,6 +4239,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
         requestBody: { requests: [{ addSheet: { properties: { title: tab } } }] },
       });
     }
+    if (width > 26) await sheetsEnsureGrid(SHEET_ID, tab, 2, width);
     const head = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tab}'!A1:${lastCol}1` });
     const first = head.data.values && head.data.values[0];
     if (!first || first[0] !== header[0] || first.length < width) {
@@ -10669,6 +10683,7 @@ async function rfxWriteAllResults(objs) {
   const sheets = getSheetsClient();
   const last = rfxColLetter(RFX_RESULT_HEADER.length);
   const rows = objs.map(o => RFX_RESULT_HEADER.map(h => (o[h] == null ? '' : String(o[h]).slice(0, 48000))));
+  await sheetsEnsureGrid(SHEET_ID, RFX_RESULTS_TAB, rows.length + 2, RFX_RESULT_HEADER.length);
   rfxResultsTable.invalidate();
   await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: `'${RFX_RESULTS_TAB}'!A2:${last}` });
   for (let i = 0; i < rows.length; i += 400) {
@@ -10722,7 +10737,7 @@ async function rfxRunSearchesInner({ searchId, actor, auto } = {}) {
     if (s) {
       const ex = rfxExcludes(s.exclude);
       if (ex.some(w => j.role.toLowerCase().includes(w))) return false;
-      const minDays = parseInt(s.min_days, 10) || 0, maxDays = parseInt(s.max_days, 10) || 60;
+      const minDays = parseInt(s.min_days, 10) || 0, maxDays = Math.min(100, parseInt(s.max_days, 10) || 60);
       if (days != null && (days < minDays || days > maxDays)) return false;
     } else if (days != null && days > 60) return false;
     const key = `${rfxNormCompany(j.company)}|${rfxNormText(j.role)}|${rfxNormText(String(j.location).split(',')[0])}`;
@@ -11357,6 +11372,9 @@ const CMP_DEFAULTS = {
   compPostcodes: ['TF', 'SY', 'WV'],
 };
 const CMP_PINNED = ['Brampton Recruitment', 'RCM Recruitment'];
+// Adverts open longer than this have almost always been left up by mistake, so they are ignored
+const CMP_MAX_DAYS = 100;
+function cmpTooOld(a, today) { const d = rfxDaysBetween(a.posted_date || a.first_seen, today); return d != null && d > CMP_MAX_DAYS; }
 
 const CMP_HEADER = ['id', 'name', 'website', 'company_number', 'postcode', 'address', 'source', 'pinned', 'hidden', 'notes', 'added_at', 'added_by', 'sic', 'accounts_type', 'size', 'company_created', 'watch_urls', 'watch_status'];
 // Job pages watched for the pinned competitors from the start (they do not advertise on Reed)
@@ -11515,7 +11533,10 @@ function cmpLinkJobs(html, base, listPath) {
     if (p.host !== host) continue;
     const path = p.pathname.toLowerCase();
     if (path === listPath || !/(\/job|\/jobs\/|vacanc|\/position|\/role\/|job-detail|jobid|job_id|\/career)/.test(path + p.search.toLowerCase())) continue;
-    if (/(\/page\/\d+|apply|login|register|alert|search|sector|categor|\/location\/|upload|cv|submit|privacy|cookie|contact|candidates?$|clients?$|job-board\/?$|jobs\/?$)/.test(path)) continue;
+    // skip navigation pages; checked per path segment so job titles containing these words are kept
+    const segs = path.split('/').filter(Boolean);
+    if (/\/page\/\d+/.test(path) || segs.some(g => /^(apply|apply-now|login|register|sign-?in|job-alerts?|alerts?|search|sectors?|categor(y|ies)|locations?|upload(-cv)?|cv|submit-cv|privacy(-policy)?|cookies?(-policy)?|contact(-us)?|candidates?|clients?|employers?|about(-us)?|blog|news|feed)$/.test(g))) continue;
+    if (/(job-board|jobs|vacancies|careers)\/?$/.test(path) && segs.length <= 1) continue;
     let text = rfxStrip(m[2]).replace(/\s+/g, ' ').trim();
     if (!text || text.length < 4 || text.length > 110 || CMP_GENERIC_LINK.test(text)) text = cmpTitleFromSlug(u);
     if (!text) continue;
@@ -11693,6 +11714,7 @@ async function cmpRun(settings, summary, roleFinderResults, opts = {}) {
     const last = rfxColLetter(header.length);
     const rowsOut = [...byNorm.values()].map(c => header.map(h => (c[h] == null ? '' : String(c[h]))));
     const sheets = getSheetsClient();
+    await sheetsEnsureGrid(SHEET_ID, 'Competitors', rowsOut.length + 2, header.length);
     cmpTable.invalidate();
     await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: `'Competitors'!A2:${last}` });
     if (rowsOut.length) await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `'Competitors'!A2:${last}${rowsOut.length + 1}`, valueInputOption: 'RAW', requestBody: { values: rowsOut } });
@@ -11704,6 +11726,7 @@ async function cmpRun(settings, summary, roleFinderResults, opts = {}) {
   const directs = roleFinderResults.filter(o => o.status !== 'agency' && o.company);
   let newAds = 0;
   for (const a of ads) {
+    if (a.posted_date && cmpTooOld(a, today)) { summary.tooOld = (summary.tooOld || 0) + 1; continue; }
     // the pinned names are matched loosely ("Brampton Recruitment Ltd" is Brampton Recruitment)
     let comp = a._comp || [...byNorm.values()].find(c => { const n = rfxNormCompany(c.name), m = rfxNormCompany(a.agency); return n === m || (c.pinned === 'yes' && (m.startsWith(n) || n.startsWith(m))); });
     if (!comp) comp = await addComp({ name: a.agency, source: 'Reed adverts' });
@@ -11738,6 +11761,7 @@ async function cmpRun(settings, summary, roleFinderResults, opts = {}) {
   // keep adverts while live; anything not seen for 30 days has closed (kept longer once worked)
   const keep = [...byKey.values()].filter(a => {
     const age = rfxDaysBetween(a.last_seen || a.first_seen, today) || 0;
+    if (a.status !== 'lead' && cmpTooOld(a, today)) return false;
     return a.status === 'lead' ? age <= 180 : age <= 30;
   });
   // a person may have changed something while this ran: their changes win
@@ -11751,7 +11775,8 @@ async function cmpRun(settings, summary, roleFinderResults, opts = {}) {
   const adCount = {};
   for (const a of keep) if ((rfxDaysBetween(a.last_seen, today) || 0) <= 4) adCount[a.competitor_id] = (adCount[a.competitor_id] || 0) + 1;
   for (const [n, c] of [...byNorm.entries()]) {
-    if (c.pinned === 'yes' || c.source === 'Added by hand' || c.notes || c.watch_urls || adCount[c.id]) continue;
+    const dead = c.size === 'Dormant' || c.size === 'Closed';
+    if (c.pinned === 'yes' || c.source === 'Added by hand' || ((c.notes || c.watch_urls || adCount[c.id]) && !dead)) continue;
     byNorm.delete(n); compsChanged = true; summary.removedCompetitors = (summary.removedCompetitors || 0) + 1;
   }
   // company size from Companies House accounts, for agencies that are advertising (40 a run)
@@ -11778,6 +11803,7 @@ async function cmpRun(settings, summary, roleFinderResults, opts = {}) {
   const sheets = getSheetsClient();
   const last = rfxColLetter(CMP_AD_HEADER.length);
   const rowsOut = keep.map(o => CMP_AD_HEADER.map(h => (o[h] == null ? '' : String(o[h]))));
+  await sheetsEnsureGrid(SHEET_ID, 'Competitor Adverts', rowsOut.length + 2, CMP_AD_HEADER.length);
   cmpAdsTable.invalidate();
   await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: `'Competitor Adverts'!A2:${last}` });
   for (let i = 0; i < rowsOut.length; i += 400) {
@@ -11887,8 +11913,8 @@ app.get('/api/competitors/overview', async (req, res) => {
     const [comps, ads, settings] = await Promise.all([cmpTable.list(), cmpAdsTable.list(), cmpSettings()]);
     const today = rfxToday();
     const d = n => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
-    const live = a => (rfxDaysBetween(a.last_seen, today) || 0) <= 4;
-    const out = comps.filter(c => c.hidden !== 'yes').map(c => {
+    const live = a => (rfxDaysBetween(a.last_seen, today) || 0) <= 4 && !cmpTooOld(a, today);
+    const out = comps.filter(c => c.hidden !== 'yes' && !((c.size === 'Dormant' || c.size === 'Closed') && c.pinned !== 'yes')).map(c => {
       const mine = ads.filter(a => a.competitor_id === c.id);
       const liveAds = mine.filter(live);
       const types = {};
@@ -11977,7 +12003,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '16 Oct 2026 - build 29';
+const SERVER_BUILD = '16 Oct 2026 - build 30';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
