@@ -4130,9 +4130,16 @@ app.get('/api/candidate-pool/:id/cv/file', async (req, res) => {
    (SHEET_ID) that is created on first use, with full list / upsert / delete.
    ====================================================================== */
 
+// Sheet column letter for a column number (1 = A, 27 = AA)
+function rfxColLetter(n) {
+  let out = '';
+  while (n > 0) { const m = (n - 1) % 26; out = String.fromCharCode(65 + m) + out; n = Math.floor((n - 1) / 26); }
+  return out;
+}
+
 function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, auditName, beforeList }) {
   const width = header.length;
-  const lastCol = String.fromCharCode(64 + width);
+  const lastCol = rfxColLetter(width);
   let ready = false;
   let chain = Promise.resolve();
   const lock = fn => { const run = chain.then(fn); chain = run.catch(() => {}); return run; };
@@ -9715,7 +9722,8 @@ const rfxSearchesTable = makeSimpleTable({
 
 const RFX_RESULT_HEADER = ['id', 'search_ids', 'source', 'source_id', 'company', 'role', 'location', 'salary', 'posted_date',
   'first_seen', 'last_seen', 'url', 'description', 'status', 'dismiss_reason', 'agency_flag', 'agency_reason',
-  'company_number', 'sic', 'dive_status', 'dive_json', 'dive_at', 'lead_id', 'handled_by', 'notes', 'key'];
+  'company_number', 'sic', 'dive_status', 'dive_json', 'dive_at', 'lead_id', 'handled_by', 'notes', 'key',
+  'role_type', 'region', 'sal_min', 'sal_max'];
 const RFX_RESULTS_TAB = 'Role Finder Results';
 const rfxResultsTable = makeSimpleTable({ tab: RFX_RESULTS_TAB, header: RFX_RESULT_HEADER, path: null, label: 'Result' });
 
@@ -10249,6 +10257,11 @@ async function rfxDeepDive(resultId, actor) {
       company_number: ch ? ch.number : r.company_number, sic: ch ? ch.sic : r.sic,
       agency_flag: agencyBySic ? 'yes' : r.agency_flag, agency_reason: agencyBySic ? 'Registered as an employment agency (Companies House)' : r.agency_reason,
     });
+    try {
+      const mk = 'rfx_dives_' + rfxToday().slice(0, 7);
+      const row = (await settingsTable.list()).find(o => o.id === mk);
+      await settingsTable.upsert({ id: mk, value: String((parseInt((row && row.value) || '0', 10) || 0) + 1), updated_by: actor || 'system' });
+    } catch (e) { /* the count is only for the cost estimate */ }
     return { result: rfxPublicResult(saved), dive };
   } catch (e) {
     try {
@@ -10261,71 +10274,333 @@ async function rfxDeepDive(resultId, actor) {
 
 /* ---------- the search run ---------- */
 
+/* ---------- Market Sweep (build 20) ----------
+   Runs with nothing for anyone to set up: every UK region, every role type,
+   rotating through the regions across the week so the free job board limits
+   are never hit. Settings (on/off, regions, role types, salary bands,
+   automatic deep dives) are kept in the Settings tab and changed by Dan. */
+
+const RFX_REGIONS = {
+  'London': ['London'],
+  'South East': ['Reading', 'Southampton', 'Brighton', 'Maidstone', 'Oxford', 'Milton Keynes', 'Guildford'],
+  'South West': ['Bristol', 'Exeter', 'Plymouth', 'Swindon', 'Bournemouth'],
+  'East of England': ['Cambridge', 'Norwich', 'Ipswich', 'Chelmsford', 'Peterborough', 'Luton'],
+  'West Midlands': ['Birmingham', 'Coventry', 'Wolverhampton', 'Telford', 'Stoke-on-Trent', 'Worcester'],
+  'East Midlands': ['Nottingham', 'Leicester', 'Derby', 'Northampton', 'Lincoln'],
+  'Yorkshire and the Humber': ['Leeds', 'Sheffield', 'Bradford', 'Hull', 'York'],
+  'North West': ['Manchester', 'Liverpool', 'Preston', 'Warrington', 'Chester', 'Bolton'],
+  'North East': ['Newcastle upon Tyne', 'Sunderland', 'Middlesbrough', 'Durham'],
+  'Wales': ['Cardiff', 'Swansea', 'Newport', 'Wrexham'],
+  'Scotland': ['Glasgow', 'Edinburgh', 'Aberdeen', 'Dundee'],
+  'Northern Ireland': ['Belfast', 'Derry'],
+};
+const RFX_TOWN_REGION = {};
+Object.entries(RFX_REGIONS).forEach(([r, towns]) => towns.forEach(t => { RFX_TOWN_REGION[t.toLowerCase()] = r; }));
+
+// Order matters: the first role type whose words match a job title wins
+const RFX_TYPES = [
+  { key: 'health', label: 'Health and Social Care', adzuna: 'healthcare-nursing-jobs', re: /\b(nurse|nursing|carer|care assistant|care worker|support worker|healthcare|clinical|pharmac\w*|physio\w*|therapist|social worker|dental|midwife|care home|registered manager|deputy manager care)\b/i },
+  { key: 'catering', label: 'Catering and Hospitality', adzuna: 'hospitality-catering-jobs', re: /\b(chef|cook|catering|hospitality|restaurant|hotel|kitchen|bar manager|front of house|food and beverage|f&b|housekeep\w*|barista|sous)\b/i },
+  { key: 'driving', label: 'Driving and Logistics', adzuna: 'logistics-warehouse-jobs', re: /\b(driver|hgv|lgv|class [12]|c\+e|logistics|warehouse|transport|fleet|forklift|flt|supply chain|despatch|dispatch|courier|stock controller|stores|inventory|distribution)\b/i },
+  { key: 'construction', label: 'Construction', adzuna: 'trade-construction-jobs', re: /\b(construction|site manager|site engineer|civil|groundwork\w*|carpenter|joiner|bricklayer|plasterer|electrician|plumber|surveyor|building|architect\w*|scaffold\w*|roofer|contracts manager)\b/i },
+  { key: 'accountancy', label: 'Accountancy and Finance', adzuna: 'accounting-finance-jobs', re: /\b(accountant|accounts|accounting|finance|financial|payroll|bookkeep\w*|credit control\w*|audit\w*|tax|treasury|fp&a|financial controller|purchase ledger|sales ledger)\b/i },
+  { key: 'commercial', label: 'Commercial', adzuna: null, adzunaWords: 'buyer procurement purchasing estimator commercial', re: /\b(buyer|procurement|purchasing|commercial|estimator|bid manager|bid writer|category manager|contracts? administrator|pricing)\b/i },
+  { key: 'engineering', label: 'Engineering and Technical', adzuna: 'engineering-jobs', re: /\b(engineer\w*|technician|cad|draughts\w*|designer|maintenance|mechanical|electrical|controls|automation|plc|quality|qa|qc|cnc|machinist|welder|fabricat\w*|toolmaker|metrology|test|calibration|hvac)\b/i },
+  { key: 'industrial', label: 'Industrial and Manufacturing', adzuna: 'manufacturing-jobs', re: /\b(production|operative|manufactur\w*|assembl\w*|plant manager|shift (manager|leader|supervisor)|process|factory|lean|continuous improvement|operations manager|team leader production|packer|machine operator)\b/i },
+  { key: 'itsales', label: 'IT and Sales', adzuna: 'it-jobs', re: /\b(software|developer|programmer|it support|it manager|it technician|data|analyst|devops|cloud|network|cyber|infrastructure|sales|business development|account (manager|executive)|telesales|area sales|territory|key account|new business)\b/i },
+  { key: 'corporate', label: 'Corporate', adzuna: 'hr-jobs', re: /\b(hr|human resources|people (partner|advisor|manager)|recruit\w*|talent|marketing|office manager|administrat\w*|admin|personal assistant|executive assistant|legal|solicitor|paralegal|compliance|customer service|receptionist|secretary|health and safety|sheq|project (manager|coordinator)|coordinator)\b/i },
+  { key: 'other', label: 'Other roles', adzuna: null, re: null },
+];
+const RFX_TYPE_LABEL = Object.fromEntries(RFX_TYPES.map(t => [t.key, t.label]));
+
+const RFX_BANDS = [
+  { key: 'b25', label: '£25k - £30k', min: 25000, max: 30000 },
+  { key: 'b30', label: '£30k - £40k', min: 30000, max: 40000 },
+  { key: 'b40', label: '£40k - £60k', min: 40000, max: 60000 },
+  { key: 'b60', label: '£60k plus', min: 60000, max: 10000000 },
+];
+const RFX_SALARY_FLOOR = 25000;
+
+const RFX_SWEEP_DEFAULTS = {
+  enabled: true,            // the automatic weekday search
+  autoDive: false,          // automatic deep dives (the only part that costs AI credit)
+  diveCount: 5,
+  regions: Object.keys(RFX_REGIONS),
+  types: RFX_TYPES.filter(t => t.key !== 'other').map(t => t.key),
+  bands: ['b30', 'b40'],
+  includeNoSalary: false,
+  listSize: 25,
+  townsPerRun: 20,
+  adzunaPerRun: 40,
+};
+
+async function rfxSweepSettings() {
+  try {
+    const row = (await settingsTable.list()).find(o => o.id === 'rfx_sweep');
+    const saved = row ? JSON.parse(row.value) : {};
+    return { ...RFX_SWEEP_DEFAULTS, ...saved };
+  } catch (e) { return { ...RFX_SWEEP_DEFAULTS }; }
+}
+
+function rfxClassify(title, fallback) {
+  for (const t of RFX_TYPES) if (t.re && t.re.test(title)) return t.key;
+  return fallback || 'other';
+}
+
+function rfxSalaryNums(o) {
+  let a = parseInt(o.sal_min, 10) || 0, b = parseInt(o.sal_max, 10) || 0;
+  if (!a && !b && o.salary) {
+    const nums = (String(o.salary).match(/\d[\d,]*/g) || []).map(n => parseInt(n.replace(/,/g, ''), 10)).filter(n => n >= 1000);
+    a = nums[0] || 0; b = nums[1] || nums[0] || 0;
+  }
+  return { min: a, max: b || a };
+}
+
+function rfxInBands(o, bandKeys) {
+  const s = rfxSalaryNums(o);
+  if (!s.min && !s.max) return null; // salary not given
+  return RFX_BANDS.filter(b => bandKeys.includes(b.key)).some(b => s.max >= b.min && s.min < b.max) && s.max >= RFX_SALARY_FLOOR;
+}
+
+function rfxRegionOf(location, fallback) {
+  const l = String(location || '').toLowerCase();
+  for (const [town, region] of Object.entries(RFX_TOWN_REGION)) if (l.includes(town)) return region;
+  for (const region of Object.keys(RFX_REGIONS)) if (l.includes(region.toLowerCase())) return region;
+  return fallback || '';
+}
+
+function rfxSleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function rfxReedTown(town, minSalary, keywords) {
+  const out = [];
+  const auth = 'Basic ' + Buffer.from(process.env.REED_API_KEY + ':').toString('base64');
+  for (let skip = 0; skip < 300; skip += 100) {
+    const p = new URLSearchParams({ locationName: town, distanceFromLocation: '15', postedByDirectEmployer: 'true', resultsToTake: '100', resultsToSkip: String(skip) });
+    if (keywords) p.set('keywords', keywords);
+    if (minSalary) p.set('minimumSalary', String(minSalary));
+    const r = await rfxFetch(`https://www.reed.co.uk/api/1.0/search?${p}`, { headers: { Authorization: auth, Accept: 'application/json' } });
+    if (r.status === 400 && !keywords) { const e = new Error('Reed needs keywords'); e.needsKeywords = true; throw e; }
+    if (!r.ok) throw new Error(`Reed returned ${r.status}`);
+    const j = await r.json();
+    const list = j.results || [];
+    for (const x of list) {
+      const m = String(x.date || '').match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+      out.push({
+        source: 'Reed', source_id: String(x.jobId || ''), company: x.employerName || '', role: rfxStrip(x.jobTitle || ''),
+        location: x.locationName || town, salary: rfxSalary(x.minimumSalary, x.maximumSalary),
+        sal_min: x.minimumSalary || '', sal_max: x.maximumSalary || '',
+        posted_date: m ? `${m[3]}-${m[2]}-${m[1]}` : '', url: x.jobUrl || '', description: rfxStrip(x.jobDescription || '').slice(0, 400),
+      });
+    }
+    await rfxSleep(250);
+    if (list.length < 100) break;
+  }
+  return out;
+}
+
+async function rfxAdzunaRegion(region, type, minSalary) {
+  const p = new URLSearchParams({
+    app_id: process.env.ADZUNA_APP_ID, app_key: process.env.ADZUNA_APP_KEY,
+    results_per_page: '50', where: region, max_days_old: '60',
+  });
+  if (type.adzuna) p.set('category', type.adzuna); else if (type.adzunaWords) p.set('what_or', type.adzunaWords);
+  if (minSalary) p.set('salary_min', String(minSalary));
+  const r = await rfxFetch(`https://api.adzuna.com/v1/api/jobs/gb/search/1?${p}`, { headers: { Accept: 'application/json' } });
+  if (!r.ok) throw new Error(`Adzuna returned ${r.status}`);
+  const j = await r.json();
+  return (j.results || []).map(x => {
+    const predicted = String(x.salary_is_predicted) === '1';
+    return {
+      source: 'Adzuna', source_id: String(x.id || ''), company: (x.company && x.company.display_name) || '', role: rfxStrip(x.title || ''),
+      location: (x.location && x.location.display_name) || region, salary: predicted ? '' : rfxSalary(x.salary_min, x.salary_max),
+      sal_min: predicted ? '' : (x.salary_min || ''), sal_max: predicted ? '' : (x.salary_max || ''),
+      posted_date: String(x.created || '').slice(0, 10), url: x.redirect_url || '', description: rfxStrip(x.description || '').slice(0, 400),
+      _type: type.key, _region: region,
+    };
+  });
+}
+
+const RFX_TYPE_KEYWORD = { health: 'care', catering: 'chef', driving: 'driver', construction: 'construction', accountancy: 'accountant', commercial: 'buyer', engineering: 'engineer', industrial: 'production', itsales: 'sales', corporate: 'manager' };
+
+async function rfxSweepJobs(settings, summary) {
+  const jobs = [];
+  const minBand = Math.min(...RFX_BANDS.filter(b => settings.bands.includes(b.key)).map(b => b.min).concat([RFX_SALARY_FLOOR]));
+  const minSalary = settings.includeNoSalary ? 0 : Math.max(RFX_SALARY_FLOOR, minBand);
+  const rows = await settingsTable.list();
+  let ptr = {};
+  try { ptr = JSON.parse((rows.find(o => o.id === 'rfx_sweep_ptr') || {}).value || '{}'); } catch (e) { ptr = {}; }
+
+  // Reed: rotate through the towns of the chosen regions
+  const towns = settings.regions.flatMap(r => (RFX_REGIONS[r] || []));
+  if (rfxSources().reed && towns.length) {
+    const n = Math.min(settings.townsPerRun, towns.length);
+    let i = (ptr.town || 0) % towns.length;
+    let keywordMode = !!ptr.reedKeywords;
+    for (let k = 0; k < n; k++, i = (i + 1) % towns.length) {
+      const town = towns[i];
+      try {
+        if (!keywordMode) {
+          try { (await rfxReedTown(town, minSalary)).forEach(j => jobs.push({ ...j, _region: RFX_TOWN_REGION[town.toLowerCase()] })); continue; }
+          catch (e) { if (!e.needsKeywords) throw e; keywordMode = true; }
+        }
+        for (const t of settings.types) {
+          if (!RFX_TYPE_KEYWORD[t]) continue;
+          (await rfxReedTown(town, minSalary, RFX_TYPE_KEYWORD[t])).forEach(j => jobs.push({ ...j, _type: t, _region: RFX_TOWN_REGION[town.toLowerCase()] }));
+        }
+      } catch (e) { summary.errors.push(`Sweep ${town} (Reed): ${e.message}`); }
+    }
+    ptr.town = i; ptr.reedKeywords = keywordMode;
+    summary.townsSearched = n;
+  }
+
+  // Adzuna: rotate through region and role type pairs
+  const pairs = [];
+  settings.regions.forEach(r => settings.types.forEach(t => { const ty = RFX_TYPES.find(x => x.key === t); if (ty && (ty.adzuna || ty.adzunaWords)) pairs.push([r, ty]); }));
+  if (rfxSources().adzuna && pairs.length && settings.adzunaPerRun > 0) {
+    const n = Math.min(settings.adzunaPerRun, pairs.length);
+    let i = (ptr.adz || 0) % pairs.length;
+    for (let k = 0; k < n; k++, i = (i + 1) % pairs.length) {
+      const [region, type] = pairs[i];
+      try { jobs.push(...await rfxAdzunaRegion(region, type, minSalary)); }
+      catch (e) { summary.errors.push(`Sweep ${region} ${type.label} (Adzuna): ${e.message}`); if (/429|401|403/.test(e.message)) break; }
+      await rfxSleep(200);
+    }
+    ptr.adz = i;
+  }
+  await settingsTable.upsert({ id: 'rfx_sweep_ptr', value: JSON.stringify(ptr), updated_by: 'system' });
+
+  // keep only the role types and salary bands that are switched on
+  return jobs.filter(j => {
+    j.role_type = rfxClassify(j.role, j._type);
+    if (!settings.types.includes(j.role_type)) return false;
+    const band = rfxInBands(j, settings.bands);
+    if (band === null) return settings.includeNoSalary;
+    return band;
+  });
+}
+
+/* ---------- Lead Score: which companies Ella should call first ---------- */
+
+function rfxCompanyScores(list, settings, today) {
+  const by = new Map();
+  list.forEach(o => {
+    if (!['new', 'shortlisted'].includes(o.status)) return;
+    const n = rfxNormCompany(o.company);
+    if (!by.has(n)) by.set(n, { days: 0, roles: new Set(), band: false, dive: false, ch: false });
+    const g = by.get(n);
+    const d = rfxDaysBetween(o.posted_date, today) || 0;
+    g.days = Math.max(g.days, d);
+    g.roles.add(rfxNormText(o.role));
+    if (rfxInBands(o, settings.bands)) g.band = true;
+    if (o.dive_json || o.has_dive) g.dive = true;
+    if (o.company_number) g.ch = true;
+  });
+  const scores = new Map();
+  by.forEach((g, n) => {
+    const s = Math.min(g.days, 60) / 60 * 45 + Math.min(g.roles.size, 5) / 5 * 25 + (g.band ? 20 : 0) + (g.dive ? 5 : 0) + (g.ch ? 5 : 0);
+    scores.set(n, Math.round(s));
+  });
+  return scores;
+}
+
+/* ---------- companies Ella has dismissed: their new adverts stay out of the way ---------- */
+
+const rfxDismissedTable = makeSimpleTable({
+  tab: 'Role Finder Dismissed',
+  header: ['id', 'name', 'reason', 'until', 'added_by', 'added_at'],
+  path: null,
+  label: 'Dismissed company',
+});
+
+async function rfxDismissedMap() {
+  const today = rfxToday();
+  const m = new Map();
+  (await rfxDismissedTable.list()).forEach(d => { if (!d.until || d.until >= today) m.set(rfxNormCompany(d.name), d); });
+  return m;
+}
+
 async function rfxWriteAllResults(objs) {
   await rfxResultsTable.ensure();
   const sheets = getSheetsClient();
+  const last = rfxColLetter(RFX_RESULT_HEADER.length);
   const rows = objs.map(o => RFX_RESULT_HEADER.map(h => (o[h] == null ? '' : String(o[h]).slice(0, 48000))));
-  await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: `'${RFX_RESULTS_TAB}'!A2:Z` });
+  await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: `'${RFX_RESULTS_TAB}'!A2:${last}` });
   for (let i = 0; i < rows.length; i += 400) {
     const chunk = rows.slice(i, i + 400);
     await sheets.spreadsheets.values.update({
-      spreadsheetId: SHEET_ID, range: `'${RFX_RESULTS_TAB}'!A${i + 2}:Z${i + 1 + chunk.length}`,
+      spreadsheetId: SHEET_ID, range: `'${RFX_RESULTS_TAB}'!A${i + 2}:${last}${i + 1 + chunk.length}`,
       valueInputOption: 'RAW', requestBody: { values: chunk },
     });
   }
 }
 
 let rfxRunState = { running: false };
+const RFX_MAX_OPEN = 5000;
 
 async function rfxRunSearches({ searchId, actor, auto } = {}) {
   const today = rfxToday();
+  const settings = await rfxSweepSettings();
   if (auto) {
     const dow = new Date().toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'Europe/London' });
     if (dow === 'Sat' || dow === 'Sun') return { skipped: 'Weekend' };
+    if (!settings.enabled) return { skipped: 'The automatic search is switched off' };
   }
   const src = rfxSources();
-  if (!src.adzuna && !src.reed) throw new Error('No job board keys are set yet. Add the Adzuna or Reed keys on Render.');
+  if (!src.adzuna && !src.reed) throw new Error('No job board keys are set yet. Add the Reed or Adzuna keys on Render.');
   const searches = (await rfxSearchesTable.list()).filter(s => (searchId ? s.id === searchId : s.active !== 'no'));
-  if (!searches.length) return { searches: 0, found: 0, newCount: 0 };
+  const runSweep = !searchId;
 
   const blockSet = new Set((await rfxBlockTable.list()).map(b => rfxNormCompany(b.name)).filter(Boolean));
-  const summary = { searches: searches.length, fetched: 0, newCount: 0, updated: 0, agencies: 0, errors: [], perSearch: {} };
+  const dismissed = await rfxDismissedMap();
+  const ctx = await rfxContext().catch(() => ({ clients: new Set(), leads: new Set(), suppressedCompanies: new Set(), suppressedEmails: new Set() }));
+  const summary = { searches: searches.length, sweep: runSweep, fetched: 0, newCount: 0, updated: 0, agencies: 0, autoHandled: 0, errors: [], perSearch: {} };
   const fresh = new Map();
+
+  const addJob = (j, sid, s) => {
+    summary.fetched++;
+    const days = rfxDaysBetween(j.posted_date, today);
+    if (s) {
+      const ex = rfxExcludes(s.exclude);
+      if (ex.some(w => j.role.toLowerCase().includes(w))) return false;
+      const minDays = parseInt(s.min_days, 10) || 0, maxDays = parseInt(s.max_days, 10) || 60;
+      if (days != null && (days < minDays || days > maxDays)) return false;
+    } else if (days != null && days > 60) return false;
+    const key = `${rfxNormCompany(j.company)}|${rfxNormText(j.role)}|${rfxNormText(String(j.location).split(',')[0])}`;
+    const prev = fresh.get(key);
+    if (prev) {
+      if (!prev.search_ids.split(',').includes(sid)) prev.search_ids += ',' + sid;
+      if (!prev.source.includes(j.source)) prev.source += ', ' + j.source;
+      if (j.posted_date && (!prev.posted_date || j.posted_date < prev.posted_date)) prev.posted_date = j.posted_date;
+      if (!prev.salary && j.salary) { prev.salary = j.salary; prev.sal_min = j.sal_min; prev.sal_max = j.sal_max; }
+      return false;
+    }
+    fresh.set(key, { ...j, key, search_ids: sid, role_type: j.role_type || rfxClassify(j.role, j._type), region: rfxRegionOf(j.location, j._region) });
+    return true;
+  };
 
   for (const s of searches) {
     const phrases = rfxPhrases(s.keywords);
     const wantSources = String(s.sources || 'adzuna,reed').toLowerCase();
-    const ex = rfxExcludes(s.exclude);
-    const minDays = parseInt(s.min_days, 10) || 0;
-    const maxDays = parseInt(s.max_days, 10) || 60;
     let count = 0;
     for (const phrase of phrases) {
       const jobs = [];
       if (src.adzuna && wantSources.includes('adzuna')) { try { jobs.push(...await rfxAdzuna(s, phrase)); } catch (e) { summary.errors.push(`${s.name || phrase} (Adzuna): ${e.message}`); } }
       if (src.reed && wantSources.includes('reed')) { try { jobs.push(...await rfxReed(s, phrase)); } catch (e) { summary.errors.push(`${s.name || phrase} (Reed): ${e.message}`); } }
-      for (const j of jobs) {
-        summary.fetched++;
-        const title = j.role.toLowerCase();
-        if (ex.some(w => title.includes(w))) continue;
-        const days = rfxDaysBetween(j.posted_date, today);
-        if (days != null && (days < minDays || days > maxDays)) continue;
-        const key = `${rfxNormCompany(j.company)}|${rfxNormText(j.role)}|${rfxNormText(String(j.location).split(',')[0])}`;
-        const prev = fresh.get(key);
-        if (prev) {
-          if (!prev.search_ids.split(',').includes(s.id)) prev.search_ids += ',' + s.id;
-          if (!prev.source.includes(j.source)) prev.source += ', ' + j.source;
-          if (j.posted_date && (!prev.posted_date || j.posted_date < prev.posted_date)) prev.posted_date = j.posted_date;
-          if (!prev.salary && j.salary) prev.salary = j.salary;
-          continue;
-        }
-        fresh.set(key, { ...j, key, search_ids: s.id });
-        count++;
-      }
+      jobs.forEach(j => { if (addJob(j, s.id, s)) count++; });
     }
     summary.perSearch[s.id] = count;
   }
 
-  // merge with what is already stored
+  if (runSweep) {
+    try {
+      const jobs = await rfxSweepJobs(settings, summary);
+      let count = 0;
+      jobs.forEach(j => { if (addJob(j, 'sweep', null)) count++; });
+      summary.perSearch.sweep = count;
+    } catch (e) { summary.errors.push('Market sweep: ' + e.message); }
+  }
+
+  // merge with what is already stored: anything already actioned keeps its status, so it never comes back as new
   const existing = await rfxResultsTable.list();
   const byKey = new Map(existing.map(x => [x.key || x.id, x]));
   const companiesToCheck = new Map();
@@ -10337,33 +10612,49 @@ async function rfxRunSearches({ searchId, actor, auto } = {}) {
       j.search_ids.split(',').forEach(i => ids.add(i));
       old.search_ids = [...ids].join(',');
       if (j.posted_date && (!old.posted_date || j.posted_date < old.posted_date)) old.posted_date = j.posted_date;
-      if (!old.salary && j.salary) old.salary = j.salary;
+      if (!old.salary && j.salary) { old.salary = j.salary; old.sal_min = j.sal_min; old.sal_max = j.sal_max; }
+      if (!old.role_type) old.role_type = j.role_type;
+      if (!old.region) old.region = j.region;
       if (!old.url && j.url) old.url = j.url;
       summary.updated++;
       continue;
     }
+    const n = rfxNormCompany(j.company);
     const ag = rfxAgencyCheck(j, blockSet);
+    let status = ag.flag ? 'agency' : 'new';
+    let reason = '';
+    if (!ag.flag) {
+      if (ctx.clients.has(n) || ctx.leads.has(n)) { status = 'added'; summary.autoHandled++; }
+      else if (ctx.suppressedCompanies.has(n)) { status = 'dismissed'; reason = 'Opted out'; summary.autoHandled++; }
+      else if (dismissed.has(n)) { status = 'dismissed'; reason = 'Company dismissed earlier' + (dismissed.get(n).reason ? ': ' + dismissed.get(n).reason : ''); summary.autoHandled++; }
+      else {
+        // a new advert from a company already actioned in Role Finder follows that company
+        const sib = existing.find(x => rfxNormCompany(x.company) === n && ['added', 'shortlisted'].includes(x.status));
+        if (sib) { status = sib.status; summary.autoHandled++; }
+      }
+    }
     const obj = {
       id: rfxId('rf'), search_ids: j.search_ids, source: j.source, source_id: j.source_id, company: j.company, role: j.role,
       location: j.location, salary: j.salary, posted_date: j.posted_date, first_seen: today, last_seen: today, url: j.url,
-      description: j.description, status: ag.flag ? 'agency' : 'new', dismiss_reason: '', agency_flag: ag.flag, agency_reason: ag.reason,
-      company_number: '', sic: '', dive_status: '', dive_json: '', dive_at: '', lead_id: '', handled_by: '', notes: '', key,
+      description: j.description, status, dismiss_reason: reason, agency_flag: ag.flag, agency_reason: ag.reason,
+      company_number: '', sic: '', dive_status: '', dive_json: '', dive_at: '', lead_id: '', handled_by: status === 'new' ? '' : 'system', notes: '', key,
+      role_type: j.role_type, region: j.region, sal_min: j.sal_min || '', sal_max: j.sal_max || '',
     };
     byKey.set(key, obj);
     if (ag.flag) summary.agencies++;
-    else {
+    else if (status === 'new') {
       summary.newCount++;
-      const n = rfxNormCompany(j.company);
       if (!companiesToCheck.has(n)) companiesToCheck.set(n, []);
       companiesToCheck.get(n).push(obj);
     }
   }
 
-  // Companies House: catch agencies registered as employment businesses
+  // Companies House: catch agencies registered as employment businesses (longest-advertised companies first)
   if (rfxSources().companiesHouse) {
+    const order = [...companiesToCheck.values()].sort((a, b) => String(a[0].posted_date || '9').localeCompare(String(b[0].posted_date || '9')));
     let checked = 0;
-    for (const [, objs] of companiesToCheck) {
-      if (checked++ >= 150) break;
+    for (const objs of order) {
+      if (checked++ >= 200) break;
       const ch = await rfxChFind(objs[0].company);
       if (!ch) continue;
       const isAgency = ch.sic.split(',').some(s => RFX_AGENCY_SIC.includes(s));
@@ -10374,54 +10665,59 @@ async function rfxRunSearches({ searchId, actor, auto } = {}) {
     }
   }
 
-  // tidy: drop adverts that have gone, keep handled ones as a record
-  const keep = [];
+  // tidy: actioned adverts are kept while the advert is still live, so they never come back as new
+  let keep = [];
   for (const o of byKey.values()) {
-    const lastSeenAge = rfxDaysBetween(o.last_seen || o.first_seen, today) || 0;
-    if (o.status === 'added') { if (lastSeenAge <= 180) keep.push(o); continue; }
-    if (o.status === 'dismissed' || o.status === 'agency') {
-      if (lastSeenAge > 120) continue;
-      if (lastSeenAge > 14) { o.description = ''; o.dive_json = ''; }
+    const age = rfxDaysBetween(o.last_seen || o.first_seen, today) || 0;
+    if (['added', 'dismissed', 'agency', 'shortlisted'].includes(o.status)) {
+      if (age > 120) continue;
+      if (age > 14 && o.status !== 'shortlisted') { o.description = ''; o.dive_json = o.status === 'added' ? o.dive_json : ''; }
       keep.push(o); continue;
     }
-    if (lastSeenAge > 21 && !o.dive_json) continue;
-    if (lastSeenAge > 45) continue;
+    if (age > 21 && !o.dive_json) continue;
+    if (age > 45) continue;
     keep.push(o);
+  }
+  // keep the sheet a sensible size: drop the lowest scoring open adverts beyond the cap
+  const open = keep.filter(o => o.status === 'new');
+  if (open.length > RFX_MAX_OPEN) {
+    const scores = rfxCompanyScores(keep, settings, today);
+    open.sort((a, b) => (scores.get(rfxNormCompany(b.company)) || 0) - (scores.get(rfxNormCompany(a.company)) || 0));
+    const drop = new Set(open.slice(RFX_MAX_OPEN).map(o => o.id));
+    keep = keep.filter(o => !drop.has(o.id));
+    summary.trimmed = drop.size;
   }
 
   // a person may have changed something while the search ran: their changes win
+  const before = new Map(existing.map(x => [x.id, x]));
   const latest = new Map((await rfxResultsTable.list()).map(x => [x.id, x]));
   const userFields = ['status', 'dismiss_reason', 'notes', 'lead_id', 'handled_by', 'dive_status', 'dive_json', 'dive_at', 'agency_flag', 'agency_reason', 'company_number', 'sic'];
   keep.forEach(o => {
-    const l = latest.get(o.id);
-    if (l) userFields.forEach(f => { if (l[f] !== undefined && l[f] !== '' && l[f] !== existing.find(e => e.id === o.id)?.[f]) o[f] = l[f]; });
+    const l = latest.get(o.id), b = before.get(o.id);
+    if (l) userFields.forEach(f => { if (l[f] !== undefined && (!b || l[f] !== b[f])) o[f] = l[f]; });
   });
   await rfxWriteAllResults(keep);
 
-  // record the run on each search
   for (const s of searches) {
     await rfxSearchesTable.upsert({ ...s, last_run: rfxNow(), last_found: String(summary.perSearch[s.id] || 0) });
   }
+  if (runSweep) await settingsTable.upsert({ id: 'rfx_sweep_last', value: JSON.stringify({ at: rfxNow(), found: summary.perSearch.sweep || 0, towns: summary.townsSearched || 0 }), updated_by: actor || 'system' });
 
-  // automatic deep dives on the longest-advertised new companies
+  // automatic deep dives: only when switched on, on the highest scoring companies
   let dived = 0;
-  if (rfxSources().ai) {
+  if (rfxSources().ai && settings.autoDive && settings.diveCount > 0) {
     const doneToday = parseInt(((await settingsTable.list()).find(o => o.id === 'rfx_auto_' + today) || {}).value || '0', 10) || 0;
-    let budget = Math.max(0, RFX_AUTO_DIVE_CAP - doneToday);
-    const known = await rfxContext().catch(() => null);
-    const seenCompanies = new Set();
-    if (known) [...known.clients, ...known.leads, ...known.suppressedCompanies].forEach(c => seenCompanies.add(c));
-    for (const s of searches) {
-      const n = parseInt(s.auto_deep_dive, 10) || 0;
-      if (!n || !budget) continue;
-      const picks = keep.filter(o => o.status === 'new' && !o.dive_json && String(o.search_ids).split(',').includes(s.id))
-        .sort((a, b) => String(a.posted_date || '9').localeCompare(String(b.posted_date || '9')))
-        .filter(o => { const c = rfxNormCompany(o.company); if (seenCompanies.has(c)) return false; seenCompanies.add(c); return true; })
-        .slice(0, Math.min(n, budget));
-      for (const p of picks) {
-        try { await rfxDeepDive(p.id, 'system'); dived++; budget--; }
-        catch (e) { summary.errors.push(`Deep dive ${p.company}: ${e.message}`); }
-      }
+    let budget = Math.max(0, Math.min(settings.diveCount, RFX_AUTO_DIVE_CAP) - doneToday);
+    const scores = rfxCompanyScores(keep, settings, today);
+    const seen = new Set();
+    const picks = keep.filter(o => o.status === 'new' && !o.dive_json)
+      .sort((a, b) => (scores.get(rfxNormCompany(b.company)) || 0) - (scores.get(rfxNormCompany(a.company)) || 0)
+        || String(a.posted_date || '9').localeCompare(String(b.posted_date || '9')))
+      .filter(o => { const c = rfxNormCompany(o.company); if (seen.has(c)) return false; seen.add(c); return true; })
+      .slice(0, budget);
+    for (const p of picks) {
+      try { await rfxDeepDive(p.id, 'system'); dived++; }
+      catch (e) { summary.errors.push(`Deep dive ${p.company}: ${e.message}`); }
     }
     if (dived) await settingsTable.upsert({ id: 'rfx_auto_' + today, value: String(doneToday + dived), updated_by: 'system' });
   }
@@ -10436,14 +10732,17 @@ async function rfxRunSearches({ searchId, actor, auto } = {}) {
   } catch (e) { summary.errors.push('Archive check: ' + e.message); }
 
   if (summary.errors.length) summary.ok = summary.fetched > 0;
+  summary.errors = summary.errors.slice(0, 20);
   return summary;
 }
 
 /* ---------- shaping results for the page ---------- */
 
-function rfxPublicResult(o) {
+function rfxPublicResult(o, keepDescription) {
   const out = { ...o };
   delete out.dive_json;
+  if (!keepDescription) delete out.description;
+  out.role_type_label = RFX_TYPE_LABEL[o.role_type] || '';
   out.has_dive = !!o.dive_json;
   out.days = rfxDaysBetween(o.posted_date, rfxToday());
   return out;
@@ -10467,16 +10766,76 @@ app.get('/api/role-finder/config', async (req, res) => {
   try {
     const month = rfxToday().slice(0, 7);
     const paid = parseInt(((await settingsTable.list()).find(o => o.id === 'rfx_paid_' + month) || {}).value || '0', 10) || 0;
-    res.json({ sources: rfxSources(), paidUsed: paid, paidCap: RFX_PAID_CAP, autoDiveCap: RFX_AUTO_DIVE_CAP });
+    const rows = await settingsTable.list();
+    const dives = parseInt((rows.find(o => o.id === 'rfx_dives_' + month) || {}).value || '0', 10) || 0;
+    let sweepLast = null;
+    try { sweepLast = JSON.parse((rows.find(o => o.id === 'rfx_sweep_last') || {}).value || 'null'); } catch (e) { sweepLast = null; }
+    res.json({
+      sources: rfxSources(), paidUsed: paid, paidCap: RFX_PAID_CAP, autoDiveCap: RFX_AUTO_DIVE_CAP,
+      sweep: await rfxSweepSettings(), sweepLast, divesThisMonth: dives,
+      regions: Object.keys(RFX_REGIONS), types: RFX_TYPES.map(t => ({ key: t.key, label: t.label })), bands: RFX_BANDS.map(b => ({ key: b.key, label: b.label })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/role-finder/sweep-settings', requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const cur = await rfxSweepSettings();
+    const next = { ...cur };
+    if (b.enabled !== undefined) next.enabled = !!b.enabled;
+    if (b.autoDive !== undefined) next.autoDive = !!b.autoDive;
+    if (b.diveCount !== undefined) next.diveCount = Math.max(0, Math.min(RFX_AUTO_DIVE_CAP, parseInt(b.diveCount, 10) || 0));
+    if (Array.isArray(b.regions)) next.regions = b.regions.filter(r => RFX_REGIONS[r]);
+    if (Array.isArray(b.types)) next.types = b.types.filter(t => RFX_TYPE_LABEL[t]);
+    if (Array.isArray(b.bands)) next.bands = b.bands.filter(k => RFX_BANDS.some(x => x.key === k));
+    if (b.includeNoSalary !== undefined) next.includeNoSalary = !!b.includeNoSalary;
+    if (b.listSize !== undefined) next.listSize = Math.max(5, Math.min(200, parseInt(b.listSize, 10) || 25));
+    if (!next.bands.length) return res.status(400).json({ error: 'Choose at least one salary band' });
+    const saved = {};
+    Object.keys(RFX_SWEEP_DEFAULTS).forEach(k => { saved[k] = next[k]; });
+    await settingsTable.upsert({ id: 'rfx_sweep', value: JSON.stringify(saved), updated_by: actorOf(req) });
+    auditLog(auditActorOf(req), 'updated', 'role_finder_settings', 'Market sweep', `on: ${next.enabled}, auto deep dives: ${next.autoDive ? next.diveCount : 'off'}`);
+    res.json({ ok: true, sweep: next });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Dismiss a whole company: all its adverts now, and any new ones for 90 days
+app.post('/api/role-finder/dismiss-company', async (req, res) => {
+  try {
+    const { company, reason } = req.body || {};
+    if (!company) return res.status(400).json({ error: 'Company is required' });
+    const n = rfxNormCompany(company);
+    const until = new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
+    const existing = (await rfxDismissedTable.list()).find(d => rfxNormCompany(d.name) === n);
+    await rfxDismissedTable.upsert({ ...(existing || {}), id: existing ? existing.id : rfxId('rd'), name: company, reason: reason || '', until, added_by: actorOf(req), added_at: rfxNow() });
+    const count = await rfxResultsTable.updateWhere(x => rfxNormCompany(x.company) === n && ['new', 'shortlisted'].includes(x.status),
+      x => ({ ...x, status: 'dismissed', dismiss_reason: reason || 'Company dismissed', handled_by: actorOf(req) }));
+    res.json({ ok: true, dismissed: count, until });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Bring a dismissed company back
+app.post('/api/role-finder/restore-company', async (req, res) => {
+  try {
+    const n = rfxNormCompany((req.body || {}).company);
+    if (!n) return res.status(400).json({ error: 'Company is required' });
+    for (const d of (await rfxDismissedTable.list()).filter(x => rfxNormCompany(x.name) === n)) await rfxDismissedTable.remove(d.id);
+    const count = await rfxResultsTable.updateWhere(x => rfxNormCompany(x.company) === n && x.status === 'dismissed',
+      x => ({ ...x, status: 'new', dismiss_reason: '', handled_by: actorOf(req) }));
+    res.json({ ok: true, restored: count });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/role-finder/results', async (req, res) => {
   try {
-    const [list, ctx] = await Promise.all([rfxResultsTable.list(), rfxContext()]);
+    const [list, ctx, settings] = await Promise.all([rfxResultsTable.list(), rfxContext(), rfxSweepSettings()]);
+    const scores = rfxCompanyScores(list, settings, rfxToday());
     const data = list.map(o => {
       const p = rfxPublicResult(o);
       const n = rfxNormCompany(o.company);
+      p.score = scores.get(n) || 0;
+      p.in_band = rfxInBands(o, settings.bands);
       p.is_client = ctx.clients.has(n);
       p.is_lead = ctx.leads.has(n);
       p.suppressed = ctx.suppressedCompanies.has(n);
@@ -10492,7 +10851,7 @@ app.get('/api/role-finder/results/:id', async (req, res) => {
     if (!o) return res.status(404).json({ error: 'Result not found' });
     let dive = null;
     try { dive = o.dive_json ? JSON.parse(o.dive_json) : null; } catch (e) { dive = null; }
-    res.json({ data: rfxPublicResult(o), dive });
+    res.json({ data: rfxPublicResult(o, true), dive });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -10788,7 +11147,7 @@ app.get('/api/lead-pipeline/stats', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '16 Oct 2026 - build 19';
+const SERVER_BUILD = '16 Oct 2026 - build 20';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

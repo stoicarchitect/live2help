@@ -14359,7 +14359,7 @@ table.ops-table tr.rfx-row td{vertical-align:top;}
   <div class="modal rfx-mid"><div class="modal-inner">
     <button class="modal-close" onclick="closeModal('rfxSearchModal')">&times;</button>
     <h2>Saved searches</h2>
-    <div class="role-sub">Each active search runs every weekday morning. Ella can add as many as she likes.</div>
+    <div class="role-sub">Optional extra searches for specific roles, on top of the automatic market sweep. Each active search runs every weekday morning.</div>
     <div id="rfxSearchList" style="margin-top:14px;"></div>
     <div class="rfx-sec" id="rfxSearchFormTitle">New search</div>
     <div class="simple-form">
@@ -14393,6 +14393,13 @@ table.ops-table tr.rfx-row td{vertical-align:top;}
   </div></div>
 </div>
 
+<div class="modal-overlay" id="rfxSettingsModal">
+  <div class="modal rfx-mid"><div class="modal-inner">
+    <button class="modal-close" onclick="closeModal('rfxSettingsModal')">&times;</button>
+    <div id="rfxSettingsBody"></div>
+  </div></div>
+</div>
+
 <div class="modal-overlay" id="lpxModal">
   <div class="modal rfx-mid"><div class="modal-inner">
     <button class="modal-close" onclick="closeModal('lpxModal')">&times;</button>
@@ -14405,7 +14412,7 @@ table.ops-table tr.rfx-row td{vertical-align:top;}
    Business Development: Role Finder and Lead Pipeline (build 19)
    ============================================================ */
 
-const RFX = {results:[], searches:[], config:null, today:'', sel:new Set(), loaded:false, polling:null, current:null, dive:null, addFor:null};
+const RFX = {results:[], searches:[], config:null, today:'', sel:new Set(), expanded:new Set(), showAll:false, groupMap:null, loaded:false, polling:null, current:null, dive:null, addFor:null};
 const LPX = {list:[], stats:null, showLost:false, dragId:null, current:null};
 const LPX_STAGE_LABEL = {identified:'Identified', contacted:'Contacted', interested:'Interested', meeting:'Meeting Booked', terms:'Terms Sent', converted:'Converted to Client', lost:'Lost', archived:'Archived'};
 const LPX_BOARD = ['identified','contacted','interested','meeting','terms','converted'];
@@ -14434,8 +14441,9 @@ function rfxNorm(s){ return String(s || '').toLowerCase().replace(/&/g,' and ').
     rf.id = 'roleFinderView';
     rf.innerHTML = `
       <div class="view-head">
-        <div><h2>Role Finder</h2><div class="sub" id="rfxSummary">Direct employers advertising now, longest advertised first.</div></div>
+        <div><h2>Role Finder</h2><div class="sub" id="rfxSummary">Direct employers hiring now, best leads first.</div></div>
         <div class="head-actions">
+          <button class="cancel" id="rfxSettingsBtn" style="padding:9px 14px;border:1px solid var(--border);background:#fff;border-radius:2px;font-family:inherit;font-size:13px;cursor:pointer;" onclick="rfxOpenSettings()">Sweep settings</button>
           <button class="cancel" style="padding:9px 14px;border:1px solid var(--border);background:#fff;border-radius:2px;font-family:inherit;font-size:13px;cursor:pointer;" onclick="rfxOpenSearches()">Saved searches</button>
           <button class="gold-btn" id="rfxRunBtn" onclick="rfxRun()">Search now</button>
         </div>
@@ -14444,8 +14452,11 @@ function rfxNorm(s){ return String(s || '').toLowerCase().replace(/&/g,' and ').
         <div id="rfxSetup"></div>
         <div class="tile-grid" id="rfxTiles"></div>
         <div class="rfx-bar">
-          <select id="rfxStatus" onchange="rfxRender()"><option value="new">To work</option><option value="shortlisted">Shortlisted</option><option value="added">Added to leads</option><option value="dismissed">Dismissed</option><option value="agency">Filtered agencies</option><option value="all">Everything</option></select>
-          <select id="rfxSearchFilter" onchange="rfxRender()"><option value="">All searches</option></select>
+          <select id="rfxStatus" onchange="RFX.showAll=false;RFX.sel.clear();rfxRender()"><option value="new">To work</option><option value="shortlisted">Shortlisted</option><option value="added">Added to leads</option><option value="dismissed">Dismissed</option><option value="agency">Filtered agencies</option><option value="all">Everything</option></select>
+          <select id="rfxRegion" onchange="rfxRender()"><option value="">All regions</option></select>
+          <select id="rfxType" onchange="rfxRender()"><option value="">All role types</option></select>
+          <select id="rfxBand" onchange="rfxRender()"><option value="">All salaries</option></select>
+          <select id="rfxSearchFilter" onchange="rfxRender()"><option value="">Market sweep and searches</option></select>
           <input id="rfxMinDays" type="number" min="0" placeholder="Min days advertised" style="width:150px;" oninput="rfxRender()">
           <input id="rfxText" placeholder="Filter company, role or place" style="min-width:200px;" oninput="rfxRender()">
           <label class="chk"><input type="checkbox" id="rfxHideKnown" checked onchange="rfxRender()"> Hide existing clients and leads</label>
@@ -14453,14 +14464,15 @@ function rfxNorm(s){ return String(s || '').toLowerCase().replace(/&/g,' and ').
         </div>
         <div class="rfx-bulk" id="rfxBulk"><span id="rfxBulkCount"></span>
           <button class="gold" onclick="rfxBulk('shortlisted')">Shortlist</button>
-          <button onclick="rfxBulk('dismissed')">Dismiss</button>
+          <button onclick="rfxBulk('dismissed')">Dismiss companies</button>
           <button onclick="rfxBulk('new')">Move back to To work</button>
           <button onclick="RFX.sel.clear();rfxRender()">Clear</button></div>
         <div class="ops-table-wrap"><table class="ops-table" style="min-width:1000px;"><thead><tr>
           <th style="width:28px;"><input type="checkbox" id="rfxAll" onclick="rfxSelectAll(this.checked)"></th>
-          <th>Company</th><th>Role</th><th>Salary</th><th>Advertised</th><th>Source</th><th style="text-align:right;">Actions</th>
+          <th>Company</th><th>Open roles</th><th>Region</th><th>Longest advertised</th><th>Lead score</th><th style="text-align:right;">Actions</th>
         </tr></thead><tbody id="rfxBody"><tr><td colspan="7" class="empty-row">Loading...</td></tr></tbody></table></div>
-        <div class="note-line">Adverts come from Adzuna and Reed. Anything posted by a recruitment agency is filtered out using the company name, the wording of the advert, the agency block list and the company's Companies House registration. If an agency slips through, use Agency on its row and it is blocked for good. Contact details are only ever business details found in public sources. Check them before adding a lead.</div>
+        <div id="rfxMore" style="margin-top:10px;"></div>
+        <div class="note-line">The market sweep searches every chosen region and role type each weekday, one row per company. The lead score favours companies advertising longest, hiring for several roles and paying within your salary bands. Anything you shortlist, add or dismiss never comes back as new: dismissing a company also hides its new adverts for 90 days, and companies that are already clients or leads are kept out automatically. Adverts come from Reed and Adzuna. Anything posted by a recruitment agency is filtered out using the company name, the wording of the advert, the agency block list and the company's Companies House registration. If an agency slips through, use Agency on its row and it is blocked for good. Contact details are only ever business details found in public sources. Check them before adding a lead.</div>
       </div>`;
     host.parentNode.appendChild(rf);
     const lp = document.createElement('div');
@@ -14514,101 +14526,157 @@ async function rfxLoad(){
 
 function rfxRenderSetup(){
   const s = (RFX.config && RFX.config.sources) || {};
+  const sw = (RFX.config && RFX.config.sweep) || {};
+  const admin = signedInUser && signedInUser.admin;
   const missing = [];
-  if(!s.adzuna) missing.push('<b>Adzuna</b> (ADZUNA_APP_ID and ADZUNA_APP_KEY, free at developer.adzuna.com)');
-  if(!s.reed) missing.push('<b>Reed</b> (REED_API_KEY, free at reed.co.uk/developers)');
-  if(!s.companiesHouse) missing.push('<b>Companies House</b> (COMPANIES_HOUSE_API_KEY, free at developer.company-information.service.gov.uk)');
+  if(!s.reed) missing.push('<b>Reed</b> (REED_API_KEY)');
+  if(!s.companiesHouse) missing.push('<b>Companies House</b> (COMPANIES_HOUSE_API_KEY)');
   let html = '';
-  if(missing.length && signedInUser && signedInUser.admin) html += `<div class="rfx-setup">To switch on every source, add these keys on Render: ${missing.join('; ')}. Each one starts working as soon as it is saved.</div>`;
-  else if(!s.adzuna && !s.reed) html += `<div class="rfx-setup">The job board connections are not switched on yet. Ask Dan to add the Adzuna and Reed keys.</div>`;
-  if(!RFX.searches.length) html += `<div class="rfx-setup">No saved searches yet. Use <b>Saved searches</b> to add the job titles, area and salary you want to target, then press <b>Search now</b>.</div>`;
+  if(missing.length && admin) html += `<div class="rfx-setup">Still to add on Render: ${missing.join('; ')}.${s.adzuna ? '' : ' Adzuna is optional (£8 a month) and switches on automatically if its keys are added.'}</div>`;
+  else if(!s.adzuna && !s.reed) html += `<div class="rfx-setup">The job board connections are not switched on yet. Ask Dan to add the Reed key.</div>`;
   document.getElementById('rfxSetup').innerHTML = html;
-  const sel = document.getElementById('rfxSearchFilter');
-  const cur = sel.value;
-  sel.innerHTML = '<option value="">All searches</option>' + RFX.searches.map(x => `<option value="${esc(x.id)}">${esc(x.name || x.keywords)}</option>`).join('');
-  sel.value = cur;
-  const last = RFX.status && RFX.status.last;
-  const lastRun = [last && last.finishedAt, ...RFX.searches.map(x => x.last_run)].filter(Boolean).sort().pop();
-  document.getElementById('rfxSummary').textContent = 'Direct employers advertising now, longest advertised first. Last search: ' +
-    (RFX.status && RFX.status.running ? 'running now' : lastRun ? rfxAgo(lastRun) : 'never') + '.';
+  const bands = ((RFX.config && RFX.config.bands) || []).filter(b => (sw.bands || []).includes(b.key)).map(b => b.label);
+  const last = RFX.config && RFX.config.sweepLast;
+  const lastRun = [last && last.at, RFX.status && RFX.status.last && RFX.status.last.finishedAt, ...RFX.searches.map(x => x.last_run)].filter(Boolean).sort().pop();
+  document.getElementById('rfxSummary').innerHTML =
+    `Automatic search <b style="color:${sw.enabled ? '#2D6A3E' : '#9B2C22'}">${sw.enabled ? 'on' : 'off'}</b> &middot; automatic deep dives <b style="color:${sw.autoDive ? '#2D6A3E' : '#999'}">${sw.autoDive ? sw.diveCount + ' a day' : 'off'}</b> &middot; ${esc(bands.join(', ') || 'no salary bands')}${sw.includeNoSalary ? ' plus adverts with no salary' : ''} &middot; last search ${esc(RFX.status && RFX.status.running ? 'running now' : lastRun ? rfxAgo(lastRun) : 'never')}`;
+  const regSel = document.getElementById('rfxRegion'), typeSel = document.getElementById('rfxType'), bandSel = document.getElementById('rfxBand'), srch = document.getElementById('rfxSearchFilter');
+  const keep = (el, html) => { const v = el.value; el.innerHTML = html; el.value = v; };
+  keep(regSel, '<option value="">All regions</option>' + ((RFX.config && RFX.config.regions) || []).map(r => `<option>${esc(r)}</option>`).join(''));
+  keep(typeSel, '<option value="">All role types</option>' + ((RFX.config && RFX.config.types) || []).map(t => `<option value="${esc(t.key)}">${esc(t.label)}</option>`).join(''));
+  keep(bandSel, '<option value="">All salaries</option>' + ((RFX.config && RFX.config.bands) || []).map(b => `<option value="${esc(b.key)}">${esc(b.label)}</option>`).join('') + '<option value="none">No salary listed</option>');
+  keep(srch, '<option value="">Market sweep and searches</option><option value="sweep">Market sweep only</option>' + RFX.searches.map(x => `<option value="${esc(x.id)}">${esc(x.name || x.keywords)}</option>`).join(''));
+  document.getElementById('rfxSettingsBtn').style.display = admin ? '' : 'none';
 }
 
-function rfxFiltered(){
+const RFX_BAND_RANGE = {b25:[25000,30000], b30:[30000,40000], b40:[40000,60000], b60:[60000,1e9]};
+function rfxSal(r){
+  let a = parseInt(r.sal_min, 10) || 0, b = parseInt(r.sal_max, 10) || 0;
+  if(!a && !b && r.salary){ const n = (String(r.salary).match(/\d[\d,]*/g) || []).map(x => parseInt(x.replace(/,/g,''), 10)).filter(x => x >= 1000); a = n[0] || 0; b = n[1] || n[0] || 0; }
+  return {min:a, max:b || a};
+}
+
+function rfxGroups(){
   const status = document.getElementById('rfxStatus').value;
   const sid = document.getElementById('rfxSearchFilter').value;
+  const region = document.getElementById('rfxRegion').value;
+  const type = document.getElementById('rfxType').value;
+  const band = document.getElementById('rfxBand').value;
   const minDays = parseInt(document.getElementById('rfxMinDays').value, 10) || 0;
   const text = document.getElementById('rfxText').value.trim().toLowerCase();
   const hideKnown = document.getElementById('rfxHideKnown').checked;
   const diveOnly = document.getElementById('rfxDiveOnly').checked;
-  return RFX.results.filter(r => {
+  const items = RFX.results.filter(r => {
     if(status !== 'all' && r.status !== status) return false;
     if(sid && !String(r.search_ids).split(',').includes(sid)) return false;
-    if(minDays && (r.days == null || r.days < minDays)) return false;
+    if(region && r.region !== region) return false;
+    if(type && r.role_type !== type) return false;
+    if(band){
+      const s = rfxSal(r);
+      if(band === 'none'){ if(s.min || s.max) return false; }
+      else { const [lo, hi] = RFX_BAND_RANGE[band]; if(!(s.max >= lo && s.min < hi)) return false; }
+    }
     if(text && !(`${r.company} ${r.role} ${r.location}`.toLowerCase().includes(text))) return false;
     if(hideKnown && status === 'new' && (r.is_client || r.is_lead || r.suppressed)) return false;
-    if(diveOnly && !r.has_dive) return false;
     return true;
-  }).sort((a, b) => (b.days == null ? -1 : b.days) - (a.days == null ? -1 : a.days));
+  });
+  const map = new Map();
+  items.forEach(r => {
+    const k = rfxNorm(r.company) || r.id;
+    if(!map.has(k)) map.set(k, {key:k, company:r.company, items:[], days:0, score:0, regions:new Set(), types:new Set(), salMax:0, has_dive:false, first_seen:r.first_seen, is_client:false, is_lead:false, suppressed:false});
+    const g = map.get(k);
+    g.items.push(r);
+    g.days = Math.max(g.days, r.days || 0);
+    g.score = Math.max(g.score, r.score || 0);
+    if(r.region) g.regions.add(r.region);
+    if(r.role_type_label) g.types.add(r.role_type_label);
+    g.salMax = Math.max(g.salMax, rfxSal(r).max || 0);
+    if(r.has_dive) g.has_dive = true;
+    if(r.first_seen < g.first_seen) g.first_seen = r.first_seen;
+    g.is_client = g.is_client || r.is_client; g.is_lead = g.is_lead || r.is_lead; g.suppressed = g.suppressed || r.suppressed;
+  });
+  let groups = [...map.values()];
+  if(diveOnly) groups = groups.filter(g => g.has_dive);
+  if(minDays) groups = groups.filter(g => g.days >= minDays);
+  groups.forEach(g => {
+    g.items.sort((a, b) => (b.days || 0) - (a.days || 0));
+    g.top = g.items.find(i => i.has_dive) || g.items[0];
+  });
+  return groups.sort((a, b) => (b.score - a.score) || (b.days - a.days));
 }
 
 function rfxRender(){
   if(!RFX.loaded) return;
-  const list = rfxFiltered();
+  const groups = rfxGroups();
+  const status = document.getElementById('rfxStatus').value;
   const all = RFX.results;
+  const coKeys = list => new Set(list.map(r => rfxNorm(r.company)));
   const todo = all.filter(r => r.status === 'new' && !r.is_client && !r.is_lead && !r.suppressed);
+  const byCo = {};
+  todo.forEach(r => { const k = rfxNorm(r.company); (byCo[k] = byCo[k] || []).push(r); });
   const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0,10);
-  const longest = todo.reduce((m, r) => Math.max(m, r.days || 0), 0);
   document.getElementById('rfxTiles').innerHTML = [
-    {n: all.filter(r => r.first_seen === RFX.today && r.status === 'new').length, l:'New today'},
-    {n: todo.length, l:'To work', warn: todo.length > 0},
-    {n: todo.filter(r => r.days >= 21).length, l:'Advertised 3 weeks or more'},
-    {n: longest ? longest + ' days' : '-', l:'Longest advertised'},
-    {n: all.filter(r => r.status === 'shortlisted').length, l:'Shortlisted'},
-    {n: all.filter(r => r.status === 'added' && (r.last_seen || '') >= weekAgo).length, l:'Added to leads'},
-    {n: all.filter(r => r.status === 'agency').length, l:'Agency adverts filtered'},
+    {n: Object.keys(byCo).length, l:'Companies to work', warn: Object.keys(byCo).length > 0},
+    {n: coKeys(todo.filter(r => r.first_seen === RFX.today)).size, l:'New companies today'},
+    {n: Object.values(byCo).filter(l => l.some(r => r.days >= 21)).length, l:'Advertising 3 weeks or more'},
+    {n: Object.values(byCo).filter(l => new Set(l.map(r => r.role.toLowerCase())).size >= 3).length, l:'Hiring for 3 or more roles'},
+    {n: Object.values(byCo).filter(l => l.some(r => r.has_dive)).length, l:'Deep dives ready'},
+    {n: coKeys(all.filter(r => r.status === 'added' && (r.last_seen || '') >= weekAgo && r.handled_by !== 'system')).size, l:'Added to leads this week'},
+    {n: coKeys(all.filter(r => r.status === 'agency')).size, l:'Agencies filtered out'},
   ].map(t => `<div class="tile static ${t.warn ? 'warn' : ''}"><div class="n">${esc(t.n)}</div><div class="l">${t.l}</div></div>`).join('');
-  const counts = {};
-  all.forEach(r => { const k = rfxNorm(r.company); counts[k] = (counts[k] || 0) + 1; });
-  RFX.sel.forEach(id => { if(!list.some(r => r.id === id)) RFX.sel.delete(id); });
-  document.getElementById('rfxBody').innerHTML = list.length ? list.slice(0, 400).map(r => {
-    const others = (counts[rfxNorm(r.company)] || 1) - 1;
+  const limit = status === 'new' ? (RFX.showAll ? 1e9 : ((RFX.config && RFX.config.sweep && RFX.config.sweep.listSize) || 25)) : 400;
+  const shown = groups.slice(0, limit);
+  [...RFX.sel].forEach(k => { if(!groups.some(g => g.key === k)) RFX.sel.delete(k); });
+  RFX.groupMap = new Map(groups.map(g => [g.key, g]));
+  document.getElementById('rfxBody').innerHTML = shown.length ? shown.map(g => {
+    const top = g.top;
+    const k = esc(g.key);
+    const open = RFX.expanded.has(g.key);
+    const roles = (open ? g.items : g.items.slice(0, 3)).map(r =>
+      `<div style="margin-bottom:3px;">${r.url ? rfxLink(r.url, r.role) : esc(r.role)} <span class="rfx-sub" style="display:inline;">${esc(r.location)}${r.salary ? ' - ' + esc(r.salary) : ''} - ${r.days == null ? '?' : r.days + ' days'}</span></div>`).join('') +
+      (g.items.length > 3 ? `<a class="tpl-link" onclick="rfxExpand('${k}')">${open ? 'Show fewer' : '+' + (g.items.length - 3) + ' more'}</a>` : '');
     const pills = [
-      r.is_client ? '<span class="rfx-pill client">Client</span>' : '',
-      r.is_lead ? '<span class="rfx-pill lead">Already a lead</span>' : '',
-      r.suppressed ? '<span class="rfx-pill warn">Opted out</span>' : '',
-      r.has_dive ? '<span class="rfx-pill dive">Deep dive ready</span>' : '',
-      r.dive_status === 'running' ? '<span class="rfx-pill">Deep dive running</span>' : '',
-      r.status === 'shortlisted' ? '<span class="rfx-pill short">Shortlisted</span>' : '',
-      others > 0 ? `<span class="rfx-pill">+${others} other role${others > 1 ? 's' : ''}</span>` : '',
-      r.status === 'agency' ? `<span class="rfx-pill warn">${esc(r.agency_reason || 'Agency')}</span>` : '',
-      r.status === 'dismissed' && r.dismiss_reason ? `<span class="rfx-pill">${esc(r.dismiss_reason)}</span>` : '',
+      g.is_client ? '<span class="rfx-pill client">Client</span>' : '',
+      g.is_lead ? '<span class="rfx-pill lead">Already a lead</span>' : '',
+      g.suppressed ? '<span class="rfx-pill warn">Opted out</span>' : '',
+      g.has_dive ? '<span class="rfx-pill dive">Deep dive ready</span>' : '',
+      g.items.some(r => r.dive_status === 'running') ? '<span class="rfx-pill">Deep dive running</span>' : '',
+      g.first_seen === RFX.today && status === 'new' ? '<span class="rfx-pill short">New today</span>' : '',
+      [...g.types].slice(0, 2).map(t => `<span class="rfx-pill">${esc(t)}</span>`).join(''),
+      status === 'agency' ? `<span class="rfx-pill warn">${esc(top.agency_reason || 'Agency')}</span>` : '',
+      status === 'dismissed' && top.dismiss_reason ? `<span class="rfx-pill">${esc(top.dismiss_reason)}</span>` : '',
     ].join('');
-    const hot = r.days != null && r.days >= 21;
-    const acts = r.status === 'agency'
-      ? `<button onclick="rfxSet('${esc(r.id)}','new')">Not an agency</button>`
-      : `<button class="gold" onclick="rfxOpenDive('${esc(r.id)}')">${r.has_dive ? 'View deep dive' : 'Deep dive'}</button>
-         ${r.status !== 'added' ? `<button onclick="rfxOpenAdd('${esc(r.id)}')">Add lead</button>` : ''}
-         ${r.status === 'new' ? `<button onclick="rfxSet('${esc(r.id)}','shortlisted')">Shortlist</button>` : ''}
-         ${r.status !== 'dismissed' && r.status !== 'added' ? `<button onclick="rfxDismiss('${esc(r.id)}')">Dismiss</button>` : `<button onclick="rfxSet('${esc(r.id)}','new')">Restore</button>`}
-         <button onclick="rfxAgency('${esc(r.id)}')" title="This is a recruitment agency: hide it for good">Agency</button>`;
+    let acts;
+    if(status === 'agency') acts = `<button onclick="rfxSet('${esc(top.id)}','new')">Not an agency</button>`;
+    else if(status === 'dismissed') acts = `<button onclick="rfxRestoreCompany('${k}')">Restore</button>`;
+    else acts = `<button class="gold" onclick="rfxOpenDive('${esc(top.id)}')">${g.has_dive ? 'View deep dive' : 'Deep dive'}</button>
+      ${status !== 'added' ? `<button onclick="rfxOpenAdd('${esc(top.id)}')">Add lead</button>` : ''}
+      ${status === 'new' ? `<button onclick="rfxGroupStatus('${k}','shortlisted')">Shortlist</button>` : ''}
+      ${status === 'shortlisted' ? `<button onclick="rfxGroupStatus('${k}','new')">Unshortlist</button>` : ''}
+      ${status !== 'added' ? `<button onclick="rfxDismissCompany('${k}')">Dismiss</button>` : ''}
+      <button onclick="rfxAgency('${esc(top.id)}')" title="This is a recruitment agency: hide it for good">Agency</button>`;
     return `<tr class="rfx-row">
-      <td><input type="checkbox" ${RFX.sel.has(r.id) ? 'checked' : ''} onclick="rfxToggle('${esc(r.id)}', this.checked)"></td>
-      <td class="strong">${esc(r.company || 'Not named')}<div>${pills}</div></td>
-      <td>${esc(r.role)}<div class="rfx-sub">${esc(r.location)}</div></td>
-      <td>${esc(r.salary || '-')}</td>
-      <td><span class="rfx-days ${hot ? 'hot' : ''}">${r.days == null ? '-' : r.days + ' days'}</span><div class="rfx-sub">${r.posted_date ? 'since ' + esc(rfxFmt(r.posted_date)) : ''}</div></td>
-      <td>${r.url ? rfxLink(r.url, r.source) : esc(r.source)}</td>
+      <td><input type="checkbox" ${RFX.sel.has(g.key) ? 'checked' : ''} onclick="rfxToggle('${k}', this.checked)"></td>
+      <td class="strong">${esc(g.company || 'Not named')}<div>${pills}</div></td>
+      <td>${roles}</td>
+      <td>${esc([...g.regions].join(', ') || '-')}</td>
+      <td><span class="rfx-days ${g.days >= 21 ? 'hot' : ''}">${g.days} days</span><div class="rfx-sub">${g.items.length} advert${g.items.length === 1 ? '' : 's'}</div></td>
+      <td><span class="rfx-days">${g.score}</span><div class="rfx-sub">score</div></td>
       <td><div class="rfx-actions">${acts}</div></td></tr>`;
-  }).join('') : `<tr><td colspan="7" class="empty-row">${all.length ? 'Nothing matches these filters.' : 'No adverts yet. Add a saved search and press Search now.'}</td></tr>`;
+  }).join('') : `<tr><td colspan="7" class="empty-row">${all.length ? 'Nothing matches these filters.' : 'No adverts yet. Press Search now to run the first market sweep.'}</td></tr>`;
+  const more = document.getElementById('rfxMore');
+  more.innerHTML = groups.length > shown.length ? `<button class="cancel" style="padding:9px 14px;border:1px solid var(--border);background:#fff;border-radius:2px;font-family:inherit;font-size:13px;cursor:pointer;" onclick="RFX.showAll=true;rfxRender()">Show all ${groups.length} companies</button>` : '';
   const bulk = document.getElementById('rfxBulk');
   bulk.classList.toggle('on', RFX.sel.size > 0);
-  document.getElementById('rfxBulkCount').textContent = RFX.sel.size + ' selected';
+  document.getElementById('rfxBulkCount').textContent = RFX.sel.size + ' compan' + (RFX.sel.size === 1 ? 'y' : 'ies') + ' selected';
   const allBox = document.getElementById('rfxAll');
-  if(allBox) allBox.checked = list.length > 0 && list.slice(0, 400).every(r => RFX.sel.has(r.id));
+  if(allBox) allBox.checked = shown.length > 0 && shown.every(g => RFX.sel.has(g.key));
 }
 
-function rfxToggle(id, on){ on ? RFX.sel.add(id) : RFX.sel.delete(id); rfxRender(); }
-function rfxSelectAll(on){ rfxFiltered().slice(0, 400).forEach(r => on ? RFX.sel.add(r.id) : RFX.sel.delete(r.id)); rfxRender(); }
+function rfxExpand(k){ RFX.expanded.has(k) ? RFX.expanded.delete(k) : RFX.expanded.add(k); rfxRender(); }
+function rfxToggle(k, on){ on ? RFX.sel.add(k) : RFX.sel.delete(k); rfxRender(); }
+function rfxSelectAll(on){ const gs = rfxGroups(); const limit = document.getElementById('rfxStatus').value === 'new' && !RFX.showAll ? ((RFX.config && RFX.config.sweep && RFX.config.sweep.listSize) || 25) : 400; gs.slice(0, limit).forEach(g => on ? RFX.sel.add(g.key) : RFX.sel.delete(g.key)); rfxRender(); }
+function rfxIdsFor(k){ const g = RFX.groupMap && RFX.groupMap.get(k); return g ? g.items.map(i => i.id) : []; }
 
 function rfxLocal(id, patch){ const r = RFX.results.find(x => x.id === id); if(r) Object.assign(r, patch); }
 
@@ -14618,26 +14686,55 @@ async function rfxSet(id, status, reason){
     await b2Post('/api/role-finder/results/' + encodeURIComponent(id), {status, dismiss_reason: reason || ''});
     if(was === 'agency'){ showToast('Unblocked. Its adverts are back in To work.'); rfxLoad(); return; }
     rfxLocal(id, {status, dismiss_reason: reason || ''});
-    if(status === 'new'){ const r = RFX.results.find(x => x.id === id); if(r){ r.agency_flag = ''; } }
     rfxRender();
   }catch(e){ showToast('Could not update: ' + e.message); }
 }
 
-function rfxDismiss(id){
-  const reason = prompt('Reason for dismissing (optional), e.g. too small, wrong sector, already spoke to them');
+async function rfxGroupStatus(k, status){
+  const ids = rfxIdsFor(k);
+  if(!ids.length) return;
+  try{ await b2Post('/api/role-finder/bulk', {ids, status}); ids.forEach(id => rfxLocal(id, {status})); rfxRender(); }
+  catch(e){ showToast('Could not update: ' + e.message); }
+}
+
+async function rfxDismissCompany(k, silentReason){
+  const g = RFX.groupMap && RFX.groupMap.get(k);
+  if(!g) return;
+  const reason = silentReason !== undefined ? silentReason : prompt(`Dismiss ${g.company}? Its adverts are hidden now and any new ones for 90 days. Reason (optional), e.g. too small, wrong sector, spoke to them already`);
   if(reason === null) return;
-  rfxSet(id, 'dismissed', reason);
+  try{
+    await b2Post('/api/role-finder/dismiss-company', {company: g.company, reason});
+    RFX.results.filter(r => rfxNorm(r.company) === k && ['new','shortlisted'].includes(r.status)).forEach(r => { r.status = 'dismissed'; r.dismiss_reason = reason || 'Company dismissed'; });
+    RFX.sel.delete(k);
+    if(silentReason === undefined){ rfxRender(); showToast(g.company + ' dismissed'); }
+  }catch(e){ showToast('Could not dismiss: ' + e.message); }
+}
+
+async function rfxRestoreCompany(k){
+  const g = RFX.groupMap && RFX.groupMap.get(k);
+  if(!g) return;
+  try{
+    await b2Post('/api/role-finder/restore-company', {company: g.company});
+    RFX.results.filter(r => rfxNorm(r.company) === k && r.status === 'dismissed').forEach(r => { r.status = 'new'; r.dismiss_reason = ''; });
+    showToast(g.company + ' is back in To work'); rfxLoad();
+  }catch(e){ showToast('Could not restore: ' + e.message); }
 }
 
 async function rfxBulk(status){
-  const ids = [...RFX.sel];
-  if(!ids.length) return;
-  let reason = '';
-  if(status === 'dismissed'){ reason = prompt('Reason for dismissing these (optional)'); if(reason === null) return; }
+  const keys = [...RFX.sel];
+  if(!keys.length) return;
+  if(status === 'dismissed'){
+    const reason = prompt(`Dismiss ${keys.length} compan${keys.length === 1 ? 'y' : 'ies'}? Their new adverts stay hidden for 90 days. Reason (optional)`);
+    if(reason === null) return;
+    for(const k of keys) await rfxDismissCompany(k, reason);
+    RFX.sel.clear(); rfxRender(); showToast(keys.length + ' dismissed');
+    return;
+  }
+  const ids = keys.flatMap(rfxIdsFor);
   try{
-    await b2Post('/api/role-finder/bulk', {ids, status, reason});
-    ids.forEach(id => rfxLocal(id, {status, dismiss_reason: status === 'dismissed' ? reason : ''}));
-    RFX.sel.clear(); rfxRender(); showToast(ids.length + ' updated');
+    await b2Post('/api/role-finder/bulk', {ids, status});
+    ids.forEach(id => rfxLocal(id, {status, dismiss_reason: ''}));
+    RFX.sel.clear(); rfxRender(); showToast(keys.length + ' updated');
   }catch(e){ showToast('Could not update: ' + e.message); }
 }
 
@@ -14649,6 +14746,51 @@ async function rfxAgency(id){
     RFX.results.filter(x => rfxNorm(x.company) === rfxNorm(r.company)).forEach(x => { x.status = 'agency'; x.agency_reason = 'Marked as agency'; });
     rfxRender(); showToast(`${r.company} blocked (${j.hidden} advert${j.hidden === 1 ? '' : 's'} hidden)`);
   }catch(e){ showToast('Could not block: ' + e.message); }
+}
+
+/* ---------- Role Finder: market sweep settings (Dan) ---------- */
+
+function rfxOpenSettings(){
+  const c = RFX.config || {};
+  const sw = c.sweep || {};
+  const box = (name, val, label, on) => `<label><input type="checkbox" name="${name}" value="${esc(val)}" ${on ? 'checked' : ''}> ${esc(label)}</label>`;
+  const dives = c.divesThisMonth || 0;
+  document.getElementById('rfxSettingsBody').innerHTML = `
+    <h2>Market sweep settings</h2>
+    <div class="role-sub">The sweep searches every chosen region and role type each weekday morning, with nothing for Ella to set up.</div>
+    <div class="simple-form">
+      <div class="rfx-confirm" style="margin-top:16px;"><input type="checkbox" id="rfxSwOn" ${sw.enabled ? 'checked' : ''}><span><b>Automatic daily search</b><br><span class="rfx-sub">Searches the job boards every weekday morning. The job board searches are free.</span></span></div>
+      <div class="rfx-confirm"><input type="checkbox" id="rfxSwDive" ${sw.autoDive ? 'checked' : ''}><span><b>Automatic deep dives</b> on the top
+        <select id="rfxSwDiveN" style="width:auto;padding:3px 6px;display:inline-block;">${[1,2,3,5,8,10].map(n => `<option ${Number(sw.diveCount) === n ? 'selected' : ''}>${n}</option>`).join('')}</select> companies each morning<br>
+        <span class="rfx-sub">This is the only part that uses AI credit: roughly 15p to 30p per deep dive. 5 a day is about £15 to £30 a month. Deep dives this month so far: ${dives} (about £${(dives * 0.15).toFixed(2)} to £${(dives * 0.3).toFixed(2)}). Manual deep dives from the list always work.</span></span></div>
+      <label>Salary bands</label>
+      <div class="rfx-chips">${(c.bands || []).map(b => box('rfxSwBand', b.key, b.label, (sw.bands || []).includes(b.key))).join('')}
+        <label><input type="checkbox" id="rfxSwNoSal" ${sw.includeNoSalary ? 'checked' : ''}> Include adverts with no salary</label></div>
+      <label>Regions</label>
+      <div class="rfx-chips">${(c.regions || []).map(r => box('rfxSwRegion', r, r, (sw.regions || []).includes(r))).join('')}</div>
+      <label>Role types</label>
+      <div class="rfx-chips">${(c.types || []).map(t => box('rfxSwType', t.key, t.label, (sw.types || []).includes(t.key))).join('')}</div>
+      <label>Companies shown in the daily list</label>
+      <input type="number" id="rfxSwList" min="5" max="200" value="${esc(sw.listSize || 25)}" style="width:120px;">
+      <div class="actions"><button class="cancel" onclick="closeModal('rfxSettingsModal')">Cancel</button><button class="save" onclick="rfxSaveSettings()">Save settings</button></div>
+    </div>`;
+  document.getElementById('rfxSettingsModal').classList.add('visible');
+}
+
+async function rfxSaveSettings(){
+  const vals = name => [...document.querySelectorAll(`input[name="${name}"]:checked`)].map(i => i.value);
+  const body = {
+    enabled: document.getElementById('rfxSwOn').checked, autoDive: document.getElementById('rfxSwDive').checked,
+    diveCount: b2Val('rfxSwDiveN'), bands: vals('rfxSwBand'), regions: vals('rfxSwRegion'), types: vals('rfxSwType'),
+    includeNoSalary: document.getElementById('rfxSwNoSal').checked, listSize: b2Val('rfxSwList'),
+  };
+  if(!body.bands.length){ showToast('Choose at least one salary band'); return; }
+  if(!body.regions.length || !body.types.length){ showToast('Choose at least one region and one role type'); return; }
+  try{
+    const j = await b2Post('/api/role-finder/sweep-settings', body);
+    RFX.config.sweep = j.sweep; closeModal('rfxSettingsModal'); rfxRenderSetup(); rfxRender();
+    showToast('Settings saved');
+  }catch(e){ showToast('Could not save: ' + e.message); }
 }
 
 /* ---------- Role Finder: running searches ---------- */
@@ -15130,7 +15272,7 @@ async function lpxSaveNew(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '16 Oct 2026 - build 19';
+var PAGE_BUILD = '16 Oct 2026 - build 20';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -15141,12 +15283,12 @@ function buildTagApply(){
     tag.style.cssText = 'font-size:10.5px;color:#999;margin-left:10px;white-space:nowrap;';
     chip.appendChild(tag);
   }
-  tag.textContent = 'Page build 19';
+  tag.textContent = 'Page build 20';
   tag.title = 'Page: ' + PAGE_BUILD;
   b2Api('/api/version').then(function(j){
-    tag.textContent = 'Page build 19 | Server ' + serverBuildLabel(j.build);
+    tag.textContent = 'Page build 20 | Server ' + serverBuildLabel(j.build);
     tag.title = 'Page: ' + PAGE_BUILD + ' | Server: ' + j.build;
-  }).catch(function(){ tag.textContent = 'Page build 19 | Server older'; });
+  }).catch(function(){ tag.textContent = 'Page build 20 | Server older'; });
 }
 (function(){
   const _si = signIn;
