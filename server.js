@@ -421,8 +421,76 @@ function getAuthClient() {
 function getSheetsClient() {
   if (sheetsClientCache) return sheetsClientCache;
   const auth = getAuthClient();
-  sheetsClientCache = google.sheets({ version: 'v4', auth });
+  sheetsClientCache = sheetsQuotaGuard(google.sheets({ version: 'v4', auth }));
   return sheetsClientCache;
+}
+
+/* ---------- Google Sheets quota guard (build 28) ----------
+   Google allows about 60 reads and 60 writes a minute for this service account, shared by
+   every page that is open and every background job. This guard sits in front of every Sheets
+   call the server makes:
+   - identical reads within a few seconds share one answer (and reads already in flight are shared)
+   - any write to a spreadsheet clears the remembered reads for that spreadsheet, so reads after
+     a write are always fresh
+   - calls are paced to stay under the limit; when the limit is close they wait their turn instead
+     of failing, and a quota refusal pauses everything briefly before carrying on */
+function sheetsQuotaGuard(client) {
+  const READ_TTL = 8000, PER_MIN = 50;
+  const cache = new Map();
+  const inflight = new Map();
+  const reads = [], writes = [];
+  let pauseUntil = 0;
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  const isQuota = e => e && (e.code === 429 || (e.response && e.response.status === 429) || /quota exceeded/i.test(String(e.message)));
+  async function slot(arr) {
+    for (;;) {
+      const now = Date.now();
+      while (arr.length && now - arr[0] > 60000) arr.shift();
+      if (now < pauseUntil) { await wait(pauseUntil - now); continue; }
+      if (arr.length < PER_MIN) { arr.push(now); return; }
+      await wait(60000 - (now - arr[0]) + 100);
+    }
+  }
+  const copy = res => (res && res.data ? { ...res, data: JSON.parse(JSON.stringify(res.data)) } : res);
+  const clearFor = id => { for (const k of [...cache.keys()]) if (k.startsWith(id + '|')) cache.delete(k); };
+  async function run(arr, fn) {
+    for (let attempt = 0; ; attempt++) {
+      await slot(arr);
+      try { return await fn(); }
+      catch (e) {
+        if (!isQuota(e) || attempt >= 4) throw e;
+        pauseUntil = Math.max(pauseUntil, Date.now() + 15000 * (attempt + 1));
+        console.warn('Sheets quota reached, waiting before trying again');
+      }
+    }
+  }
+  const wrapRead = (obj, name, keyOf) => {
+    const orig = obj[name].bind(obj);
+    obj[name] = async (params = {}, ...rest) => {
+      const key = keyOf(params);
+      const hit = cache.get(key);
+      if (hit && Date.now() - hit.at < READ_TTL) return copy(hit.res);
+      if (inflight.has(key)) return copy(await inflight.get(key));
+      const p = run(reads, () => orig(params, ...rest)).then(res => { cache.set(key, { at: Date.now(), res }); return res; }).finally(() => inflight.delete(key));
+      inflight.set(key, p);
+      return copy(await p);
+    };
+  };
+  const wrapWrite = (obj, name) => {
+    const orig = obj[name].bind(obj);
+    obj[name] = async (params = {}, ...rest) => {
+      clearFor(params.spreadsheetId);
+      try { return await run(writes, () => orig(params, ...rest)); }
+      finally { clearFor(params.spreadsheetId); }
+    };
+  };
+  const v = client.spreadsheets.values;
+  wrapRead(v, 'get', p => `${p.spreadsheetId}|get|${p.range}|${p.valueRenderOption || ''}|${p.majorDimension || ''}`);
+  if (v.batchGet) wrapRead(v, 'batchGet', p => `${p.spreadsheetId}|batchGet|${(p.ranges || []).join(',')}|${p.valueRenderOption || ''}`);
+  wrapRead(client.spreadsheets, 'get', p => `${p.spreadsheetId}|meta|${p.fields || ''}|${p.includeGridData ? 1 : 0}|${(p.ranges || []).join(',')}`);
+  ['update', 'append', 'clear', 'batchUpdate', 'batchClear'].forEach(n => { if (v[n]) wrapWrite(v, n); });
+  wrapWrite(client.spreadsheets, 'batchUpdate');
+  return client;
 }
 
 function getDriveClient() {
@@ -11708,7 +11776,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '16 Oct 2026 - build 27';
+const SERVER_BUILD = '16 Oct 2026 - build 28';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
