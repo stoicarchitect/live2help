@@ -15612,7 +15612,7 @@ function cmpRender(){
       <td><span class="rfx-days ${a.days >= 21 ? 'hot' : ''}">${a.days == null ? '-' : a.days + ' days'}</span></td>
       <td style="max-width:340px;">${cmpConfPill(a)}</td>
       <td><div class="rfx-actions">${acts}</div></td></tr>`;
-  }).join('') : '<tr><td colspan="6" class="empty-row">No adverts match these filters.</td></tr>';
+  }).join('') : `<tr><td colspan="6" class="empty-row">No adverts match these filters. <a class="tpl-link" onclick="cmpClearFilters()">Clear filters</a></td></tr>`;
   document.getElementById('cmpPagerB').innerHTML = l2hPager(list.length, CMP.pageB, CMP.per, 'cmpPageB', 'cmpPer');
 }
 
@@ -15630,6 +15630,15 @@ function cmpTile(what){
   CMP.pageB = 1;
   cmpRender();
   document.getElementById('cmpAdsTitle').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function cmpClearFilters(){
+  document.getElementById('cmpClient').value = '';
+  document.getElementById('cmpText').value = '';
+  document.getElementById('cmpLive').checked = true;
+  document.getElementById('cmpHideDone').checked = true;
+  CMP.pageB = 1;
+  cmpRender();
 }
 
 function cmpShowClients(id){
@@ -15667,7 +15676,15 @@ function cmpPoll(){
   CMP.polling = setInterval(tick, 3000);
 }
 
-function cmpPickAgency(id){ CMP.agency = CMP.agency === id ? '' : id; CMP.pageB = 1; cmpRender(); document.getElementById('cmpAdsTitle').scrollIntoView({behavior:'smooth', block:'start'}); }
+function cmpPickAgency(id){
+  CMP.agency = CMP.agency === id ? '' : id;
+  // picking an agency always shows all of its live adverts, whatever was filtered before
+  if(CMP.agency){
+    document.getElementById('cmpClient').value = '';
+    document.getElementById('cmpText').value = '';
+    document.getElementById('cmpLive').checked = true;
+  }
+  CMP.pageB = 1; cmpRender(); document.getElementById('cmpAdsTitle').scrollIntoView({behavior:'smooth', block:'start'}); }
 function cmpAd(id){ return ((CMP.data && CMP.data.adverts) || []).find(a => a.id === id); }
 
 async function cmpConfirmFind(id){
@@ -15968,7 +15985,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '16 Oct 2026 - build 29';
+var PAGE_BUILD = '16 Oct 2026 - build 31';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -15979,12 +15996,12 @@ function buildTagApply(){
     tag.style.cssText = 'font-size:10.5px;color:#999;margin-left:10px;white-space:nowrap;';
     chip.appendChild(tag);
   }
-  tag.textContent = 'Page build 29';
+  tag.textContent = 'Page build 31';
   tag.title = 'Page: ' + PAGE_BUILD;
   b2Api('/api/version').then(function(j){
-    tag.textContent = 'Page build 29 | Server ' + serverBuildLabel(j.build);
+    tag.textContent = 'Page build 31 | Server ' + serverBuildLabel(j.build);
     tag.title = 'Page: ' + PAGE_BUILD + ' | Server: ' + j.build;
-  }).catch(function(){ tag.textContent = 'Page build 29 | Server older'; });
+  }).catch(function(){ tag.textContent = 'Page build 31 | Server older'; });
 }
 (function(){
   const _si = signIn;

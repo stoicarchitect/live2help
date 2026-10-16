@@ -11764,6 +11764,13 @@ async function cmpRun(settings, summary, roleFinderResults, opts = {}) {
     if (a.status !== 'lead' && cmpTooOld(a, today)) return false;
     return a.status === 'lead' ? age <= 180 : age <= 30;
   });
+  // adverts always point at the agency row that is kept (older runs could leave a duplicate behind)
+  const ids = new Set([...byNorm.values()].map(c => c.id));
+  keep.forEach(a => {
+    if (ids.has(a.competitor_id)) return;
+    const c = byNorm.get(rfxNormCompany(a.agency));
+    if (c) a.competitor_id = c.id;
+  });
   // a person may have changed something while this ran: their changes win
   const latest = new Map((await cmpAdsTable.list()).map(x => [x.id, x]));
   const before = new Map(existing.map(x => [x.id, x]));
@@ -12003,7 +12010,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '16 Oct 2026 - build 30';
+const SERVER_BUILD = '16 Oct 2026 - build 31';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
