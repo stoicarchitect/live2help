@@ -6680,7 +6680,7 @@ function renderInterviews(){
   for(let i = 0; i < startDow; i++) cells += '<div class="iv-day blank"></div>';
   for(let day = 1; day <= daysIn; day++){
     const iso = ivMonth + '-' + String(day).padStart(2, '0');
-    const items = list.filter(i => opsDateOnly(i.date) === iso)
+    const items = list.filter(i => opsDateOnly(i.date) === iso && i.status !== 'cancelled')
       .sort((a, b) => String(a.time).localeCompare(String(b.time)));
     cells += `<div class="iv-day ${iso === today ? 'today' : ''}" onclick="openInterviewModal(null,'${iso}')">
       <div class="num">${day}</div>
@@ -14223,7 +14223,7 @@ async function tpReviewed(id){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '16 Oct 2026 - build 15';
+var PAGE_BUILD = '16 Oct 2026 - build 17';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -14234,12 +14234,12 @@ function buildTagApply(){
     tag.style.cssText = 'font-size:10.5px;color:#999;margin-left:10px;white-space:nowrap;';
     chip.appendChild(tag);
   }
-  tag.textContent = 'Page build 15';
+  tag.textContent = 'Page build 17';
   tag.title = 'Page: ' + PAGE_BUILD;
   b2Api('/api/version').then(function(j){
-    tag.textContent = 'Page build 15 | Server ' + serverBuildLabel(j.build);
+    tag.textContent = 'Page build 17 | Server ' + serverBuildLabel(j.build);
     tag.title = 'Page: ' + PAGE_BUILD + ' | Server: ' + j.build;
-  }).catch(function(){ tag.textContent = 'Page build 15 | Server older'; });
+  }).catch(function(){ tag.textContent = 'Page build 17 | Server older'; });
 }
 (function(){
   const _si = signIn;

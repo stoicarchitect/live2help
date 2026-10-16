@@ -4475,7 +4475,48 @@ const interviewsTable = makeSimpleTable({
   label: 'Interview',
   auditType: 'interview',
   auditName: o => `${o.candidate_name} - ${o.date}`,
+  beforeList: () => syncInterviewsWithPipeline(),
 });
+
+/* Interviews follow the pipeline: once a candidate is rejected, any interview still marked
+   Scheduled for that role is set to Cancelled with a note, so the Interviews tab matches the board. */
+let ivSyncAt = 0;
+let ivSyncing = null;
+async function syncInterviewsWithPipeline(force) {
+  if (!force && Date.now() - ivSyncAt < 30 * 1000) return;
+  if (ivSyncing) return ivSyncing;
+  ivSyncing = (async () => {
+    const ivs = await interviewsTable.list();
+    const open = ivs.filter(i => !i.status || lc(i.status) === 'scheduled');
+    if (!open.length) return;
+    const dash = (await readAllRows()).filter(r => r && r[0]).map(rowToCandidate);
+    const apps = await readApplicationsRows();
+    const people = dash.concat(apps).map(c => ({ id: c.id, name: c.name, role: c.role, company: c.company, stage: normStage(c.stage) }));
+    const isRejected = st => st.startsWith('rejected');
+    const findPerson = iv => {
+      const byId = iv.candidate_id ? people.filter(p => p.id === iv.candidate_id) : [];
+      if (byId.length) return byId;
+      return people.filter(p => personNameMatches(p.name, iv.candidate_name) && lc(p.role) === lc(iv.role) &&
+        (!iv.company || !p.company || lc(p.company) === lc(iv.company)));
+    };
+    const today = todayISO();
+    const cancel = new Set();
+    open.forEach(iv => {
+      const hits = findPerson(iv);
+      // every record for this person on this role is rejected (none still live)
+      if (hits.length && hits.every(p => isRejected(p.stage))) cancel.add(iv.id);
+    });
+    if (!cancel.size) return;
+    await interviewsTable.updateWhere(o => cancel.has(o.id), o => {
+      o.status = 'cancelled';
+      o.notes = [o.notes, `Cancelled automatically on ${formatDateUK(today)}: candidate rejected on the pipeline.`].filter(Boolean).join('\n');
+      return o;
+    });
+    console.log(`Interviews: cancelled ${cancel.size} for rejected candidates`);
+  })().then(() => { ivSyncAt = Date.now(); }, e => { console.error('Interview sync failed:', e.message); })
+    .finally(() => { ivSyncing = null; });
+  return ivSyncing;
+}
 
 const commsTable = makeSimpleTable({
   tab: 'Comms Log',
@@ -9609,7 +9650,7 @@ app.post('/api/talent-pool/reconsent/run', requireAdmin, async (req, res) => {
 });
 
 // Lets the dashboard show which server version is live
-const SERVER_BUILD = '16 Oct 2026 - build 16';
+const SERVER_BUILD = '16 Oct 2026 - build 17';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
