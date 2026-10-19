@@ -16075,12 +16075,12 @@ function buildTagApply(){
     tag.style.cssText = 'font-size:10.5px;color:#999;margin-left:10px;white-space:nowrap;';
     chip.appendChild(tag);
   }
-  tag.textContent = 'Page build 31';
+  tag.textContent = 'Page build ' + PAGE_BUILD.split('build ').pop();
   tag.title = 'Page: ' + PAGE_BUILD;
   b2Api('/api/version').then(function(j){
-    tag.textContent = 'Page build 31 | Server ' + serverBuildLabel(j.build);
+    tag.textContent = 'Page build ' + PAGE_BUILD.split('build ').pop() + ' | Server ' + serverBuildLabel(j.build);
     tag.title = 'Page: ' + PAGE_BUILD + ' | Server: ' + j.build;
-  }).catch(function(){ tag.textContent = 'Page build 31 | Server older'; });
+  }).catch(function(){ tag.textContent = 'Page build ' + PAGE_BUILD.split('build ').pop() + ' | Server older'; });
 }
 (function(){
   const _si = signIn;
