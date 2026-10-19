@@ -918,6 +918,7 @@ async function tryMarkApplicationSubmitted(companyName, role, candidateName) {
       requestBody: { values: [existing] },
     });
     stageAutomation({ name: existing[2] || candidateName, role, company: companyName, notes: existing[20] || '' }, 'submitted');
+    logPipelineComm('', { name: existing[2] || candidateName, role, company: companyName, notes: existing[20] || '' }, `Submitted to ${companyName || 'the client'}`);
     return { matched: true, changed: true, fullName: existing[2] || candidateName };
   } catch (e) {
     // Tab probably doesn't exist for this role - candidate wasn't sourced from a form
@@ -4256,7 +4257,7 @@ function rfxColLetter(n) {
   return out;
 }
 
-function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, auditName, beforeList }) {
+function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, auditName, beforeList, afterSave }) {
   const width = header.length;
   const lastCol = rfxColLetter(width);
   let ready = false;
@@ -4413,6 +4414,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
           saved = (await list()).find(o => o.id === saved.id) || saved;
         }
         if (auditType) auditLog(auditActorOf(req), existing ? 'updated' : 'created', auditType, auditName ? auditName(saved) : saved.id, '');
+        if (afterSave) Promise.resolve().then(() => afterSave(saved, existing, req)).catch(e => console.error(`afterSave ${path} failed:`, e.message));
         res.json({ ok: true, data: saved });
       } catch (e) { console.error(`POST ${path} error:`, e.message); res.status(500).json({ error: e.message }); }
     });
@@ -4633,6 +4635,7 @@ const interviewsTable = makeSimpleTable({
   auditType: 'interview',
   auditName: o => `${o.candidate_name} - ${o.date}`,
   beforeList: () => syncInterviewsWithPipeline(),
+  afterSave: (saved, existing, req) => onInterviewSaved(saved, existing, req),
 });
 
 /* Interviews follow the pipeline: once a candidate is rejected, any interview still marked
@@ -4688,6 +4691,7 @@ const feedbackTable = makeSimpleTable({
   path: '/api/client-feedback',
   label: 'Feedback',
   auditType: 'client_feedback',
+  afterSave: (saved, existing, req) => onFeedbackSaved(saved, existing, req),
   auditName: o => `${o.candidate_name} - ${o.company}`,
 });
 
@@ -4935,7 +4939,7 @@ async function snapshotCandidate(c) {
     const r = rows.find(x => x && x[0] === c.id);
     if (!r) return null;
     const o = rowToCandidate(r);
-    return { stage: o.stage, notes: o.notes, salary: o.salary, company: o.company };
+    return { stage: o.stage, notes: o.notes, salary: o.salary, company: o.company, startDate: o.startDate };
   } catch (e) {
     return null;
   }
@@ -4944,10 +4948,20 @@ async function snapshotCandidate(c) {
 function auditCandidateChange(req, c, before) {
   const who = actorOf(req);
   const label = `${c.name} - ${c.role}`;
-  if (!before) { auditLog(who, 'candidate_created', 'candidate', label, `stage ${c.stage || 'submitted'}`); if (c.stage) stageAutomation(c, c.stage); return; }
-  if (c.stage && normStage(c.stage) !== normStage(before.stage)) {
+  if (!before) {
+    auditLog(who, 'candidate_created', 'candidate', label, `stage ${c.stage || 'submitted'}`);
+    if (c.stage) { stageAutomation(c, c.stage); logPipelineComm(who, c, `Added to the pipeline at ${pipelineStageLabel(c.stage)}`); }
+    return;
+  }
+  const stageChanged = c.stage && normStage(c.stage) !== normStage(before.stage);
+  if (stageChanged) {
     auditLog(who, 'stage_changed', 'candidate', label, `${before.stage} to ${c.stage}`);
     stageAutomation(c, c.stage);
+    logPipelineComm(who, c, pipelineMoveSummary(c, before.stage));
+  } else if (c.stage) {
+    const startChanged = c.startDate !== undefined && String(c.startDate || '') !== String(before.startDate || '');
+    candidateTasksRefresh(c, startChanged);
+    if (startChanged && c.startDate) logPipelineComm(who, c, `Start date set to ${formatDateUK(String(c.startDate).slice(0, 10))}`);
   }
   if (c.notes !== undefined && String(c.notes) !== String(before.notes)) {
     auditLog(who, 'notes_edited', 'candidate', label, String(c.notes).slice(0, 120));
@@ -7972,7 +7986,13 @@ async function buildStageTasks(c, stage) {
 }
 
 async function stageAutomation(c, toStage) {
-  try { return await addAutoTasks(await buildStageTasks(c, toStage)); }
+  try {
+    const cc = { ...c, stage: toStage };
+    // The interview record is usually saved a moment before or after the card moves, so wait briefly before looking for it
+    if (normStage(toStage) === 'interview_scheduled') await new Promise(r => setTimeout(r, 8000));
+    await closeAutoTasksForCandidate(cc);
+    return await addAutoTasks(await buildStageTasks(cc, toStage));
+  }
   catch (e) { console.error('stageAutomation failed:', e.message); return 0; }
 }
 
@@ -7994,6 +8014,218 @@ async function reconcileTasks() {
   }
   try { list.push(...await complianceTasks()); } catch (e) { console.error('complianceTasks failed:', e.message); }
   return addAutoTasks(list);
+}
+
+/* ---------- Auto task closing (server build 35) ----------
+   Stage tasks used to be created and never closed, so the Tasks tab and Notifications filled up with
+   work that was already done. Every auto task is now checked against the candidate's real stage:
+   on every pipeline move, when an interview or client feedback is saved, and in a full sweep on start-up
+   and in the daily run. Closed tasks are marked Complete (and archived) with an "Auto-closed" note,
+   so there is still a record. Manual tasks are never touched. */
+const AUTO_EVENT_RE = /^(chase1|chase3|avail|ivmissing|ivday-before(-r\d+)?|iv-3h(-r\d+)?|iv-after(-r\d+)?|iv-clientfb(-r\d+)?|fbchase|offer-call|offer-letter|offer-info|offer-handover|nostart|prestart|day1|week1|month1|reject-email|stale-[a-z_]+|clientreply-[a-z0-9]+)$/;
+const PIPELINE_STAGE_LABELS = {
+  applied: 'Applied', ready_to_submit: 'Ready to submit', submitted: 'Submitted', rejected_by_client: 'Rejected by client',
+  rejected: 'Rejected', interview_requested: 'Interview requested', interview_scheduled: 'Interview scheduled',
+  interviewed: 'Interviewed', offer: 'Offer', start_date: 'Start date', day1: 'Day 1 message sent',
+  week1: 'Week 1 check-in done', month1: 'Month 1 check-in done', withdrawn: 'Withdrawn',
+};
+function pipelineStageLabel(s) { const k = normStage(s); return PIPELINE_STAGE_LABELS[k] || k.replace(/_/g, ' ').replace(/^\w/, m => m.toUpperCase()); }
+function isClosedOutStage(s) { const k = normStage(s); return k.startsWith('rejected') || k === 'withdrawn'; }
+
+function autoTaskStillValid(ev, stage, c, hasInterview) {
+  const st = normStage(stage);
+  const out = isClosedOutStage(st);
+  if (ev === 'reject-email') return out;
+  if (ev.startsWith('clientreply-')) return !(stageRank(st) >= 3 && !out);
+  if (out) return false;
+  const base = ev.replace(/-r\d+$/, '');
+  if (base.startsWith('stale-')) return st === base.slice(6);
+  switch (base) {
+    case 'chase1': case 'chase3': return st === 'submitted';
+    case 'avail': return st === 'interview_requested';
+    case 'ivmissing': return st === 'interview_scheduled' && !hasInterview;
+    case 'ivday-before': case 'iv-3h': case 'iv-after': return st === 'interview_scheduled';
+    case 'iv-clientfb': return st === 'interview_scheduled' || st === 'interviewed';
+    case 'fbchase': return st === 'interviewed';
+    case 'offer-call': case 'offer-letter': return st === 'offer';
+    case 'offer-info': case 'offer-handover': return st === 'offer' || st === 'start_date';
+    case 'nostart': return ['start_date', 'day1', 'week1'].includes(st) && !parseISODate(c.startDate);
+    case 'prestart': case 'day1': return st === 'start_date';
+    case 'week1': return st === 'start_date' || st === 'day1';
+    case 'month1': return ['start_date', 'day1', 'week1'].includes(st);
+  }
+  return true;
+}
+
+let autoTaskChain = Promise.resolve();
+function autoTaskLock(fn) { const run = autoTaskChain.then(fn); autoTaskChain = run.catch(() => {}); return run; }
+
+// decide(key, task) returns a reason string to close the task, or null to leave it
+function closeAutoTasks(decide) {
+  return autoTaskLock(async () => {
+    const rows = await getTasksSheet();
+    const close = new Map();
+    rows.forEach(r => {
+      if (!r || !r[0] || !String(r[0]).startsWith('auto-')) return;
+      const t = rowToTask(r);
+      if (t.status === 'Complete' || t.archived) return;
+      const reason = decide(String(r[0]).slice(5), t);
+      if (reason) close.set(t.id, { t, reason });
+    });
+    if (!close.size) return [];
+    // Re-read just before writing so a task deleted in the meantime cannot shift the rows
+    const fresh = await getTasksSheet();
+    const stamp = formatDateUK(todayISO());
+    const data = [];
+    const closed = [];
+    fresh.forEach((r, i) => {
+      const hit = r && close.get(r[0]);
+      if (!hit) return;
+      const t = rowToTask(r);
+      if (t.status === 'Complete' || t.archived) return;
+      const nt = { ...t, status: 'Complete', archived: true, context: [t.context, `Auto-closed ${stamp}: ${hit.reason}`].filter(Boolean).join('\n') };
+      data.push({ range: `${TASKS_TAB}!A${i + 2}:I${i + 2}`, values: [taskToRow(nt)] });
+      closed.push(t);
+    });
+    if (data.length) await getSheetsClient().spreadsheets.values.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { valueInputOption: 'RAW', data } });
+    return closed;
+  });
+}
+
+async function closeAutoTasksForCandidate(c, hasInterview) {
+  if (!c || !c.name || !c.role || !c.stage) return [];
+  const prefix = slugKey(`${c.name}-${c.role}`) + '-';
+  const st = normStage(c.stage);
+  if (hasInterview === undefined) hasInterview = st === 'interview_scheduled' ? !!(await findInterviewFor(c)) : false;
+  return closeAutoTasks(key => {
+    if (!key.startsWith(prefix)) return null;
+    const ev = key.slice(prefix.length);
+    if (!AUTO_EVENT_RE.test(ev)) return null;
+    if (autoTaskStillValid(ev, st, c, hasInterview)) return null;
+    return ev === 'ivmissing' ? 'the interview is now on the Interviews tab' : `${c.name} is now at ${pipelineStageLabel(st)}`;
+  });
+}
+
+// Any candidate save that is not a stage move: close anything out of date, and add dated start tasks once a start date arrives
+async function candidateTasksRefresh(c, startChanged) {
+  try {
+    await closeAutoTasksForCandidate(c);
+    if (startChanged && ['start_date', 'day1', 'week1'].includes(normStage(c.stage))) await addAutoTasks(await buildStageTasks(c, c.stage));
+  } catch (e) { console.error('candidateTasksRefresh failed:', e.message); }
+}
+
+async function pipelinePeople() {
+  const dash = (await readAllRows()).filter(r => r && r[0]).map(rowToCandidate);
+  let apps = [];
+  try { apps = await readApplicationsRows(); } catch (e) { /* no application tabs */ }
+  // Dashboard rows win: the Applications row stays behind as a historical record once a candidate moves on
+  const map = new Map();
+  apps.concat(dash).forEach(p => { if (p && p.name && p.role) map.set(slugKey(`${p.name}-${p.role}`), p); });
+  return map;
+}
+
+async function findPipelinePerson(name, role, id) {
+  const map = await pipelinePeople();
+  const all = [...map.values()];
+  return (id && all.find(p => p.id === id)) ||
+    all.find(p => lc(p.role) === lc(role) && personNameMatches(p.name, name)) || null;
+}
+
+let lastAutoSweep = null;
+async function sweepAutoTasks() {
+  const map = await pipelinePeople();
+  const ivs = (await interviewsTable.list()).filter(i => !/cancel/i.test(i.status || ''));
+  const hasIv = p => ivs.some(i => lc(i.role) === lc(p.role) && personNameMatches(p.name, i.candidate_name));
+  const bases = [...map.keys()].sort((a, b) => b.length - a.length);
+  const byType = {};
+  const closed = await closeAutoTasks(key => {
+    const base = bases.find(b => key.startsWith(b + '-') && AUTO_EVENT_RE.test(key.slice(b.length + 1)));
+    let reason = null, ev = null;
+    if (base) {
+      const p = map.get(base);
+      ev = key.slice(base.length + 1);
+      if (!autoTaskStillValid(ev, p.stage, p, hasIv(p))) reason = ev === 'ivmissing' ? 'the interview is now on the Interviews tab' : `${p.name} is now at ${pipelineStageLabel(p.stage)}`;
+    } else {
+      // A candidate task whose candidate is no longer on the pipeline at all
+      const parts = key.split('-');
+      for (let i = 1; i < parts.length && !ev; i++) { const tail = parts.slice(i).join('-'); if (AUTO_EVENT_RE.test(tail)) ev = tail; }
+      // Leave it alone if someone with the same first name is still on that role (the name may just be spelt differently)
+      const people = [...map.values()];
+      const lookalike = ev && people.some(p => key.startsWith(slugKey(String(p.name).split(/\s+/)[0]) + '-') && key.includes('-' + slugKey(p.role) + '-'));
+      if (ev && !lookalike) reason = 'the candidate is no longer on the pipeline';
+      else ev = null;
+    }
+    if (reason) { const k = ev.replace(/-r\d+$/, '').replace(/^(stale|clientreply)-.*/, '$1'); byType[k] = (byType[k] || 0) + 1; }
+    return reason;
+  });
+  // Candidates at Interview Scheduled whose interview now exists get their dated reminder calls
+  let added = 0;
+  for (const p of map.values()) {
+    if (normStage(p.stage) === 'interview_scheduled' && hasIv(p)) {
+      try { added += await addAutoTasks(await buildStageTasks(p, 'interview_scheduled')); } catch (e) { /* best effort */ }
+    }
+  }
+  lastAutoSweep = { at: new Date().toISOString(), closed: closed.length, byType, added };
+  console.log(`Auto task sweep: closed ${closed.length}`, byType, `added ${added}`);
+  return lastAutoSweep;
+}
+
+app.get('/api/tasks/auto-sweep', async (req, res) => {
+  try {
+    if (req.query.run === '1' && (!lastAutoSweep || Date.now() - Date.parse(lastAutoSweep.at) > 5 * 60 * 1000)) await sweepAutoTasks();
+    res.json({ ok: true, last: lastAutoSweep });
+  } catch (e) { console.error('auto-sweep error:', e.message); res.status(500).json({ error: e.message }); }
+});
+setTimeout(() => { sweepAutoTasks().catch(e => console.error('Start-up auto task sweep failed:', e.message)); }, 60 * 1000);
+
+/* ---------- Pipeline activity in the candidate contact log ---------- */
+function logPipelineComm(user, c, summary, direction) {
+  if (!c || !c.name || !summary || isTestRecord(c.name, c.notes)) return Promise.resolve(null);
+  return commsTable.append({
+    id: `cm-auto-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, timestamp: new Date().toISOString(),
+    user: user || 'system', entity_type: 'candidate', entity_name: c.name, company: c.company || '', role: c.role || '',
+    channel: 'pipeline', direction: direction || 'outbound', summary, follow_up_date: '', follow_up_done: '',
+  }).catch(e => { console.error('Pipeline contact log failed:', e.message); return null; });
+}
+
+function pipelineMoveSummary(c, fromStage) {
+  const to = normStage(c.stage);
+  const from = pipelineStageLabel(fromStage);
+  const back = stageRank(to) >= 0 && stageRank(fromStage) > stageRank(to);
+  let s = `${back ? 'Moved back' : 'Moved'} from ${from} to ${pipelineStageLabel(to)}`;
+  if (to === 'offer' && c.salary) s += ` (salary ${c.salary})`;
+  if (to === 'start_date' && c.startDate) s += ` - starts ${formatDateUK(String(c.startDate).slice(0, 10))}`;
+  return s;
+}
+
+async function onInterviewSaved(iv, existing, req) {
+  if (/cancel/i.test(iv.status || '')) return;
+  const p = await findPipelinePerson(iv.candidate_name, iv.role, iv.candidate_id);
+  const who = actorOf(req);
+  if (!existing) {
+    const round = iv.round_label || (parseInt(iv.round_no, 10) > 1 ? `Round ${iv.round_no}` : '');
+    const when = [iv.date ? formatDateUK(String(iv.date).slice(0, 10)) : '', iv.time].filter(Boolean).join(' at ');
+    logPipelineComm(who, { name: iv.candidate_name, role: iv.role, company: iv.company, notes: p && p.notes },
+      ['Interview booked', round, iv.type, when].filter(Boolean).join(' - '));
+  }
+  if (p && normStage(p.stage) === 'interview_scheduled') {
+    await closeAutoTasksForCandidate(p, true);
+    await addAutoTasks(await buildStageTasks(p, 'interview_scheduled'));
+  }
+}
+
+async function onFeedbackSaved(fb, existing, req) {
+  if (existing) return;
+  const p = await findPipelinePerson(fb.candidate_name, fb.role);
+  const name = p ? p.name : fb.candidate_name;
+  const prefix = slugKey(`${name}-${p ? p.role : fb.role}`) + '-';
+  await closeAutoTasks(key => {
+    if (!key.startsWith(prefix)) return null;
+    const ev = key.slice(prefix.length).replace(/-r\d+$/, '');
+    return ['chase1', 'chase3', 'fbchase', 'iv-clientfb'].includes(ev) ? 'client feedback has been logged' : null;
+  });
+  logPipelineComm(actorOf(req), { name, role: fb.role, company: fb.company, notes: p && p.notes },
+    `Client feedback logged: ${[fb.outcome, fb.reason].filter(Boolean).join(' - ') || 'no detail'}`, 'inbound');
 }
 
 /* ---------- Invoice chasing ---------- */
@@ -8092,6 +8324,7 @@ async function runDailyJob(skipBackup) {
   };
   await step('health', deepHealthCheck);
   if (!skipBackup) await step('backup', safeBackup);
+  await step('autoTaskSweep', sweepAutoTasks);
   await step('tasks', reconcileTasks);
   await step('invoiceChase', checkOverdueInvoices);
   await step('talentPoolReconsent', talentPoolReconsentCheck);
@@ -12053,7 +12286,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '19 Oct 2026 - build 34';
+const SERVER_BUILD = '19 Oct 2026 - build 35';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

@@ -1559,7 +1559,7 @@
           <input id="cmSearch" placeholder="Search name, company, role or summary" oninput="renderComms()">
           <select id="cmChannelFilter" onchange="renderComms()">
             <option value="">All channels</option><option value="call">Call</option><option value="email">Email</option>
-            <option value="text">Text</option><option value="whatsapp">WhatsApp</option><option value="meeting">Meeting</option><option value="note">Note</option>
+            <option value="text">Text</option><option value="whatsapp">WhatsApp</option><option value="meeting">Meeting</option><option value="note">Note</option><option value="pipeline">Pipeline update</option>
           </select>
           <select id="cmFollowFilter" onchange="renderComms()">
             <option value="">All entries</option><option value="due">Follow-ups outstanding</option>
@@ -6550,7 +6550,7 @@ function opsAddDays(iso, n){ const d = new Date(iso + 'T00:00:00Z'); d.setUTCDat
 function b2List(json){ return json && Array.isArray(json.data) ? json.data : []; }
 function b2Val(id){ const el = document.getElementById(id); return el ? el.value : ''; }
 function b2Set(id, v){ const el = document.getElementById(id); if(el) el.value = v == null ? '' : v; }
-function userLabel(key){ const u = (typeof USERS !== 'undefined') && USERS.find(x => x.key === String(key || '').toLowerCase()); return u ? u.name : (key || ''); }
+function userLabel(key){ if(String(key || '').toLowerCase() === 'system') return 'Dashboard (automatic)'; const u = (typeof USERS !== 'undefined') && USERS.find(x => x.key === String(key || '').toLowerCase()); return u ? u.name : (key || ''); }
 function b2Same(a, b){ return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); }
 
 /* ---------- activity tracking (feeds Team performance) ---------- */
@@ -6596,10 +6596,17 @@ async function loadB2Core(force){
     if(!signedInUser) return out;
     const today = opsToday();
     const tomorrow = opsAddDays(today, 1);
+    const ivStageOf = iv => {
+      const hits = flatCandidates().filter(x => b2Same(x.role, iv.role) && b2Same(x.c.name, iv.candidate_name));
+      return hits.length ? hits[0].c.stage : '';
+    };
     B2.interviews.forEach(iv => {
       if(iv.status && iv.status !== 'scheduled') return;
       const d = opsDateOnly(iv.date);
       if(!d) return;
+      // once the card has moved past Interview Scheduled (or been rejected) the interview alerts are finished with
+      const ivStage = ivStageOf(iv);
+      if(ivStage && ivStage !== 'interview_scheduled' && ivStage !== 'interview_requested') return;
       const t = iv.time ? ' at ' + iv.time : '';
       const detail = (iv.role || '') + (iv.company ? ' at ' + iv.company : '') + (iv.location ? ' - ' + iv.location : '');
       const act = {type:'tab', tab:'interviews'};
@@ -6766,7 +6773,7 @@ function logContactFromCandidate(){
    Communications log
    ============================================================ */
 
-const CM_CHANNELS = {call:'Call', email:'Email', text:'Text', whatsapp:'WhatsApp', meeting:'Meeting', note:'Note'};
+const CM_CHANNELS = {call:'Call', email:'Email', text:'Text', whatsapp:'WhatsApp', meeting:'Meeting', note:'Note', pipeline:'Pipeline update'};
 
 async function loadComms(){
   try{ B2.comms = b2List(await b2Api('/api/comms')); }catch(e){ showToast('Could not load the communications log'); }
@@ -16105,7 +16112,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '19 Oct 2026 - build 35';
+var PAGE_BUILD = '19 Oct 2026 - build 36';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -16127,6 +16134,99 @@ function buildTagApply(){
   const _si = signIn;
   signIn = function(user){ _si(user); buildTagApply(); };
   if(typeof signedInUser !== 'undefined' && signedInUser) buildTagApply();
+})();
+</script>
+
+<script>
+/* ============================================================
+   Page build 36: tasks, notifications and the contact log follow
+   the pipeline. The server closes out-of-date auto tasks and logs
+   pipeline moves; this keeps the page in step straight away.
+   ============================================================ */
+(function(){
+  var syncTimers = [];
+  var WATCH = /\/api\/(candidates|interviews|client-feedback|applications|submissions|applicant)/i;
+  function pipelineResync(){
+    syncTimers.forEach(clearTimeout);
+    // the server finishes its task and log updates a few seconds after the save (up to ~10s for interview bookings)
+    syncTimers = [3500, 12000].map(function(ms){
+      return setTimeout(async function(){
+        if(!signedInUser) return;
+        try{ await loadB2Core(true); }catch(e){}
+        try{ await refreshOps(true); }catch(e){}
+        try{ renderComms(); }catch(e){}
+        try{ var tv = document.getElementById('tasksView'); if(typeof loadTasks === 'function' && tv && tv.style.display !== 'none') loadTasks('active'); }catch(e){}
+        try{ candCommsRefresh(); }catch(e){}
+      }, ms);
+    });
+  }
+  var _f = window.fetch;
+  window.fetch = function(input, init){
+    var url = typeof input === 'string' ? input : (input && input.url) || '';
+    var method = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+    var p = _f.apply(this, arguments);
+    if(method !== 'GET' && WATCH.test(url) && url.indexOf(API_BASE) === 0){
+      p.then(function(r){ if(r && r.ok) pipelineResync(); }).catch(function(){});
+    }
+    return p;
+  };
+
+  /* Contact history inside the candidate card, alongside the notes */
+  window.candCommsHtml = function(c){
+    if(!c) return '';
+    var list = (B2.comms || []).filter(function(x){
+      return x.entity_type !== 'client' && b2Same(x.entity_name, c.name) && (!x.role || b2Same(x.role, currentRole));
+    }).sort(function(a, b){ return String(b.timestamp).localeCompare(String(a.timestamp)); });
+    var rows = list.slice(0, 8).map(function(x){
+      return '<div class="extras-row">' + esc(CM_CHANNELS[x.channel] || x.channel) + ': ' + esc(opsTrunc(x.summary, 160)) +
+        '<div class="m">' + esc(opsFmt(x.timestamp)) + ' ' + esc(String(x.timestamp).slice(11, 16)) + ' by ' + esc(userLabel(x.user)) + '</div></div>';
+    }).join('');
+    return '<div id="candCommsBox" style="margin-top:16px;"><div class="pool-section-label">Contact history' +
+      (list.length > 8 ? ' (latest 8 of ' + list.length + ')' : '') + '</div>' +
+      (rows || '<div class="pool-muted">No contact or pipeline activity logged yet.</div>') + '</div>';
+  };
+  window.candCommsRefresh = function(){
+    var box = document.getElementById('candCommsBox');
+    if(!box || !openCandidateId) return;
+    var c = null;
+    try{ c = findCandidate(openCandidateId); }catch(e){}
+    if(c) box.outerHTML = candCommsHtml(c);
+  };
+  var _ocm = openCandidateModal;
+  openCandidateModal = function(id){
+    _ocm.apply(this, arguments);
+    try{
+      var body = document.getElementById('candModalBody');
+      var c = findCandidate(id);
+      if(body && c && !document.getElementById('candCommsBox')) body.insertAdjacentHTML('beforeend', candCommsHtml(c));
+    }catch(e){}
+  };
+
+  /* Tidy-up of out-of-date tasks: runs on sign-in (the server limits it to once every 5 minutes) */
+  async function autoSweep(){
+    try{
+      var r = await fetch(API_BASE + '/api/tasks/auto-sweep?run=1');
+      if(!r.ok) return;
+      var j = await r.json();
+      var last = j && j.last;
+      if(!last) return;
+      await refreshOps(true);
+      if(signedInUser && signedInUser.admin && last.closed > 0){
+        var seen = '';
+        try{ seen = localStorage.getItem('l2h-sweep-seen') || ''; }catch(e){}
+        if(seen !== last.at){
+          showToast('Task tidy-up: ' + last.closed + ' out-of-date task' + (last.closed === 1 ? '' : 's') + ' closed automatically');
+          try{ localStorage.setItem('l2h-sweep-seen', last.at); }catch(e){}
+        }
+      }
+    }catch(e){}
+  }
+  var _si = signIn;
+  signIn = function(){
+    var r = _si.apply(this, arguments);
+    setTimeout(autoSweep, 4000);
+    return r;
+  };
 })();
 </script>
 </body>
