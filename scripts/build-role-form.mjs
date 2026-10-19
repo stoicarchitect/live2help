@@ -325,7 +325,7 @@ ${def.sections.map(s => `      <fieldset>
 (function(){
   var API_BASE = "${API_BASE}";
   var SLUG = "${esc(def.slug)}";
-  var ROLE_ID = "${esc(def.roleId || '')}";
+  var ROLE_ID = ""; // the role is matched by the reference in the slug, so no internal ID (which can name the client) is put on the public page
   var ENDPOINT = API_BASE + "/api/applications/" + SLUG;
   var MAX_BYTES = 5 * 1024 * 1024;
   var QUESTIONS = ${JSON.stringify(qConfig)};

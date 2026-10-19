@@ -1560,6 +1560,42 @@ async function handleRoleFormApplication(req, res, slug) {
 // Live details for a role-linked form: lets the form show the salary once it is on the
 // Roles tab (otherwise "Competitive salary"), and close itself when the role is filled or lost.
 // Never returns the client's name.
+/* ---------- Careers scrape guard (build 32) ----------
+   Our live roles are only handed to a real browser on our own sites. Plain page readers, scraping tools and
+   other agencies' scripts get a 403, the same way Brampton's site turns our reader away. Search engines are let
+   through so the roles still show on Google. A visitor asking for roles too fast is slowed down. */
+const SCRAPE_ALLOWED_HOSTS = ['careers.live2helprecruitment.co.uk', 'live2helprecruitment.co.uk', 'www.live2helprecruitment.co.uk', 'localhost', '127.0.0.1']
+  .concat(String(process.env.CAREERS_EXTRA_ORIGINS || '').split(',').map(x => x.trim()).filter(Boolean));
+const SCRAPE_GOOD_BOTS = /googlebot|google-inspectiontool|adsbot-google|storebot-google|bingbot|bingpreview|duckduckbot|applebot|yandexbot|linkedinbot|facebookexternalhit|twitterbot|slackbot|whatsapp/i;
+const SCRAPE_BAD_UA = /curl|wget|python|requests|aiohttp|httpx|scrapy|node-fetch|undici|axios|got\b|okhttp|java\/|go-http|libwww|perl|ruby|php|httpclient|postman|insomnia|headless|phantom|puppeteer|playwright|selenium|crawler|spider|scraper|bot\b|gptbot|ccbot|claudebot|anthropic|bytespider|ahrefs|semrush|mj12|dotbot|petalbot|dataforseo|zoominfo|apify|diffbot|^$/i;
+const scrapeHits = new Map();
+let scrapeBlocked = { total: 0, since: new Date().toISOString(), last: [] };
+function scrapeHost(v) { try { return new URL(v).hostname.toLowerCase(); } catch (e) { return ''; } }
+function careersGuard(req, res, next) {
+  const ua = String(req.get('user-agent') || '');
+  if (SCRAPE_GOOD_BOTS.test(ua)) return next();
+  const host = scrapeHost(req.get('origin') || '') || scrapeHost(req.get('referer') || '');
+  const fromUs = host && SCRAPE_ALLOWED_HOSTS.some(h => host === h || host.endsWith('.' + h));
+  const ip = String(req.get('x-forwarded-for') || req.ip || '').split(',')[0].trim();
+  const now = Date.now();
+  const hit = scrapeHits.get(ip) || { n: 0, at: now };
+  if (now - hit.at > 10 * 60 * 1000) { hit.n = 0; hit.at = now; }
+  hit.n++; scrapeHits.set(ip, hit);
+  if (scrapeHits.size > 5000) { for (const [k, v] of scrapeHits) if (now - v.at > 10 * 60 * 1000) scrapeHits.delete(k); }
+  let why = '';
+  if (SCRAPE_BAD_UA.test(ua)) why = 'tool';
+  else if (!fromUs) why = 'not from our site';
+  else if (hit.n > 120) why = 'too many requests';
+  if (!why) { res.set('Vary', 'Origin'); return next(); }
+  scrapeBlocked.total++;
+  scrapeBlocked.last.unshift({ at: new Date().toISOString(), why, path: req.path, ua: ua.slice(0, 120), from: host || '' });
+  scrapeBlocked.last = scrapeBlocked.last.slice(0, 25);
+  if (why === 'too many requests') return res.status(429).json({ error: 'Too many requests. Please try again shortly.' });
+  return res.status(403).json({ error: 'Forbidden' });
+}
+app.use(['/api/public/roles', '/api/public/forms'], careersGuard);
+app.get('/api/careers-guard', requireAdmin, (req, res) => res.json(scrapeBlocked));
+
 app.get('/api/public/forms/:slug', async (req, res) => {
   try {
     const role = await findRoleForForm(req.params.slug);
@@ -7410,7 +7446,7 @@ async function buildPublicRoles() {
 app.get('/api/public/roles', async (req, res) => {
   try {
     const list = await buildPublicRoles();
-    res.set('Cache-Control', 'public, max-age=60');
+    res.set('Cache-Control', 'private, max-age=60');
     const roles = list.map(r => ({ ...r, sections: undefined }));
     const byLoc = new Map();
     roles.forEach(r => { if (!byLoc.has(r.locationGroup)) byLoc.set(r.locationGroup, []); byLoc.get(r.locationGroup).push(r); });
@@ -7425,7 +7461,7 @@ app.get('/api/public/roles/:slug', async (req, res) => {
   try {
     const hit = (await buildPublicRoles()).find(r => r.slug === req.params.slug);
     if (!hit) return res.status(404).json({ error: 'Role not found' });
-    res.set('Cache-Control', 'public, max-age=60');
+    res.set('Cache-Control', 'private, max-age=60');
     res.json({ role: hit });
   } catch (e) { console.error('GET /api/public/roles/:slug error:', e.message); res.status(500).json({ error: 'Could not load role' }); }
 });
@@ -11959,9 +11995,11 @@ app.post('/api/competitors/adverts/:id/find-client', async (req, res) => {
     if (allow.used >= allow.cap) return res.status(429).json({ error: `This month's limit of ${allow.cap} AI searches has been reached.` });
     const g = await cmpFindClient(ad);
     await rfxCountAi(actorOf(req));
+    const alts = (Array.isArray(g.alternatives) ? g.alternatives : (typeof g.alternatives === 'string' ? g.alternatives.split(/[,;\n]+/) : []))
+      .map(x => typeof x === 'string' ? x : (x && (x.name || x.client)) || '').map(x => String(x).trim()).filter(Boolean);
     const saved = await cmpAdsTable.upsert({
       ...ad, client: g.client || '', client_confidence: g.client ? (g.confidence === 'unknown' ? 'possible' : g.confidence) : '',
-      client_reason: [g.reasons, g.alternatives && g.alternatives.length ? 'Other possibilities: ' + g.alternatives.join(', ') : ''].filter(Boolean).join(' '),
+      client_reason: [g.reasons, alts.length ? 'Other possibilities: ' + alts.join(', ') : ''].filter(Boolean).join(' '),
       client_website: g.website || '', client_at: rfxNow(), client_by: actorOf(req),
     });
     res.json({ ok: true, data: saved });
@@ -12010,7 +12048,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '16 Oct 2026 - build 31';
+const SERVER_BUILD = '19 Oct 2026 - build 32';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

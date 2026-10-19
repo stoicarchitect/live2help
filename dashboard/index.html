@@ -14296,6 +14296,10 @@ th.rfx-sort:hover{color:var(--gold);}
 th.rfx-sort.on{color:var(--dark);border-bottom:2px solid var(--gold);}
 th.rfx-sort::after{content:attr(data-arrow);font-size:10px;color:var(--gold);font-weight:400;}
 th.rfx-sort.on::before{content:'';}
+th.cmp-sort{cursor:pointer;user-select:none;white-space:nowrap;}
+th.cmp-sort:hover{color:var(--gold);}
+th.cmp-sort.on{color:var(--dark);border-bottom:2px solid var(--gold);}
+th.cmp-sort::after{content:attr(data-arrow);font-size:10px;color:var(--gold);font-weight:400;}
 .rfx-prog{background:#fff;border:1px solid var(--border);border-left:3px solid var(--gold);border-radius:2px;padding:12px 14px;margin-bottom:14px;font-size:13px;}
 .rfx-prog.ok{border-left-color:#2D6A3E;}
 .rfx-prog.bad{border-left-color:#9B2C22;}
@@ -15425,7 +15429,7 @@ tr.cmp-row.sel td{background:#FBF6E8;}
    and the clients behind them
    ============================================================ */
 
-const CMP = {data:null, agency:'', loaded:false, polling:null, pageA:1, pageB:1, per:25, sortA:'live', showQuiet:false};
+const CMP = {data:null, agency:'', loaded:false, polling:null, pageA:1, pageB:1, per:25, sortA:'live', showQuiet:false, sA:{key:'live',dir:-1}, sB:null};
 
 // Page controls used under long tables
 function l2hPager(total, page, per, fnPage, fnPer){
@@ -15465,12 +15469,12 @@ function l2hPager(total, page, per, fnPage, fnPer){
         <div class="tile-grid" id="cmpTiles"></div>
         <div class="section-title">Agencies</div>
         <div class="rfx-bar">
-          <select id="cmpSortA" onchange="CMP.sortA=this.value;CMP.pageA=1;cmpRender()"><option value="live">Sort: most live adverts</option><option value="size">Sort: biggest company first</option><option value="new">Sort: most new adverts this week</option><option value="clients">Sort: most clients identified</option><option value="name">Sort: name A to Z</option></select>
+          <select id="cmpSortA" onchange="cmpSortBy('A',this.value,true)"><option value="live">Sort: most live adverts</option><option value="size">Sort: biggest company first</option><option value="new">Sort: most new adverts this week</option><option value="clients">Sort: most clients identified</option><option value="name">Sort: name A to Z</option></select>
           <select id="cmpSizeF" onchange="CMP.pageA=1;cmpRender()"><option value="">All sizes</option><option value="Large">Large</option><option value="Medium">Medium</option><option value="Small">Small</option><option value="Micro">Micro</option><option value="unknown">Size not known</option></select>
           <input id="cmpTextA" placeholder="Filter agencies" oninput="CMP.pageA=1;cmpRender()" style="min-width:180px;">
         </div>
         <div class="ops-table-wrap"><table class="ops-table" style="min-width:1040px;"><thead><tr>
-          <th>Agency</th><th>Size</th><th>Live adverts</th><th>New this week</th><th>Trend (30 days)</th><th>Average days open</th><th>Main sectors</th><th>Salary range</th><th>Clients identified</th><th style="text-align:right;">Actions</th>
+          <th class="cmp-sort" data-t="A" data-sort="name" onclick="cmpSortBy('A','name')">Agency</th><th class="cmp-sort" data-t="A" data-sort="size" onclick="cmpSortBy('A','size')">Size</th><th class="cmp-sort" data-t="A" data-sort="live" onclick="cmpSortBy('A','live')">Live adverts</th><th class="cmp-sort" data-t="A" data-sort="new" onclick="cmpSortBy('A','new')">New this week</th><th class="cmp-sort" data-t="A" data-sort="trend" onclick="cmpSortBy('A','trend')">Trend (30 days)</th><th class="cmp-sort" data-t="A" data-sort="avgDays" onclick="cmpSortBy('A','avgDays')">Average days open</th><th class="cmp-sort" data-t="A" data-sort="sectors" onclick="cmpSortBy('A','sectors')">Main sectors</th><th class="cmp-sort" data-t="A" data-sort="salary" onclick="cmpSortBy('A','salary')">Salary range</th><th class="cmp-sort" data-t="A" data-sort="clients" onclick="cmpSortBy('A','clients')">Clients identified</th><th style="text-align:right;">Actions</th>
         </tr></thead><tbody id="cmpBody"><tr><td colspan="10" class="empty-row">Loading...</td></tr></tbody></table></div>
         <div id="cmpPagerA"></div>
         <div class="section-title" id="cmpAdsTitle">Live agency adverts</div>
@@ -15482,7 +15486,7 @@ function l2hPager(total, page, per, fnPage, fnPer){
           <label class="chk"><input type="checkbox" id="cmpHideDone" checked onchange="cmpRender()"> Hide not relevant</label>
         </div>
         <div class="ops-table-wrap"><table class="ops-table" style="min-width:1050px;"><thead><tr>
-          <th>Agency</th><th>Role</th><th>Salary</th><th>Days open</th><th>Client behind it</th><th style="text-align:right;">Actions</th>
+          <th class="cmp-sort" data-t="B" data-sort="agency" onclick="cmpSortBy('B','agency')">Agency</th><th class="cmp-sort" data-t="B" data-sort="role" onclick="cmpSortBy('B','role')">Role</th><th class="cmp-sort" data-t="B" data-sort="salary" onclick="cmpSortBy('B','salary')">Salary</th><th class="cmp-sort" data-t="B" data-sort="days" onclick="cmpSortBy('B','days')">Days open</th><th class="cmp-sort" data-t="B" data-sort="client" onclick="cmpSortBy('B','client')">Client behind it</th><th style="text-align:right;">Actions</th>
         </tr></thead><tbody id="cmpAdsBody"></tbody></table></div>
         <div id="cmpPagerB"></div>
         <div class="note-line">Agencies are found from Reed adverts posted by agencies around the chosen towns, plus the job pages you add for any agency (their own site, CV-Library and similar). Only agencies with live adverts are listed, apart from your main competitors and any you add by hand. Company size comes from the accounts they file at Companies House. The client behind each advert is matched for free first, by finding the same role advertised directly by an employer in the same town. Find the client uses AI and the web for a best guess, counting towards the monthly AI limit. Labels: Confirmed (same role, town and salary advertised directly), Likely (strong clues), Possible (an informed guess). Check before relying on a guess.</div>
@@ -15536,14 +15540,19 @@ function cmpRender(){
     if(textA && !String(c.name).toLowerCase().includes(textA)) return false;
     return true;
   });
-  const sorters = {
-    live: (a, b) => b.live - a.live,
-    size: (a, b) => (CMP_SIZE_RANK[b.size || ''] || 0) - (CMP_SIZE_RANK[a.size || ''] || 0) || b.live - a.live,
-    new: (a, b) => b.newThisWeek - a.newThisWeek,
-    clients: (a, b) => b.clientsKnown - a.clientsKnown,
-    name: (a, b) => a.name.localeCompare(b.name),
+  const numA = {
+    live: c => c.live, size: c => CMP_SIZE_RANK[c.size || ''] || 0, new: c => c.newThisWeek, trend: c => c.last30 - c.prev30,
+    avgDays: c => c.live ? c.avgDays : -1, salary: c => c.salMax || c.salMin || 0, clients: c => c.clientsKnown,
   };
-  comps.sort((a, b) => (b.pinned === 'yes') - (a.pinned === 'yes') || (sorters[CMP.sortA] || sorters.live)(a, b) || a.name.localeCompare(b.name));
+  const txtA = { name: c => c.name || '', sectors: c => (c.sectors || []).join(', ') };
+  const sa = CMP.sA || {key:'live', dir:-1};
+  comps.sort((a, b) => {
+    if(sa.key === 'live' && sa.dir < 0){ const p = (b.pinned === 'yes') - (a.pinned === 'yes'); if(p) return p; }
+    let r = 0;
+    if(txtA[sa.key]){ const x = txtA[sa.key](a), y = txtA[sa.key](b); r = (!x) - (!y) || x.localeCompare(y) * sa.dir; }
+    else { const f = numA[sa.key] || numA.live; r = (f(a) - f(b)) * sa.dir; }
+    return r || b.live - a.live || a.name.localeCompare(b.name);
+  });
   document.getElementById('cmpSummary').textContent = `Agencies advertising around ${(d.towns || []).join(', ')}, plus your main competitors' own job pages. ${d.enabled ? 'Checked every weekday with the market sweep.' : 'Automatic checking is switched off.'} Agencies with no live adverts are left out.`;
   const clientsKnown = new Set(liveAds.filter(a => a.client).map(a => a.client.toLowerCase())).size;
   document.getElementById('cmpTiles').innerHTML = [
@@ -15591,7 +15600,18 @@ function cmpRender(){
     if(cf === 'ours' && !a.client_is_client) return false;
     if(text && !`${a.role} ${a.client} ${a.location} ${a.agency}`.toLowerCase().includes(text)) return false;
     return true;
-  }).sort((a, b) => (cf === 'known' || cf === 'confirmed' ? String(a.client).localeCompare(String(b.client)) : 0) || (b.days || 0) - (a.days || 0));
+  });
+  const sb = CMP.sB || (cf === 'known' || cf === 'confirmed' ? {key:'client', dir:1} : {key:'days', dir:-1});
+  const salOf = a => { let x = parseInt(a.sal_max, 10) || parseInt(a.sal_min, 10) || 0; if(!x && a.salary){ const n = (String(a.salary).match(/\d[\d,]*/g) || []).map(v => parseInt(v.replace(/,/g, ''), 10)).filter(v => v >= 1000); x = n[1] || n[0] || 0; } return x; };
+  const txtB = { agency: a => a.agency || '', role: a => a.role || '', client: a => a.client || '' };
+  list.sort((a, b) => {
+    let r = 0;
+    if(txtB[sb.key]){ const x = txtB[sb.key](a), y = txtB[sb.key](b); r = (!x) - (!y) || x.localeCompare(y) * sb.dir; }
+    else if(sb.key === 'salary'){ const x = salOf(a), y = salOf(b); r = (!x) - (!y) || (x - y) * sb.dir; }
+    else r = ((a.days == null ? -1 : a.days) - (b.days == null ? -1 : b.days)) * sb.dir;
+    return r || (b.days || 0) - (a.days || 0);
+  });
+  cmpSortMarks(sb);
   const agencyName = CMP.agency && (all.find(c => c.id === CMP.agency) || {}).name;
   document.getElementById('cmpAdsTitle').innerHTML = (agencyName ? esc(agencyName) + ': adverts' : 'Live agency adverts') + ` <span class="rfx-sub" style="display:inline;">(${list.length})</span>` + (agencyName ? ' <a class="tpl-link" onclick="cmpPickAgency(\'\')">Show all agencies</a>' : '');
   const pagesB = Math.max(1, Math.ceil(list.length / CMP.per));
@@ -15616,15 +15636,44 @@ function cmpRender(){
   document.getElementById('cmpPagerB').innerHTML = l2hPager(list.length, CMP.pageB, CMP.per, 'cmpPageB', 'cmpPer');
 }
 
+function cmpSortBy(t, key, fromSelect){
+  const txt = ['name','sectors','agency','role','client'].includes(key);
+  const first = txt ? 1 : -1;
+  if(t === 'A'){
+    const cur = CMP.sA || {key:'live', dir:-1};
+    CMP.sA = fromSelect || cur.key !== key ? {key, dir:first} : {key, dir:-cur.dir};
+    CMP.sortA = key; CMP.pageA = 1;
+  } else {
+    const cur = CMP.sB || {key:'days', dir:-1};
+    CMP.sB = cur.key !== key ? {key, dir:first} : {key, dir:-cur.dir};
+    CMP.pageB = 1;
+  }
+  cmpRender();
+}
+
+function cmpSortMarks(sb){
+  const sa = CMP.sA || {key:'live', dir:-1};
+  const sel = document.getElementById('cmpSortA');
+  if(sel && [...sel.options].some(o => o.value === sa.key)) sel.value = sa.key;
+  document.querySelectorAll('th.cmp-sort').forEach(th => {
+    const cur = th.dataset.t === 'A' ? sa : sb;
+    const on = !!cur && th.dataset.sort === cur.key;
+    const txt = ['name','sectors','agency','role','client'].includes(th.dataset.sort);
+    th.classList.toggle('on', on);
+    th.dataset.arrow = on ? (txt ? (cur.dir > 0 ? ' A-Z' : ' Z-A') : (cur.dir > 0 ? ' lowest first' : ' highest first')) : '';
+  });
+}
+
 function cmpPageA(p){ CMP.pageA = p; cmpRender(); document.getElementById('cmpBody').closest('.ops-table-wrap').scrollIntoView({behavior:'smooth', block:'start'}); }
 function cmpPageB(p){ CMP.pageB = p; cmpRender(); document.getElementById('cmpAdsTitle').scrollIntoView({behavior:'smooth', block:'start'}); }
 function cmpPer(n){ CMP.per = n; CMP.pageA = 1; CMP.pageB = 1; cmpRender(); }
 
 function cmpTile(what){
   const clientSel = document.getElementById('cmpClient');
-  if(what === 'advertising'){ CMP.sortA = 'live'; document.getElementById('cmpSortA').value = 'live'; CMP.pageA = 1; cmpRender(); document.getElementById('cmpBody').closest('.ops-table-wrap').scrollIntoView({behavior:'smooth', block:'start'}); return; }
+  if(what === 'advertising'){ CMP.sortA = 'live'; CMP.sA = {key:'live', dir:-1}; document.getElementById('cmpSortA').value = 'live'; CMP.pageA = 1; cmpRender(); document.getElementById('cmpBody').closest('.ops-table-wrap').scrollIntoView({behavior:'smooth', block:'start'}); return; }
   CMP.agency = '';
   clientSel.value = what === 'known' ? 'known' : what === 'ours' ? 'ours' : '';
+  CMP.sB = null;
   document.getElementById('cmpLive').checked = true;
   document.getElementById('cmpText').value = '';
   CMP.pageB = 1;
@@ -15985,7 +16034,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '16 Oct 2026 - build 31';
+var PAGE_BUILD = '19 Oct 2026 - build 32';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
