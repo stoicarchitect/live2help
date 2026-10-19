@@ -3504,6 +3504,7 @@ app.post('/api/cold-calls', async (req, res) => {
       }
     });
     
+    scheduleTaskTidy();
     res.json({ ok: true, company, contactNames });
   } catch (e) {
     console.error('POST /api/cold-calls error:', e.message);
@@ -3551,7 +3552,7 @@ app.patch('/api/cold-calls/:id', async (req, res) => {
         values: [updateRow]
       }
     });
-    
+    scheduleTaskTidy();
     res.json({ ok: true });
   } catch (e) {
     console.error('PATCH /api/cold-calls/:id error:', e.message);
@@ -4683,6 +4684,7 @@ const commsTable = makeSimpleTable({
   header: ['id', 'timestamp', 'user', 'entity_type', 'entity_name', 'company', 'role', 'channel', 'direction', 'summary', 'follow_up_date', 'follow_up_done'],
   path: '/api/comms',
   label: 'Contact',
+  afterSave: (saved, existing) => { if (!existing) scheduleTaskTidy(); },
 });
 
 const feedbackTable = makeSimpleTable({
@@ -8066,10 +8068,12 @@ function closeAutoTasks(decide) {
     const rows = await getTasksSheet();
     const close = new Map();
     rows.forEach(r => {
-      if (!r || !r[0] || !String(r[0]).startsWith('auto-')) return;
+      if (!r || !r[0]) return;
       const t = rowToTask(r);
       if (t.status === 'Complete' || t.archived) return;
-      const reason = decide(String(r[0]).slice(5), t);
+      // auto tasks are passed their key; everything else gets '' and is judged on the task itself
+      const key = String(r[0]).startsWith('auto-') ? String(r[0]).slice(5) : '';
+      const reason = decide(key, t);
       if (reason) close.set(t.id, { t, reason });
     });
     if (!close.size) return [];
@@ -8132,35 +8136,98 @@ async function findPipelinePerson(name, role, id) {
 }
 
 let lastAutoSweep = null;
+
+// Match a task key written with a short or differently spelt name ("Stephen B") to the full pipeline record
+function fuzzyTaskPerson(key, people) {
+  const hits = [];
+  people.forEach(p => {
+    const rs = slugKey(p.role);
+    if (!rs) return;
+    const at = key.indexOf('-' + rs + '-');
+    if (at <= 0) return;
+    const tail = key.slice(at + rs.length + 2);
+    if (!AUTO_EVENT_RE.test(tail)) return;
+    const a = key.slice(0, at).split('-'), b = slugKey(p.name).split('-');
+    if (a[0] !== b[0]) return;
+    const la = a[a.length - 1], lb = b[b.length - 1];
+    const ok = a.length === 1 || b.length === 1 || la === lb || (la.length === 1 && lb.startsWith(la)) || (lb.length === 1 && la.startsWith(lb));
+    if (ok) hits.push({ p, ev: tail });
+  });
+  const uniq = [...new Map(hits.map(h => [slugKey(h.p.name + '-' + h.p.role), h])).values()];
+  return uniq.length === 1 ? uniq[0] : null;
+}
+
+function taskCreatedMs(t) {
+  const m = String(t.id || '').match(/^task-(\d{12,})$/);
+  if (m) return +m[1];
+  const d = parseISODate(t.dueDate);
+  return d ? d.getTime() : 0;
+}
+function msOf(s) { const d = parseISODate(s); const n = Date.parse(s); return !isNaN(n) ? n : (d ? d.getTime() : 0); }
+
+// A rejection email counts as sent once an outbound email to the candidate is logged on or after the task date
+function rejectionSent(p, t, comms) {
+  const from = parseISODate(t.dueDate);
+  const since = from ? from.getTime() - 3 * 86400000 : 0;
+  return comms.some(c => c.entity_type !== 'client' && lc(c.channel) === 'email' && !/^in/i.test(c.direction || '') &&
+    personNameMatches(c.entity_name, p.name) && (!c.role || lc(c.role) === lc(p.role)) && msOf(c.timestamp) >= since);
+}
+
+// Cold Call Tracker "Add to Tasks" follow-ups: "Follow up with <company>", context "Contact: <names> - <notes>"
+function coldCallFollowUpReason(t, calls, comms) {
+  const m = String(t.title || '').match(/^Follow up with (.+)$/i);
+  if (!m || !/^task-/.test(t.id)) return null;
+  const company = lc(m[1]);
+  const names = lc((String(t.context || '').match(/^Contact:\s*(.*?)\s+-\s/) || [])[1] || '');
+  const created = taskCreatedMs(t);
+  const same = calls.filter(c => lc(c.company) === company);
+  const mine = same.filter(c => !names || lc(c.contactNames) === names);
+  if (mine.some(c => /completed|archived|successful/i.test(c.status || ''))) return 'the cold call was marked complete';
+  const later = same.find(c => msOf(c.createdAt || c.dateCalled) > created + 10 * 60 * 1000);
+  if (later) return `a newer contact with ${m[1]} was logged on ${formatDateUK(toISODate(new Date(msOf(later.createdAt || later.dateCalled))))}`;
+  const cm = comms.find(c => c.entity_type === 'client' && (lc(c.company) === company || lc(c.entity_name) === company) && msOf(c.timestamp) > created + 10 * 60 * 1000);
+  if (cm) return `contact with ${m[1]} was logged on ${formatDateUK(toISODate(new Date(msOf(cm.timestamp))))}`;
+  return null;
+}
+
 async function sweepAutoTasks() {
   const map = await pipelinePeople();
+  const people = [...map.values()];
   const ivs = (await interviewsTable.list()).filter(i => !/cancel/i.test(i.status || ''));
+  const comms = await commsTable.list().catch(() => []);
+  const calls = await getColdCallsSheet().catch(() => []);
   const hasIv = p => ivs.some(i => lc(i.role) === lc(p.role) && personNameMatches(p.name, i.candidate_name));
   const bases = [...map.keys()].sort((a, b) => b.length - a.length);
   const byType = {};
-  const closed = await closeAutoTasks(key => {
+  const count = k => { byType[k] = (byType[k] || 0) + 1; };
+  const closed = await closeAutoTasks((key, t) => {
+    if (!key) {
+      const r = coldCallFollowUpReason(t, calls, comms);
+      if (r) count('coldCallFollowUp');
+      return r;
+    }
+    let p = null, ev = null;
     const base = bases.find(b => key.startsWith(b + '-') && AUTO_EVENT_RE.test(key.slice(b.length + 1)));
-    let reason = null, ev = null;
-    if (base) {
-      const p = map.get(base);
-      ev = key.slice(base.length + 1);
+    if (base) { p = map.get(base); ev = key.slice(base.length + 1); }
+    else { const f = fuzzyTaskPerson(key, people); if (f) { p = f.p; ev = f.ev; } }
+    let reason = null;
+    if (p) {
       if (!autoTaskStillValid(ev, p.stage, p, hasIv(p))) reason = ev === 'ivmissing' ? 'the interview is now on the Interviews tab' : `${p.name} is now at ${pipelineStageLabel(p.stage)}`;
+      else if (ev === 'reject-email' && rejectionSent(p, t, comms)) reason = 'the rejection email has been logged as sent';
     } else {
       // A candidate task whose candidate is no longer on the pipeline at all
       const parts = key.split('-');
       for (let i = 1; i < parts.length && !ev; i++) { const tail = parts.slice(i).join('-'); if (AUTO_EVENT_RE.test(tail)) ev = tail; }
-      // Leave it alone if someone with the same first name is still on that role (the name may just be spelt differently)
-      const people = [...map.values()];
-      const lookalike = ev && people.some(p => key.startsWith(slugKey(String(p.name).split(/\s+/)[0]) + '-') && key.includes('-' + slugKey(p.role) + '-'));
+      // Leave it alone if someone with the same first name is still on the pipeline (the name may be spelt differently)
+      const lookalike = ev && people.some(q => key.startsWith(slugKey(String(q.name).split(/\s+/)[0]) + '-'));
       if (ev && !lookalike) reason = 'the candidate is no longer on the pipeline';
-      else ev = null;
     }
-    if (reason) { const k = ev.replace(/-r\d+$/, '').replace(/^(stale|clientreply)-.*/, '$1'); byType[k] = (byType[k] || 0) + 1; }
+    if (reason) count(ev.replace(/-r\d+$/, '').replace(/^(stale|clientreply)-.*/, '$1'));
     return reason;
   });
   // Candidates at Interview Scheduled whose interview now exists get their dated reminder calls
   let added = 0;
-  for (const p of map.values()) {
+  for (const p of people) {
     if (normStage(p.stage) === 'interview_scheduled' && hasIv(p)) {
       try { added += await addAutoTasks(await buildStageTasks(p, 'interview_scheduled')); } catch (e) { /* best effort */ }
     }
@@ -8170,9 +8237,16 @@ async function sweepAutoTasks() {
   return lastAutoSweep;
 }
 
+// Contact logged, cold call completed: tidy up shortly afterwards (several saves in a row run one sweep)
+let taskTidyTimer = null;
+function scheduleTaskTidy() {
+  if (taskTidyTimer) clearTimeout(taskTidyTimer);
+  taskTidyTimer = setTimeout(() => { taskTidyTimer = null; sweepAutoTasks().catch(e => console.error('Task tidy failed:', e.message)); }, 4000);
+}
+
 app.get('/api/tasks/auto-sweep', async (req, res) => {
   try {
-    if (req.query.run === '1' && (!lastAutoSweep || Date.now() - Date.parse(lastAutoSweep.at) > 5 * 60 * 1000)) await sweepAutoTasks();
+    if (req.query.run === '1' && (!lastAutoSweep || Date.now() - Date.parse(lastAutoSweep.at) > 60 * 1000)) await sweepAutoTasks();
     res.json({ ok: true, last: lastAutoSweep });
   } catch (e) { console.error('auto-sweep error:', e.message); res.status(500).json({ error: e.message }); }
 });
@@ -12286,7 +12360,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '19 Oct 2026 - build 35';
+const SERVER_BUILD = '19 Oct 2026 - build 36';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
