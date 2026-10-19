@@ -14594,7 +14594,7 @@ function rfxRenderSetup(){
   const lastRun = [last && last.at, RFX.status && RFX.status.last && RFX.status.last.finishedAt, ...RFX.searches.map(x => x.last_run)].filter(Boolean).sort().pop();
   document.getElementById('rfxSummary').innerHTML =
     `Automatic search <b style="color:${sw.enabled ? '#2D6A3E' : '#9B2C22'}">${sw.enabled ? 'on' : 'off'}</b> &middot; automatic deep dives <b style="color:${sw.autoDive ? '#2D6A3E' : '#999'}">${sw.autoDive ? sw.diveCount + ' a day' : 'off'}</b> &middot; ${esc(bands.join(', ') || 'no salary bands')}${sw.includeNoSalary ? ' plus adverts with no salary' : ''} &middot; last search ${esc(RFX.status && RFX.status.running ? 'running now' : lastRun ? rfxAgo(lastRun) : 'never')}`
-    + '<br>' + l2hUpdatedLine(last ? last : (lastRun ? {at: lastRun, by: (RFX.status && RFX.status.last && RFX.status.last.by) || 'Ella'} : null), {enabled: !!sw.enabled, running: !!(RFX.status && RFX.status.running), detail: last ? `${last.newCount != null ? last.newCount + ' new adverts' : (last.found || 0) + ' adverts checked'}` : ''});
+    + '<br>' + l2hUpdatedLine(last ? last : (lastRun ? {at: lastRun, by: (RFX.status && RFX.status.last && RFX.status.last.by) || 'Ella'} : null), {enabled: !!sw.enabled, running: !!(RFX.status && RFX.status.running), detail: last ? `${last.newCount != null ? last.newCount + (last.newCount == 1 ? ' new advert' : ' new adverts') : (last.found || 0) + ' adverts checked'}` : ''});
   const regSel = document.getElementById('rfxRegion'), typeSel = document.getElementById('rfxType'), bandSel = document.getElementById('rfxBand'), srch = document.getElementById('rfxSearchFilter');
   const keep = (el, html) => { const v = el.value; el.innerHTML = html; el.value = v; };
   keep(regSel, '<option value="">All regions</option>' + ((RFX.config && RFX.config.regions) || []).map(r => `<option>${esc(r)}</option>`).join(''));
@@ -15583,7 +15583,7 @@ function cmpRender(){
   });
   const lr = d.lastRun;
   document.getElementById('cmpSummary').innerHTML = esc(`Agencies advertising around ${(d.towns || []).join(', ')}, plus your main competitors' own job pages. ${d.enabled ? 'Checked every weekday with the market sweep.' : 'Automatic checking is switched off.'} Agencies with no live adverts are left out.`)
-    + '<br>' + l2hUpdatedLine(lr, {enabled: d.enabled, running: !!CMP.polling, detail: lr ? `${lr.adverts || 0} live adverts, ${lr.newAdverts || 0} new` : ''});
+    + '<br>' + l2hUpdatedLine(lr, {enabled: d.enabled, running: !!CMP.polling, detail: lr ? `${lr.adverts || 0} live advert${lr.adverts == 1 ? '' : 's'}, ${lr.newAdverts || 0} new` : ''});
   const clientsKnown = new Set(liveAds.filter(a => a.client).map(a => a.client.toLowerCase())).size;
   document.getElementById('cmpTiles').innerHTML = [
     {n: all.filter(c => c.live > 0).length, l:'Agencies advertising now', go:"cmpTile('advertising')"},
