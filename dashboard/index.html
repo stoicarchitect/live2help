@@ -14296,6 +14296,11 @@ th.rfx-sort:hover{color:var(--gold);}
 th.rfx-sort.on{color:var(--dark);border-bottom:2px solid var(--gold);}
 th.rfx-sort::after{content:attr(data-arrow);font-size:10px;color:var(--gold);font-weight:400;}
 th.rfx-sort.on::before{content:'';}
+
+.l2h-updated{font-size:12px;margin-top:4px;padding:3px 8px;border-radius:2px;display:inline-block;}
+.l2h-updated.ok{background:#EEF6F0;color:#2D6A3E;}
+.l2h-updated.warn{background:#FBEDEB;color:#9B2C22;}
+.l2h-updated.run{background:#FFF7E3;color:#8A6A12;}
 th.cmp-sort{cursor:pointer;user-select:none;white-space:nowrap;}
 th.cmp-sort:hover{color:var(--gold);}
 th.cmp-sort.on{color:var(--dark);border-bottom:2px solid var(--gold);}
@@ -14443,6 +14448,28 @@ const LPX_STAGE_LABEL = {identified:'Identified', contacted:'Contacted', interes
 const LPX_BOARD = ['identified','contacted','interested','meeting','terms','converted'];
 
 function rfxFmt(d){ if(!d) return ''; const x = new Date(String(d).length <= 10 ? d + 'T00:00:00' : d); return isNaN(x) ? String(d) : x.toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'}); }
+// "Last updated" line: exact time, who ran it, and a red warning if the automatic weekday run has been missed
+function l2hExpectedRun(){
+  // the automatic run happens on weekday mornings (about 6:30am UK); work out the latest morning it should have run
+  const d = new Date();
+  const ukHour = parseInt(d.toLocaleString('en-GB', {hour:'2-digit', hour12:false, timeZone:'Europe/London'}), 10);
+  if(ukHour < 8) d.setDate(d.getDate() - 1);
+  while(d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
+  return d.toLocaleDateString('en-CA', {timeZone:'Europe/London'});
+}
+function l2hUpdatedLine(last, opts){
+  opts = opts || {};
+  if(opts.running) return '<div class="l2h-updated run">Updating now...</div>';
+  if(!last || !last.at) return `<div class="l2h-updated warn">Last updated: never. ${opts.enabled ? 'It should update automatically each weekday morning.' : 'Automatic updates are switched off.'}</div>`;
+  const t = new Date(last.at);
+  const when = t.toLocaleString('en-GB', {weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit', timeZone:'Europe/London'});
+  const auto = (last.by || 'system') === 'system';
+  const who = auto ? 'automatic daily run' : 'run by ' + String(last.by).replace(/^./, c => c.toUpperCase());
+  const lastDay = t.toLocaleDateString('en-CA', {timeZone:'Europe/London'});
+  const missed = opts.enabled && lastDay < l2hExpectedRun();
+  const extra = opts.detail ? ' - ' + opts.detail : '';
+  return `<div class="l2h-updated ${missed ? 'warn' : 'ok'}">Last updated ${esc(when)} (${esc(who)}, ${esc(rfxAgo(last.at))})${esc(extra)}${missed ? '. <b>The automatic update has not run since then.</b> Check the GitHub Actions run, or press the search button to update now.' : ''}</div>`;
+}
 function rfxAgo(iso){ if(!iso) return 'never'; const m = Math.round((Date.now() - Date.parse(iso)) / 60000); if(m < 1) return 'just now'; if(m < 60) return m + ' min ago'; const h = Math.round(m / 60); if(h < 24) return h + ' hours ago'; return rfxFmt(iso); }
 function rfxNextWorkingDay(){ const d = new Date(); do { d.setDate(d.getDate() + 1); } while(d.getDay() === 0 || d.getDay() === 6); return d.toISOString().slice(0,10); }
 function rfxLink(u, label){ if(!u) return ''; const href = /^https?:/i.test(u) ? u : 'https://' + u; return `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(label || u)}</a>`; }
@@ -14566,7 +14593,8 @@ function rfxRenderSetup(){
   const last = RFX.config && RFX.config.sweepLast;
   const lastRun = [last && last.at, RFX.status && RFX.status.last && RFX.status.last.finishedAt, ...RFX.searches.map(x => x.last_run)].filter(Boolean).sort().pop();
   document.getElementById('rfxSummary').innerHTML =
-    `Automatic search <b style="color:${sw.enabled ? '#2D6A3E' : '#9B2C22'}">${sw.enabled ? 'on' : 'off'}</b> &middot; automatic deep dives <b style="color:${sw.autoDive ? '#2D6A3E' : '#999'}">${sw.autoDive ? sw.diveCount + ' a day' : 'off'}</b> &middot; ${esc(bands.join(', ') || 'no salary bands')}${sw.includeNoSalary ? ' plus adverts with no salary' : ''} &middot; last search ${esc(RFX.status && RFX.status.running ? 'running now' : lastRun ? rfxAgo(lastRun) : 'never')}`;
+    `Automatic search <b style="color:${sw.enabled ? '#2D6A3E' : '#9B2C22'}">${sw.enabled ? 'on' : 'off'}</b> &middot; automatic deep dives <b style="color:${sw.autoDive ? '#2D6A3E' : '#999'}">${sw.autoDive ? sw.diveCount + ' a day' : 'off'}</b> &middot; ${esc(bands.join(', ') || 'no salary bands')}${sw.includeNoSalary ? ' plus adverts with no salary' : ''} &middot; last search ${esc(RFX.status && RFX.status.running ? 'running now' : lastRun ? rfxAgo(lastRun) : 'never')}`
+    + '<br>' + l2hUpdatedLine(last ? last : (lastRun ? {at: lastRun, by: (RFX.status && RFX.status.last && RFX.status.last.by) || 'Ella'} : null), {enabled: !!sw.enabled, running: !!(RFX.status && RFX.status.running), detail: last ? `${last.newCount != null ? last.newCount + ' new adverts' : (last.found || 0) + ' adverts checked'}` : ''});
   const regSel = document.getElementById('rfxRegion'), typeSel = document.getElementById('rfxType'), bandSel = document.getElementById('rfxBand'), srch = document.getElementById('rfxSearchFilter');
   const keep = (el, html) => { const v = el.value; el.innerHTML = html; el.value = v; };
   keep(regSel, '<option value="">All regions</option>' + ((RFX.config && RFX.config.regions) || []).map(r => `<option>${esc(r)}</option>`).join(''));
@@ -15553,7 +15581,9 @@ function cmpRender(){
     else { const f = numA[sa.key] || numA.live; r = (f(a) - f(b)) * sa.dir; }
     return r || b.live - a.live || a.name.localeCompare(b.name);
   });
-  document.getElementById('cmpSummary').textContent = `Agencies advertising around ${(d.towns || []).join(', ')}, plus your main competitors' own job pages. ${d.enabled ? 'Checked every weekday with the market sweep.' : 'Automatic checking is switched off.'} Agencies with no live adverts are left out.`;
+  const lr = d.lastRun;
+  document.getElementById('cmpSummary').innerHTML = esc(`Agencies advertising around ${(d.towns || []).join(', ')}, plus your main competitors' own job pages. ${d.enabled ? 'Checked every weekday with the market sweep.' : 'Automatic checking is switched off.'} Agencies with no live adverts are left out.`)
+    + '<br>' + l2hUpdatedLine(lr, {enabled: d.enabled, running: !!CMP.polling, detail: lr ? `${lr.adverts || 0} live adverts, ${lr.newAdverts || 0} new` : ''});
   const clientsKnown = new Set(liveAds.filter(a => a.client).map(a => a.client.toLowerCase())).size;
   document.getElementById('cmpTiles').innerHTML = [
     {n: all.filter(c => c.live > 0).length, l:'Agencies advertising now', go:"cmpTile('advertising')"},
@@ -16034,7 +16064,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '19 Oct 2026 - build 32';
+var PAGE_BUILD = '19 Oct 2026 - build 33';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;

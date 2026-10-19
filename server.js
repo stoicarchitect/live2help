@@ -10926,10 +10926,10 @@ async function rfxRunSearchesInner({ searchId, actor, auto } = {}) {
     await rfxSearchesTable.upsert({ ...s, last_run: rfxNow(), last_found: String(summary.perSearch[s.id] || 0) });
   }
   if (runSweep) {
-    try { await cmpRun(await cmpSettings(), summary, keep); }
+    try { await cmpRun(await cmpSettings(), summary, keep, { actor: actor || 'system' }); }
     catch (e) { summary.errors.push('Competitor Watch: ' + e.message); }
   }
-  if (runSweep) await settingsTable.upsert({ id: 'rfx_sweep_last', value: JSON.stringify({ at: rfxNow(), found: summary.perSearch.sweep || 0, towns: summary.townsSearched || 0 }), updated_by: actor || 'system' });
+  if (runSweep) await settingsTable.upsert({ id: 'rfx_sweep_last', value: JSON.stringify({ at: rfxNow(), found: summary.perSearch.sweep || 0, towns: summary.townsSearched || 0, newCount: summary.newCount || 0, by: actor || 'system', auto: !!auto }), updated_by: actor || 'system' });
 
   // automatic deep dives: only when switched on, on the highest scoring companies
   let dived = 0;
@@ -11856,6 +11856,10 @@ async function cmpRun(settings, summary, roleFinderResults, opts = {}) {
   cmpAdsTable.invalidate();
   summary.competitorAdverts = keep.length;
   summary.newCompetitorAdverts = newAds;
+  try {
+    await settingsTable.upsert({ id: 'cmp_last_run', value: JSON.stringify({ at: rfxNow(), by: opts.actor || 'system', manual: !!opts.manual,
+      adverts: keep.filter(a => (rfxDaysBetween(a.last_seen, today) || 0) <= 4).length, newAdverts: newAds, agencies: Object.keys(adCount).length }), updated_by: opts.actor || 'system' });
+  } catch (e) { summary.errors.push('Competitor Watch: could not record the last update time: ' + e.message); }
 }
 
 /* ---------- AI: best guess at the real client behind an agency advert ---------- */
@@ -11940,7 +11944,7 @@ async function cmpRunNow(actor) {
     const settings = await cmpSettings();
     if (!rfxSources().reed && !rfxSources().companiesHouse) throw new Error('Add the Reed or Companies House key on Render first.');
     const results = await rfxResultsTable.list();
-    await cmpRun(settings, summary, results, { manual: true });
+    await cmpRun(settings, summary, results, { manual: true, actor: actor || 'system' });
     rfxProg({ phase: 'Finished', current: '', pct: 100, done: true, result: { newCount: summary.newCompetitorAdverts || 0, agencies: summary.newCompetitors || 0, deepDives: 0, competitor: true, total: summary.competitorAdverts || 0 } });
     return summary;
   } catch (e) { rfxProg({ phase: 'Failed', error: e.message, done: true }); throw e; }
@@ -11953,7 +11957,9 @@ app.post('/api/competitors/run', async (req, res) => {
 
 app.get('/api/competitors/overview', async (req, res) => {
   try {
-    const [comps, ads, settings] = await Promise.all([cmpTable.list(), cmpAdsTable.list(), cmpSettings()]);
+    const [comps, ads, settings, srows] = await Promise.all([cmpTable.list(), cmpAdsTable.list(), cmpSettings(), settingsTable.list()]);
+    let lastRun = null;
+    try { lastRun = JSON.parse((srows.find(o => o.id === 'cmp_last_run') || {}).value || 'null'); } catch (e) { lastRun = null; }
     const today = rfxToday();
     const d = n => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
     const live = a => (rfxDaysBetween(a.last_seen, today) || 0) <= 4 && !cmpTooOld(a, today);
@@ -11983,7 +11989,7 @@ app.get('/api/competitors/overview', async (req, res) => {
       client_is_client: !!(ctx && a.client && ctx.clients.has(rfxNormCompany(a.client))),
       client_is_lead: !!(ctx && a.client && ctx.leads.has(rfxNormCompany(a.client))),
     }));
-    res.json({ competitors: out, adverts: adsOut, towns: settings.compTowns, postcodes: settings.compPostcodes, enabled: settings.compEnabled, today });
+    res.json({ competitors: out, adverts: adsOut, towns: settings.compTowns, postcodes: settings.compPostcodes, enabled: settings.compEnabled, today, lastRun });
   } catch (e) { console.error('GET competitors:', e.message); res.status(500).json({ error: e.message }); }
 });
 
@@ -12048,7 +12054,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '19 Oct 2026 - build 32';
+const SERVER_BUILD = '19 Oct 2026 - build 33';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
