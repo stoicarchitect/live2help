@@ -14651,6 +14651,11 @@ function rfxGroups(){
   });
   let groups = [...map.values()];
   if(diveOnly) groups = groups.filter(g => g.has_dive);
+  const tf = RFX.tile;
+  if(tf === 'today') groups = groups.filter(g => g.items.some(r => r.first_seen === RFX.today));
+  if(tf === 'weeks3') groups = groups.filter(g => g.items.some(r => (r.days || 0) >= 21));
+  if(tf === 'roles3') groups = groups.filter(g => new Set(g.items.map(r => String(r.role).toLowerCase())).size >= 3);
+  if(tf === 'addedWeek'){ const wk = new Date(Date.now() - 7 * 86400000).toISOString().slice(0,10); groups = groups.filter(g => g.items.some(r => (r.last_seen || '') >= wk && r.handled_by !== 'system')); }
   if(minDays) groups = groups.filter(g => g.days >= minDays);
   groups.forEach(g => {
     g.items.sort((a, b) => (b.days || 0) - (a.days || 0));
@@ -14676,14 +14681,15 @@ function rfxRender(){
   todo.forEach(r => { const k = rfxNorm(r.company); (byCo[k] = byCo[k] || []).push(r); });
   const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0,10);
   document.getElementById('rfxTiles').innerHTML = [
-    {n: Object.keys(byCo).length, l:'Companies to work', warn: Object.keys(byCo).length > 0},
-    {n: coKeys(todo.filter(r => r.first_seen === RFX.today)).size, l:'New companies today'},
-    {n: Object.values(byCo).filter(l => l.some(r => r.days >= 21)).length, l:'Advertising 3 weeks or more'},
-    {n: Object.values(byCo).filter(l => new Set(l.map(r => r.role.toLowerCase())).size >= 3).length, l:'Hiring for 3 or more roles'},
-    {n: Object.values(byCo).filter(l => l.some(r => r.has_dive)).length, l:'Deep dives ready'},
-    {n: coKeys(all.filter(r => r.status === 'added' && (r.last_seen || '') >= weekAgo && r.handled_by !== 'system')).size, l:'Added to leads this week'},
-    {n: coKeys(all.filter(r => r.status === 'agency')).size, l:'Agencies filtered out'},
-  ].map(t => `<div class="tile static ${t.warn ? 'warn' : ''}"><div class="n">${esc(t.n)}</div><div class="l">${t.l}</div></div>`).join('');
+    {n: Object.keys(byCo).length, l:'Companies to work', warn: Object.keys(byCo).length > 0, k:'todo'},
+    {n: coKeys(todo.filter(r => r.first_seen === RFX.today)).size, l:'New companies today', k:'today'},
+    {n: Object.values(byCo).filter(l => l.some(r => r.days >= 21)).length, l:'Advertising 3 weeks or more', k:'weeks3'},
+    {n: Object.values(byCo).filter(l => new Set(l.map(r => r.role.toLowerCase())).size >= 3).length, l:'Hiring for 3 or more roles', k:'roles3'},
+    {n: Object.values(byCo).filter(l => l.some(r => r.has_dive)).length, l:'Deep dives ready', k:'dive'},
+    {n: coKeys(all.filter(r => r.status === 'added' && (r.last_seen || '') >= weekAgo && r.handled_by !== 'system')).size, l:'Added to leads this week', k:'addedWeek'},
+    {n: coKeys(all.filter(r => r.status === 'agency')).size, l:'Agencies filtered out', k:'agency'},
+  ].map(t => `<div class="tile click ${t.warn ? 'warn' : ''} ${RFX.tileKey === t.k ? 'sel' : ''}" onclick="rfxTile('${t.k}')" title="Click to show these"><div class="n">${esc(t.n)}</div><div class="l">${t.l}</div></div>`).join('')
+    + (RFX.tileKey && RFX.tileKey !== 'todo' ? `<div style="grid-column:1/-1;"><span class="tile-filter-note">Showing: ${esc(RFX.tileLabel || '')}<a onclick="rfxTile('todo')">Show everything to work</a></span></div>` : '');
   const per = RFX.per || ((RFX.config && RFX.config.sweep && RFX.config.sweep.listSize) || 25);
   const pages = Math.max(1, Math.ceil(groups.length / per));
   RFX.page = Math.min(Math.max(1, RFX.page || 1), pages);
@@ -14752,6 +14758,20 @@ function rfxSortMarks(){
     th.classList.toggle('on', on);
     th.dataset.arrow = on ? (cur.dir > 0 ? (th.dataset.sort === 'company' || th.dataset.sort === 'region' ? ' A-Z' : ' lowest first') : (th.dataset.sort === 'company' || th.dataset.sort === 'region' ? ' Z-A' : ' highest first')) : '';
   });
+}
+
+const RFX_TILE_LABELS = {today:'new companies today', weeks3:'companies advertising 3 weeks or more', roles3:'companies hiring for 3 or more roles', dive:'deep dives ready', addedWeek:'companies added to leads this week', agency:'filtered agencies'};
+function rfxTile(k){
+  if(RFX.tileKey === k && k !== 'todo') k = 'todo';   // clicking the selected tile again clears it
+  ['rfxRegion','rfxType','rfxBand','rfxSearchFilter','rfxText','rfxMinDays'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
+  document.getElementById('rfxStatus').value = k === 'addedWeek' ? 'added' : k === 'agency' ? 'agency' : 'new';
+  document.getElementById('rfxHideKnown').checked = true;
+  document.getElementById('rfxDiveOnly').checked = k === 'dive';
+  RFX.tile = ['today','weeks3','roles3','addedWeek'].includes(k) ? k : '';
+  RFX.tileKey = k; RFX.tileLabel = RFX_TILE_LABELS[k] || '';
+  RFX.page = 1; RFX.sel.clear();
+  rfxRender();
+  const t = document.getElementById('rfxBody'); if(t) t.closest('.ops-table-wrap').scrollIntoView({behavior:'smooth', block:'start'});
 }
 
 function rfxPage(p){ RFX.page = p; rfxRender(); document.getElementById('rfxBody').closest('.ops-table-wrap').scrollIntoView({behavior:'smooth', block:'start'}); }
@@ -15262,22 +15282,41 @@ function lpxColumn(stage, list){
     <h4>${LPX_STAGE_LABEL[stage]} <span>${list.length}</span></h4><div class="lpx-cards">${list.map(lpxCard).join('')}</div></div>`;
 }
 
+const LPX_TILE_LABELS = {due:'follow-ups due', week:'leads added this week', meet:'meetings and terms out', conv:'leads converted to clients', rf:'leads from Role Finder', rfwon:'clients won from Role Finder'};
+function lpxTile(k){
+  LPX.tile = LPX.tile === k ? '' : k;
+  document.getElementById('lpxText').value = '';
+  if(LPX.tile === 'conv' || LPX.tile === 'rfwon' || LPX.tile === 'rf') LPX.showLost = LPX.tile === 'rf' ? LPX.showLost : false;
+  lpxRender();
+  document.getElementById('lpxBoard').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
 function lpxRender(){
   const text = (document.getElementById('lpxText').value || '').trim().toLowerCase();
-  const list = LPX.list.filter(l => !text || `${l.company} ${l.contact_name}`.toLowerCase().includes(text))
+  const today0 = new Date().toISOString().slice(0,10), wk = new Date(Date.now() - 7 * 86400000).toISOString();
+  const tileF = {
+    due: l => l.next_followup && l.next_followup <= today0 && !['converted','lost','archived'].includes(l.stage),
+    week: l => String(l.created_at) >= wk,
+    meet: l => ['meeting','terms'].includes(l.stage),
+    conv: l => l.stage === 'converted',
+    rf: l => l.source === 'Role Finder',
+    rfwon: l => l.source === 'Role Finder' && l.stage === 'converted',
+  }[LPX.tile];
+  const list = LPX.list.filter(l => (!text || `${l.company} ${l.contact_name}`.toLowerCase().includes(text)) && (!tileF || tileF(l)))
     .sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
   const s = LPX.stats;
   const open = LPX.list.filter(l => ['identified','contacted','interested','meeting','terms'].includes(l.stage));
   const today = new Date().toISOString().slice(0,10);
   document.getElementById('lpxTiles').innerHTML = [
-    {n: open.length, l:'Open leads'},
-    {n: LPX.list.filter(l => l.next_followup && l.next_followup <= today && !['converted','lost','archived'].includes(l.stage)).length, l:'Follow-ups due', warn:true},
-    {n: s ? s.leadsThisWeek : '-', l:'Leads added this week'},
-    {n: LPX.list.filter(l => ['meeting','terms'].includes(l.stage)).length, l:'Meetings and terms out'},
-    {n: s ? s.conversion.converted + '%' : '-', l:'Lead to client rate'},
-    {n: s ? s.fromRoleFinder : '-', l:'Leads from Role Finder'},
-    {n: s ? s.convertedFromRoleFinder : '-', l:'Clients won from Role Finder'},
-  ].map(t => `<div class="tile static ${t.warn && t.n ? 'warn' : ''}"><div class="n">${esc(t.n)}</div><div class="l">${t.l}</div></div>`).join('');
+    {n: open.length, l:'Open leads', k:''},
+    {n: LPX.list.filter(l => l.next_followup && l.next_followup <= today && !['converted','lost','archived'].includes(l.stage)).length, l:'Follow-ups due', warn:true, k:'due'},
+    {n: s ? s.leadsThisWeek : '-', l:'Leads added this week', k:'week'},
+    {n: LPX.list.filter(l => ['meeting','terms'].includes(l.stage)).length, l:'Meetings and terms out', k:'meet'},
+    {n: s ? s.conversion.converted + '%' : '-', l:'Lead to client rate', k:'conv'},
+    {n: s ? s.fromRoleFinder : '-', l:'Leads from Role Finder', k:'rf'},
+    {n: s ? s.convertedFromRoleFinder : '-', l:'Clients won from Role Finder', k:'rfwon'},
+  ].map(t => `<div class="tile click ${t.warn && t.n ? 'warn' : ''} ${(LPX.tile || '') === t.k ? 'sel' : ''}" onclick="lpxTile('${t.k}')" title="Click to show these"><div class="n">${esc(t.n)}</div><div class="l">${t.l}</div></div>`).join('')
+    + (LPX.tile ? `<div style="grid-column:1/-1;"><span class="tile-filter-note">Showing: ${esc(LPX_TILE_LABELS[LPX.tile] || '')} (${list.length})<a onclick="lpxTile('')">Show all leads</a></span></div>` : '');
   document.getElementById('lpxBoard').innerHTML = LPX_BOARD.map(st => lpxColumn(st, list.filter(l => l.stage === st))).join('');
   const lost = list.filter(l => l.stage === 'lost' || l.stage === 'archived');
   document.getElementById('lpxLostToggle').textContent = lost.length ? (LPX.showLost ? 'Hide' : 'Show') + ` lost and archived (${lost.length})` : '';
@@ -15427,6 +15466,9 @@ async function lpxSaveNew(){
 .l2h-pager button{padding:5px 10px;font-size:12px;border:1px solid var(--border);background:#fff;cursor:pointer;border-radius:2px;font-family:inherit;color:var(--grey);}
 .l2h-pager button:hover{background:var(--lightbg);}
 .tile.click{cursor:pointer;}
+.tile.click.sel{outline:2px solid var(--gold);outline-offset:-2px;}
+.tile-filter-note{font-size:12px;color:#8A6A12;background:#FFF7E3;padding:4px 10px;border-radius:2px;margin:-4px 0 10px;display:inline-block;}
+.tile-filter-note a{cursor:pointer;text-decoration:underline;margin-left:6px;}
 .tile.click:hover{box-shadow:0 2px 10px rgba(0,0,0,.08);}
 .cmp-size{display:inline-block;padding:2px 7px;border-radius:2px;font-size:11px;background:var(--lightbg);color:var(--dark);}
 .cmp-size.Large{background:#1A1A1A;color:var(--gold);}
@@ -16063,7 +16105,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '19 Oct 2026 - build 34';
+var PAGE_BUILD = '19 Oct 2026 - build 35';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
