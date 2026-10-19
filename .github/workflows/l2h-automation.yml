@@ -1,8 +1,12 @@
 name: L2H automation
 
 on:
+  # Aim: everything finished by 7am UK time, every day.
+  # GitHub schedules run in UTC only, so there is one schedule for summer time (BST) and one for winter (GMT).
+  # Both start at 5:50am UK; the gate below lets only the one that matches the current UK clock through.
   schedule:
-    - cron: '30 5 * * *'
+    - cron: '50 4 * * *'   # 5:50am UK during British Summer Time
+    - cron: '50 5 * * *'   # 5:50am UK during winter (GMT)
   workflow_dispatch:
 
 env:
@@ -10,7 +14,26 @@ env:
   CRON_SECRET: ${{ secrets.CRON_SECRET }}
 
 jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.check.outputs.go }}
+    steps:
+      - id: check
+        run: |
+          zone=$(TZ=Europe/London date +%Z)
+          sched='${{ github.event.schedule }}'
+          go=false
+          if [ "${{ github.event_name }}" != "schedule" ]; then go=true
+          elif [ "$zone" = "BST" ] && [ "$sched" = "50 4 * * *" ]; then go=true
+          elif [ "$zone" = "GMT" ] && [ "$sched" = "50 5 * * *" ]; then go=true
+          fi
+          echo "UK clock is on $zone, schedule '$sched', run: $go"
+          echo "go=$go" >> "$GITHUB_OUTPUT"
+
   run:
+    needs: gate
+    if: needs.gate.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

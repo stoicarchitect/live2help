@@ -9811,7 +9811,7 @@ app.post('/api/talent-pool/reconsent/run', requireAdmin, async (req, res) => {
    BUSINESS DEVELOPMENT - Role Finder and Lead Pipeline (build 19)
 
    Role Finder: Ella saves her own searches (titles, location or UK-wide,
-   salary, days advertised). Every weekday morning, and on demand, the
+   salary, days advertised). Every morning at 7am UK time, and on demand, the
    server pulls live adverts from Adzuna and Reed, drops anything posted by
    a recruitment agency, and lists direct employers longest-advertised
    first. A Deep Dive on any company adds Companies House data, AI web
@@ -10470,7 +10470,7 @@ const RFX_BANDS = [
 const RFX_SALARY_FLOOR = 25000;
 
 const RFX_SWEEP_DEFAULTS = {
-  enabled: true,            // the automatic weekday search
+  enabled: true,            // the automatic daily search (7am UK)
   autoDive: false,          // automatic deep dives (the only part that costs AI credit)
   diveCount: 5,
   regions: Object.keys(RFX_REGIONS),
@@ -10752,7 +10752,6 @@ async function rfxRunSearchesInner({ searchId, actor, auto } = {}) {
   const settings = await rfxSweepSettings();
   if (auto) {
     const dow = new Date().toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'Europe/London' });
-    if (dow === 'Sat' || dow === 'Sun') return { skipped: 'Weekend' };
     if (!settings.enabled) return { skipped: 'The automatic search is switched off' };
   }
   const src = rfxSources();
@@ -12054,7 +12053,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '19 Oct 2026 - build 33';
+const SERVER_BUILD = '19 Oct 2026 - build 34';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

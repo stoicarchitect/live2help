@@ -14389,7 +14389,7 @@ th.cmp-sort::after{content:attr(data-arrow);font-size:10px;color:var(--gold);fon
   <div class="modal rfx-mid"><div class="modal-inner">
     <button class="modal-close" onclick="closeModal('rfxSearchModal')">&times;</button>
     <h2>Saved searches</h2>
-    <div class="role-sub">Optional extra searches for specific roles, on top of the automatic market sweep. Each active search runs every weekday morning.</div>
+    <div class="role-sub">Optional extra searches for specific roles, on top of the automatic market sweep. Each active search runs every morning by 7am.</div>
     <div id="rfxSearchList" style="margin-top:14px;"></div>
     <div class="rfx-sec" id="rfxSearchFormTitle">New search</div>
     <div class="simple-form">
@@ -14448,19 +14448,18 @@ const LPX_STAGE_LABEL = {identified:'Identified', contacted:'Contacted', interes
 const LPX_BOARD = ['identified','contacted','interested','meeting','terms','converted'];
 
 function rfxFmt(d){ if(!d) return ''; const x = new Date(String(d).length <= 10 ? d + 'T00:00:00' : d); return isNaN(x) ? String(d) : x.toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'}); }
-// "Last updated" line: exact time, who ran it, and a red warning if the automatic weekday run has been missed
+// "Last updated" line: exact time, who ran it, and a red warning if the automatic 7am run has been missed
 function l2hExpectedRun(){
-  // the automatic run happens on weekday mornings (about 6:30am UK); work out the latest morning it should have run
+  // the automatic run starts every morning so it is finished by 7am UK; allow until 9am for GitHub delays before warning
   const d = new Date();
   const ukHour = parseInt(d.toLocaleString('en-GB', {hour:'2-digit', hour12:false, timeZone:'Europe/London'}), 10);
-  if(ukHour < 8) d.setDate(d.getDate() - 1);
-  while(d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
+  if(ukHour < 9) d.setDate(d.getDate() - 1);
   return d.toLocaleDateString('en-CA', {timeZone:'Europe/London'});
 }
 function l2hUpdatedLine(last, opts){
   opts = opts || {};
   if(opts.running) return '<div class="l2h-updated run">Updating now...</div>';
-  if(!last || !last.at) return `<div class="l2h-updated warn">Last updated: never. ${opts.enabled ? 'It should update automatically each weekday morning.' : 'Automatic updates are switched off.'}</div>`;
+  if(!last || !last.at) return `<div class="l2h-updated warn">Last updated: never. ${opts.enabled ? 'It should update automatically every morning by 7am.' : 'Automatic updates are switched off.'}</div>`;
   const t = new Date(last.at);
   const when = t.toLocaleString('en-GB', {weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit', timeZone:'Europe/London'});
   const auto = (last.by || 'system') === 'system';
@@ -14526,7 +14525,7 @@ function rfxNorm(s){ return String(s || '').toLowerCase().replace(/&/g,' and ').
           <th class="rfx-sort" data-sort="company" onclick="rfxSortBy('company')">Company</th><th class="rfx-sort" data-sort="roles" onclick="rfxSortBy('roles')">Open roles</th><th class="rfx-sort" data-sort="region" onclick="rfxSortBy('region')">Region</th><th class="rfx-sort" data-sort="days" onclick="rfxSortBy('days')">Longest advertised</th><th class="rfx-sort" data-sort="score" onclick="rfxSortBy('score')">Lead score</th><th style="text-align:right;">Actions</th>
         </tr></thead><tbody id="rfxBody"><tr><td colspan="7" class="empty-row">Loading...</td></tr></tbody></table></div>
         <div id="rfxMore" style="margin-top:10px;"></div>
-        <div class="note-line">The market sweep searches every chosen region and role type each weekday, one row per company. The lead score favours companies advertising longest, hiring for several roles and paying within your salary bands. Anything you shortlist, add or dismiss never comes back as new: dismissing a company also hides its new adverts for 90 days, and companies that are already clients or leads are kept out automatically. Adverts come from Reed and Adzuna. Anything posted by a recruitment agency is filtered out using the company name, the wording of the advert, the agency block list and the company's Companies House registration. If an agency slips through, use Agency on its row and it is blocked for good. Contact details are only ever business details found in public sources. Check them before adding a lead.</div>
+        <div class="note-line">The market sweep searches every chosen region and role type every morning by 7am, one row per company. The lead score favours companies advertising longest, hiring for several roles and paying within your salary bands. Anything you shortlist, add or dismiss never comes back as new: dismissing a company also hides its new adverts for 90 days, and companies that are already clients or leads are kept out automatically. Adverts come from Reed and Adzuna. Anything posted by a recruitment agency is filtered out using the company name, the wording of the advert, the agency block list and the company's Companies House registration. If an agency slips through, use Agency on its row and it is blocked for good. Contact details are only ever business details found in public sources. Check them before adding a lead.</div>
       </div>`;
     host.parentNode.appendChild(rf);
     const lp = document.createElement('div');
@@ -14842,9 +14841,9 @@ function rfxOpenSettings(){
   const dives = c.divesThisMonth || 0;
   document.getElementById('rfxSettingsBody').innerHTML = `
     <h2>Market sweep settings</h2>
-    <div class="role-sub">The sweep searches every chosen region and role type each weekday morning, with nothing for Ella to set up.</div>
+    <div class="role-sub">The sweep searches every chosen region and role type every morning by 7am, with nothing for Ella to set up.</div>
     <div class="simple-form">
-      <div class="rfx-confirm" style="margin-top:16px;"><input type="checkbox" id="rfxSwOn" ${sw.enabled ? 'checked' : ''}><span><b>Automatic daily search</b><br><span class="rfx-sub">Searches the job boards every weekday morning. The job board searches are free.</span></span></div>
+      <div class="rfx-confirm" style="margin-top:16px;"><input type="checkbox" id="rfxSwOn" ${sw.enabled ? 'checked' : ''}><span><b>Automatic daily search</b><br><span class="rfx-sub">Searches the job boards every morning, finished by 7am UK time. The job board searches are free.</span></span></div>
       <div class="rfx-confirm"><input type="checkbox" id="rfxSwDive" ${sw.autoDive ? 'checked' : ''}><span><b>Automatic deep dives</b> on the top
         <select id="rfxSwDiveN" style="width:auto;padding:3px 6px;display:inline-block;">${[1,2,3,4,5,8,10].map(n => `<option ${Number(sw.diveCount) === n ? 'selected' : ''}>${n}</option>`).join('')}</select> companies each morning<br>
         <span class="rfx-sub">This is the only part that uses AI credit: roughly 15p to 30p per deep dive. Automatic and manual deep dives share the monthly limit below. Deep dives this month so far: ${dives} (about £${(dives * 0.15).toFixed(2)} to £${(dives * 0.3).toFixed(2)}).</span></span></div>
@@ -15582,7 +15581,7 @@ function cmpRender(){
     return r || b.live - a.live || a.name.localeCompare(b.name);
   });
   const lr = d.lastRun;
-  document.getElementById('cmpSummary').innerHTML = esc(`Agencies advertising around ${(d.towns || []).join(', ')}, plus your main competitors' own job pages. ${d.enabled ? 'Checked every weekday with the market sweep.' : 'Automatic checking is switched off.'} Agencies with no live adverts are left out.`)
+  document.getElementById('cmpSummary').innerHTML = esc(`Agencies advertising around ${(d.towns || []).join(', ')}, plus your main competitors' own job pages. ${d.enabled ? 'Checked every morning by 7am with the market sweep.' : 'Automatic checking is switched off.'} Agencies with no live adverts are left out.`)
     + '<br>' + l2hUpdatedLine(lr, {enabled: d.enabled, running: !!CMP.polling, detail: lr ? `${lr.adverts || 0} live advert${lr.adverts == 1 ? '' : 's'}, ${lr.newAdverts || 0} new` : ''});
   const clientsKnown = new Set(liveAds.filter(a => a.client).map(a => a.client.toLowerCase())).size;
   document.getElementById('cmpTiles').innerHTML = [
@@ -15844,7 +15843,7 @@ function cmpOpenPages(id){
   const status = urls.map(u => { const x = st[u]; return `<div style="margin-bottom:6px;">${rfxLink(u)}<br><span class="rfx-sub" style="display:inline;${x && x.error ? 'color:#9B2C22;' : ''}">${x ? (x.error ? 'Problem: ' + esc(x.error) : x.found + ' jobs read from ' + x.pages + ' page' + (x.pages === 1 ? '' : 's')) + ', checked ' + esc(rfxAgo(x.at)) : 'Not checked yet'}</span></div>`; }).join('');
   document.getElementById('cmpModalBody').innerHTML = `
     <h2>${esc(c.name)}: job pages</h2>
-    <div class="role-sub">Their own job board, CV-Library or similar pages. Read every weekday, and every time you press Search competitors now.</div>
+    <div class="role-sub">Their own job board, CV-Library or similar pages. Read every morning, and every time you press Search competitors now.</div>
     ${status ? `<div class="rfx-sec">Last check</div><div class="rfx-list">${status}</div>` : ''}
     <div class="simple-form">
       <label>Job page addresses, one per line</label>
@@ -15873,7 +15872,7 @@ function cmpOpenAdd(){
     <div class="simple-form">
       <label>Agency name (as it appears on job boards)</label><input id="cmpNName">
       <label>Website (optional)</label><input id="cmpNWeb">
-      <label>Page listing their jobs (optional, read every weekday)</label><input id="cmpNPages" placeholder="https://www.example-agency.co.uk/jobs">
+      <label>Page listing their jobs (optional, read every morning)</label><input id="cmpNPages" placeholder="https://www.example-agency.co.uk/jobs">
       <label>Notes (optional)</label><input id="cmpNNotes" placeholder="e.g. strong in engineering, lost Iconsys to them">
       <div class="actions"><button class="cancel" onclick="closeModal('cmpModal')">Cancel</button><button class="save" onclick="cmpSaveNew()">Add</button></div>
     </div>`;
@@ -15890,9 +15889,9 @@ async function cmpSaveNew(){
 function cmpOpenAreas(){
   const d = CMP.data || {};
   document.getElementById('cmpModalBody').innerHTML = `
-    <h2>Competitor areas</h2><div class="role-sub">Which agencies Competitor Watch tracks. Checked with the weekday market sweep.</div>
+    <h2>Competitor areas</h2><div class="role-sub">Which agencies Competitor Watch tracks. Checked with the 7am market sweep.</div>
     <div class="simple-form">
-      <div class="rfx-confirm" style="margin-top:14px;"><input type="checkbox" id="cmpAOn" ${d.enabled ? 'checked' : ''}><span><b>Check competitors every weekday</b><br><span class="rfx-sub">Free: uses Reed and Companies House only. Finding clients with AI is always by hand.</span></span></div>
+      <div class="rfx-confirm" style="margin-top:14px;"><input type="checkbox" id="cmpAOn" ${d.enabled ? 'checked' : ''}><span><b>Check competitors every morning</b><br><span class="rfx-sub">Free: uses Reed and Companies House only. Finding clients with AI is always by hand.</span></span></div>
       <label>Towns (comma separated)</label><input id="cmpATowns" value="${esc((d.towns || []).join(', '))}">
       <div class="actions"><button class="cancel" onclick="closeModal('cmpModal')">Cancel</button><button class="save" onclick="cmpSaveAreas()">Save</button></div>
     </div>`;
@@ -16064,7 +16063,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '19 Oct 2026 - build 33';
+var PAGE_BUILD = '19 Oct 2026 - build 34';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
