@@ -14476,6 +14476,8 @@ function l2hUpdatedLine(last, opts){
   const extra = opts.detail ? ' - ' + opts.detail : '';
   return `<div class="l2h-updated ${missed ? 'warn' : 'ok'}">Last updated ${esc(when)} (${esc(who)}, ${esc(rfxAgo(last.at))})${esc(extra)}${missed ? '. <b>The automatic update has not run since then.</b> Check the GitHub Actions run, or press the search button to update now.' : ''}</div>`;
 }
+// the monthly AI limit resets at the start of each calendar month, UK time
+function rfxRenewDate(){ const d = new Date(new Date().toLocaleString('en-US', {timeZone:'Europe/London'})); return new Date(d.getFullYear(), d.getMonth() + 1, 1).toLocaleDateString('en-GB', {day:'numeric', month:'long'}); }
 function rfxAgo(iso){ if(!iso) return 'never'; const m = Math.round((Date.now() - Date.parse(iso)) / 60000); if(m < 1) return 'just now'; if(m < 60) return m + ' min ago'; const h = Math.round(m / 60); if(h < 24) return h + ' hours ago'; return rfxFmt(iso); }
 function rfxNextWorkingDay(){ const d = new Date(); do { d.setDate(d.getDate() + 1); } while(d.getDay() === 0 || d.getDay() === 6); return d.toISOString().slice(0,10); }
 function rfxLink(u, label){ if(!u) return ''; const href = /^https?:/i.test(u) ? u : 'https://' + u; return `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(label || u)}</a>`; }
@@ -14873,7 +14875,7 @@ function rfxOpenSettings(){
       <div class="rfx-confirm" style="margin-top:16px;"><input type="checkbox" id="rfxSwOn" ${sw.enabled ? 'checked' : ''}><span><b>Automatic daily search</b><br><span class="rfx-sub">Searches the job boards every morning, finished by 7am UK time. The job board searches are free.</span></span></div>
       <div class="rfx-confirm"><input type="checkbox" id="rfxSwDive" ${sw.autoDive ? 'checked' : ''}><span><b>Automatic deep dives</b> on the top
         <select id="rfxSwDiveN" style="width:auto;padding:3px 6px;display:inline-block;">${[1,2,3,4,5,8,10].map(n => `<option ${Number(sw.diveCount) === n ? 'selected' : ''}>${n}</option>`).join('')}</select> companies each morning<br>
-        <span class="rfx-sub">This is the only part that uses AI credit: roughly 15p to 30p per deep dive. Automatic and manual deep dives share the monthly limit below. Deep dives this month so far: ${dives} (about £${(dives * 0.15).toFixed(2)} to £${(dives * 0.3).toFixed(2)}).</span></span></div>
+        <span class="rfx-sub">This is the only part that uses AI credit: roughly 15p to 30p per deep dive. Automatic and manual deep dives share the monthly limit below. Deep dives this month so far: ${dives}, resetting on ${rfxRenewDate()} (about £${(dives * 0.15).toFixed(2)} to £${(dives * 0.3).toFixed(2)}).</span></span></div>
       <label>Monthly deep dive limit (automatic and manual together, no daily limit)</label>
       <div style="display:flex;align-items:center;gap:10px;"><input type="number" id="rfxSwCap" min="1" max="1000" value="${esc(sw.monthlyCap || c.diveMonthlyCap || 100)}" style="width:120px;" oninput="document.getElementById('rfxSwCapCost').textContent='Most it can cost: about £' + ((parseInt(this.value,10)||0) * 0.3).toFixed(0) + ' a month'"><span class="rfx-sub" id="rfxSwCapCost">Most it can cost: about £${((sw.monthlyCap || c.diveMonthlyCap || 100) * 0.3).toFixed(0)} a month</span></div>
       <label>Salary bands</label>
@@ -15076,7 +15078,7 @@ async function rfxConfirmDive(){
     </div>
     <div class="rfx-sec">Cost and allowance</div>
     <div class="rfx-list">Uses AI credit, roughly 15p to 30p, and takes one to two minutes.<br>
-      <b>${used} of ${cap}</b> AI searches used this month (deep dives and competitor client finds share the limit)${left ? ', ' + left + ' left.' : '. This month\'s limit has been reached, so this cannot run until the 1st unless Dan raises the limit.'}
+      <b>${used} of ${cap}</b> AI searches used this month (deep dives and competitor client finds share the limit)${left ? ', ' + left + ' left. Resets on ' + rfxRenewDate() + '.' : '. This month\'s limit has been reached, so this cannot run until ' + rfxRenewDate() + ' unless Dan raises the limit.'}
       ${again ? '<br>This company already has a deep dive. Running it again replaces it and counts towards this month\'s limit.' : ''}</div>
     <div class="simple-form"><div class="actions">
       <button class="cancel" onclick="${again ? 'rfxRenderDive()' : "closeModal('rfxDiveModal')"}">Cancel</button>
@@ -15830,7 +15832,7 @@ async function cmpConfirmFind(id){
       - Search the web for local employers that fit, and for the same role advertised directly<br>
       - Give its single best match with a confidence level and the reasons, plus any other possibilities</div>
     <div class="rfx-sec">Cost and allowance</div>
-    <div class="rfx-list">Uses AI credit, roughly 5p to 15p, and takes under a minute.<br><b>${used} of ${cap}</b> AI searches used this month${left ? ', ' + left + ' left.' : '. The monthly limit has been reached.'}</div>
+    <div class="rfx-list">Uses AI credit, roughly 5p to 15p, and takes under a minute.<br><b>${used} of ${cap}</b> AI searches used this month${left ? ', ' + left + ' left. Resets on ' + rfxRenewDate() + '.' : '. The monthly limit has been reached. It resets on ' + rfxRenewDate() + '.'}</div>
     <div class="simple-form"><div class="actions">
       <button class="cancel" onclick="closeModal('cmpModal')">Cancel</button>
       <button class="save" ${left ? '' : 'disabled style="opacity:.5;cursor:not-allowed;"'} onclick="cmpFind('${esc(id)}')">Yes, find the client</button>
@@ -16112,7 +16114,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '19 Oct 2026 - build 37';
+var PAGE_BUILD = '20 Oct 2026 - build 38';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
