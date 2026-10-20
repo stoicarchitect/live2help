@@ -1,41 +1,27 @@
 name: L2H automation
 
+# Back-up trigger only. The main trigger is cron-job.org calling /api/cron/morning at 5:45am UK,
+# because GitHub's scheduler often runs hours late or skips a day. The server only runs the morning
+# jobs once per UK day, so if cron-job.org has already run them this does nothing.
 on:
-  # Aim: everything finished by 7am UK time, every day.
-  # GitHub schedules run in UTC only, so there is one schedule for summer time (BST) and one for winter (GMT).
-  # Both start at 5:50am UK; the gate below lets only the one that matches the current UK clock through.
   schedule:
-    - cron: '50 4 * * *'   # 5:50am UK during British Summer Time
-    - cron: '50 5 * * *'   # 5:50am UK during winter (GMT)
+    - cron: '50 4 * * *'   # 5:50am UK in summer time (usually runs later than this)
+    - cron: '50 5 * * *'   # 5:50am UK in winter
   workflow_dispatch:
+    inputs:
+      force:
+        description: 'Run again even if it already ran today'
+        type: boolean
+        default: false
 
 env:
   BASE_URL: https://l2h-api.onrender.com
   CRON_SECRET: ${{ secrets.CRON_SECRET }}
 
 jobs:
-  gate:
-    runs-on: ubuntu-latest
-    outputs:
-      go: ${{ steps.check.outputs.go }}
-    steps:
-      - id: check
-        run: |
-          zone=$(TZ=Europe/London date +%Z)
-          sched='${{ github.event.schedule }}'
-          go=false
-          if [ "${{ github.event_name }}" != "schedule" ]; then go=true
-          elif [ "$zone" = "BST" ] && [ "$sched" = "50 4 * * *" ]; then go=true
-          elif [ "$zone" = "GMT" ] && [ "$sched" = "50 5 * * *" ]; then go=true
-          fi
-          echo "UK clock is on $zone, schedule '$sched', run: $go"
-          echo "go=$go" >> "$GITHUB_OUTPUT"
-
   run:
-    needs: gate
-    if: needs.gate.outputs.go == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - name: Wake the server
         run: |
@@ -48,103 +34,32 @@ jobs:
           echo "The server did not wake up within about 4 minutes"
           exit 1
 
-      - name: Check the server is on the latest build
-        run: |
-          curl -sS --max-time 30 --retry 3 --retry-all-errors --retry-delay 10 "$BASE_URL/api/version"
-          echo
-
-      - name: Start the backup
+      - name: Start the morning jobs
         run: |
           echo "START=$(date -u -d '60 seconds ago' +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_ENV"
-          curl -sS --fail-with-body --max-time 60 --retry 3 --retry-all-errors --retry-delay 10 \
-            -H "x-cron-key: $CRON_SECRET" "$BASE_URL/api/cron/backup"
-          echo
+          force=""
+          if [ "${{ inputs.force }}" = "true" ]; then force="?force=1"; fi
+          out=$(curl -sS --fail-with-body --max-time 60 --retry 3 --retry-all-errors --retry-delay 10 \
+            -H "x-cron-key: $CRON_SECRET" "$BASE_URL/api/cron/morning$force")
+          echo "$out"
+          if echo "$out" | jq -e '.alreadyRanToday' > /dev/null; then echo "SKIP=1" >> "$GITHUB_ENV"; fi
 
-      - name: Check the backup result
+      - name: Check the result
+        if: env.SKIP != '1'
         run: |
-          for i in $(seq 1 60); do
+          for i in $(seq 1 180); do
             out=$(curl -sS --max-time 30 --retry 3 --retry-all-errors --retry-delay 5 \
               -H "x-cron-key: $CRON_SECRET" "$BASE_URL/api/cron/status")
-            fin=$(echo "$out" | jq -r '.backupJob.finishedAt // ""')
+            fin=$(echo "$out" | jq -r '.morning.finishedAt // ""')
             if [ -n "$fin" ] && [[ "$fin" > "$START" ]]; then
-              echo "$out" | jq '.backupJob'
-              ok=$(echo "$out" | jq -r '.backupJob.ok')
+              echo "$out" | jq '.morning'
+              ok=$(echo "$out" | jq -r '.morning.ok')
               if [ "$ok" = "true" ]; then exit 0; fi
-              echo "The backup reported a failure. See the details above."
+              echo "A morning step reported a problem. See the details above."
               exit 1
             fi
-            echo "Waiting for the backup to finish ($i)"
-            sleep 5
-          done
-          echo "The backup did not report a result within 5 minutes"
-          exit 1
-
-      - name: Start the daily job
-        run: |
-          echo "START=$(date -u -d '60 seconds ago' +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_ENV"
-          curl -sS --fail-with-body --max-time 60 --retry 3 --retry-all-errors --retry-delay 10 \
-            -H "x-cron-key: $CRON_SECRET" "$BASE_URL/api/cron/daily?skipBackup=1"
-          echo
-
-      - name: Check the daily job result
-        run: |
-          for i in $(seq 1 60); do
-            out=$(curl -sS --max-time 30 --retry 3 --retry-all-errors --retry-delay 5 \
-              -H "x-cron-key: $CRON_SECRET" "$BASE_URL/api/cron/status")
-            fin=$(echo "$out" | jq -r '.daily.finishedAt // ""')
-            if [ -n "$fin" ] && [[ "$fin" > "$START" ]]; then
-              echo "$out" | jq '.daily'
-              ok=$(echo "$out" | jq -r '.daily.ok')
-              if [ "$ok" = "true" ]; then exit 0; fi
-              echo "A daily step reported a failure. See the details above."
-              exit 1
-            fi
-            echo "Waiting for the daily job to finish ($i)"
-            sleep 5
-          done
-          echo "The daily job did not report a result within 5 minutes"
-          exit 1
-
-      - name: Start the Role Finder search
-        run: |
-          echo "START=$(date -u -d '60 seconds ago' +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_ENV"
-          curl -sS --fail-with-body --max-time 60 --retry 3 --retry-all-errors --retry-delay 10 \
-            -H "x-cron-key: $CRON_SECRET" "$BASE_URL/api/cron/role-finder"
-          echo
-
-      - name: Check the Role Finder result
-        continue-on-error: true
-        run: |
-          for i in $(seq 1 120); do
-            out=$(curl -sS --max-time 30 --retry 3 --retry-all-errors --retry-delay 5 \
-              -H "x-cron-key: $CRON_SECRET" "$BASE_URL/api/cron/status")
-            fin=$(echo "$out" | jq -r '.roleFinder.finishedAt // ""')
-            if [ -n "$fin" ] && [[ "$fin" > "$START" ]]; then
-              echo "$out" | jq '.roleFinder'
-              ok=$(echo "$out" | jq -r '.roleFinder.ok')
-              if [ "$ok" = "true" ]; then exit 0; fi
-              echo "The Role Finder search reported a problem. See the details above."
-              exit 1
-            fi
-            echo "Waiting for the Role Finder search to finish ($i)"
+            echo "Waiting for the morning jobs to finish ($i)"
             sleep 10
           done
-          echo "The Role Finder search did not report a result within 20 minutes"
+          echo "The morning jobs did not report a result within 30 minutes"
           exit 1
-
-      - name: Invoice reminders
-        run: |
-          curl -sS --fail-with-body --max-time 120 --retry 3 --retry-all-errors --retry-delay 15 \
-            -H "x-cron-key: $CRON_SECRET" "$BASE_URL/api/check-invoice-reminders"
-          echo
-
-      - name: Monday digest
-        if: ${{ github.event_name == 'schedule' && format('{0}', github.event.schedule) != '' }}
-        run: |
-          if [ "$(date -u +%u)" = "1" ]; then
-            curl -sS --fail-with-body --max-time 120 --retry 3 --retry-all-errors --retry-delay 15 \
-              -H "x-cron-key: $CRON_SECRET" "$BASE_URL/api/cron/weekly-digest"
-            echo
-          else
-            echo "Not Monday, no digest today"
-          fi

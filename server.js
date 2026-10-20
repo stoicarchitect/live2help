@@ -2564,23 +2564,22 @@ app.get('/api/invoices/:number/pdf', async (req, res) => {
 
 // GET daily check - candidates starting tomorrow with no invoice generated yet.
 // Called once a day by an external scheduler (EasyCron).
-app.get('/api/check-invoice-reminders', async (req, res) => {
-  try {
-    const rows = await readAllRows();
-    const tomorrow = toISODate(addDays(new Date(), 1));
+async function sendInvoiceReminders() {
+  const rows = await readAllRows();
+  const tomorrow = toISODate(addDays(new Date(), 1));
 
-    const due = rows.filter(r => {
-      const candidate = rowToCandidate(r);
-      return candidate.stage === 'start_date' && candidate.startDate === tomorrow && !candidate.invoiceNumber;
-    }).map(rowToCandidate);
+  const due = rows.filter(r => {
+    const candidate = rowToCandidate(r);
+    return candidate.stage === 'start_date' && candidate.startDate === tomorrow && !candidate.invoiceNumber;
+  }).map(rowToCandidate);
 
-    for (const candidate of due) {
-      const { rate, fee } = calculatePlacementFee(candidate.salary);
-      await emailTransporter.sendMail({
-        from: process.env.BREVO_SENDER_EMAIL,
-        to: process.env.REMINDER_EMAIL_TO || process.env.BREVO_SENDER_EMAIL,
-        subject: `Invoice Reminder - ${candidate.name} starts tomorrow`,
-        text: `Hi Dan,
+  for (const candidate of due) {
+    const { rate, fee } = calculatePlacementFee(candidate.salary);
+    await emailTransporter.sendMail({
+      from: process.env.BREVO_SENDER_EMAIL,
+      to: process.env.REMINDER_EMAIL_TO || process.env.BREVO_SENDER_EMAIL,
+      subject: `Invoice Reminder - ${candidate.name} starts tomorrow`,
+      text: `Hi Dan,
 
 ${candidate.name} is starting at ${candidate.company} tomorrow (${formatDateUK(candidate.startDate)}).
 
@@ -2591,10 +2590,16 @@ Generate and send the invoice from the dashboard's Invoices tab.
 
 Thanks,
 Live 2 Help System`,
-      });
-    }
+    });
+  }
 
-    res.json({ remindersSent: due.length, candidates: due.map(c => c.name) });
+  return { remindersSent: due.length, candidates: due.map(c => c.name) };
+}
+
+app.get('/api/check-invoice-reminders', async (req, res) => {
+  try {
+    const due = await sendInvoiceReminders();
+    res.json(due);
   } catch (e) {
     console.error('GET /api/check-invoice-reminders error:', e.message);
     res.status(500).json({ error: e.message });
@@ -7733,7 +7738,7 @@ app.get('/api/cron/status', cronOnly, async (req, res) => {
   try {
     const rows = await settingsTable.list();
     const get = id => { const r = rows.find(o => o.id === id); if (!r) return null; try { return JSON.parse(r.value); } catch (e) { return null; } };
-    res.json({ now: new Date().toISOString(), build: SERVER_BUILD, backup: get('backup_last'), backupJob: get('cron_backup'), daily: get('cron_daily'), roleFinder: get('cron_roleFinder') });
+    res.json({ now: new Date().toISOString(), build: SERVER_BUILD, backup: get('backup_last'), backupJob: get('cron_backup'), daily: get('cron_daily'), roleFinder: get('cron_roleFinder'), morning: get('cron_morning'), morningLastDate: (rows.find(o => o.id === 'morning_last_date') || {}).value || '' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/backup/run', requireAdmin, async (req, res) => {
@@ -11551,6 +11556,47 @@ app.get('/api/role-finder/status', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/* ---------- One morning call does everything (build 39) ----------
+   GitHub's own scheduler runs hours late or skips days, so a free external timer (cron-job.org) calls this
+   at 5:45am UK. It runs the backup, the daily job, Role Finder and Competitor Watch, invoice reminders and,
+   on Mondays, the weekly digest. It only runs once per UK day, so the GitHub run as a back-up does no harm.
+   Add ?force=1 to run it again on the same day. */
+async function runMorningChain() {
+  const out = { startedAt: new Date().toISOString() };
+  const step = async (name, fn) => {
+    try { out[name] = await fn(); }
+    catch (e) { out[name] = 'FAIL: ' + e.message; await alertDan('morning:' + name, `Live 2 Help dashboard: morning job step failed (${name})`, e.message); }
+  };
+  await step('backup', safeBackup);
+  await step('daily', () => runDailyJob(true));
+  await step('roleFinder', async () => {
+    if (cronRunning.roleFinder) return 'already running';
+    cronRunning.roleFinder = true;
+    try {
+      const r = await rfxRunSearches({ actor: 'system', auto: true });
+      try { await settingsTable.upsert({ id: 'cron_roleFinder', value: JSON.stringify({ startedAt: out.startedAt, finishedAt: new Date().toISOString(), running: false, ok: true, result: r }).slice(0, 45000), updated_by: 'system' }); } catch (e) { /* not essential */ }
+      return { newCount: r.newCount || 0, competitorAdverts: r.competitorAdverts || 0, errors: (r.errors || []).length };
+    } finally { cronRunning.roleFinder = false; }
+  });
+  await step('invoiceReminders', sendInvoiceReminders);
+  const dow = new Date().toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'Europe/London' });
+  if (dow === 'Mon') await step('weeklyDigest', async () => ({ sent: await mailDan('Your Live 2 Help week at a glance', await buildDigest()) }));
+  out.finishedAt = new Date().toISOString();
+  const bad = v => typeof v === 'string' ? v.startsWith('FAIL') : (v && typeof v === 'object' ? (v.ok === false || Object.values(v).some(bad)) : false);
+  if (['backup', 'daily', 'roleFinder', 'invoiceReminders', 'weeklyDigest'].some(k => bad(out[k]))) out.ok = false;
+  return out;
+}
+app.get('/api/cron/morning', cronOnly, async (req, res) => {
+  try {
+    const today = rfxToday();
+    const row = (await settingsTable.list()).find(o => o.id === 'morning_last_date');
+    if (row && row.value === today && req.query.force !== '1') return res.json({ started: false, alreadyRanToday: today });
+    if (cronRunning.morning) return res.json({ started: false, running: true });
+    await settingsTable.upsert({ id: 'morning_last_date', value: today, updated_by: 'system' });
+    res.json(await runCronJob('morning', runMorningChain));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/cron/role-finder', cronOnly, async (req, res) => {
   if (req.query.wait === '1') return res.json(await rfxRunSearches({ actor: 'system', auto: true }));
   res.json(await runCronJob('roleFinder', () => rfxRunSearches({ actor: 'system', auto: true })));
@@ -12360,7 +12406,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '19 Oct 2026 - build 36';
+const SERVER_BUILD = '20 Oct 2026 - build 39';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
