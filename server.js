@@ -2274,11 +2274,15 @@ async function readInvoiceRows() {
   return result.data.values || [];
 }
 
-// Brevo SMTP transporter for the daily invoice reminder email
+// Brevo SMTP transporter for all dashboard emails.
+// Port 2525: Render's free plan blocks the usual mail ports (25, 465 and 587), which made every send time out.
+// Brevo accepts the same login on 2525. BREVO_SMTP_PORT on Render can override it.
 const emailTransporter = nodemailer.createTransport({
   host: 'smtp-relay.brevo.com',
-  port: 587,
+  port: parseInt(process.env.BREVO_SMTP_PORT || '2525', 10),
   secure: false,
+  connectionTimeout: 20000,
+  greetingTimeout: 15000,
   auth: {
     user: process.env.BREVO_SMTP_USER,
     pass: process.env.BREVO_SMTP_PASS,
@@ -7719,6 +7723,10 @@ async function runCronJob(name, fn) {
   if (cronRunning[name]) return { started: false, running: true };
   cronRunning[name] = true;
   const startedAt = new Date().toISOString();
+  // Render's free plan puts the server to sleep after 15 minutes with no visitors, even mid-job.
+  // While a job runs, the server visits its own public address every 4 minutes so it stays awake.
+  const selfUrl = process.env.RENDER_EXTERNAL_URL;
+  const keepAwake = selfUrl ? setInterval(() => { fetch(selfUrl.replace(/\/+$/, '') + '/api/health').catch(() => {}); }, 4 * 60 * 1000) : null;
   try { await settingsTable.upsert({ id: 'cron_' + name, value: JSON.stringify({ startedAt, running: true }), updated_by: 'system' }); } catch (e) { /* not essential */ }
   fn().then(async result => {
     const failed = result && typeof result === 'object' && (result.ok === false || Object.values(result).some(v => typeof v === 'string' && v.startsWith('FAIL')));
@@ -7726,7 +7734,7 @@ async function runCronJob(name, fn) {
   }).catch(async e => {
     try { await settingsTable.upsert({ id: 'cron_' + name, value: JSON.stringify({ startedAt, finishedAt: new Date().toISOString(), running: false, ok: false, error: e.message }), updated_by: 'system' }); } catch (x) { /* not essential */ }
     await alertDan('cron:' + name, `Live 2 Help dashboard: ${name} job failed`, e.message);
-  }).finally(() => { cronRunning[name] = false; });
+  }).finally(() => { cronRunning[name] = false; if (keepAwake) clearInterval(keepAwake); });
   return { started: true, startedAt };
 }
 
@@ -12406,7 +12414,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '20 Oct 2026 - build 39';
+const SERVER_BUILD = '20 Oct 2026 - build 40';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
