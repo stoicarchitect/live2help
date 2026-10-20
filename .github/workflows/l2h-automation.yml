@@ -55,6 +55,8 @@ jobs:
               echo "$out" | jq '.morning'
               ok=$(echo "$out" | jq -r '.morning.ok')
               if [ "$ok" = "true" ]; then exit 0; fi
+              echo "$out" | jq -r '.morning.result // {} | paths(scalars) as $p | {p: ($p|map(tostring)|join(".")), v: getpath($p)} | select((.v|tostring|startswith("FAIL")) or (.p|endswith(".ok")) and .v==false or (.p|endswith(".error"))) | "::error title=\(.p)::\(.v)"'
+              echo "$out" | jq -r 'if .morning.error then "::error title=morning::\(.morning.error)" else empty end'
               echo "A morning step reported a problem. See the details above."
               exit 1
             fi
