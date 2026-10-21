@@ -4267,7 +4267,9 @@ function rfxColLetter(n) {
   return out;
 }
 
-function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, auditName, beforeList, afterSave }) {
+function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, auditName, beforeList, afterSave, sheetId }) {
+  // sheetId lets a table live in another spreadsheet (build 41: the HR sheet). Default is the tracker sheet.
+  const SID_OF = () => sheetId || SHEET_ID;
   const width = header.length;
   const lastCol = rfxColLetter(width);
   let ready = false;
@@ -4277,21 +4279,21 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
   async function ensure() {
     if (ready) return;
     const sheets = getSheetsClient();
-    const ss = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties.title' });
+    const ss = await sheets.spreadsheets.get({ spreadsheetId: SID_OF(), fields: 'sheets.properties.title' });
     let created = false;
     if (!(ss.data.sheets || []).some(s => s.properties.title === tab)) {
       created = true;
       await sheets.spreadsheets.batchUpdate({
-        spreadsheetId: SHEET_ID,
+        spreadsheetId: SID_OF(),
         requestBody: { requests: [{ addSheet: { properties: { title: tab } } }] },
       });
     }
-    if (width > 26) await sheetsEnsureGrid(SHEET_ID, tab, 2, width);
-    const head = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tab}'!A1:${lastCol}1` });
+    if (width > 26) await sheetsEnsureGrid(SID_OF(), tab, 2, width);
+    const head = await sheets.spreadsheets.values.get({ spreadsheetId: SID_OF(), range: `'${tab}'!A1:${lastCol}1` });
     const first = head.data.values && head.data.values[0];
     if (!first || first[0] !== header[0] || first.length < width) {
       await sheets.spreadsheets.values.update({
-        spreadsheetId: SHEET_ID,
+        spreadsheetId: SID_OF(),
         range: `'${tab}'!A1:${lastCol}1`,
         valueInputOption: 'RAW',
         requestBody: { values: [header] },
@@ -4299,7 +4301,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
     }
     if (created && seed && seed.length) {
       await sheets.spreadsheets.values.append({
-        spreadsheetId: SHEET_ID, range: `'${tab}'!A:${lastCol}`, valueInputOption: 'RAW',
+        spreadsheetId: SID_OF(), range: `'${tab}'!A:${lastCol}`, valueInputOption: 'RAW',
         insertDataOption: 'INSERT_ROWS', requestBody: { values: seed.map(o => header.map(h => (o[h] == null ? '' : String(o[h])))) },
       });
     }
@@ -4314,7 +4316,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
     await ensure();
     if (cache && Date.now() - cache.at < 3000) return cache.rows.map(r => r.slice());
     const sheets = getSheetsClient();
-    const r = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `'${tab}'!A2:${lastCol}` });
+    const r = await sheets.spreadsheets.values.get({ spreadsheetId: SID_OF(), range: `'${tab}'!A2:${lastCol}` });
     const rows = r.data.values || [];
     cache = { at: Date.now(), rows };
     return rows.map(x => x.slice());
@@ -4340,13 +4342,13 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
       invalidate();
       if (idx === -1) {
         await sheets.spreadsheets.values.append({
-          spreadsheetId: SHEET_ID, range: `'${tab}'!A:${lastCol}`, valueInputOption: 'RAW',
+          spreadsheetId: SID_OF(), range: `'${tab}'!A:${lastCol}`, valueInputOption: 'RAW',
           insertDataOption: 'INSERT_ROWS', requestBody: { values: [row] },
         });
       } else {
         const n = idx + 2;
         await sheets.spreadsheets.values.update({
-          spreadsheetId: SHEET_ID, range: `'${tab}'!A${n}:${lastCol}${n}`, valueInputOption: 'RAW',
+          spreadsheetId: SID_OF(), range: `'${tab}'!A${n}:${lastCol}${n}`, valueInputOption: 'RAW',
           requestBody: { values: [row] },
         });
       }
@@ -4360,7 +4362,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
       invalidate();
       const sheets = getSheetsClient();
       await sheets.spreadsheets.values.append({
-        spreadsheetId: SHEET_ID, range: `'${tab}'!A:${lastCol}`, valueInputOption: 'RAW',
+        spreadsheetId: SID_OF(), range: `'${tab}'!A:${lastCol}`, valueInputOption: 'RAW',
         insertDataOption: 'INSERT_ROWS', requestBody: { values: [toRow(obj)] },
       });
       return toObj(toRow(obj));
@@ -4375,7 +4377,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
       if (idx === -1) return false;
       const n = idx + 2;
       invalidate();
-      await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: `'${tab}'!A${n}:${lastCol}${n}` });
+      await sheets.spreadsheets.values.clear({ spreadsheetId: SID_OF(), range: `'${tab}'!A${n}:${lastCol}${n}` });
       return true;
     });
   }
@@ -4395,7 +4397,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
       });
       if (data.length) {
         invalidate();
-        await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { valueInputOption: 'RAW', data } });
+        await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: SID_OF(), requestBody: { valueInputOption: 'RAW', data } });
       }
       return data.length;
     });
@@ -12414,7 +12416,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '20 Oct 2026 - build 40';
+const SERVER_BUILD = '21 Oct 2026 - build 41 (CRM and People)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -12443,6 +12445,464 @@ app.get('/api/reply-activity', async (req, res) => {
     console.error('GET /api/reply-activity error:', e.message);
     res.status(500).json({ error: e.message });
   }
+});
+
+/* ======================================================================
+   People and HR (build 41)
+
+   Everything here is new and additive. It does not change any existing route.
+   Data lives in its own Google Sheet in the HR folder in Dan's Drive, set by
+   HR_SHEET_ID on Render. HR documents are the Word files in that folder.
+   Permissions are enforced here, on the server:
+   - an admin (Dan) sees and changes everything
+   - anyone else sees only their own record, never commission, never the
+     Bradford Factor, and never documents marked admin only
+   ====================================================================== */
+const HR_SHEET_ID = process.env.HR_SHEET_ID || '';
+const HR_FOLDER_ID = process.env.HR_FOLDER_ID || '1hZLRrhp8odAuKxNsPaff6GEE5vKM3Fwe';
+
+const hrEmployees = makeSimpleTable({
+  sheetId: HR_SHEET_ID || null, tab: 'Employees', path: null, label: 'Employee',
+  header: ['id', 'full_name', 'known_as', 'title', 'manager', 'start_date', 'continuous_date', 'hours', 'work_pattern', 'place_of_work',
+    'salary', 'pay_frequency', 'pension', 'notice', 'sick_pay', 'probation_start', 'probation_end', 'restrictive_covenant',
+    'holiday_days', 'holiday_year_start', 'holiday_from', 'email', 'phone', 'emergency_contact', 'commission_rate', 'status', 'updated_by', 'updated_at'],
+  seed: [{
+    id: 'ella', full_name: 'Elzbieta Pietrzak', known_as: 'Ella', title: 'Talent Acquisition and Business Development Consultant', manager: 'dan',
+    start_date: '2026-11-02', continuous_date: '2026-10-01', hours: '37.5', work_pattern: 'Monday to Friday, flexible around school runs',
+    place_of_work: 'Home-based', salary: '25000', pay_frequency: 'Monthly', pension: 'Company 3%, employee 5%', notice: 'One month',
+    sick_pay: 'Statutory Sick Pay only', probation_start: '2026-10-01', probation_end: '2026-12-31', restrictive_covenant: '6 months',
+    holiday_days: '26', holiday_year_start: '01-01', holiday_from: '2026-11-02', email: 'ella@live2helprecruitment.co.uk', phone: '07434 351996',
+    emergency_contact: '', commission_rate: '15', status: 'Active', updated_by: 'system', updated_at: '2026-10-21',
+  }],
+});
+const hrHolidays = makeSimpleTable({
+  sheetId: HR_SHEET_ID || null, tab: 'Holiday Requests', path: null, label: 'Holiday request',
+  header: ['id', 'employee', 'from_date', 'to_date', 'half_start', 'half_end', 'days', 'note', 'status', 'decided_by', 'decided_at', 'comment', 'created_at', 'created_by'],
+});
+const hrAbsences = makeSimpleTable({
+  sheetId: HR_SHEET_ID || null, tab: 'Absences', path: null, label: 'Absence',
+  header: ['id', 'employee', 'from_date', 'to_date', 'days', 'reason', 'certification', 'fit_note_file_id', 'fit_note_name', 'rtw_done', 'rtw_date', 'rtw_notes', 'created_at', 'created_by'],
+});
+const hrDocuments = makeSimpleTable({
+  sheetId: HR_SHEET_ID || null, tab: 'HR Documents', path: null, label: 'HR document',
+  header: ['id', 'employee', 'name', 'category', 'file_id', 'admin_only', 'needs_ack', 'acknowledged_at', 'added_at', 'added_by'],
+  seed: [
+    { id: 'doc-contract', employee: 'ella', name: 'Contract of Employment', category: 'Contract', file_id: '1CpSA9wEBdQok3dbypqQJY89c-SspAiuy', admin_only: 'FALSE', needs_ack: 'TRUE', added_at: '2026-10-21', added_by: 'dan' },
+    { id: 'doc-offer', employee: 'ella', name: 'Offer of Employment Letter', category: 'Contract', file_id: '1_godffMxkc9MnYD07uBohTcbY4c2gck8', admin_only: 'FALSE', needs_ack: 'TRUE', added_at: '2026-10-21', added_by: 'dan' },
+    { id: 'doc-policies', employee: 'all', name: 'Employee Policies', category: 'Policy', file_id: '1ydy_VTwkSnUQrt4I220AmB6MtAEa9OJb', admin_only: 'FALSE', needs_ack: 'TRUE', added_at: '2026-10-21', added_by: 'dan' },
+    { id: 'doc-termination', employee: 'ella', name: 'Termination of Self-Employed Agreement', category: 'Contract', file_id: '1ddmNJVYqaX-tLh8UNJroqaahjgEfw0HV', admin_only: 'FALSE', needs_ack: 'FALSE', added_at: '2026-10-21', added_by: 'dan' },
+    { id: 'doc-commission', employee: 'ella', name: 'Commission Scheme', category: 'Pay', file_id: '1vlSsDpVjSvVl4rhWdS00Z2KY7NQtEF2J', admin_only: 'TRUE', needs_ack: 'FALSE', added_at: '2026-10-21', added_by: 'dan' },
+  ],
+});
+const hrReviews = makeSimpleTable({
+  sheetId: HR_SHEET_ID || null, tab: 'Reviews', path: null, label: 'Review',
+  header: ['id', 'employee', 'kind', 'due_date', 'status', 'objectives', 'employee_notes', 'manager_notes', 'outcome', 'completed_at', 'updated_by'],
+  seed: [
+    { id: 'rev-ella-1m', employee: 'ella', kind: '1-month check-in', due_date: '2026-10-30', status: 'Due' },
+    { id: 'rev-ella-mid', employee: 'ella', kind: 'Mid-probation review', due_date: '2026-11-30', status: 'Upcoming' },
+    { id: 'rev-ella-final', employee: 'ella', kind: 'Final probation review', due_date: '2026-12-18', status: 'Upcoming' },
+  ],
+});
+const hrCommission = makeSimpleTable({
+  sheetId: HR_SHEET_ID || null, tab: 'Commission', path: null, label: 'Commission line',
+  header: ['id', 'employee', 'candidate', 'client', 'invoice_number', 'fee', 'rate', 'amount', 'status', 'payroll_month', 'notes', 'updated_by', 'updated_at'],
+});
+
+/* ---------- England and Wales bank holidays (gov.uk, with a built-in fallback) ---------- */
+const HR_BANK_FALLBACK = ['2026-01-01', '2026-04-03', '2026-04-06', '2026-05-04', '2026-05-25', '2026-08-31', '2026-12-25', '2026-12-28',
+  '2027-01-01', '2027-03-26', '2027-03-29', '2027-05-03', '2027-05-31', '2027-08-30', '2027-12-27', '2027-12-28'];
+let hrBankCache = { at: 0, map: null };
+async function hrBankHolidays() {
+  if (hrBankCache.map && Date.now() - hrBankCache.at < 24 * 3600 * 1000) return hrBankCache.map;
+  const map = new Map(HR_BANK_FALLBACK.map(d => [d, 'Bank holiday']));
+  try {
+    const r = await fetch('https://www.gov.uk/bank-holidays.json', { signal: AbortSignal.timeout(8000) });
+    if (r.ok) {
+      const j = await r.json();
+      ((j['england-and-wales'] || {}).events || []).forEach(e => map.set(e.date, e.title));
+    }
+  } catch (e) { /* fallback list is used */ }
+  hrBankCache = { at: Date.now(), map };
+  return map;
+}
+const hrISO = d => d.toISOString().slice(0, 10);
+const hrD = s => new Date(String(s).slice(0, 10) + 'T12:00:00Z');
+function hrWorkingDays(from, to, bank, halfStart, halfEnd) {
+  let n = 0;
+  for (let d = hrD(from); d <= hrD(to); d.setUTCDate(d.getUTCDate() + 1)) {
+    const w = d.getUTCDay();
+    if (w === 0 || w === 6 || bank.has(hrISO(d))) continue;
+    n++;
+  }
+  if (n > 0 && halfStart) n -= 0.5;
+  if (n > 0 && halfEnd && to !== from) n -= 0.5;
+  return n;
+}
+const hrTrue = v => String(v).toUpperCase() === 'TRUE' || v === true;
+const hrNow = () => new Date().toISOString();
+const hrId = p => p + '-' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex');
+
+// Entitlement for a holiday year, including bank holidays (26 days plus bank holidays).
+// The first year is pro rata from holiday_from, rounded up to the nearest half day.
+async function hrEntitlement(emp, year) {
+  const bank = await hrBankHolidays();
+  const base = Number(emp.holiday_days || 26);
+  const yStart = `${year}-01-01`, yEnd = `${year}-12-31`;
+  const from = emp.holiday_from && emp.holiday_from > yStart ? emp.holiday_from : yStart;
+  if (from > yEnd) return { year, total: 0, bankDays: 0, bookable: 0, proRata: false };
+  const bankInYear = [...bank.keys()].filter(d => d >= yStart && d <= yEnd);
+  const bankWorking = bankInYear.filter(d => { const w = hrD(d).getUTCDay(); return w !== 0 && w !== 6; });
+  const fullTotal = base + bankWorking.length;
+  const proRata = from > yStart;
+  let total = fullTotal;
+  if (proRata) {
+    const daysIn = (hrD(yEnd) - hrD(from)) / 86400000 + 1;
+    const yearLen = (hrD(yEnd) - hrD(yStart)) / 86400000 + 1;
+    total = Math.ceil(fullTotal * daysIn / yearLen * 2) / 2;
+  }
+  const bankDays = bankWorking.filter(d => d >= from).length;
+  return { year, total, bankDays, bookable: total - bankDays, proRata, from, fullTotal,
+    workings: proRata ? `${fullTotal} x ${(hrD(yEnd) - hrD(from)) / 86400000 + 1} / ${(hrD(yEnd) - hrD(yStart)) / 86400000 + 1}, rounded up to the nearest half day` : `${base} days plus ${bankWorking.length} bank holidays` };
+}
+async function hrBalance(emp, year) {
+  const ent = await hrEntitlement(emp, year);
+  const reqs = (await hrHolidays.list()).filter(r => r.employee === emp.id && String(r.from_date).startsWith(String(year)));
+  const sum = s => reqs.filter(r => r.status === s).reduce((a, r) => a + Number(r.days || 0), 0);
+  const approved = sum('approved'), pending = sum('pending');
+  return { ...ent, approved, pending, remaining: ent.bookable - approved - pending };
+}
+
+/* ---------- who can see what ---------- */
+function hrWho(req) {
+  const key = String((req.user && req.user.key) || actorOf(req) || '').toLowerCase();
+  return { key, admin: isAdmin(req) };
+}
+function hrNeedSheet(res) {
+  if (HR_SHEET_ID) return false;
+  res.status(503).json({ error: 'HR is not switched on yet. Add HR_SHEET_ID on Render.' });
+  return true;
+}
+function hrCleanEmployee(e, admin) {
+  if (admin) return e;
+  const { commission_rate, updated_by, ...rest } = e;
+  return rest;
+}
+async function hrMailTo(key, subject, text) {
+  try {
+    const p = profileOf(key);
+    if (!p.email) return false;
+    await emailTransporter.sendMail({ from: process.env.BREVO_SENDER_EMAIL, to: p.email, subject, text });
+    return true;
+  } catch (e) { console.error('HR email failed:', e.message); return false; }
+}
+const hrFmt = s => hrD(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+
+/* ---------- routes ---------- */
+app.get('/api/hr/me', async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    const { key, admin } = hrWho(req);
+    const year = Number(req.query.year) || new Date().getUTCFullYear();
+    const all = await hrEmployees.list();
+    const people = admin ? all : all.filter(e => e.id === key);
+    const balances = {};
+    for (const e of people) balances[e.id] = await hrBalance(e, year);
+    const pendingApprovals = admin ? (await hrHolidays.list()).filter(r => r.status === 'pending').length : 0;
+    res.json({ key, admin, year, employees: people.map(e => hrCleanEmployee(e, admin)), balances, pendingApprovals, isEmployee: all.some(e => e.id === key) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/hr/employees', requireAdmin, async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    const b = req.body || {};
+    if (!b.id) return res.status(400).json({ error: 'id is required' });
+    const existing = (await hrEmployees.list()).find(e => e.id === b.id) || {};
+    const saved = await hrEmployees.upsert({ ...existing, ...b, updated_by: actorOf(req), updated_at: hrNow() });
+    auditLog(auditActorOf(req), existing.id ? 'updated' : 'created', 'employee', saved.full_name || saved.id, '');
+    res.json({ ok: true, data: saved });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/hr/bank-holidays', async (req, res) => {
+  try { res.json({ data: [...(await hrBankHolidays()).entries()].map(([date, title]) => ({ date, title })) }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/hr/holidays', async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    const { key, admin } = hrWho(req);
+    const rows = (await hrHolidays.list()).filter(r => admin || r.employee === key);
+    rows.sort((a, b) => String(b.from_date).localeCompare(String(a.from_date)));
+    res.json({ data: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/hr/holidays', async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    const { key, admin } = hrWho(req);
+    const b = req.body || {};
+    const employee = admin && b.employee ? String(b.employee) : key;
+    const emp = (await hrEmployees.list()).find(e => e.id === employee);
+    if (!emp) return res.status(400).json({ error: 'There is no HR record for this person yet' });
+    const from = String(b.from_date || '').slice(0, 10), to = String(b.to_date || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || to < from) return res.status(400).json({ error: 'Choose a last day on or after the first day' });
+    if (from.slice(0, 4) !== to.slice(0, 4)) return res.status(400).json({ error: 'Split requests that cross 31 December into two, one for each holiday year' });
+    if (emp.holiday_from && from < emp.holiday_from) return res.status(400).json({ error: `Holiday can be booked from ${hrFmt(emp.holiday_from)}` });
+    const bank = await hrBankHolidays();
+    const days = hrWorkingDays(from, to, bank, hrTrue(b.half_start), hrTrue(b.half_end));
+    if (days <= 0) return res.status(400).json({ error: 'Those dates are all weekends or bank holidays' });
+    const overlap = (await hrHolidays.list()).find(r => r.employee === employee && ['pending', 'approved'].includes(r.status) && !(r.to_date < from || r.from_date > to));
+    if (overlap) return res.status(400).json({ error: `This overlaps a request you already have (${hrFmt(overlap.from_date)} to ${hrFmt(overlap.to_date)})` });
+    const bal = await hrBalance(emp, Number(from.slice(0, 4)));
+    if (days > bal.remaining) return res.status(400).json({ error: `That is ${days} days and ${bal.remaining} are left to book this year` });
+    const autoApprove = admin && hrTrue(b.approve_now);
+    const row = {
+      id: hrId('hol'), employee, from_date: from, to_date: to, half_start: hrTrue(b.half_start) ? 'TRUE' : 'FALSE', half_end: hrTrue(b.half_end) ? 'TRUE' : 'FALSE',
+      days: String(days), note: String(b.note || '').slice(0, 300), status: autoApprove ? 'approved' : 'pending',
+      decided_by: autoApprove ? key : '', decided_at: autoApprove ? hrNow() : '', comment: '', created_at: hrNow(), created_by: key,
+    };
+    await hrHolidays.append(row);
+    auditLog(auditActorOf(req), 'requested', 'holiday', `${emp.known_as || emp.full_name} ${from} to ${to}`, `${days} days`);
+    if (!autoApprove) mailDan(`Holiday request from ${emp.known_as || emp.full_name}`,
+      `${emp.known_as || emp.full_name} has asked for ${days} day${days === 1 ? '' : 's'} off: ${hrFmt(from)} to ${hrFmt(to)}.\n${row.note ? 'Note: ' + row.note + '\n' : ''}\nApprove or decline it in the dashboard under People > Holidays.`);
+    res.json({ ok: true, data: row });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/hr/holidays/:id/decision', requireAdmin, async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    const decision = String((req.body || {}).decision || '');
+    if (!['approved', 'declined'].includes(decision)) return res.status(400).json({ error: 'Choose approve or decline' });
+    const row = (await hrHolidays.list()).find(r => r.id === req.params.id);
+    if (!row) return res.status(404).json({ error: 'Request not found' });
+    const comment = String((req.body || {}).comment || '').slice(0, 300);
+    const saved = await hrHolidays.upsert({ ...row, status: decision, decided_by: actorOf(req), decided_at: hrNow(), comment });
+    auditLog(auditActorOf(req), decision, 'holiday', `${row.employee} ${row.from_date} to ${row.to_date}`, comment);
+    hrMailTo(row.employee, `Your holiday request was ${decision}`,
+      `Your request for ${hrFmt(row.from_date)} to ${hrFmt(row.to_date)} (${row.days} days) was ${decision}.${comment ? '\n\nComment: ' + comment : ''}`);
+    res.json({ ok: true, data: saved });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/hr/holidays/:id/cancel', async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    const { key, admin } = hrWho(req);
+    const row = (await hrHolidays.list()).find(r => r.id === req.params.id);
+    if (!row) return res.status(404).json({ error: 'Request not found' });
+    if (!admin && (row.employee !== key || row.status !== 'pending')) return res.status(403).json({ error: 'Only a pending request can be cancelled. Ask Daniel to cancel an approved one.' });
+    const saved = await hrHolidays.upsert({ ...row, status: 'cancelled', decided_by: key, decided_at: hrNow() });
+    auditLog(auditActorOf(req), 'cancelled', 'holiday', `${row.employee} ${row.from_date} to ${row.to_date}`, '');
+    res.json({ ok: true, data: saved });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/hr/calendar', async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    const { key, admin } = hrWho(req);
+    const emps = await hrEmployees.list();
+    const name = id => { const e = emps.find(x => x.id === id); return e ? (e.known_as || e.full_name) : id; };
+    const hol = (await hrHolidays.list()).filter(r => ['approved', 'pending'].includes(r.status));
+    const abs = await hrAbsences.list();
+    const events = [
+      ...hol.map(r => ({ who: name(r.employee), employee: r.employee, from: r.from_date, to: r.to_date, kind: r.status === 'approved' ? 'holiday' : 'pending' })),
+      ...abs.map(a => ({ who: name(a.employee), employee: a.employee, from: a.from_date, to: a.to_date, kind: 'absence' })),
+    ].map(e => (admin || e.employee === key) ? e : { who: e.who, employee: e.employee, from: e.from, to: e.to, kind: 'away' });
+    const bank = [...(await hrBankHolidays()).entries()].map(([date, title]) => ({ date, title }));
+    res.json({ events, bank });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/hr/absences', async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    const { key, admin } = hrWho(req);
+    const rows = (await hrAbsences.list()).filter(r => admin || r.employee === key);
+    rows.sort((a, b) => String(b.from_date).localeCompare(String(a.from_date)));
+    const out = { data: rows };
+    if (admin) {
+      // Bradford Factor over the last 52 weeks: spells x spells x days
+      const since = hrISO(new Date(Date.now() - 364 * 86400000));
+      out.bradford = {};
+      [...new Set(rows.map(r => r.employee))].forEach(emp => {
+        const mine = rows.filter(r => r.employee === emp && r.from_date >= since);
+        const days = mine.reduce((a, r) => a + Number(r.days || 0), 0);
+        out.bradford[emp] = { spells: mine.length, days, score: mine.length * mine.length * days };
+      });
+    }
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/hr/absences', async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    const { key, admin } = hrWho(req);
+    const b = req.body || {};
+    const employee = admin && b.employee ? String(b.employee) : key;
+    const emp = (await hrEmployees.list()).find(e => e.id === employee);
+    if (!emp) return res.status(400).json({ error: 'There is no HR record for this person yet' });
+    const from = String(b.from_date || '').slice(0, 10), to = String(b.to_date || from).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || to < from) return res.status(400).json({ error: 'Choose the first and last day you were off' });
+    const bank = await hrBankHolidays();
+    const days = hrWorkingDays(from, to, bank, false, false);
+    const calDays = (hrD(to) - hrD(from)) / 86400000 + 1;
+    const row = {
+      id: hrId('abs'), employee, from_date: from, to_date: to, days: String(days), reason: String(b.reason || '').slice(0, 300),
+      certification: calDays > 7 ? 'Fit note needed' : 'Self-certified', fit_note_file_id: '', fit_note_name: '', rtw_done: 'FALSE', rtw_date: '', rtw_notes: '',
+      created_at: hrNow(), created_by: key,
+    };
+    await hrAbsences.append(row);
+    auditLog(auditActorOf(req), 'logged', 'absence', emp.known_as || emp.full_name, `${from} to ${to}`);
+    if (!admin) mailDan(`Absence logged by ${emp.known_as || emp.full_name}`, `${emp.known_as || emp.full_name} logged an absence: ${hrFmt(from)} to ${hrFmt(to)} (${days} working days). ${row.certification}. Book a return to work chat in People > Sickness.`);
+    res.json({ ok: true, data: row });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/hr/absences/:id', async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    const { key, admin } = hrWho(req);
+    const row = (await hrAbsences.list()).find(r => r.id === req.params.id);
+    if (!row) return res.status(404).json({ error: 'Absence not found' });
+    if (!admin && row.employee !== key) return res.status(403).json({ error: 'Not allowed' });
+    const b = req.body || {};
+    const next = { ...row };
+    if (admin) ['rtw_done', 'rtw_date', 'rtw_notes', 'certification'].forEach(f => { if (b[f] !== undefined) next[f] = String(b[f]); });
+    if (b.to_date && /^\d{4}-\d{2}-\d{2}$/.test(b.to_date) && b.to_date >= row.from_date) {
+      next.to_date = b.to_date;
+      next.days = String(hrWorkingDays(row.from_date, b.to_date, await hrBankHolidays(), false, false));
+      if ((hrD(b.to_date) - hrD(row.from_date)) / 86400000 + 1 > 7 && !next.fit_note_file_id) next.certification = 'Fit note needed';
+    }
+    if (b.fit_note && b.fit_note.base64) {
+      const drive = getUploadDriveClient();
+      const buf = Buffer.from(String(b.fit_note.base64), 'base64');
+      if (buf.length > 10 * 1024 * 1024) return res.status(400).json({ error: 'Keep the fit note under 10MB' });
+      const f = await drive.files.create({
+        requestBody: { name: `Fit note ${row.employee} ${row.from_date} ${String(b.fit_note.name || 'file').slice(0, 80)}`, parents: [HR_FOLDER_ID] },
+        media: { mimeType: String(b.fit_note.type || 'application/octet-stream'), body: Readable.from(buf) }, fields: 'id,name',
+      });
+      next.fit_note_file_id = f.data.id; next.fit_note_name = f.data.name; next.certification = 'Fit note received';
+    }
+    const saved = await hrAbsences.upsert(next);
+    auditLog(auditActorOf(req), 'updated', 'absence', row.employee, `${row.from_date}`);
+    res.json({ ok: true, data: saved });
+  } catch (e) { res.status(500).json({ error: friendlyDriveError(e) }); }
+});
+
+app.get('/api/hr/documents', async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    const { key, admin } = hrWho(req);
+    const rows = (await hrDocuments.list()).filter(d => admin || ((d.employee === key || d.employee === 'all') && !hrTrue(d.admin_only)));
+    res.json({ data: rows.map(d => ({ ...d, acknowledged: !!d.acknowledged_at })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/hr/documents/:id/file', async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    const { key, admin } = hrWho(req);
+    const d = (await hrDocuments.list()).find(x => x.id === req.params.id);
+    if (!d || !(admin || ((d.employee === key || d.employee === 'all') && !hrTrue(d.admin_only)))) return res.status(404).json({ error: 'Document not found' });
+    const drive = getDriveClient();
+    const meta = await drive.files.get({ fileId: d.file_id, fields: 'name,mimeType' });
+    const isGoogle = String(meta.data.mimeType).startsWith('application/vnd.google-apps');
+    const out = isGoogle
+      ? await drive.files.export({ fileId: d.file_id, mimeType: 'application/pdf' }, { responseType: 'stream' })
+      : await drive.files.get({ fileId: d.file_id, alt: 'media' }, { responseType: 'stream' });
+    const name = isGoogle ? `${d.name}.pdf` : (meta.data.name || d.name);
+    res.setHeader('Content-Type', isGoogle ? 'application/pdf' : (meta.data.mimeType || 'application/octet-stream'));
+    res.setHeader('Content-Disposition', `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="${String(name).replace(/"/g, '')}"`);
+    out.data.pipe(res);
+  } catch (e) { res.status(500).json({ error: friendlyDriveError(e) }); }
+});
+
+app.post('/api/hr/documents/:id/ack', async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    const { key, admin } = hrWho(req);
+    const d = (await hrDocuments.list()).find(x => x.id === req.params.id);
+    if (!d || hrTrue(d.admin_only) || !(d.employee === key || d.employee === 'all' || admin)) return res.status(404).json({ error: 'Document not found' });
+    const stamp = `${key} ${hrNow()}`;
+    const saved = await hrDocuments.upsert({ ...d, acknowledged_at: d.acknowledged_at ? d.acknowledged_at + '; ' + stamp : stamp });
+    auditLog(auditActorOf(req), 'acknowledged', 'hr document', d.name, '');
+    res.json({ ok: true, data: saved });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/hr/documents', requireAdmin, async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    const b = req.body || {};
+    const m = String(b.link || b.file_id || '').match(/[-\w]{25,}/);
+    if (!m || !b.name) return res.status(400).json({ error: 'Give the document a name and paste its Google Drive link' });
+    const row = { id: b.id || hrId('doc'), employee: b.employee || 'all', name: String(b.name).slice(0, 120), category: b.category || 'Policy', file_id: m[0],
+      admin_only: hrTrue(b.admin_only) ? 'TRUE' : 'FALSE', needs_ack: hrTrue(b.needs_ack) ? 'TRUE' : 'FALSE', acknowledged_at: '', added_at: hrNow(), added_by: actorOf(req) };
+    const saved = await hrDocuments.upsert(row);
+    res.json({ ok: true, data: saved });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/hr/reviews', async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    const { key, admin } = hrWho(req);
+    const rows = (await hrReviews.list()).filter(r => admin || r.employee === key)
+      .map(r => admin ? r : { ...r, manager_notes: r.status === 'Completed' ? r.manager_notes : '' });
+    rows.sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
+    res.json({ data: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/hr/reviews', async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    const { key, admin } = hrWho(req);
+    const b = req.body || {};
+    const existing = b.id ? (await hrReviews.list()).find(r => r.id === b.id) : null;
+    if (!admin) {
+      if (!existing || existing.employee !== key) return res.status(403).json({ error: 'Not allowed' });
+      const saved = await hrReviews.upsert({ ...existing, employee_notes: String(b.employee_notes || '').slice(0, 4000), updated_by: key });
+      return res.json({ ok: true, data: saved });
+    }
+    const row = { ...(existing || { id: hrId('rev'), employee: b.employee || 'ella', status: 'Upcoming' }) };
+    ['kind', 'due_date', 'status', 'objectives', 'manager_notes', 'outcome'].forEach(f => { if (b[f] !== undefined) row[f] = String(b[f]).slice(0, 4000); });
+    if (row.status === 'Completed' && !row.completed_at) row.completed_at = hrNow();
+    row.updated_by = key;
+    const saved = await hrReviews.upsert(row);
+    auditLog(auditActorOf(req), existing ? 'updated' : 'created', 'review', `${row.employee} ${row.kind}`, row.outcome || '');
+    if (row.outcome === 'Pass probation') hrMailTo(row.employee, 'You have passed your probation', 'Congratulations, you have passed your probation at Live 2 Help Recruitment. A letter confirming this will follow.');
+    res.json({ ok: true, data: saved });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/hr/commission', requireAdmin, async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    res.json({ data: await hrCommission.list() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/hr/commission', requireAdmin, async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    const b = req.body || {};
+    const fee = Number(b.fee || 0), rate = Number(b.rate || 15);
+    if (!(fee > 0)) return res.status(400).json({ error: 'Enter the placement fee invoiced, excluding VAT' });
+    const existing = b.id ? (await hrCommission.list()).find(r => r.id === b.id) : null;
+    const row = { ...(existing || { id: hrId('com') }), employee: b.employee || 'ella', candidate: b.candidate || '', client: b.client || '', invoice_number: b.invoice_number || '',
+      fee: String(fee), rate: String(rate), amount: (fee * rate / 100).toFixed(2), status: b.status || 'Awaiting client payment', payroll_month: b.payroll_month || '',
+      notes: b.notes || '', updated_by: actorOf(req), updated_at: hrNow() };
+    const saved = await hrCommission.upsert(row);
+    auditLog(auditActorOf(req), existing ? 'updated' : 'created', 'commission', `${row.employee} ${row.candidate}`, row.amount);
+    res.json({ ok: true, data: saved });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
