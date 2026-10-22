@@ -159,6 +159,11 @@
   .plan p { color: #C9CCD6; font-size: 14px; margin: 0 0 12px; }
   .plan ul { flex: 1; }
   .upsell { margin: 0 0 18px; }
+  .topup { position: relative; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; border: 1px solid var(--gold); border-radius: 12px; padding: 16px 18px; margin: 0 0 16px; background: rgba(201,168,76,.08); }
+  .topup b { color: #fff; font-size: 17px; } .topup .p { color: var(--gold); font-weight: bold; font-size: 22px; margin-left: 6px; }
+  .topup span.s { display: block; color: #C9CCD6; font-size: 13.5px; margin-top: 2px; }
+  .topup-msg { border-radius: 10px; padding: 14px 16px; margin-bottom: 18px; font-size: 15px; }
+  .topup-msg.ok { background: #EAF5EE; color: var(--ok); } .topup-msg.wait { background: var(--gold-bg); color: #7A6420; }
   .result.bare { background: transparent; border: 0; padding: 0; }
   .upsell h2 { font-size: 19px; line-height: 1.35; max-width: 640px; }
   .tools.spent .tool { opacity: .6; }
@@ -257,12 +262,13 @@
     <div class="userbar">
       <h2 id="hello">Your Career Toolkit</h2>
       <div class="credits" title="Credits reset on the 1st of each month">
-        <span><b id="credLeft">0</b> of <span id="credAll">0</span> credits left</span>
+        <span><b id="credLeft">0</b> credits left <small id="credSplit" style="color:#B4B8C4;"></small></span>
         <span class="bar"><i id="credBar" style="width:0"></i></span>
         <button class="linkish" id="signOut" style="color:#B4B8C4;font-size:13px;">Sign out</button>
       </div>
     </div>
 
+    <div id="topupNote" class="hidden"></div>
     <div class="card" id="inputsCard">
       <h2>1. Add your CV and the job</h2>
       <p class="sub">Your CV stays in this browser session. We only send it to our tools when you run one.</p>
@@ -404,12 +410,14 @@
   function enter(u) {
     user = u; renderCredits();
     $('hello').textContent = 'Welcome, ' + u.firstName;
-    show('toolkit'); restoreInputs(); buildChecklist();
+    show('toolkit'); restoreInputs(); buildChecklist(); topupReturn();
   }
   function renderCredits() {
     if (!user) return; var c = user.credits;
-    $('credLeft').textContent = c.left; $('credAll').textContent = c.allowance;
-    $('credBar').style.width = Math.round(c.left / Math.max(1, c.allowance) * 100) + '%';
+    var top = c.topup || 0, free = c.freeLeft != null ? c.freeLeft : c.left;
+    $('credLeft').textContent = c.left;
+    $('credSplit').textContent = top ? '(' + free + ' free + ' + top + ' top-up)' : '(of ' + c.allowance + ' free this month)';
+    $('credBar').style.width = Math.round(Math.min(1, c.left / Math.max(1, c.allowance)) * 100) + '%';
     var d = new Date(c.resets + 'T00:00:00Z');
     $('credLeft').parentNode.parentNode.title = 'Credits reset on ' + d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
     var out = c.left <= 0;
@@ -418,7 +426,7 @@
     document.querySelector('#toolsCard .tools').classList.toggle('spent', out);
     Array.prototype.forEach.call(document.querySelectorAll('[data-tool]'), function (b) {
       if (!b.dataset.label) b.dataset.label = b.textContent;
-      b.textContent = c.left < (COST[b.getAttribute('data-tool')] || 1) ? 'Get it done by a recruiter' : b.dataset.label;
+      b.textContent = c.left < (COST[b.getAttribute('data-tool')] || 1) ? 'Need more credits' : b.dataset.label;
     });
   }
 
@@ -511,7 +519,46 @@
   var COST = { cv_check: 1, job_match: 1, cv_rewrite: 3, interview_prep: 2 };
   var MSG_OUT = 'You\u2019ve used this month\u2019s free credits. Credits refresh on the 1st, or get it done by a recruiter now.';
   function upsellHtml(text) {
-    return '<div class="card premium upsell"><p class="eyebrow">Expert services</p><h2>' + esc(text) + '</h2><div class="plans">' + $('plans').innerHTML + '</div></div>';
+    return '<div class="card premium upsell"><p class="eyebrow">Keep going</p><h2>' + esc(text) + '</h2>' +
+      '<div class="topup"><div><b>Top up 10 credits</b><span class="p">£5</span><span class="s">Use them straight away. Top-up credits never expire and are used after your free monthly credits.</span></div>' +
+      '<button class="btn btn-gold" data-topup>Buy 10 credits</button></div>' +
+      '<p class="eyebrow" style="margin:6px 0 10px;">Or get it done by a recruiter</p>' +
+      '<div class="plans">' + $('plans').innerHTML + '</div></div>';
+  }
+  document.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-topup]') : null;
+    if (!b || b.disabled) return;
+    b.disabled = true; b.textContent = 'Opening secure payment...';
+    try { sessionStorage.setItem('l2h_ts_topup_before', String(user ? (user.credits.topup || 0) : 0)); } catch (e2) {}
+    api('/api/talent-suite/credits/checkout', {}).then(function (j) {
+      if (j.url) { window.location.href = j.url; return; }
+      b.disabled = false; b.textContent = 'Buy 10 credits';
+      alert(j.error || 'The payment page could not be opened. Please try again.');
+    });
+  });
+  // back from Stripe: read the new balance from the server (the webhook may take a few seconds)
+  function topupReturn() {
+    var q; try { q = new URLSearchParams(location.search); } catch (e) { return; }
+    var st = q.get('topup'); if (!st) return;
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+    var note = $('topupNote'); note.classList.remove('hidden');
+    if (st === 'cancelled') { note.innerHTML = '<div class="topup-msg wait">Top-up cancelled. Nothing has been charged.</div>'; return; }
+    var before = 0; try { before = parseInt(sessionStorage.getItem('l2h_ts_topup_before') || '0', 10) || 0; } catch (e) {}
+    note.innerHTML = '<div class="topup-msg wait">Payment received. Adding your credits...</div>';
+    var tries = 0;
+    (function poll() {
+      api('/api/talent-suite/me', {}).then(function (j) {
+        if (j.ok) { user = j.user; renderCredits(); }
+        var now = j.ok ? (j.user.credits.topup || 0) : before;
+        if (now > before) {
+          try { sessionStorage.removeItem('l2h_ts_topup_before'); } catch (e) {}
+          note.innerHTML = '<div class="topup-msg ok"><b>' + (now - before) + ' credits added.</b> You now have ' + user.credits.left + ' credits (' + now + ' top-up). Top-up credits never expire.</div>';
+          return;
+        }
+        if (++tries < 12) { setTimeout(poll, 2500); return; }
+        note.innerHTML = '<div class="topup-msg wait">Your payment went through. Your credits are taking a little longer than usual to appear. Refresh this page in a minute, or email office@live2helprecruitment.co.uk if they do not show.</div>';
+      });
+    })();
   }
   function showUpsell(tool) {
     var left = user ? user.credits.left : 0, cost = COST[tool] || 1;

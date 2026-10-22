@@ -15986,7 +15986,7 @@ function renderTalentSuite(){
     <td class="strong">${esc(u.name)}<div class="pool-muted">${esc(u.email)}</div></td>
     <td>${esc(u.sector)}<div class="pool-muted">${esc(u.target_role || '')}</div></td>
     <td>${esc(u.tools_used || '-')}<div class="pool-muted">${esc(u.total_runs || 0)} run${u.total_runs === '1' ? '' : 's'}</div></td>
-    <td><span class="status-pill ${used >= allow ? 'lost' : used ? 'hold' : 'active'}">${used} of ${allow} used</span>${parseInt(u.bonus_credits, 10) ? '<div class="pool-muted">includes ' + esc(u.bonus_credits) + ' bonus</div>' : ''}</td>
+    <td><span class="status-pill ${used >= allow ? 'lost' : used ? 'hold' : 'active'}">${used} of ${allow} used</span>${parseInt(u.bonus_credits, 10) ? '<div class="pool-muted">includes ' + esc(u.bonus_credits) + ' bonus</div>' : ''}${parseInt(u.topup_credits, 10) ? '<div class="pool-muted" style="color:var(--gold);">+ ' + esc(u.topup_credits) + ' bought credits</div>' : ''}</td>
     <td>${u.last_seen ? esc(opsFmt(String(u.last_seen).slice(0, 10))) : '-'}</td>
     <td><select onchange="setTalentSuiteUser('${esc(u.id)}',{status:this.value})" style="padding:6px 8px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12px;background:#fff;">${Object.keys(TSU_STATUS).map(k => `<option value="${k}"${u.status === k ? ' selected' : ''}>${TSU_STATUS[k]}</option>`).join('')}</select></td>
     <td><input value="${esc(u.notes)}" placeholder="Add a note" onchange="setTalentSuiteUser('${esc(u.id)}',{notes:this.value})" style="padding:6px 8px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12px;width:190px;"></td>

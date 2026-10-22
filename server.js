@@ -236,7 +236,7 @@ const PUBLIC_API = [
   { method: 'POST', re: /^\/api\/talent-pool$/ },
   { method: 'POST', re: /^\/api\/funnel-lead$/ },
   { method: 'POST', re: /^\/api\/claude$/ },
-  { method: 'POST', re: /^\/api\/talent-suite\/(start|verify|me|tool|cv-docx|review-request|orders|checkout)$/ },
+  { method: 'POST', re: /^\/api\/talent-suite\/(start|verify|me|tool|cv-docx|review-request|orders|checkout|credits\/checkout)$/ },
   { method: 'POST', re: /^\/api\/stripe\/webhook$/ },
   { method: 'GET', re: /^\/api\/public\/roles(\/[a-z0-9-]+)?$/ },
   { method: 'GET', re: /^\/api\/public\/forms\/[a-z0-9-]+$/ },
@@ -13292,7 +13292,7 @@ const TS_SECTORS = ['Engineering', 'Technical and CAD', 'Sales and Business Deve
 const tsUsersTable = makeSimpleTable({
   tab: 'Talent Suite Users',
   header: ['id', 'date', 'name', 'email', 'sector', 'target_role', 'source', 'consent', 'verified_at', 'last_seen',
-    'period', 'credits_used', 'bonus_credits', 'total_runs', 'tools_used', 'review_requested', 'status', 'notes'],
+    'period', 'credits_used', 'bonus_credits', 'total_runs', 'tools_used', 'review_requested', 'status', 'notes', 'topup_credits'],
   path: '/api/talent-suite-users',
   label: 'Talent Suite user',
   auditType: 'talent_suite_user',
@@ -13319,11 +13319,13 @@ function tsVerify(token) {
 }
 function tsAllowance(u) { return TS_FREE_CREDITS + (Number(u.bonus_credits) || 0); }
 function tsUsed(u) { return u.period === tsPeriod() ? (Number(u.credits_used) || 0) : 0; }
+function tsFreeLeft(u) { return Math.max(0, tsAllowance(u) - tsUsed(u)); }
+function tsTopup(u) { return Math.max(0, Number(u.topup_credits) || 0); } // bought credits: never reset on the 1st
 function tsPublicUser(u) {
   const allowance = tsAllowance(u);
   const d = new Date(); const reset = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
   return { name: u.name, firstName: String(u.name).split(' ')[0], email: u.email, sector: u.sector,
-    credits: { allowance, used: tsUsed(u), left: Math.max(0, allowance - tsUsed(u)), resets: reset.toISOString().slice(0, 10) },
+    credits: { allowance, used: tsUsed(u), freeLeft: tsFreeLeft(u), topup: tsTopup(u), left: tsFreeLeft(u) + tsTopup(u), resets: reset.toISOString().slice(0, 10) },
     reviewRequested: u.review_requested === 'Yes' };
 }
 async function tsFindUser(email) { return (await tsUsersTable.list()).find(o => o.id === tsId(email)) || null; }
@@ -13546,7 +13548,7 @@ app.post('/api/talent-suite/tool', async (req, res) => {
     const role = tpClean(b.role, 120);
     if (def.needs.includes('cv') && cv.length < 300) return res.status(400).json({ error: 'Please add your full CV first (upload it or paste the text).' });
     if (def.needs.includes('job') && job.length < 150 && !(b.tool === 'interview_prep' && role)) return res.status(400).json({ error: 'Please paste the job advert or description.' });
-    if (tsUsed(u) + def.cost > tsAllowance(u)) return res.status(402).json({ error: `You have used this month's credits. They reset on ${tsPublicUser(u).credits.resets}. Want an expert to do it for you? Request a Live 2 Help review.`, code: 'TS_CREDITS' });
+    if (tsFreeLeft(u) + tsTopup(u) < def.cost) return res.status(402).json({ error: `You do not have enough credits for this tool. Free credits refresh on ${tsPublicUser(u).credits.resets}, or you can top up or get it done by a recruiter.`, code: 'TS_CREDITS', user: tsPublicUser(u) });
     if (!tpAllow('ts:run:' + u.email, 12, 3600000)) return res.status(429).json({ error: 'Please slow down a little and try again shortly.' });
     const limited = aiRateCheck(req.ip);
     if (limited) return res.status(429).json({ error: limited });
@@ -13560,9 +13562,20 @@ app.post('/api/talent-suite/tool', async (req, res) => {
 
     // reserve the credit before calling, give it back if the call fails
     const period = tsPeriod();
+    // spend this month's free credits first, then bought top-up credits; a failed run gives back exactly what it took
+    let split = { free: 0, topup: 0 };
     const charge = async sign => tsUsersTable.updateWhere(o => o.id === u.id, o => {
       const base = o.period === period ? (Number(o.credits_used) || 0) : 0;
-      o.period = period; o.credits_used = String(Math.max(0, base + sign * def.cost));
+      o.period = period;
+      if (sign > 0) {
+        const freeLeft = Math.max(0, tsAllowance(o) - base);
+        split = { free: Math.min(def.cost, freeLeft), topup: def.cost - Math.min(def.cost, freeLeft) };
+        o.credits_used = String(base + split.free);
+        o.topup_credits = String(Math.max(0, tsTopup(o) - split.topup));
+      } else {
+        o.credits_used = String(Math.max(0, base - split.free));
+        o.topup_credits = String(tsTopup(o) + split.topup);
+      }
       if (sign > 0) {
         o.total_runs = String((Number(o.total_runs) || 0) + 1);
         o.tools_used = Array.from(new Set(String(o.tools_used || '').split(',').map(s => s.trim()).filter(Boolean).concat(def.label))).join(', ');
@@ -13885,6 +13898,94 @@ app.post('/api/talent-suite/checkout', async (req, res) => {
   }
 });
 
+/* ---------- Section 6a: credit top-up (10 credits, STRIPE_PRICE_CREDITS_10) ---------- */
+const TS_TOPUP_CREDITS = 10;
+const tsCreditPurchasesSheet = makeSimpleTable({
+  tab: 'Credit Purchases',
+  header: ['session_id', 'date', 'user_id', 'email', 'credits', 'amount_gbp', 'stripe_payment_intent', 'status', 'credits_removed', 'refunded_at'],
+});
+const tsCreditPurchases = {
+  async list() { return (await tsCreditPurchasesSheet.list()).map(o => ({ ...o, id: o.session_id })); },
+  async get(sessionId) { return (await this.list()).find(o => o.session_id === sessionId) || null; },
+  async save(o) { const { id, ...rest } = o; return tsCreditPurchasesSheet.upsert({ ...rest, id: rest.session_id }); },
+  update(pred, mutate) { return tsCreditPurchasesSheet.updateWhere(pred, o => mutate(o) || o); },
+};
+
+app.post('/api/talent-suite/credits/checkout', async (req, res) => {
+  try {
+    const u = await tsAuth(req, res);
+    if (!u) return;
+    const price = process.env.STRIPE_PRICE_CREDITS_10;
+    if (!process.env.STRIPE_SECRET_KEY || !price) return res.status(503).json({ error: 'Credit top-ups are not switched on yet. Please try again soon.' });
+    if (!tpAllow('tstop:' + u.email, 10, 3600000)) return res.status(429).json({ error: 'Please try again shortly.' });
+    const base = tsBaseUrl();
+    const p = new URLSearchParams({
+      mode: 'payment',
+      'line_items[0][price]': price,
+      'line_items[0][quantity]': '1',
+      customer_email: u.email,
+      client_reference_id: u.id,
+      'metadata[type]': 'credit_topup',
+      'metadata[user_email]': u.email,
+      'metadata[credits]': String(TS_TOPUP_CREDITS),
+      'payment_intent_data[metadata][type]': 'credit_topup',
+      'payment_intent_data[metadata][user_email]': u.email,
+      'payment_intent_data[metadata][credits]': String(TS_TOPUP_CREDITS),
+      success_url: `${base}/talent-suite/career/?topup=success`,
+      cancel_url: `${base}/talent-suite/career/?topup=cancelled`,
+    });
+    const r = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`, 'Stripe-Version': STRIPE_API_VERSION, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: p.toString(),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.url) {
+      console.error('Stripe top-up session failed:', (j.error && j.error.message) || r.status);
+      return res.status(502).json({ error: 'The payment page could not be opened. Please try again in a minute.' });
+    }
+    res.json({ url: j.url });
+  } catch (e) {
+    console.error('POST /api/talent-suite/credits/checkout error:', e.message);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
+  }
+});
+
+async function tsApplyTopup(session) {
+  if (await tsCreditPurchases.get(session.id)) return false; // this session was already applied
+  const email = String((session.metadata && session.metadata.user_email) || session.customer_email || '').toLowerCase();
+  const credits = Math.max(0, parseInt((session.metadata && session.metadata.credits) || TS_TOPUP_CREDITS, 10) || TS_TOPUP_CREDITS);
+  const userId = session.client_reference_id || tsId(email);
+  // log first: the session id is the guard that stops the same payment being applied twice
+  await tsCreditPurchases.save({
+    session_id: session.id, date: new Date().toISOString(), user_id: userId, email, credits: String(credits),
+    amount_gbp: String((Number(session.amount_total) || 0) / 100),
+    stripe_payment_intent: typeof session.payment_intent === 'string' ? session.payment_intent : ((session.payment_intent || {}).id || ''),
+    status: 'applied', credits_removed: '', refunded_at: '',
+  });
+  const n = await tsUsersTable.updateWhere(o => o.id === userId || o.email === email, o => { o.topup_credits = String(tsTopup(o) + credits); return o; });
+  if (!n) {
+    await tsCreditPurchases.update(o => o.session_id === session.id, o => { o.status = 'no matching user'; return o; });
+    mailDan('Talent Suite top-up needs a look', `A credit top-up was paid (${session.id}, ${email}) but no Career Toolkit user matched, so no credits were added.`);
+  }
+  auditLog('stripe', 'talent_suite_topup', 'talent_suite', email, `${credits} credits`);
+  return true;
+}
+
+async function tsRefundTopup(paymentIntent) {
+  const p = (await tsCreditPurchases.list()).find(o => paymentIntent && o.stripe_payment_intent === paymentIntent);
+  if (!p) return false;
+  if (p.status === 'refunded') return true;
+  let removed = 0;
+  await tsUsersTable.updateWhere(o => o.id === p.user_id || o.email === p.email, o => {
+    removed = Math.min(Number(p.credits) || 0, tsTopup(o)); // only the unused part can be taken back
+    o.topup_credits = String(tsTopup(o) - removed); return o;
+  });
+  await tsCreditPurchases.update(o => o.session_id === p.session_id, o => { o.status = 'refunded'; o.credits_removed = String(removed); o.refunded_at = new Date().toISOString(); return o; });
+  mailDan('Talent Suite top-up refunded', `${p.email}: top-up refunded in Stripe. ${removed} unused credit${removed === 1 ? '' : 's'} removed (bought ${p.credits}).`);
+  return true;
+}
+
 /* ---------- Section 5: POST /api/stripe/webhook ---------- */
 function tsStripeSignatureOk(raw, header, secret) {
   if (!raw || !header || !secret) return false;
@@ -13951,6 +14052,12 @@ app.post('/api/stripe/webhook', async (req, res) => {
   try {
     if (ev.type === 'checkout.session.completed') {
       if (obj.payment_status !== 'paid') return res.json({ received: true });
+      if (obj.metadata && obj.metadata.type === 'credit_topup') {
+        if (tsWebhookBusy.has(obj.id)) return res.json({ received: true });
+        tsWebhookBusy.add(obj.id);
+        try { await tsApplyTopup(obj); } finally { tsWebhookBusy.delete(obj.id); }
+        return res.json({ received: true });
+      }
       const orderId = (obj.metadata && obj.metadata.order_id) || obj.client_reference_id;
       if (!orderId || tsWebhookBusy.has(orderId)) return res.json({ received: true });
       tsWebhookBusy.add(orderId);
@@ -13979,6 +14086,7 @@ app.post('/api/stripe/webhook', async (req, res) => {
     }
     if (ev.type === 'charge.refunded') {
       const pi = typeof obj.payment_intent === 'string' ? obj.payment_intent : ((obj.payment_intent || {}).id || '');
+      if (await tsRefundTopup(pi)) return res.json({ received: true });
       const orderId = obj.metadata && obj.metadata.order_id;
       const n = await tsOrders.update(orderId || '__none__', o => { o.status = 'refunded'; return o; })
         || (pi ? await tsOrdersSheet.updateWhere(o => o.stripe_payment_intent === pi, o => { o.status = 'refunded'; return o; }) : 0);
