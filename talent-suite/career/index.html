@@ -22,12 +22,13 @@
   a { color: var(--navy); text-decoration-color: var(--gold); text-underline-offset: 3px; }
   .hidden { display: none !important; }
 
-  .topbar { background: var(--navy); padding: 18px 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  .topbar img { height: 44px; width: auto; display: block; }
-  .topbar .links a { color: #B4B8C4; font-size: 14px; margin-left: 18px; text-decoration: none; }
+  .topbar { background: var(--navy); padding: 26px 20px 10px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .topbar img { height: 118px; width: auto; display: block; }
+  @media (max-width: 600px) { .topbar img { height: 92px; } }
+  .topbar .links a { color: #B4B8C4; font-size: 13.5px; margin: 0 10px; text-decoration: none; }
   .topbar .links a:hover { color: var(--gold); }
 
-  .hero { background: linear-gradient(180deg, var(--navy) 0%, var(--navy-2) 100%); color: #fff; padding: 46px 20px 56px; border-bottom: 3px solid var(--gold); }
+  .hero { background: linear-gradient(180deg, var(--navy) 0%, var(--navy-2) 100%); color: #fff; padding: 30px 20px 56px; border-bottom: 3px solid var(--gold); }
   .hero-in { max-width: 980px; margin: 0 auto; }
   .eyebrow { color: var(--gold); letter-spacing: 3px; font-size: 12px; font-weight: bold; text-transform: uppercase; margin: 0 0 10px; }
   .hero h1 { font-size: clamp(30px, 5vw, 44px); margin: 0 0 12px; line-height: 1.15; }
@@ -179,7 +180,7 @@
 <body>
 
 <header class="topbar">
-  <a href="../"><img src="../../assets/logo.png" alt="Live 2 Help Recruitment"></a>
+  <a href="../"><img src="../../assets/logo3-transparent.png" alt="Live 2 Help Recruitment"></a>
   <nav class="links"><a href="../">Talent Suite</a><a href="../../">Live roles</a><a href="../../talent-pool/">Talent pool</a></nav>
 </header>
 
