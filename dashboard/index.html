@@ -15759,6 +15759,8 @@ async function lpxSaveNew(){
 
 <style>
 #competitorsView{display:none;flex:1;flex-direction:column;min-height:0;}
+#talentSuiteView{display:none;flex:1;flex-direction:column;min-height:0;}
+#talentSuiteView.visible{display:flex;}
 .l2h-pager{display:flex;gap:18px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:10px 4px;font-size:12.5px;color:var(--grey);}
 .l2h-pager select{padding:4px 6px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12px;margin-left:6px;}
 .l2h-pager .nav{display:flex;gap:6px;align-items:center;}
@@ -15874,6 +15876,135 @@ function l2hPager(total, page, per, fnPage, fnPer){
     if(tab === 'competitors') cmpLoad();
   };
 })();
+
+/* ---------- Talent Suite (Career Toolkit users) ---------- */
+const TSU = {list: [], loaded: false};
+const TSU_STATUS = {'active':'Active', 'review requested':'Review requested', 'contacted':'Contacted', 'in talent pool':'In talent pool', 'placed':'Placed', 'blocked':'Blocked'};
+const TSU_FREE = 8;
+
+(function(){
+  const tabs = document.getElementById('tabs');
+  if(tabs){
+    const b = document.createElement('button');
+    b.className = 'tab-btn gh'; b.dataset.tab = 'talentSuite'; b.textContent = 'Talent Suite';
+    b.onclick = () => switchTab('talentSuite');
+    tabs.appendChild(b);
+  }
+  const host = document.getElementById('funnelLeadsView');
+  if(host && host.parentNode){
+    const v = document.createElement('div');
+    v.id = 'talentSuiteView';
+    v.innerHTML = `
+      <div class="view-head">
+        <div><h2>Talent Suite</h2><div class="sub" id="tsuSummary">Job seekers using the Career Toolkit.</div></div>
+        <div class="head-actions">
+          <select id="tsuFilter" onchange="renderTalentSuite()" style="padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13px;background:#fff;">
+            <option value="">All users</option><option value="review requested">Review requested</option><option value="active_month">Active this month</option><option value="contacted">Contacted</option><option value="in talent pool">In talent pool</option><option value="placed">Placed</option><option value="blocked">Blocked</option></select>
+          <input id="tsuText" placeholder="Search name, email, field" oninput="renderTalentSuite()" style="padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13px;min-width:200px;">
+          <a class="gold-btn" href="https://careers.live2helprecruitment.co.uk/talent-suite/" target="_blank" rel="noopener" style="text-decoration:none;">Open the Talent Suite</a>
+        </div>
+      </div>
+      <div class="view-body">
+        <div class="tile-grid" id="tsuTiles"></div>
+        <div class="ops-table-wrap"><table class="ops-table" style="min-width:1080px;"><thead><tr><th>Joined</th><th>Person</th><th>Field and target</th><th>Tools used</th><th>Credits this month</th><th>Last seen</th><th>Status</th><th>Notes</th><th style="text-align:right;">Actions</th></tr></thead><tbody id="tsuBody"><tr><td colspan="9" class="empty-row">Loading...</td></tr></tbody></table></div>
+        <div class="note-line">These people signed up to the Career Toolkit at careers.live2helprecruitment.co.uk/talent-suite/career and confirmed their email. Each gets ${TSU_FREE} free credits a month; talent pool members get extra. "Review requested" means they asked for a paid expert CV review, and a task was created for Ella. Use Give credits to top someone up, or Blocked to stop an email address using the toolkit.</div>
+      </div>`;
+    host.parentNode.appendChild(v);
+  }
+  const _st = switchTab;
+  switchTab = function(tab){
+    _st(tab);
+    const v = document.getElementById('talentSuiteView');
+    if(v) v.classList.toggle('visible', tab === 'talentSuite');
+    if(tab === 'talentSuite') loadTalentSuite();
+  };
+})();
+
+async function loadTalentSuite(){
+  try{ TSU.list = b2List(await b2Api('/api/talent-suite-users')); TSU.loaded = true; }
+  catch(e){ document.getElementById('tsuBody').innerHTML = `<tr><td colspan="9" class="empty-row">Could not load: ${esc(e.message)}</td></tr>`; return; }
+  renderTalentSuite();
+}
+
+function tsuMonth(){ return new Date().toISOString().slice(0, 7); }
+function tsuUsed(u){ return u.period === tsuMonth() ? (parseInt(u.credits_used, 10) || 0) : 0; }
+function tsuAllow(u){ return TSU_FREE + (parseInt(u.bonus_credits, 10) || 0); }
+
+function renderTalentSuite(){
+  const list = (TSU.list || []).slice().sort((a, b) => String(b.verified_at || b.date).localeCompare(String(a.verified_at || a.date)));
+  const f = b2Val('tsuFilter'), q = String(b2Val('tsuText') || '').toLowerCase().trim();
+  const month = tsuMonth();
+  const shown = list.filter(u => (!f || (f === 'active_month' ? (u.period === month && tsuUsed(u) > 0) : u.status === f))
+    && (!q || [u.name, u.email, u.sector, u.target_role].join(' ').toLowerCase().includes(q)));
+  const weekAgo = Date.now() - 7 * 86400000;
+  const reviews = list.filter(u => u.status === 'review requested').length;
+  const runs = list.reduce((a, u) => a + (parseInt(u.total_runs, 10) || 0), 0);
+  document.getElementById('tsuSummary').textContent = list.length + ' job seeker' + (list.length === 1 ? '' : 's') + ' using the Career Toolkit';
+  document.getElementById('tsuTiles').innerHTML = [
+    {n: list.length, l:'Users in total'},
+    {n: list.filter(u => Date.parse(u.verified_at || u.date) >= weekAgo).length, l:'New this week'},
+    {n: list.filter(u => u.period === month && tsuUsed(u) > 0).length, l:'Active this month'},
+    {n: reviews, l:'Expert reviews waiting', warn: reviews > 0},
+    {n: runs, l:'Tool runs in total'},
+  ].map(t => `<div class="tile static ${t.warn ? 'warn' : ''}"><div class="n">${esc(t.n)}</div><div class="l">${t.l}</div></div>`).join('');
+  document.getElementById('tsuBody').innerHTML = shown.length ? shown.map(u => {
+    const used = tsuUsed(u), allow = tsuAllow(u);
+    const hot = u.status === 'review requested';
+    return `<tr${hot ? ' style="background:#FBF6E8;"' : ''}>
+    <td>${esc(opsFmt(u.date))}${u.source ? '<div class="pool-muted">' + esc(u.source) + '</div>' : ''}</td>
+    <td class="strong">${esc(u.name)}<div class="pool-muted">${esc(u.email)}</div></td>
+    <td>${esc(u.sector)}<div class="pool-muted">${esc(u.target_role || '')}</div></td>
+    <td>${esc(u.tools_used || '-')}<div class="pool-muted">${esc(u.total_runs || 0)} run${u.total_runs === '1' ? '' : 's'}</div></td>
+    <td><span class="status-pill ${used >= allow ? 'lost' : used ? 'hold' : 'active'}">${used} of ${allow} used</span>${parseInt(u.bonus_credits, 10) ? '<div class="pool-muted">includes ' + esc(u.bonus_credits) + ' bonus</div>' : ''}</td>
+    <td>${u.last_seen ? esc(opsFmt(String(u.last_seen).slice(0, 10))) : '-'}</td>
+    <td><select onchange="setTalentSuiteUser('${esc(u.id)}',{status:this.value})" style="padding:6px 8px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12px;background:#fff;">${Object.keys(TSU_STATUS).map(k => `<option value="${k}"${u.status === k ? ' selected' : ''}>${TSU_STATUS[k]}</option>`).join('')}</select></td>
+    <td><input value="${esc(u.notes)}" placeholder="Add a note" onchange="setTalentSuiteUser('${esc(u.id)}',{notes:this.value})" style="padding:6px 8px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12px;width:190px;"></td>
+    <td><div class="row-actions"><button onclick="tsuEmail('${esc(u.id)}')">Email</button><button onclick="tsuCredits('${esc(u.id)}')">Give credits</button><button onclick="tsuDelete('${esc(u.id)}')">Delete</button></div></td></tr>`;
+  }).join('') : '<tr><td colspan="9" class="empty-row">' + (list.length ? 'Nothing matches this filter.' : 'No users yet. They appear here as soon as someone confirms their email on the Career Toolkit.') + '</td></tr>';
+}
+
+async function setTalentSuiteUser(id, patch, quiet){
+  const u = (TSU.list || []).find(x => x.id === id);
+  if(!u) return;
+  try{
+    const json = await b2Post('/api/talent-suite-users', Object.assign({id: id}, patch));
+    Object.assign(u, json.data);
+    if(!quiet) showToast('Saved');
+    renderTalentSuite();
+  }catch(e){ showToast('Could not save: ' + e.message); }
+}
+
+function tsuCredits(id){
+  const u = (TSU.list || []).find(x => x.id === id);
+  if(!u) return;
+  const n = parseInt(prompt('How many extra credits a month should ' + u.name + ' get? They currently have ' + (parseInt(u.bonus_credits, 10) || 0) + ' extra.', '4'), 10);
+  if(!isFinite(n) || n < 0) return;
+  setTalentSuiteUser(id, {bonus_credits: String(Math.min(n, 100))});
+}
+
+function tsuEmail(id){
+  const u = (TSU.list || []).find(x => x.id === id);
+  if(!u) return;
+  const first = String(u.name || '').split(' ')[0];
+  const review = u.status === 'review requested';
+  const body = 'Hi ' + first + ',\n\n' + (review
+    ? 'Thanks for requesting an expert CV review through the Live 2 Help Talent Suite. I would be glad to help' + (u.target_role ? ' with your search for ' + u.target_role + ' roles' : '') + '. Could you reply with your latest CV and the roles you are most interested in? I will then come back to you with the next steps.'
+    : 'Thanks for using the Live 2 Help Career Toolkit. I hope it has helped' + (u.target_role ? ' with your search for ' + u.target_role + ' roles' : '') + '. If you would like a recruiter to look at your CV or talk through roles we are working on, just reply to this email.')
+    + '\n\nKind regards';
+  openMailInOutlook('web', u.email, review ? 'Your expert CV review' : 'Your Live 2 Help Career Toolkit', body);
+  if(review) setTalentSuiteUser(id, {status: 'contacted'}, true);
+}
+
+async function tsuDelete(id){
+  const u = (TSU.list || []).find(x => x.id === id);
+  if(!u || !confirm('Delete ' + u.name + ' from the Talent Suite? Their details are removed and they would need to sign up again.')) return;
+  try{
+    await b2Del('/api/talent-suite-users', id);
+    TSU.list = TSU.list.filter(x => x.id !== id);
+    showToast('Deleted');
+    renderTalentSuite();
+  }catch(e){ showToast('Could not delete: ' + e.message); }
+}
 
 async function cmpLoad(){
   try{
@@ -16564,7 +16695,7 @@ function buildTagApply(){
     {key:'today', label:'Today', sect:'Work', tabs:['home','notifications']},
     {key:'crm', label:'CRM', tabs:['crmAccounts','clients','leadClients','leadPipeline','clientHealth','clientComms','coldCalls','referrals','funnelLeads']},
     {key:'prospecting', label:'Lead Generation', tabs:['roleFinder','competitors']},
-    {key:'recruitment', label:'Recruitment', tabs:['candidates','candidatePool','roles','interviews','placements','comms','feedback']},
+    {key:'recruitment', label:'Recruitment', tabs:['candidates','candidatePool','talentSuite','roles','interviews','placements','comms','feedback']},
     {key:'actions', label:'Actions', tabs:['tasks','week','roadmap']},
     {key:'results', label:'Results', tabs:['kpi','forecast','team','sourcing']},
     {key:'marketing', label:'Marketing', tabs:['marketing']},
@@ -16574,7 +16705,7 @@ function buildTagApply(){
   ];
   const TAB_LABELS = {crmAccounts:'Accounts', clients:'Clients', leadClients:'Lead clients', leadPipeline:'Pipeline', clientHealth:'Client health',
     clientComms:'Client comms', coldCalls:'Cold calls', referrals:'Referrals', funnelLeads:'Funnel leads', roleFinder:'Role Finder', competitors:'Competitors',
-    candidates:'Candidate pipeline', candidatePool:'Talent pool', roles:'Roles', interviews:'Interviews', placements:'Placements', comms:'Candidate comms',
+    candidates:'Candidate pipeline', candidatePool:'Talent pool', talentSuite:'Talent Suite', roles:'Roles', interviews:'Interviews', placements:'Placements', comms:'Candidate comms',
     feedback:'Client feedback', tasks:'Tasks', kpi:'KPIs and targets', forecast:'Forecast', team:'Team performance', sourcing:'Sourcing and costs',
     hr:'People', library:'Documents', week:'This week', roadmap:'Roadmap', marketing:'Marketing', templates:'Email templates', invoices:'Invoices', gdpr:'Data and GDPR', audit:'Audit trail', home:'Overview', notifications:'Notifications'};
 

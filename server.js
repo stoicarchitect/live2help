@@ -387,7 +387,11 @@ function aiRateCheck(ip) {
   const now = Date.now();
   const day = new Date().toISOString().slice(0, 10);
   if (aiGlobal.day !== day) aiGlobal = { day, count: 0 };
-  if (aiGlobal.count >= AI_GLOBAL_DAILY) return 'The AI tools have reached today\'s limit. Please try again tomorrow.';
+  if (aiGlobal.count >= AI_GLOBAL_DAILY) {
+    alertDan('ai-cap-hit', 'Talent Suite: daily AI limit reached',
+      `The AI tools reached today's limit of ${AI_GLOBAL_DAILY} runs. New runs are paused until midnight (UTC) and visitors see a "try again tomorrow" message. No credits are taken for paused runs. To allow more, raise AI_GLOBAL_DAILY on Render.`).catch(() => {});
+    return 'Our AI tools are very busy and have paused for today. Please try again tomorrow, or request an expert review below.';
+  }
   const u = aiUsage.get(ip) || { hits: [] };
   u.hits = u.hits.filter(t => now - t < 86400000);
   if (u.hits.filter(t => now - t < 3600000).length >= AI_PER_IP_HOURLY) return 'You have reached the hourly limit. Please try again later.';
@@ -395,6 +399,10 @@ function aiRateCheck(ip) {
   u.hits.push(now);
   aiUsage.set(ip, u);
   aiGlobal.count++;
+  if (aiGlobal.count === Math.ceil(AI_GLOBAL_DAILY * 0.8)) {
+    alertDan('ai-cap-80', 'Talent Suite: 80% of the daily AI limit used',
+      `${aiGlobal.count} of ${AI_GLOBAL_DAILY} AI runs used today. If this keeps happening, consider raising AI_GLOBAL_DAILY on Render.`).catch(() => {});
+  }
   if (aiUsage.size > 5000) for (const [k, v] of aiUsage) if (!v.hits.some(t => now - t < 86400000)) aiUsage.delete(k);
   return null;
 }
@@ -8462,7 +8470,8 @@ async function buildDigest() {
 
 app.get('/api/cron/weekly-digest', cronOnly, async (req, res) => {
   try {
-    const body = await buildDigest();
+    let body = await buildDigest();
+    try { body = body.replace('\n\nSYSTEM\n', `\n\n${await tsDigestSection()}\n\nSYSTEM\n`); } catch (e) { console.error('Talent Suite digest section failed:', e.message); }
     const ok = await mailDan('Your Live 2 Help week at a glance', body);
     res.json({ sent: ok });
   } catch (e) {
@@ -13376,7 +13385,7 @@ app.post('/api/talent-suite/verify', async (req, res) => {
     if (ex.status === 'blocked') return res.status(403).json({ error: 'This email cannot use the toolkit.' });
     const nowIso = new Date().toISOString();
     let bonus = ex.bonus_credits || '';
-    if (!ex.id) {
+    if (!bonus) {
       try { // talent pool members get extra credits
         const pool = await readPoolRows();
         if (pool.some(r => r && String(r[2] || '').trim().toLowerCase() === email)) bonus = String(TS_EXTRA_CREDITS);
@@ -13577,6 +13586,15 @@ app.post('/api/talent-suite/tool', async (req, res) => {
     res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 });
+
+async function tsDigestSection() {
+  const all = await tsUsersTable.list();
+  const weekAgo = Date.now() - 7 * 86400000;
+  const fresh = all.filter(u => Date.parse(u.verified_at || u.date) >= weekAgo);
+  const active = all.filter(u => Date.parse(u.last_seen) >= weekAgo);
+  const open = all.filter(u => u.status === 'review requested');
+  return `TALENT SUITE (CAREER TOOLKIT)\n- New users this week: ${fresh.length} (${all.length} in total)\n- Used it this week: ${active.length}\n- Expert review requests waiting: ${open.length}${open.length ? '\n' + open.slice(0, 8).map(u => `  ${u.name} (${u.email}), ${u.sector}`).join('\n') : ''}`;
+}
 
 /* ---------- Word download of a rewritten CV (no AI, no credits) ---------- */
 app.post('/api/talent-suite/cv-docx', async (req, res) => {
