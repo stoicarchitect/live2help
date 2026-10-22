@@ -13693,6 +13693,7 @@ const TS_TIERS = {
   cv_review_coaching: { name: 'CV Review + Interview Coaching', priceEnv: 'STRIPE_PRICE_CV_COACHING' },
 };
 const TS_TURNAROUND_DAYS = 3;
+const STRIPE_API_VERSION = '2026-09-30.endive'; // pinned: must match the webhook destination's API version in Stripe
 const TS_STATUSES = ['pending_payment', 'paid', 'in_review', 'delivered', 'abandoned', 'refunded'];
 const TS_PAID_OR_LATER = ['paid', 'in_review', 'delivered', 'refunded'];
 const TS_CV_MAX = 5 * 1024 * 1024;
@@ -13866,7 +13867,7 @@ app.post('/api/talent-suite/checkout', async (req, res) => {
     });
     const r = await fetch('https://api.stripe.com/v1/checkout/sessions', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Idempotency-Key': `${order.order_id}-${Date.now()}` },
+      headers: { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`, 'Stripe-Version': STRIPE_API_VERSION, 'Content-Type': 'application/x-www-form-urlencoded', 'Idempotency-Key': `${order.order_id}-${Date.now()}` },
       body: p.toString(),
     });
     const j = await r.json().catch(() => ({}));
