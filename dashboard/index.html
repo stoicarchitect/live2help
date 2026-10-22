@@ -15879,7 +15879,9 @@ function l2hPager(total, page, per, fnPage, fnPer){
 
 /* ---------- Talent Suite (Career Toolkit users) ---------- */
 const TSU = {list: [], orders: [], loaded: false};
-const TSO_STATUS = {'requested':'Requested (needs payment link)', 'awaiting payment':'Awaiting payment', 'paid':'Paid, not started', 'in progress':'In progress', 'delivered':'Delivered', 'cancelled':'Cancelled', 'refunded':'Refunded'};
+const TSO_STATUS = {pending_payment:'Awaiting payment', paid:'Paid, not started', in_review:'In review', delivered:'Delivered', abandoned:'Abandoned checkout', refunded:'Refunded'};
+const TSO_TIER = {cv_review:'Expert CV Review', cv_review_coaching:'CV Review + Interview Coaching'};
+const TSO_NEXT = {paid:['in_review'], in_review:['paid','delivered'], delivered:['in_review']};
 const TSU_STATUS = {'active':'Active', 'review requested':'Review requested', 'contacted':'Contacted', 'in talent pool':'In talent pool', 'placed':'Placed', 'blocked':'Blocked'};
 const TSU_FREE = 8;
 
@@ -15908,10 +15910,10 @@ const TSU_FREE = 8;
       <div class="view-body">
         <div class="tile-grid" id="tsuTiles"></div>
         <div class="section-title">Expert service orders</div>
-        <div class="ops-table-wrap"><table class="ops-table" style="min-width:1080px;"><thead><tr><th>Ordered</th><th>Customer</th><th>Service</th><th>Amount</th><th>Status</th><th>Due by</th><th>Notes</th><th style="text-align:right;">Actions</th></tr></thead><tbody id="tsoBody"></tbody></table></div>
+        <div class="ops-table-wrap"><table class="ops-table" style="min-width:1080px;"><thead><tr><th>Ordered</th><th>Customer</th><th>Service</th><th>Amount</th><th>Status</th><th>Due by</th><th>Assigned to</th><th style="text-align:right;">Actions</th></tr></thead><tbody id="tsoBody"></tbody></table></div>
         <div class="section-title">Career Toolkit users</div>
         <div class="ops-table-wrap"><table class="ops-table" style="min-width:1080px;"><thead><tr><th>Joined</th><th>Person</th><th>Field and target</th><th>Tools used</th><th>Credits this month</th><th>Last seen</th><th>Status</th><th>Notes</th><th style="text-align:right;">Actions</th></tr></thead><tbody id="tsuBody"><tr><td colspan="9" class="empty-row">Loading...</td></tr></tbody></table></div>
-        <div class="note-line">These people signed up to the Career Toolkit at careers.live2helprecruitment.co.uk/talent-suite/career and confirmed their email. Each gets ${TSU_FREE} free credits a month; talent pool members get extra. "Review requested" means they asked for a paid expert CV review, and a task was created for Ella. Use Give credits to top someone up, or Blocked to stop an email address using the toolkit. Paid orders confirm automatically through Stripe; for anything paid another way, use Mark paid so the customer gets their booking email and a task with a due date is created.</div>
+        <div class="note-line">These people signed up to the Career Toolkit at careers.live2helprecruitment.co.uk/talent-suite/career and confirmed their email. Each gets ${TSU_FREE} free credits a month; talent pool members get extra. "Review requested" means they asked for a paid expert CV review, and a task was created for Ella. Use Give credits to top someone up, or Blocked to stop an email address using the toolkit. Orders are confirmed by Stripe only: once paid, the customer gets their confirmation email and Ella gets a task due in 3 UK working days. Move paid orders to In review and then Delivered here. Past-due orders show in red.</div>
       </div>`;
     host.parentNode.appendChild(v);
   }
@@ -15948,30 +15950,33 @@ function renderTalentSuite(){
   const runs = list.reduce((a, u) => a + (parseInt(u.total_runs, 10) || 0), 0);
   const orders = (TSU.orders || []).slice().sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
   const today = new Date().toISOString().slice(0, 10);
-  const revMonth = orders.filter(o => o.paid_at && o.paid_at.slice(0, 7) === month).reduce((a, o) => a + (parseInt(o.amount, 10) || 0), 0);
-  const openOrders = orders.filter(o => ['requested','awaiting payment','paid','in progress'].includes(o.status));
-  const late = orders.filter(o => ['paid','in progress'].includes(o.status) && o.due_by && o.due_by < today).length;
+  const revMonth = orders.filter(o => o.paid_at && o.paid_at.slice(0, 7) === month && o.status !== 'refunded').reduce((a, o) => a + (parseFloat(o.amount_gbp) || 0), 0);
+  const openOrders = orders.filter(o => ['paid','in_review'].includes(o.status));
+  const late = openOrders.filter(o => o.due_date && o.due_date < today).length;
   document.getElementById('tsuSummary').textContent = list.length + ' job seeker' + (list.length === 1 ? '' : 's') + ' using the Career Toolkit';
   document.getElementById('tsuTiles').innerHTML = [
     {n: list.length, l:'Users in total'},
     {n: list.filter(u => Date.parse(u.verified_at || u.date) >= weekAgo).length, l:'New this week'},
     {n: list.filter(u => u.period === month && tsuUsed(u) > 0).length, l:'Active this month'},
     {n: openOrders.length, l: late ? late + ' order' + (late === 1 ? '' : 's') + ' past due' : 'Orders open', warn: late > 0 || openOrders.length > 0},
-    {n: '£' + (revMonth / 100).toLocaleString('en-GB'), l:'Paid services this month'},
+    {n: '£' + revMonth.toLocaleString('en-GB'), l:'Paid services this month'},
     {n: runs, l:'Tool runs in total'},
   ].map(t => `<div class="tile static ${t.warn ? 'warn' : ''}"><div class="n">${esc(t.n)}</div><div class="l">${t.l}</div></div>`).join('');
   document.getElementById('tsoBody').innerHTML = orders.length ? orders.map(o => {
-    const overdue = ['paid','in progress'].includes(o.status) && o.due_by && o.due_by < today;
-    const needsPay = o.status === 'requested' || o.status === 'awaiting payment';
+    const overdue = ['paid','in_review'].includes(o.status) && o.due_date && o.due_date < today;
+    const opts = [o.status].concat(TSO_NEXT[o.status] || []);
+    const sel = (opts.length > 1)
+      ? `<select onchange="setTalentSuiteOrder('${esc(o.id)}',{status:this.value})" style="padding:6px 8px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12px;background:#fff;">${opts.map(k => `<option value="${k}"${o.status === k ? ' selected' : ''}>${TSO_STATUS[k] || k}</option>`).join('')}</select>`
+      : `<span class="status-pill ${o.status === 'refunded' || o.status === 'abandoned' ? 'lost' : 'hold'}">${esc(TSO_STATUS[o.status] || o.status)}</span>`;
     return `<tr${overdue ? ' style="background:#FBEDED;"' : (o.status === 'paid' ? ' style="background:#FBF6E8;"' : '')}>
-    <td>${esc(opsFmt(String(o.created_at).slice(0, 10)))}<div class="pool-muted">${esc(o.id)}</div></td>
-    <td class="strong">${esc(o.name)}<div class="pool-muted">${esc(o.email)}${o.phone ? ' | ' + esc(o.phone) : ''}</div>${o.target_role ? '<div class="pool-muted">' + esc(o.target_role) + '</div>' : ''}</td>
-    <td>${esc(o.service_name)}${o.customer_notes ? '<div class="pool-muted">' + esc(o.customer_notes) + '</div>' : ''}</td>
-    <td>£${esc(((parseInt(o.amount, 10) || 0) / 100).toFixed(2).replace(/\.00$/, ''))}${o.paid_at ? '<div class="pool-muted">paid ' + esc(opsFmt(o.paid_at.slice(0, 10))) + '</div>' : ''}</td>
-    <td><select onchange="setTalentSuiteOrder('${esc(o.id)}',{status:this.value})" style="padding:6px 8px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12px;background:#fff;">${Object.keys(TSO_STATUS).map(k => `<option value="${k}"${o.status === k ? ' selected' : ''}>${TSO_STATUS[k]}</option>`).join('')}</select></td>
-    <td>${o.due_by ? `<span class="status-pill ${overdue ? 'lost' : 'active'}">${esc(opsFmt(o.due_by))}</span>` : '-'}${o.delivered_at ? '<div class="pool-muted">delivered ' + esc(opsFmt(o.delivered_at.slice(0, 10))) + '</div>' : ''}</td>
-    <td><input value="${esc(o.notes)}" placeholder="Add a note" onchange="setTalentSuiteOrder('${esc(o.id)}',{notes:this.value})" style="padding:6px 8px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12px;width:170px;"></td>
-    <td><div class="row-actions">${needsPay ? `<button onclick="tsoMarkPaid('${esc(o.id)}')">Mark paid</button>` : ''}<button onclick="tsoEmail('${esc(o.id)}')">Email</button></div></td></tr>`;
+    <td>${esc(opsFmt(String(o.created_at).slice(0, 10)))}<div class="pool-muted">${esc(o.order_id)}</div></td>
+    <td class="strong">${esc(o.candidate_name)}<div class="pool-muted">${esc(o.candidate_email)}${o.candidate_phone ? ' | ' + esc(o.candidate_phone) : ''}</div>${o.target_role ? '<div class="pool-muted">' + esc(o.target_role) + '</div>' : ''}</td>
+    <td>${esc(TSO_TIER[o.tier] || o.tier)}${o.cv_file_link ? `<div><a href="${esc(o.cv_file_link)}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;">Open CV</a></div>` : ''}${o.coaching_availability ? '<div class="pool-muted">Free: ' + esc(o.coaching_availability) + '</div>' : ''}${o.candidate_notes ? '<div class="pool-muted">' + esc(o.candidate_notes) + '</div>' : ''}</td>
+    <td>${o.amount_gbp ? '£' + esc(parseFloat(o.amount_gbp).toFixed(2)) : '-'}${o.paid_at ? '<div class="pool-muted">paid ' + esc(opsFmt(o.paid_at.slice(0, 10))) + '</div>' : ''}</td>
+    <td>${sel}</td>
+    <td>${o.due_date ? `<span class="status-pill ${overdue ? 'lost' : 'active'}">${esc(opsFmt(o.due_date))}</span>` : '-'}${o.delivered_at ? '<div class="pool-muted">delivered ' + esc(opsFmt(o.delivered_at.slice(0, 10))) + '</div>' : ''}</td>
+    <td><select onchange="setTalentSuiteOrder('${esc(o.id)}',{assigned_to:this.value})" style="padding:6px 8px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12px;background:#fff;">${['','Dan','Ella'].map(k => `<option value="${k}"${(o.assigned_to || '') === k ? ' selected' : ''}>${k || 'Not assigned'}</option>`).join('')}</select></td>
+    <td><div class="row-actions"><button onclick="tsoEmail('${esc(o.id)}')">Email</button></div></td></tr>`;
   }).join('') : '<tr><td colspan="8" class="empty-row">No orders yet. Paid expert reviews and coaching appear here.</td></tr>';
   document.getElementById('tsuBody').innerHTML = shown.length ? shown.map(u => {
     const used = tsuUsed(u), allow = tsuAllow(u);
@@ -16024,30 +16029,21 @@ function tsuEmail(id){
 async function setTalentSuiteOrder(id, patch){
   const o = (TSU.orders || []).find(x => x.id === id);
   if(!o) return;
-  if(patch.status === 'delivered' && !o.delivered_at) patch.delivered_at = new Date().toISOString();
   try{
     const json = await b2Post('/api/talent-suite-orders', Object.assign({id: id}, patch));
     Object.assign(o, json.data); showToast('Saved'); renderTalentSuite();
-  }catch(e){ showToast('Could not save: ' + e.message); }
-}
-
-async function tsoMarkPaid(id){
-  const o = (TSU.orders || []).find(x => x.id === id);
-  if(!o || !confirm('Mark ' + o.id + ' as paid? ' + o.name + ' will get their booking email asking for their CV, and a task with a due date will be created.')) return;
-  try{ await b2Post('/api/talent-suite-orders/' + encodeURIComponent(id) + '/mark-paid', {}); showToast('Marked as paid'); loadTalentSuite(); }
-  catch(e){ showToast('Could not update: ' + e.message); }
+  }catch(e){ showToast('Could not save: ' + e.message); renderTalentSuite(); }
 }
 
 function tsoEmail(id){
   const o = (TSU.orders || []).find(x => x.id === id);
   if(!o) return;
-  const first = String(o.name || '').split(' ')[0];
-  const needsPay = o.status === 'requested' || o.status === 'awaiting payment';
-  const body = 'Hi ' + first + ',\n\n' + (needsPay
-    ? 'Thank you for choosing our ' + o.service_name + '. Here is your secure payment link for £' + ((parseInt(o.amount, 10) || 0) / 100) + ': [PASTE PAYMENT LINK]\n\nOnce paid, please reply with your latest CV and the job adverts you are targeting, and we will get started.'
-    : 'Thank you for your order (' + o.id + '). [YOUR MESSAGE]')
-    + '\n\nKind regards';
-  openMailInOutlook('web', o.email, 'Your Live 2 Help ' + o.service_name + ' (' + o.id + ')', body);
+  const first = String(o.candidate_name || '').split(' ')[0];
+  const tier = TSO_TIER[o.tier] || 'order';
+  const body = o.status === 'pending_payment' || o.status === 'abandoned'
+    ? 'Hi ' + first + ',\n\nI noticed you started an order for our ' + tier + ' but did not finish paying. If anything went wrong or you have a question, just reply and I will help.\n\nKind regards'
+    : 'Hi ' + first + ',\n\nThank you for your order (' + o.order_id + '). [YOUR MESSAGE]\n\nKind regards';
+  openMailInOutlook('web', o.candidate_email, 'Your Live 2 Help ' + tier + ' (' + o.order_id + ')', body);
 }
 
 async function tsuDelete(id){

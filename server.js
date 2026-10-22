@@ -236,8 +236,7 @@ const PUBLIC_API = [
   { method: 'POST', re: /^\/api\/talent-pool$/ },
   { method: 'POST', re: /^\/api\/funnel-lead$/ },
   { method: 'POST', re: /^\/api\/claude$/ },
-  { method: 'POST', re: /^\/api\/talent-suite\/(start|verify|me|tool|cv-docx|review-request|checkout)$/ },
-  { method: 'GET', re: /^\/api\/talent-suite\/services$/ },
+  { method: 'POST', re: /^\/api\/talent-suite\/(start|verify|me|tool|cv-docx|review-request|orders|checkout)$/ },
   { method: 'POST', re: /^\/api\/stripe\/webhook$/ },
   { method: 'GET', re: /^\/api\/public\/roles(\/[a-z0-9-]+)?$/ },
   { method: 'GET', re: /^\/api\/public\/forms\/[a-z0-9-]+$/ },
@@ -13678,206 +13677,354 @@ app.post('/api/talent-suite/review-request', async (req, res) => {
 
 
 /* ======================================================================
-   TALENT SUITE PHASE 3 - PAID EXPERT SERVICES (Stripe)
-   Two services, human delivered by Live 2 Help. Prices in pence, can be changed on Render:
-     TS_PRICE_REVIEW (default 2500 = £25), TS_PRICE_COACHING (default 4900 = £49)
-   Stripe switches on when these are set on Render:
-     STRIPE_SECRET_KEY      (sk_live_... or sk_test_...)
-     STRIPE_WEBHOOK_SECRET  (whsec_..., from the webhook endpoint pointing at /api/stripe/webhook)
-   Without them, an order is saved as "requested" and Ella sends a payment link by hand.
-   Orders live in the "Talent Suite Orders" tab (staff API /api/talent-suite-orders).
+   TALENT SUITE PAID TIERS (Stripe) - built to "Stripe Talent Suite Handover Spec" v1.0
+   Sections 3 to 6: intake form -> POST /api/talent-suite/orders -> POST /api/talent-suite/checkout
+   -> Stripe Checkout -> POST /api/stripe/webhook. Fulfilment happens from the webhook only.
+   Render environment variables:
+     STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_CV_REVIEW, STRIPE_PRICE_CV_COACHING,
+     APP_BASE_URL (default https://careers.live2helprecruitment.co.uk)
+     TS_COACHING_BOOKING_URL (optional: booking link sent to coaching customers once paid)
+   Stripe webhook destination must be subscribed to exactly:
+     checkout.session.completed, checkout.session.expired, charge.refunded
    ====================================================================== */
 
-const TS_TURNAROUND_DAYS = Number(process.env.TS_TURNAROUND_DAYS || 3);
-const TS_SERVICES = {
-  cv_review: {
-    name: 'Expert CV Review', price: Number(process.env.TS_PRICE_REVIEW || 2500),
-    summary: 'A Live 2 Help recruiter reviews your CV line by line and returns a polished, screening-safe version with written feedback.',
-    includes: ['Line-by-line review by a working UK recruiter', 'Your CV rewritten and polished, every placeholder filled with you', 'Written feedback on positioning and where to apply', `Delivered within ${TS_TURNAROUND_DAYS} working days`],
-  },
-  cv_coaching: {
-    name: 'CV Review + Interview Coaching', price: Number(process.env.TS_PRICE_COACHING || 4900),
-    summary: 'Everything in the Expert CV Review, plus a 30 minute one to one call to prepare you for interviews.',
-    includes: ['Everything in the Expert CV Review', '30 minute video or phone coaching call', 'Practice on the questions you are most likely to face', 'Honest advice on salary and offers'],
-  },
+const TS_TIERS = {
+  cv_review: { name: 'Expert CV Review', priceEnv: 'STRIPE_PRICE_CV_REVIEW' },
+  cv_review_coaching: { name: 'CV Review + Interview Coaching', priceEnv: 'STRIPE_PRICE_CV_COACHING' },
 };
-function tsStripeOn() { return !!process.env.STRIPE_SECRET_KEY; }
-function tsGbp(p) { return '£' + (Number(p) / 100).toFixed(Number(p) % 100 ? 2 : 0); }
-function tsAddWorkingDays(n) {
-  const d = new Date();
-  let left = n;
-  while (left > 0) { d.setUTCDate(d.getUTCDate() + 1); if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) left--; }
+const TS_TURNAROUND_DAYS = 3;
+const TS_STATUSES = ['pending_payment', 'paid', 'in_review', 'delivered', 'abandoned', 'refunded'];
+const TS_PAID_OR_LATER = ['paid', 'in_review', 'delivered', 'refunded'];
+const TS_CV_MAX = 5 * 1024 * 1024;
+function tsBaseUrl() { return String(process.env.APP_BASE_URL || 'https://careers.live2helprecruitment.co.uk').replace(/\/+$/, ''); }
+
+// Section 4: the order record. Column A is order_id, so rows are wrapped to the table helper's "id" key.
+const tsOrdersSheet = makeSimpleTable({
+  tab: 'Talent Suite Orders',
+  header: ['order_id', 'created_at', 'tier', 'amount_gbp', 'candidate_name', 'candidate_email', 'candidate_phone',
+    'target_role', 'cv_file_link', 'candidate_notes', 'coaching_availability', 'status', 'stripe_session_id',
+    'stripe_payment_intent', 'paid_at', 'due_date', 'assigned_to', 'delivered_at'],
+});
+const tsOrders = {
+  async list() { return (await tsOrdersSheet.list()).map(o => ({ ...o, id: o.order_id })); },
+  async get(orderId) { return (await this.list()).find(o => o.order_id === orderId) || null; },
+  async save(o) { const { id, ...rest } = o; return tsOrdersSheet.upsert({ ...rest, id: rest.order_id }); },
+  update(orderId, mutate) { return tsOrdersSheet.updateWhere(o => o.order_id === orderId, o => mutate(o) || o); },
+};
+
+function tsOrderId() {
+  const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/London' }));
+  const ymd = String(d.getFullYear()).slice(2) + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let r = ''; for (let i = 0; i < 4; i++) r += abc[crypto.randomInt(abc.length)];
+  return `TS-${ymd}-${r}`;
+}
+
+/* ---------- UK working days (England and Wales bank holidays from GOV.UK, with a fallback list) ---------- */
+const TS_BANK_HOLIDAYS_FALLBACK = ['2026-01-01', '2026-04-03', '2026-04-06', '2026-05-04', '2026-05-25', '2026-08-31', '2026-12-25', '2026-12-28',
+  '2027-01-01', '2027-03-26', '2027-03-29', '2027-05-03', '2027-05-31', '2027-08-30', '2027-12-27', '2027-12-28'];
+let tsBankHolidays = { at: 0, set: new Set(TS_BANK_HOLIDAYS_FALLBACK) };
+async function tsLoadBankHolidays() {
+  if (Date.now() - tsBankHolidays.at < 24 * 3600 * 1000) return tsBankHolidays.set;
+  try {
+    const r = await fetch('https://www.gov.uk/bank-holidays.json', { signal: AbortSignal.timeout(6000) });
+    const j = await r.json();
+    const list = ((j['england-and-wales'] || {}).events || []).map(e => e.date).filter(Boolean);
+    if (list.length) tsBankHolidays = { at: Date.now(), set: new Set([...TS_BANK_HOLIDAYS_FALLBACK, ...list]) };
+  } catch (e) { console.error('Bank holidays could not load, using the built-in list:', e.message); tsBankHolidays.at = Date.now() - 23 * 3600 * 1000; }
+  return tsBankHolidays.set;
+}
+function tsLondonDate(iso) { return new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Europe/London' }); } // YYYY-MM-DD
+async function tsDueDate(paidIso, days) {
+  const hol = await tsLoadBankHolidays();
+  const d = new Date(tsLondonDate(paidIso) + 'T12:00:00Z');
+  let left = days;
+  while (left > 0) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    const ymd = d.toISOString().slice(0, 10);
+    if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6 && !hol.has(ymd)) left--;
+  }
   return d.toISOString().slice(0, 10);
 }
 
-const tsOrdersTable = makeSimpleTable({
-  tab: 'Talent Suite Orders',
-  header: ['id', 'created_at', 'user_id', 'name', 'email', 'phone', 'service', 'service_name', 'amount', 'status',
-    'target_role', 'customer_notes', 'stripe_session', 'paid_at', 'due_by', 'delivered_at', 'owner', 'notes'],
-  path: '/api/talent-suite-orders',
-  label: 'Talent Suite order',
-  auditType: 'talent_suite_order',
-  auditName: o => `${o.service_name} for ${o.name}`,
-});
-
-app.get('/api/talent-suite/services', (req, res) => {
-  res.json({
-    payments: tsStripeOn(), turnaround: TS_TURNAROUND_DAYS,
-    services: Object.entries(TS_SERVICES).map(([id, s]) => ({ id, name: s.name, price: s.price, priceLabel: tsGbp(s.price), summary: s.summary, includes: s.includes })),
+/* ---------- multipart parsing for the intake form (busboy, loaded on first use) ---------- */
+let busboyLib = null;
+async function tsParseMultipart(req) {
+  if (!busboyLib) {
+    try { busboyLib = (await import('busboy')).default; }
+    catch (e) { throw new Error('The "busboy" package is not installed on the server. Add it to package.json and redeploy.'); }
+  }
+  return new Promise((resolve, reject) => {
+    let bb;
+    try { bb = busboyLib({ headers: req.headers, limits: { fileSize: TS_CV_MAX, files: 1, fields: 20, fieldSize: 4000 } }); }
+    catch (e) { return reject(Object.assign(new Error('Please send the form again.'), { status: 400 })); }
+    const fields = {}; let file = null; let tooBig = false;
+    bb.on('field', (k, v) => { fields[k] = v; });
+    bb.on('file', (name, stream, info) => {
+      if (name !== 'cv') { stream.resume(); return; }
+      const chunks = [];
+      stream.on('data', c => chunks.push(c));
+      stream.on('limit', () => { tooBig = true; });
+      stream.on('end', () => { file = { fileName: info.filename || '', mime: info.mimeType || '', buffer: Buffer.concat(chunks) }; });
+    });
+    bb.on('error', reject);
+    bb.on('close', () => resolve({ fields, file, tooBig }));
+    req.pipe(bb);
   });
-});
-
-async function tsTask(title, context, due, priority) {
-  try {
-    const task = { id: `task-ts-${Date.now()}-${crypto.randomBytes(2).toString('hex')}`, user: 'ella', title, priority: priority || 'High',
-      dueDate: due || flNextWorkingDay(), context, status: 'Open', recurring: 'none', archived: false };
-    await getSheetsClient().spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: TASKS_RANGE, valueInputOption: 'RAW', requestBody: { values: [taskToRow(task)] } });
-  } catch (e) { console.error('Talent Suite task failed:', e.message); }
+}
+function tsCvKind(file) {
+  if (!file || !file.buffer || !file.buffer.length) return null;
+  const n = String(file.fileName).toLowerCase(), b = file.buffer;
+  if (n.endsWith('.pdf') && b.slice(0, 5).toString() === '%PDF-') return 'pdf';
+  if (n.endsWith('.docx') && b[0] === 0x50 && b[1] === 0x4b) return 'docx';
+  return null;
 }
 
-function tsOrderEmail(o) {
-  return `<div style="background:#0B0B18;padding:32px 24px;font-family:'Gill Sans MT','Gill Sans',Calibri,sans-serif;color:#fff;">
-  <div style="max-width:560px;margin:0 auto;">
-    <p style="color:#C9A84C;letter-spacing:2px;font-size:12px;margin:0 0 6px;">LIVE 2 HELP TALENT SUITE</p>
-    <h1 style="font-size:22px;margin:0 0 14px;color:#fff;">Thank you, your ${flEsc(o.service_name)} is booked</h1>
-    <p style="color:#C9CCD6;margin:0 0 14px;">Hi ${flEsc(String(o.name).split(' ')[0])}, we have received your payment of ${flEsc(tsGbp(o.amount))}. Here is what happens next:</p>
-    <ol style="color:#C9CCD6;padding-left:20px;margin:0 0 16px;line-height:1.6;">
-      <li><b style="color:#fff;">Reply to this email</b> with your latest CV (Word or PDF) and links to, or copies of, the job adverts you are targeting.</li>
-      <li>A Live 2 Help recruiter reviews everything and may email you a few quick questions so nothing is guessed.</li>
-      <li>You receive your polished CV and written feedback within ${TS_TURNAROUND_DAYS} working days of sending your CV${o.service === 'cv_coaching' ? ', and we will book your 30 minute coaching call at a time that suits you' : ''}.</li>
-    </ol>
-    <p style="color:#B4B8C4;font-size:13px;margin:0 0 6px;">Order reference: ${flEsc(o.id)}</p>
-    <p style="color:#B4B8C4;font-size:12px;margin:0;">Live 2 Help Recruitment Ltd, Company No. 11731080. Questions? Just reply to this email.</p>
-  </div></div>`;
-}
-
-app.post('/api/talent-suite/checkout', async (req, res) => {
+/* ---------- Section 5: POST /api/talent-suite/orders ---------- */
+app.post('/api/talent-suite/orders', async (req, res) => {
   try {
-    const u = await tsAuth(req, res);
-    if (!u) return;
-    const b = req.body || {};
-    const svc = TS_SERVICES[b.service];
-    if (!svc) return res.status(400).json({ error: 'Please choose a service.' });
-    if (b.agree !== true) return res.status(400).json({ error: 'Please tick the box to confirm the terms.' });
-    if (!tpAllow('ts:order:' + u.email, 6, 3600000)) return res.status(429).json({ error: 'Please try again shortly.' });
-    const nowIso = new Date().toISOString();
-    const order = {
-      id: 'TS-' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase(),
-      created_at: nowIso, user_id: u.id, name: u.name, email: u.email, phone: tpClean(b.phone, 30),
-      service: b.service, service_name: svc.name, amount: String(svc.price), status: tsStripeOn() ? 'awaiting payment' : 'requested',
-      target_role: tpClean(b.role, 120) || u.target_role || '', customer_notes: tpClean(b.notes, 800),
-      stripe_session: '', paid_at: '', due_by: '', delivered_at: '', owner: 'ella', notes: '',
-    };
+    const ip = tpClientIp(req);
+    if (!tpAllow('tso:ip:' + ip, 10, 3600000)) return res.status(429).json({ error: 'Too many orders from this connection. Please try again later.' });
+    if (!String(req.get('content-type') || '').startsWith('multipart/form-data')) return res.status(400).json({ error: 'Please send the form with your CV attached.' });
+    const { fields: f, file, tooBig } = await tsParseMultipart(req);
+    if (tpClean(f.website, 200)) return res.json({ order_id: 'TS-000000-0000' }); // hidden field filled in: a bot
+    const tier = String(f.tier || '');
+    if (!TS_TIERS[tier]) return res.status(400).json({ error: 'Please choose a service.' });
+    const name = tpClean(f.candidate_name, 80), email = tpClean(f.candidate_email, 120).toLowerCase();
+    if (name.length < 2) return res.status(400).json({ error: 'Please add your full name.' });
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(email)) return res.status(400).json({ error: 'Please check your email address.' });
+    const targetRole = tpClean(f.target_role, 120);
+    if (targetRole.length < 2) return res.status(400).json({ error: 'Please tell us the role or sector you are applying for.' });
+    if (f.start_now !== 'true') return res.status(400).json({ error: 'Please tick the box asking us to start within the cancellation period.' });
+    if (tooBig) return res.status(400).json({ error: 'Your CV is over 5MB. Please upload a smaller file.' });
+    const kind = tsCvKind(file);
+    if (!kind) return res.status(400).json({ error: 'Please upload your CV as a PDF or Word (.docx) file.' });
+    if (!tpAllow('tso:em:' + email, 5, 24 * 3600000)) return res.status(429).json({ error: 'We already have orders from this email today. Email office@live2helprecruitment.co.uk if you need help.' });
+    if (!(await tpVerifyTurnstile(f.turnstileToken, ip))) return res.status(400).json({ error: 'We could not confirm you are human. Please refresh and try again.' });
 
-    if (!tsStripeOn()) {
-      await tsOrdersTable.upsert(order);
-      await tsUsersTable.updateWhere(o => o.id === u.id, o => { o.review_requested = 'Yes'; o.status = 'review requested'; return o; });
-      await tsTask(`Talent Suite order to invoice: ${svc.name} for ${u.name}`,
-        `${u.name} (${u.email}${order.phone ? ', ' + order.phone : ''}) wants the ${svc.name} at ${tsGbp(svc.price)}${order.target_role ? ' for ' + order.target_role + ' roles' : ''}. Online payment is not switched on yet, so send them a payment link or invoice, then set the order to Paid in the Talent Suite tab. ${order.customer_notes}`.trim());
-      mailDan(`Talent Suite order (payment needed): ${svc.name}, ${u.name}`, `${u.name} (${u.email}) ordered the ${svc.name} at ${tsGbp(svc.price)}.\nOnline payment is not switched on yet, so they need a payment link or invoice.\nOrder ${order.id}. A task has been created for Ella.`);
-      return res.json({ ok: true, manual: true, orderId: order.id });
+    const orderId = tsOrderId();
+    let cvLink = '';
+    try {
+      const folderId = await getOrCreateCandidateFolder(SUBMISSIONS_FOLDER_ID, 'Talent Suite Orders');
+      if (!folderId) throw new Error('folder');
+      const created = await getUploadDriveClient().files.create({
+        resource: { name: `${orderId} - ${cleanCandidateName(name)} - CV.${kind}`, parents: [folderId] },
+        media: { mimeType: kind === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', body: Readable.from([file.buffer]) },
+        fields: 'id, webViewLink',
+      });
+      cvLink = created.data.webViewLink || `https://drive.google.com/file/d/${created.data.id}/view`;
+    } catch (e) {
+      console.error('Talent Suite CV upload failed:', e.message);
+      return res.status(502).json({ error: 'We could not save your CV just now. Please try again in a minute.' });
     }
 
-    const base = 'https://careers.live2helprecruitment.co.uk/talent-suite/career/';
-    const form = new URLSearchParams({
+    await tsOrders.save({
+      order_id: orderId, created_at: new Date().toISOString(), tier, amount_gbp: '',
+      candidate_name: name, candidate_email: email, candidate_phone: tpClean(f.candidate_phone, 30),
+      target_role: targetRole, cv_file_link: cvLink, candidate_notes: tpClean(f.candidate_notes, 1000),
+      coaching_availability: tier === 'cv_review_coaching' ? tpClean(f.coaching_availability, 300) : '',
+      status: 'pending_payment', stripe_session_id: '', stripe_payment_intent: '', paid_at: '', due_date: '', assigned_to: '', delivered_at: '',
+    });
+    auditLog('website', 'talent_suite_order', 'talent_suite', `${name} (${email})`, `${TS_TIERS[tier].name} ${orderId}`);
+    res.json({ order_id: orderId });
+  } catch (e) {
+    console.error('POST /api/talent-suite/orders error:', e.message);
+    res.status(e.status || 500).json({ error: e.status ? e.message : 'Something went wrong. Please try again.' });
+  }
+});
+
+/* ---------- Section 5: POST /api/talent-suite/checkout ---------- */
+app.post('/api/talent-suite/checkout', async (req, res) => {
+  try {
+    if (!process.env.STRIPE_SECRET_KEY) return res.status(503).json({ error: 'Online payment is not switched on yet. Please email office@live2helprecruitment.co.uk.' });
+    const ip = tpClientIp(req);
+    if (!tpAllow('tsc:ip:' + ip, 20, 3600000)) return res.status(429).json({ error: 'Please try again shortly.' });
+    const orderId = tpClean((req.body || {}).order_id, 40);
+    const order = orderId ? await tsOrders.get(orderId) : null;
+    if (!order) return res.status(404).json({ error: 'We could not find that order. Please start again.' });
+    if (TS_PAID_OR_LATER.includes(order.status)) return res.status(409).json({ error: 'This order has already been paid.' });
+    const tier = TS_TIERS[order.tier];
+    const price = tier && process.env[tier.priceEnv];
+    if (!price) return res.status(503).json({ error: 'This service is not available to buy online yet.' });
+
+    const base = tsBaseUrl();
+    const p = new URLSearchParams({
       mode: 'payment',
+      'line_items[0][price]': price,
       'line_items[0][quantity]': '1',
-      'line_items[0][price_data][currency]': 'gbp',
-      'line_items[0][price_data][unit_amount]': String(svc.price),
-      'line_items[0][price_data][product_data][name]': `Live 2 Help ${svc.name}`,
-      'line_items[0][price_data][product_data][description]': svc.summary,
-      customer_email: u.email,
-      client_reference_id: order.id,
-      'metadata[order_id]': order.id,
-      'payment_intent_data[metadata][order_id]': order.id,
-      'payment_intent_data[description]': `Live 2 Help ${svc.name} (${order.id})`,
-      success_url: `${base}?paid=${encodeURIComponent(order.id)}`,
-      cancel_url: `${base}?cancelled=1`,
+      customer_email: order.candidate_email,
+      client_reference_id: order.order_id,
+      'metadata[order_id]': order.order_id,
+      'metadata[tier]': order.tier,
+      'payment_intent_data[metadata][order_id]': order.order_id,
+      'payment_intent_data[metadata][tier]': order.tier,
+      success_url: `${base}/talent-suite/thank-you?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${base}/talent-suite/pricing?cancelled=1`,
+      'consent_collection[terms_of_service]': 'required',
+      'invoice_creation[enabled]': 'true',
+      expires_at: String(Math.floor(Date.now() / 1000) + 60 * 60),
     });
     const r = await fetch('https://api.stripe.com/v1/checkout/sessions', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: form.toString(),
+      headers: { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Idempotency-Key': `${order.order_id}-${Date.now()}` },
+      body: p.toString(),
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.url) {
-      console.error('Stripe checkout failed:', (j.error && j.error.message) || r.status);
+      const why = (j.error && j.error.message) || `status ${r.status}`;
+      console.error('Stripe checkout session failed:', why);
+      if (/terms of service/i.test(why)) alertDan('stripe-terms', 'Stripe: terms URL missing', `Checkout could not open because Stripe needs a Terms of Service URL (Dashboard > Settings > Public details).\n\n${why}`).catch(() => {});
       return res.status(502).json({ error: 'The payment page could not be opened. Please try again in a minute.' });
     }
-    order.stripe_session = j.id;
-    await tsOrdersTable.upsert(order);
-    res.json({ ok: true, url: j.url, orderId: order.id });
+    await tsOrders.update(order.order_id, o => { o.stripe_session_id = j.id; if (o.status === 'abandoned') o.status = 'pending_payment'; return o; });
+    res.json({ url: j.url });
   } catch (e) {
     console.error('POST /api/talent-suite/checkout error:', e.message);
     res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 });
 
+/* ---------- Section 5: POST /api/stripe/webhook ---------- */
 function tsStripeSignatureOk(raw, header, secret) {
   if (!raw || !header || !secret) return false;
-  const parts = Object.fromEntries(String(header).split(',').map(p => p.split('=')).filter(p => p.length === 2).map(([k, v]) => [k.trim(), v.trim()]));
-  const sigs = String(header).split(',').filter(p => p.trim().startsWith('v1=')).map(p => p.trim().slice(3));
-  const t = Number(parts.t);
+  const items = String(header).split(',').map(s => s.trim());
+  const t = Number((items.find(s => s.startsWith('t=')) || '').slice(2));
+  const sigs = items.filter(s => s.startsWith('v1=')).map(s => s.slice(3));
   if (!t || !sigs.length || Math.abs(Date.now() / 1000 - t) > 300) return false;
   const expected = crypto.createHmac('sha256', secret).update(`${t}.${raw.toString('utf8')}`).digest('hex');
   return sigs.some(s => s.length === expected.length && crypto.timingSafeEqual(Buffer.from(s), Buffer.from(expected)));
 }
 
-async function tsMarkPaid(orderId, sessionId) {
-  const order = (await tsOrdersTable.list()).find(o => o.id === orderId);
-  if (!order || order.paid_at) return false;
-  const nowIso = new Date().toISOString();
-  const due = tsAddWorkingDays(TS_TURNAROUND_DAYS);
-  await tsOrdersTable.updateWhere(o => o.id === orderId, o => {
-    o.status = 'paid'; o.paid_at = nowIso; o.due_by = due; if (sessionId) o.stripe_session = sessionId; return o;
-  });
-  await tsUsersTable.updateWhere(o => o.id === order.user_id, o => { o.review_requested = 'Yes'; o.status = 'review requested'; return o; });
-  await tsTask(`PAID: ${order.service_name} for ${order.name} (due ${due})`,
-    `${order.name} (${order.email}${order.phone ? ', ' + order.phone : ''}) paid ${tsGbp(order.amount)} for the ${order.service_name}${order.target_role ? ', targeting ' + order.target_role : ''}. They have been asked to reply with their CV and target adverts. Deliver by ${due}. Order ${order.id}. ${order.customer_notes}`.trim(), flNextWorkingDay(), 'High');
+const tsWebhookBusy = new Set();
+
+function tsConfirmationEmail(o) {
+  const coaching = o.tier === 'cv_review_coaching';
+  const booking = process.env.TS_COACHING_BOOKING_URL;
+  const ukDate = new Date(o.due_date + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+  return `<div style="background:#0B0B18;padding:32px 24px;font-family:'Gill Sans MT','Gill Sans',Calibri,sans-serif;color:#fff;">
+  <div style="max-width:560px;margin:0 auto;">
+    <p style="color:#C9A84C;letter-spacing:2px;font-size:12px;margin:0 0 6px;">LIVE 2 HELP TALENT SUITE</p>
+    <h1 style="font-size:22px;margin:0 0 14px;color:#fff;">Thank you, your ${flEsc(TS_TIERS[o.tier].name)} is booked</h1>
+    <p style="color:#C9CCD6;margin:0 0 14px;">Hi ${flEsc(String(o.candidate_name).split(' ')[0])}, we have your payment and your CV. A Live 2 Help recruiter will now review it against ${flEsc(o.target_role || 'your target roles')}.</p>
+    <table style="width:100%;border-collapse:collapse;margin:0 0 16px;color:#C9CCD6;font-size:14px;">
+      <tr><td style="padding:6px 0;border-top:1px solid #2C2C4C;">Order reference</td><td style="padding:6px 0;border-top:1px solid #2C2C4C;color:#fff;text-align:right;">${flEsc(o.order_id)}</td></tr>
+      <tr><td style="padding:6px 0;border-top:1px solid #2C2C4C;">Amount paid</td><td style="padding:6px 0;border-top:1px solid #2C2C4C;color:#fff;text-align:right;">£${flEsc(Number(o.amount_gbp).toFixed(2))}</td></tr>
+      <tr><td style="padding:6px 0;border-top:1px solid #2C2C4C;">Your reviewed CV by</td><td style="padding:6px 0;border-top:1px solid #2C2C4C;color:#C9A84C;text-align:right;"><b>${flEsc(ukDate)}</b></td></tr>
+    </table>
+    ${coaching ? (booking
+      ? `<p style="color:#C9CCD6;margin:0 0 16px;">Your 30 minute coaching call is included. <a href="${flEsc(booking)}" style="color:#C9A84C;">Book your call here</a> at a time that suits you.</p>`
+      : `<p style="color:#C9CCD6;margin:0 0 16px;">Your 30 minute coaching call is included. We will email you within one working day to book it${o.coaching_availability ? ', using the availability you gave us' : ''}.</p>`) : ''}
+    <p style="color:#C9CCD6;margin:0 0 14px;">We may email you a few quick questions so nothing in your CV is guessed. Your receipt comes separately from Stripe.</p>
+    <p style="color:#B4B8C4;font-size:12px;margin:0;">Live 2 Help Recruitment Ltd, Company No. 11731080. Questions? Just reply to this email.</p>
+  </div></div>`;
+}
+
+async function tsFulfil(order) {
+  const tierName = TS_TIERS[order.tier].name;
   try {
-    await emailTransporter.sendMail({ from: process.env.BREVO_SENDER_EMAIL, to: order.email, replyTo: 'office@live2helprecruitment.co.uk',
-      subject: `Your ${order.service_name} is booked (${order.id})`, html: tsOrderEmail(order),
-      text: `Thank you, your ${order.service_name} is booked. Please reply to this email with your latest CV and the job adverts you are targeting. We will deliver within ${TS_TURNAROUND_DAYS} working days of receiving your CV. Order ${order.id}.` });
-  } catch (e) { console.error('Talent Suite order email failed:', e.message); }
-  mailDan(`New paid order: ${order.service_name}, ${tsGbp(order.amount)}`, `${order.name} (${order.email}) paid ${tsGbp(order.amount)} for the ${order.service_name}.\nDue by ${due}. Order ${order.id}.\nA task has been created for Ella and the customer has been asked to send their CV.`);
-  auditLog('website', 'talent_suite_paid', 'talent_suite', order.name, `${order.service_name} ${tsGbp(order.amount)}`);
-  return true;
+    const task = { id: `task-ts-${Date.now()}-${crypto.randomBytes(2).toString('hex')}`, user: 'ella',
+      title: `Talent Suite: ${tierName} for ${order.candidate_name} (due ${order.due_date})`, priority: 'High', dueDate: order.due_date,
+      context: `Paid £${Number(order.amount_gbp).toFixed(2)}. ${order.candidate_name} (${order.candidate_email}${order.candidate_phone ? ', ' + order.candidate_phone : ''}) targeting ${order.target_role}. CV: ${order.cv_file_link}${order.coaching_availability ? '. Coaching availability: ' + order.coaching_availability : ''}${order.candidate_notes ? '. Notes: ' + order.candidate_notes : ''}. Order ${order.order_id}. Mark it In review and Delivered in Talent Suite.`,
+      status: 'Open', recurring: 'none', archived: false };
+    await getSheetsClient().spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: TASKS_RANGE, valueInputOption: 'RAW', requestBody: { values: [taskToRow(task)] } });
+  } catch (e) { console.error('Talent Suite task failed:', e.message); }
+  try {
+    await emailTransporter.sendMail({ from: process.env.BREVO_SENDER_EMAIL, to: order.candidate_email, replyTo: 'office@live2helprecruitment.co.uk',
+      subject: `Your ${tierName} is booked (${order.order_id})`, html: tsConfirmationEmail(order),
+      text: `Thank you, your ${tierName} is booked. Order ${order.order_id}, paid £${Number(order.amount_gbp).toFixed(2)}. Your reviewed CV will be with you by ${order.due_date}.` });
+  } catch (e) { console.error('Talent Suite confirmation email failed:', e.message); }
+  try {
+    await tsUsersTable.updateWhere(o => o.email === order.candidate_email, o => { o.review_requested = 'Yes'; o.status = 'review requested'; return o; });
+  } catch (e) { /* not every buyer uses the Career Toolkit */ }
+  mailDan(`New Talent Suite order: ${tierName}, £${Number(order.amount_gbp).toFixed(2)}`,
+    `${order.candidate_name} (${order.candidate_email}) paid for the ${tierName}.\nTarget: ${order.target_role}\nDue: ${order.due_date}\nCV: ${order.cv_file_link}\nOrder ${order.order_id}. A task has been created for Ella.`);
+  auditLog('stripe', 'talent_suite_paid', 'talent_suite', order.candidate_name, `${tierName} ${order.order_id}`);
 }
 
 app.post('/api/stripe/webhook', async (req, res) => {
   if (!tsStripeSignatureOk(req.rawBody, req.get('stripe-signature'), process.env.STRIPE_WEBHOOK_SECRET)) {
     return res.status(400).json({ error: 'Invalid signature' });
   }
+  const ev = req.body || {};
+  const obj = (ev.data && ev.data.object) || {};
   try {
-    const ev = req.body || {};
-    const s = ev.data && ev.data.object;
-    if ((ev.type === 'checkout.session.completed' || ev.type === 'checkout.session.async_payment_succeeded') && s && s.payment_status === 'paid') {
-      const orderId = (s.metadata && s.metadata.order_id) || s.client_reference_id;
-      if (orderId) await tsMarkPaid(orderId, s.id);
+    if (ev.type === 'checkout.session.completed') {
+      if (obj.payment_status !== 'paid') return res.json({ received: true });
+      const orderId = (obj.metadata && obj.metadata.order_id) || obj.client_reference_id;
+      if (!orderId || tsWebhookBusy.has(orderId)) return res.json({ received: true });
+      tsWebhookBusy.add(orderId);
+      try {
+        const order = await tsOrders.get(orderId);
+        if (!order || TS_PAID_OR_LATER.includes(order.status)) return res.json({ received: true }); // idempotent
+        const paidIso = new Date().toISOString();
+        const due = await tsDueDate(paidIso, TS_TURNAROUND_DAYS);
+        const amount = (Number(obj.amount_total) || 0) / 100;
+        await tsOrders.update(orderId, o => {
+          o.status = 'paid'; o.paid_at = paidIso; o.due_date = due; o.amount_gbp = String(amount);
+          o.stripe_payment_intent = typeof obj.payment_intent === 'string' ? obj.payment_intent : ((obj.payment_intent || {}).id || '');
+          if (!o.stripe_session_id) o.stripe_session_id = obj.id || '';
+          return o;
+        });
+        res.json({ received: true });
+        const fresh = await tsOrders.get(orderId);
+        tsFulfil(fresh).catch(e => console.error('Talent Suite fulfilment failed:', e.message));
+      } finally { tsWebhookBusy.delete(orderId); }
+      return;
+    }
+    if (ev.type === 'checkout.session.expired') {
+      const orderId = (obj.metadata && obj.metadata.order_id) || obj.client_reference_id;
+      if (orderId) await tsOrders.update(orderId, o => { if (o.status === 'pending_payment' && (!o.stripe_session_id || o.stripe_session_id === obj.id)) o.status = 'abandoned'; return o; });
+      return res.json({ received: true });
+    }
+    if (ev.type === 'charge.refunded') {
+      const pi = typeof obj.payment_intent === 'string' ? obj.payment_intent : ((obj.payment_intent || {}).id || '');
+      const orderId = obj.metadata && obj.metadata.order_id;
+      const n = await tsOrders.update(orderId || '__none__', o => { o.status = 'refunded'; return o; })
+        || (pi ? await tsOrdersSheet.updateWhere(o => o.stripe_payment_intent === pi, o => { o.status = 'refunded'; return o; }) : 0);
+      if (n) mailDan('Talent Suite order refunded', `A Talent Suite order was refunded in Stripe (${orderId || pi}).`);
+      return res.json({ received: true });
     }
     res.json({ received: true });
   } catch (e) {
     console.error('Stripe webhook error:', e.message);
-    res.status(500).json({ error: 'Webhook handling failed' }); // Stripe retries
+    if (!res.headersSent) res.status(500).json({ error: 'Webhook handling failed' }); // Stripe retries
   }
 });
 
-// Staff: mark an invoiced (non-Stripe) order as paid so the same emails, task and due date follow
-app.post('/api/talent-suite-orders/:id/mark-paid', async (req, res) => {
+/* ---------- Staff: orders for the dashboard (Section 6 statuses) ---------- */
+app.get('/api/talent-suite-orders', async (req, res) => {
+  try { res.json({ data: await tsOrders.list() }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/talent-suite-orders', async (req, res) => {
   try {
-    const done = await tsMarkPaid(req.params.id, '');
-    res.json({ ok: true, changed: done });
+    const b = req.body || {};
+    const orderId = String(b.id || b.order_id || '');
+    const cur = await tsOrders.get(orderId);
+    if (!cur) return res.status(404).json({ error: 'Order not found' });
+    if (b.status !== undefined) {
+      // staff move paid work along; payment states (pending_payment, paid, abandoned, refunded) come from Stripe
+      const allowed = { paid: ['in_review'], in_review: ['paid', 'delivered'], delivered: ['in_review'] };
+      if (b.status !== cur.status && !(allowed[cur.status] || []).includes(b.status)) return res.status(400).json({ error: `An order cannot move from ${cur.status} to ${b.status} by hand` });
+    }
+    await tsOrders.update(orderId, o => {
+      if (b.status !== undefined) { o.status = b.status; if (b.status === 'delivered' && !o.delivered_at) o.delivered_at = new Date().toISOString(); if (b.status !== 'delivered') o.delivered_at = ''; }
+      if (b.assigned_to !== undefined) o.assigned_to = ['Dan', 'Ella', ''].includes(b.assigned_to) ? b.assigned_to : o.assigned_to;
+      return o;
+    });
+    auditLog(actorOf(req), 'talent_suite_order_update', 'talent_suite', orderId, JSON.stringify({ status: b.status, assigned_to: b.assigned_to }));
+    res.json({ data: await tsOrders.get(orderId) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 async function tsOrdersDigest() {
-  const all = await tsOrdersTable.list();
+  const all = await tsOrders.list();
   const today = todayISO();
-  const open = all.filter(o => ['paid', 'in progress'].includes(o.status));
-  const late = open.filter(o => o.due_by && o.due_by < today);
+  const open = all.filter(o => ['paid', 'in_review'].includes(o.status));
+  const late = open.filter(o => o.due_date && o.due_date < today);
   const month = today.slice(0, 7);
-  const rev = all.filter(o => o.paid_at && o.paid_at.slice(0, 7) === month).reduce((a, o) => a + (Number(o.amount) || 0), 0);
-  return `- Paid expert services this month: ${tsGbp(rev)}\n- Orders in progress: ${open.length}${late.length ? ` (${late.length} past due)` : ''}${open.length ? '\n' + open.slice(0, 8).map(o => `  ${o.name}: ${o.service_name}, due ${o.due_by}`).join('\n') : ''}`;
+  const rev = all.filter(o => o.paid_at && o.paid_at.slice(0, 7) === month && o.status !== 'refunded').reduce((a, o) => a + (Number(o.amount_gbp) || 0), 0);
+  return `- Paid expert services this month: £${rev.toFixed(2)}\n- Orders open: ${open.length}${late.length ? ` (${late.length} past due)` : ''}${open.length ? '\n' + open.slice(0, 8).map(o => `  ${o.candidate_name}: ${TS_TIERS[o.tier] ? TS_TIERS[o.tier].name : o.tier}, due ${o.due_date}`).join('\n') : ''}`;
 }
 
 

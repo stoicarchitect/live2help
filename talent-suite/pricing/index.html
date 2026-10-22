@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Expert CV Services - Live 2 Help Talent Suite</title>
+<meta name="description" content="Have a Live 2 Help recruiter review your CV by hand. Expert CV Review £25, or CV Review plus Interview Coaching £49. Delivered within 3 working days.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Live 2 Help Recruitment">
+<meta property="og:title" content="Expert CV Services - Live 2 Help Talent Suite">
+<meta property="og:description" content="A working UK recruiter reviews your CV by hand. From £25, delivered within 3 working days.">
+<meta property="og:image" content="https://careers.live2helprecruitment.co.uk/assets/og-image.png">
+<link rel="icon" href="../../assets/logo.png" type="image/png">
+<style>
+  :root { --gold: #C9A84C; --gold-l: #E8C96A; --gold-bg: #FBF6E8; --navy: #0B0B18; --navy-2: #151528; --dark: #1A1A1A; --grey: #444444; --muted: #6B6F7B; --lightbg: #F7F6F3; --border: #DDDDDD; --ok: #2E7D4F; --bad: #B23B3B; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Gill Sans MT', 'Gill Sans', Calibri, sans-serif; background: var(--lightbg); color: var(--dark); line-height: 1.5; }
+  a { color: var(--navy); text-decoration-color: var(--gold); text-underline-offset: 3px; }
+  .hidden { display: none !important; }
+  .topbar { background: var(--navy); padding: 26px 20px 10px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .topbar img { height: 118px; width: auto; display: block; }
+  @media (max-width: 600px) { .topbar img { height: 92px; } }
+  .topbar nav a { color: #B4B8C4; font-size: 13.5px; margin: 0 10px; text-decoration: none; }
+  .topbar nav a:hover { color: var(--gold); }
+  .hero { background: linear-gradient(180deg, var(--navy) 0%, var(--navy-2) 100%); color: #fff; padding: 26px 20px 100px; text-align: center; }
+  .eyebrow { color: var(--gold); letter-spacing: 3px; font-size: 12px; font-weight: bold; text-transform: uppercase; margin: 0 0 10px; }
+  .hero h1 { font-size: clamp(28px, 5vw, 44px); margin: 0 auto 12px; max-width: 760px; line-height: 1.15; }
+  .hero h1 span { color: var(--gold); }
+  .hero p { color: #C9CCD6; font-size: 16.5px; max-width: 620px; margin: 0 auto; }
+
+  .wrap { max-width: 960px; margin: -70px auto 0; padding: 0 20px 80px; position: relative; }
+  .tiers { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 26px; }
+  @media (max-width: 760px) { .tiers { grid-template-columns: 1fr; } }
+  .tier { background: #fff; border: 2px solid var(--border); border-radius: 14px; padding: 24px; cursor: pointer; position: relative; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(11,11,24,.07); transition: border-color .15s, transform .15s; }
+  .tier:hover { transform: translateY(-2px); }
+  .tier.sel { border-color: var(--gold); box-shadow: 0 0 0 4px rgba(201,168,76,.18), 0 10px 30px rgba(11,11,24,.08); }
+  .tier .tag { position: absolute; top: -12px; right: 18px; background: var(--gold); color: var(--navy); font-size: 11.5px; font-weight: bold; padding: 3px 12px; border-radius: 999px; }
+  .tier .radio { position: absolute; top: 22px; right: 22px; width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border); }
+  .tier.sel .radio { border-color: var(--gold); background: radial-gradient(var(--gold) 45%, #fff 48%); }
+  .tier h2 { font-size: 20px; margin: 0 0 4px; color: var(--navy); padding-right: 36px; }
+  .tier .price { font-size: 38px; font-weight: bold; color: var(--navy); line-height: 1.1; margin: 4px 0 8px; }
+  .tier .price small { font-size: 13px; color: var(--muted); font-weight: normal; }
+  .tier p { font-size: 14.5px; color: var(--grey); margin: 0 0 12px; }
+  .tier ul { margin: 0; padding-left: 20px; font-size: 14px; color: var(--grey); }
+  .tier ul li { margin-bottom: 5px; } .tier ul li::marker { color: var(--gold); }
+
+  .card { background: #fff; border: 1px solid var(--border); border-radius: 14px; padding: 28px 26px; }
+  .card h2 { font-size: 21px; margin: 0 0 4px; color: var(--navy); }
+  .card .sub { color: var(--grey); font-size: 14.5px; margin: 0 0 22px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+  @media (max-width: 640px) { .grid2 { grid-template-columns: 1fr; } }
+  .field { margin-bottom: 18px; }
+  label { display: block; font-weight: bold; font-size: 14px; margin-bottom: 6px; }
+  .req { color: var(--gold); }
+  .hint { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+  input[type=text], input[type=email], input[type=tel], textarea { width: 100%; padding: 12px 13px; border: 1px solid var(--border); border-radius: 8px; font-size: 15px; font-family: inherit; background: #fff; color: var(--dark); }
+  textarea { min-height: 90px; resize: vertical; }
+  input:focus, textarea:focus { outline: 2px solid var(--gold); outline-offset: 0; border-color: var(--gold); }
+  .drop { border: 2px dashed var(--border); border-radius: 10px; padding: 18px; text-align: center; background: var(--lightbg); cursor: pointer; }
+  .drop:hover, .drop.over { border-color: var(--gold); background: var(--gold-bg); }
+  .drop b { color: var(--navy); } .drop .fn { color: var(--ok); font-weight: bold; }
+  .check { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; color: var(--grey); font-weight: normal; }
+  .check input { margin-top: 3px; accent-color: var(--navy); width: 17px; height: 17px; flex: none; }
+  .hp { position: absolute; left: -5000px; }
+  .summary { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; border-top: 1px solid #EEE; padding-top: 18px; margin-top: 6px; }
+  .summary .what { font-size: 15px; color: var(--grey); } .summary .what b { color: var(--navy); font-size: 18px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 8px; padding: 14px 24px; font-size: 15.5px; font-weight: bold; font-family: inherit; cursor: pointer; background: var(--gold); color: var(--navy); }
+  .btn:hover { background: var(--gold-l); } .btn[disabled] { opacity: .6; cursor: not-allowed; }
+  .secure { font-size: 12.5px; color: var(--muted); margin-top: 10px; }
+  .msg { font-size: 14px; margin-top: 14px; padding: 10px 12px; border-radius: 8px; }
+  .msg.err { background: #FBEDED; color: var(--bad); }
+  .banner { background: var(--gold-bg); border: 1px solid #EADBB0; color: #7A6420; border-radius: 10px; padding: 12px 16px; font-size: 14.5px; margin-bottom: 18px; }
+  .faq { margin-top: 26px; }
+  .faq details { background: #fff; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; }
+  .faq summary { padding: 14px 16px; cursor: pointer; font-weight: bold; color: var(--navy); }
+  .faq details p { margin: 0; padding: 0 16px 14px; color: var(--grey); font-size: 14.5px; }
+  .foot { background: var(--navy); color: #8D91A0; text-align: center; font-size: 12.5px; padding: 26px 20px; }
+  .foot a { color: var(--gold); }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a href="../"><img src="../../assets/logo3-transparent.png" alt="Live 2 Help Recruitment"></a>
+  <nav><a href="../">Talent Suite</a><a href="../career/">Career Toolkit</a><a href="../../">Live roles</a></nav>
+</header>
+
+<section class="hero">
+  <p class="eyebrow">Live 2 Help Talent Suite</p>
+  <h1>Have a recruiter <span>fix your CV by hand</span></h1>
+  <p>A working UK recruiter reviews your CV against the roles you want, then returns it polished and ready to send. Delivered within 3 working days.</p>
+</section>
+
+<main class="wrap">
+  <div class="banner hidden" id="cancelled">Payment cancelled. Nothing has been charged. Your details are still here if you want to try again.</div>
+
+  <div class="tiers" role="radiogroup" aria-label="Choose a service">
+    <div class="tier" data-tier="cv_review" role="radio" tabindex="0" aria-checked="false">
+      <span class="radio"></span>
+      <h2>Expert CV Review</h2>
+      <div class="price">£25 <small>one-off</small></div>
+      <p>Your CV reviewed line by line and returned polished, screening-safe and aimed at your target roles.</p>
+      <ul><li>Reviewed by a working UK recruiter</li><li>Your CV rewritten and polished</li><li>Written feedback on positioning and where to apply</li><li>Delivered within 3 working days</li></ul>
+    </div>
+    <div class="tier" data-tier="cv_review_coaching" role="radio" tabindex="0" aria-checked="false">
+      <span class="tag">Best value</span><span class="radio"></span>
+      <h2>CV Review + Interview Coaching</h2>
+      <div class="price">£49 <small>one-off</small></div>
+      <p>Everything in the Expert CV Review, plus a 30 minute one to one call to get you ready for interviews.</p>
+      <ul><li>Everything in the Expert CV Review</li><li>30 minute video or phone coaching call</li><li>Practice on the questions you are most likely to face</li><li>Honest advice on salary and offers</li></ul>
+    </div>
+  </div>
+
+  <form class="card" id="intake" novalidate>
+    <h2>Your details</h2>
+    <p class="sub">Tell us about you and upload your CV. You pay securely by card on the next page.</p>
+    <div class="grid2">
+      <div class="field"><label for="candidate_name">Full name <span class="req">*</span></label><input type="text" id="candidate_name" autocomplete="name"></div>
+      <div class="field"><label for="candidate_email">Email <span class="req">*</span></label><input type="email" id="candidate_email" autocomplete="email"><div class="hint">Your receipt and reviewed CV come here.</div></div>
+      <div class="field"><label for="candidate_phone">Phone</label><input type="tel" id="candidate_phone" autocomplete="tel"></div>
+      <div class="field"><label for="target_role">Role or sector you are applying for <span class="req">*</span></label><input type="text" id="target_role" placeholder="e.g. Senior Buyer, engineering"></div>
+    </div>
+    <div class="field">
+      <label>Your CV <span class="req">*</span></label>
+      <div class="drop" id="drop" tabindex="0"><b>Upload your CV</b><br><span id="dropText" style="font-size:13px;color:var(--muted);">PDF or Word (.docx), up to 5MB</span></div>
+      <input type="file" id="cv" accept=".pdf,.docx" class="hidden">
+    </div>
+    <div class="field hidden" id="availField"><label for="coaching_availability">When are you free for your coaching call?</label><input type="text" id="coaching_availability" placeholder="e.g. weekday evenings after 6pm, or Saturday mornings"></div>
+    <div class="field"><label for="candidate_notes">Anything we should know?</label><textarea id="candidate_notes" placeholder="e.g. returning after a career break, changing sector, an interview next week"></textarea></div>
+    <input type="text" id="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
+    <div class="field"><label class="check"><input type="checkbox" id="start_now"> <span>I ask Live 2 Help to start work within the 14-day cancellation period. I understand that I can cancel before the service is complete, and that I lose my right to cancel once the service has been fully delivered.</span></label></div>
+    <div id="turnstileBox" style="margin-bottom:12px;"></div>
+    <div class="summary">
+      <div class="what" id="what">Choose a service above</div>
+      <button class="btn" id="payBtn" type="submit">Continue to secure payment</button>
+    </div>
+    <div class="secure">Payments are handled by Stripe. Live 2 Help never sees your card details.</div>
+    <div class="msg err hidden" id="err" role="alert"></div>
+  </form>
+
+  <section class="faq">
+    <details><summary>What happens after I pay?</summary><p>You get a confirmation email straight away with your order reference and the date your reviewed CV is due. A Live 2 Help recruiter reviews your CV and may email you a few quick questions so nothing is guessed.</p></details>
+    <details><summary>How long does it take?</summary><p>Within 3 UK working days of payment. Weekends and bank holidays are not counted.</p></details>
+    <details><summary>How does the coaching call work?</summary><p>Once you have paid, we arrange a 30 minute video or phone call at a time that suits you, using the availability you give us.</p></details>
+    <details><summary>Can I get a refund?</summary><p>You can cancel before the service is complete by replying to your confirmation email. If we cannot help with your CV for any reason, we refund you in full.</p></details>
+    <details><summary>Not ready to pay?</summary><p>Try our free <a href="../career/">Career Toolkit</a> first: a CV health check, job match score, CV rewrite and interview prep, with free credits every month.</p></details>
+  </section>
+</main>
+
+<footer class="foot">
+  Live 2 Help Talent Suite is a service of Live 2 Help Recruitment Ltd, Company No. 11731080. Not VAT registered, so no VAT is charged.<br>
+  Questions: <a href="mailto:office@live2helprecruitment.co.uk">office@live2helprecruitment.co.uk</a>
+</footer>
+
+<script>
+(function () {
+  var API = 'https://l2h-api.onrender.com';
+  var TURNSTILE_SITE_KEY = '';
+  var TIERS = { cv_review: { name: 'Expert CV Review', price: '£25' }, cv_review_coaching: { name: 'CV Review + Interview Coaching', price: '£49' } };
+  var tier = '', file = null, busy = false, tw = null;
+  function $(id) { return document.getElementById(id); }
+  function err(t) { $('err').textContent = t || ''; $('err').classList.toggle('hidden', !t); if (t) $('err').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+
+  try { fetch(API + '/api/health', { cache: 'no-store' }).catch(function () {}); } catch (e) {}
+  if (TURNSTILE_SITE_KEY) {
+    var s = document.createElement('script'); s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'; s.async = true;
+    s.onload = function () { try { tw = window.turnstile.render('#turnstileBox', { sitekey: TURNSTILE_SITE_KEY }); } catch (e) {} };
+    document.head.appendChild(s);
+  }
+
+  function pick(t) {
+    if (!TIERS[t]) return; tier = t;
+    Array.prototype.forEach.call(document.querySelectorAll('.tier'), function (el) { var on = el.getAttribute('data-tier') === t; el.classList.toggle('sel', on); el.setAttribute('aria-checked', on ? 'true' : 'false'); });
+    $('availField').classList.toggle('hidden', t !== 'cv_review_coaching');
+    $('what').innerHTML = '<b>' + TIERS[t].name + '</b> &nbsp;' + TIERS[t].price;
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.tier'), function (el) {
+    el.addEventListener('click', function () { pick(el.getAttribute('data-tier')); });
+    el.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(el.getAttribute('data-tier')); } });
+  });
+
+  var q = {}; try { q = Object.fromEntries(new URLSearchParams(location.search)); } catch (e) {}
+  pick(q.tier || 'cv_review_coaching');
+  if (q.cancelled) { $('cancelled').classList.remove('hidden'); }
+  // prefill from the Career Toolkit or from this page before a cancelled payment (same site storage, never the URL)
+  try {
+    var pre = JSON.parse(sessionStorage.getItem('l2h_ts_prefill') || 'null');
+    if (pre) { if (pre.name) $('candidate_name').value = pre.name; if (pre.email) $('candidate_email').value = pre.email; if (pre.role) $('target_role').value = pre.role;
+      ['candidate_phone', 'candidate_notes', 'coaching_availability'].forEach(function (k) { if (pre[k]) $(k).value = pre[k]; }); if (pre.tier) pick(pre.tier); }
+  } catch (e) {}
+
+  var drop = $('drop');
+  function setFile(f) {
+    if (!f) return;
+    var n = f.name.toLowerCase();
+    if (!/\.(pdf|docx)$/.test(n)) { err('Please upload your CV as a PDF or Word (.docx) file.'); return; }
+    if (f.size > 5 * 1024 * 1024) { err('Your CV is over 5MB. Please upload a smaller file.'); return; }
+    file = f; err('');
+    $('dropText').innerHTML = '<span class="fn">' + f.name.replace(/[<>&"]/g, '') + '</span> (' + Math.round(f.size / 1024) + 'KB). Click to change.';
+  }
+  drop.addEventListener('click', function () { $('cv').click(); });
+  drop.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('cv').click(); } });
+  drop.addEventListener('dragover', function (e) { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', function () { drop.classList.remove('over'); });
+  drop.addEventListener('drop', function (e) { e.preventDefault(); drop.classList.remove('over'); setFile(e.dataTransfer.files[0]); });
+  $('cv').addEventListener('change', function () { setFile(this.files[0]); this.value = ''; });
+
+  function post(path, body) {
+    return fetch(API + path, body instanceof FormData ? { method: 'POST', body: body } : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { j._status = r.status; return j; }); })
+      .catch(function () { return { error: 'We could not connect. Please check your connection and try again.' }; });
+  }
+  function reset() { busy = false; $('payBtn').disabled = false; $('payBtn').textContent = 'Continue to secure payment'; }
+
+  $('intake').addEventListener('submit', function (e) {
+    e.preventDefault(); if (busy) return;
+    var v = function (id) { return $(id).value.trim(); };
+    if (!tier) return err('Please choose a service above.');
+    if (v('candidate_name').length < 2) return err('Please add your full name.');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(v('candidate_email'))) return err('Please check your email address.');
+    if (v('target_role').length < 2) return err('Please tell us the role or sector you are applying for.');
+    if (!file) return err('Please upload your CV.');
+    if (!$('start_now').checked) return err('Please tick the box asking us to start within the cancellation period.');
+    err(''); busy = true; $('payBtn').disabled = true; $('payBtn').textContent = 'Saving your details...';
+    try { sessionStorage.setItem('l2h_ts_prefill', JSON.stringify({ tier: tier, name: v('candidate_name'), email: v('candidate_email'), role: v('target_role'), candidate_phone: v('candidate_phone'), candidate_notes: v('candidate_notes'), coaching_availability: v('coaching_availability') })); } catch (e2) {}
+    var fd = new FormData();
+    fd.append('tier', tier);
+    ['candidate_name', 'candidate_email', 'candidate_phone', 'target_role', 'candidate_notes'].forEach(function (k) { fd.append(k, v(k)); });
+    if (tier === 'cv_review_coaching') fd.append('coaching_availability', v('coaching_availability'));
+    fd.append('start_now', 'true');
+    fd.append('website', $('website').value);
+    fd.append('turnstileToken', (window.turnstile && tw !== null) ? window.turnstile.getResponse(tw) : '');
+    fd.append('cv', file, file.name);
+    post('/api/talent-suite/orders', fd).then(function (j) {
+      if (!j.order_id) { reset(); if (window.turnstile && tw !== null) try { window.turnstile.reset(tw); } catch (e3) {} return err(j.error || 'Something went wrong. Please try again.'); }
+      $('payBtn').textContent = 'Opening secure payment...';
+      return post('/api/talent-suite/checkout', { order_id: j.order_id }).then(function (c) {
+        if (c.url) { window.location.href = c.url; return; }
+        reset(); err((c.error || 'The payment page could not be opened. Please try again.') + ' Your order reference is ' + j.order_id + '.');
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>
