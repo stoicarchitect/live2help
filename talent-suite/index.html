@@ -159,6 +159,18 @@
   .spin { width: 26px; height: 26px; border: 3px solid #EEE; border-top-color: var(--gold); border-radius: 50%; animation: s 0.8s linear infinite; flex: none; }
   @keyframes s { to { transform: rotate(360deg); } }
 
+  .runner { padding: 6px 0; }
+  .runner .top { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+  .runner .stage { font-size: 16px; color: var(--navy); font-weight: bold; }
+  .runner .meta { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .runner .track { height: 10px; background: #EEE; border-radius: 5px; overflow: hidden; }
+  .runner .track i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--gold), var(--gold-l)); border-radius: 5px; transition: width 1s linear; }
+  .runner .steps { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .runner .steps span { font-size: 12.5px; padding: 3px 10px; border-radius: 999px; background: var(--lightbg); color: var(--muted); }
+  .runner .steps span.done { background: #EAF5EE; color: var(--ok); }
+  .runner .steps span.now { background: var(--gold-bg); color: #7A6420; font-weight: bold; }
+  .banner { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; background: #EAF5EE; color: var(--ok); border-radius: 8px; padding: 10px 14px; font-size: 14px; margin-bottom: 10px; }
+  .note { font-size: 13.5px; color: var(--grey); background: var(--lightbg); border-radius: 8px; padding: 10px 14px; margin: 0 0 16px; }
   .foot { background: var(--navy); color: #8D91A0; text-align: center; font-size: 12.5px; padding: 26px 20px; }
   .foot a { color: var(--gold); }
   @media print { .topbar, .hero, .foot, #toolsCard, #inputsCard, .premium, .userbar, .actions, #freeCard { display: none !important; } body { background: #fff; } .card { border: 0; } }
@@ -213,7 +225,8 @@
   <!-- 2. VERIFY -->
   <section id="verify" class="card narrow hidden">
     <h2>Check your inbox</h2>
-    <p class="sub">We sent a 6 digit code to <b id="verifyEmail"></b>. It works for 15 minutes. Check your spam folder if it has not arrived.</p>
+    <p class="sub">We sent a 6 digit code to <b id="verifyEmail"></b>. It usually arrives within a minute and works for 15 minutes.</p>
+    <p class="note" style="margin-top:-8px;">Using Gmail? Check your <b>Updates</b> or <b>Promotions</b> tab, and your spam folder.</p>
     <form id="verifyForm" novalidate>
       <div class="field"><input type="text" id="code" class="code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000"></div>
       <button class="btn btn-gold btn-block" id="verifyBtn" type="submit">Open my toolkit</button>
@@ -239,6 +252,7 @@
       <div class="inputs">
         <div>
           <label>Your CV <span class="req">*</span></label>
+          <div class="banner hidden" id="cvBanner"><span>Now using your <b>rewritten CV</b>. Fill in any [placeholders] here before you send it.</span><button type="button" class="linkish" id="restoreCv">Restore my original</button></div>
           <div class="drop" id="drop"><b>Upload your CV</b><br><span style="font-size:13px;color:var(--muted);">PDF or Word (.docx), or paste the text below</span></div>
           <input type="file" id="cvFile" accept=".pdf,.docx" class="hidden">
           <textarea id="cvText" placeholder="Or paste the full text of your CV here"></textarea>
@@ -330,6 +344,9 @@
       .catch(function () { return { _status: 0, error: 'We could not reach the toolkit. Check your connection and try again.' }; });
   }
 
+  // wake the server early (it sleeps when idle), so sign-in and tools respond quickly
+  try { fetch(API + '/api/health', { cache: 'no-store' }).catch(function () {}); } catch (e) {}
+
   // Turnstile only loads if a site key is set
   if (TURNSTILE_SITE_KEY) {
     var s = document.createElement('script');
@@ -345,7 +362,7 @@
     if (name.length < 2 || !/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(email) || !sector) return msg('signupMsg', 'Please add your name, a valid email and your field.');
     if (!$('consent').checked) return msg('signupMsg', 'Please tick the consent box to continue.');
     var t = (window.turnstile && turnstileWidget !== null) ? window.turnstile.getResponse(turnstileWidget) : '';
-    $('signupBtn').disabled = true; $('signupBtn').textContent = 'Sending your code...'; msg('signupMsg', '');
+    $('signupBtn').disabled = true; $('signupBtn').textContent = 'One moment...'; msg('signupMsg', '');
     api('/api/talent-suite/start', { name: name, email: email, sector: sector, targetRole: $('targetRole').value.trim(), consent: true, website: $('website').value, turnstileToken: t, src: src() })
       .then(function (j) {
         $('signupBtn').disabled = false; $('signupBtn').textContent = 'Email me my code';
@@ -385,11 +402,20 @@
   }
 
   // ---------- CV and job inputs ----------
-  function saveInputs() { store('set', CV_KEY, JSON.stringify({ cv: $('cvText').value, job: $('jobText').value, role: $('role').value }), true); }
+  var originalCv = '';
+  function saveInputs() { store('set', CV_KEY, JSON.stringify({ cv: $('cvText').value, job: $('jobText').value, role: $('role').value, original: originalCv }), true); }
   function restoreInputs() {
-    try { var s = JSON.parse(store('get', CV_KEY, null, true) || 'null'); if (s) { if (!$('cvText').value) $('cvText').value = s.cv || ''; if (!$('jobText').value) $('jobText').value = s.job || ''; if (!$('role').value) $('role').value = s.role || ''; } } catch (e) {}
+    try { var s = JSON.parse(store('get', CV_KEY, null, true) || 'null'); if (s) { if (!$('cvText').value) $('cvText').value = s.cv || ''; if (!$('jobText').value) $('jobText').value = s.job || ''; if (!$('role').value) $('role').value = s.role || ''; originalCv = s.original || ''; } } catch (e) {}
+    $('cvBanner').classList.toggle('hidden', !originalCv);
     cvStatus(); jobStatus();
   }
+  function useRewrite(r) {
+    if (!originalCv) originalCv = $('cvText').value;
+    $('cvText').value = cvText(r); $('cvBanner').classList.remove('hidden'); saveInputs(); cvStatus();
+  }
+  $('restoreCv').addEventListener('click', function () {
+    if (!originalCv) return; $('cvText').value = originalCv; originalCv = ''; $('cvBanner').classList.add('hidden'); saveInputs(); cvStatus();
+  });
   function words(t) { return (t.trim().match(/\S+/g) || []).length; }
   function cvStatus() { var n = words($('cvText').value); var el = $('cvStatus'); el.className = 'status' + (n >= 60 ? ' good' : ''); el.textContent = n ? (n >= 60 ? 'CV ready (' + n + ' words)' : 'This looks short. Make sure the whole CV is here.') : ''; }
   function jobStatus() { var n = words($('jobText').value); var el = $('jobStatus'); el.className = 'status' + (n >= 30 ? ' good' : ''); el.textContent = n ? (n >= 30 ? 'Job advert added (' + n + ' words)' : 'Paste the full advert for the best results.') : ''; }
@@ -435,7 +461,30 @@
 
   // ---------- run tools ----------
   var LABELS = { cv_check: 'CV Health Check', job_match: 'Job Match Score', cv_rewrite: 'Tailored CV Rewrite', interview_prep: 'Interview Prep Pack' };
-  var WAIT = { cv_check: 'Reviewing your CV like a recruiter would...', job_match: 'Comparing your CV with the job...', cv_rewrite: 'Rewriting your CV. This takes up to a minute...', interview_prep: 'Building your interview prep pack...' };
+  var PLAN = {
+    cv_check: { secs: 45, steps: ['Reading your CV', 'Checking layout for screening software', 'Assessing impact and evidence', 'Scoring', 'Writing your fixes'] },
+    job_match: { secs: 40, steps: ['Reading the job advert', 'Listing every requirement', 'Finding evidence in your CV', 'Calculating your score'] },
+    cv_rewrite: { secs: 90, steps: ['Reading your CV', 'Matching it to the job', 'Rewriting your profile', 'Strengthening each role', 'Final screening-safe check'] },
+    interview_prep: { secs: 60, steps: ['Reading the job advert', 'Working out what they want', 'Choosing likely questions', 'Planning answers from your experience', 'Finishing your pack'] },
+  };
+  var timer = null;
+  function startRunner(tool) {
+    var p = PLAN[tool], t0 = Date.now();
+    $('resultBox').innerHTML = '<div class="runner"><div class="top"><div class="spin"></div><div><div class="stage" id="rStage"></div><div class="meta" id="rMeta"></div></div></div>' +
+      '<div class="track"><i id="rBar"></i></div><div class="steps" id="rSteps">' + p.steps.map(function (x) { return '<span>' + esc(x) + '</span>'; }).join('') + '</div></div>';
+    function tick() {
+      var el = (Date.now() - t0) / 1000, frac = el / p.secs;
+      var shown = frac < 1 ? frac * 0.92 : 0.92 + 0.07 * (1 - Math.exp(-(el - p.secs) / 30)); // slows near the end, never stalls at a fixed point
+      var idx = Math.min(p.steps.length - 1, Math.floor(Math.min(frac, 0.999) * p.steps.length));
+      $('rBar').style.width = Math.round(shown * 100) + '%';
+      $('rStage').textContent = p.steps[idx] + '...';
+      var left = Math.max(0, Math.round(p.secs - el));
+      $('rMeta').textContent = left > 0 ? 'About ' + left + ' seconds left. Please keep this page open.' : 'Nearly there, putting the finishing touches to it. ' + Math.round(el) + ' seconds so far.';
+      Array.prototype.forEach.call($('rSteps').children, function (c, i) { c.className = i < idx ? 'done' : i === idx ? 'now' : ''; });
+    }
+    tick(); timer = setInterval(tick, 1000);
+  }
+  function stopRunner() { if (timer) clearInterval(timer); timer = null; }
   Array.prototype.forEach.call(document.querySelectorAll('[data-tool]'), function (b) { b.addEventListener('click', function () { run(b.getAttribute('data-tool')); }); });
 
   function run(tool) {
@@ -447,10 +496,10 @@
     if (need) { box.classList.remove('hidden'); box.innerHTML = '<div class="msg err">' + esc(need) + '</div>'; box.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
     busy = true; setButtons(true);
     box.classList.remove('hidden');
-    box.innerHTML = '<div class="loading"><div class="spin"></div><div>' + esc(WAIT[tool]) + '</div></div>';
+    startRunner(tool);
     box.scrollIntoView({ behavior: 'smooth', block: 'start' });
     api('/api/talent-suite/tool', { tool: tool, cv: cv, job: job, role: role }).then(function (j) {
-      busy = false; setButtons(false);
+      stopRunner(); busy = false; setButtons(false);
       if (j.user) { user = j.user; renderCredits(); }
       if (j.code === 'TS_AUTH') { token = ''; store('del', TOKEN_KEY); show('signup'); return; }
       if (!j.ok) {
@@ -483,12 +532,14 @@
       return head('job_match') +
         '<div class="scores"><div class="score"><div class="n ' + band(r.match_score) + '">' + esc(r.match_score) + '%</div><div class="l">Match to this job</div></div></div>' +
         '<div class="verdict">' + esc(r.summary) + '</div>' +
+        '<p class="note">This score measures how well your CV <b>proves</b> each requirement in the advert. The CV Health Check measures how well the CV is <b>written</b>. A strong fit can still be rejected if the CV is weak, so aim to get both up.</p>' +
         '<h4>Requirements you evidence</h4>' + chips(r.matched, 'yes') +
+        (list(r.partial).length ? '<h4>Only partly shown (easy wins)</h4>' + chips(r.partial, 'maybe') : '') +
         (list(r.missing_essential).length ? '<h4>Essential gaps</h4>' + chips(r.missing_essential, 'no') : '') +
         (list(r.missing_desirable).length ? '<h4>Desirable gaps</h4>' + chips(r.missing_desirable, 'maybe') : '') +
         '<h4>How to raise your score</h4>' + ul(r.tailoring_tips) +
         '<h4>Should you apply?</h4><p style="font-size:14.5px;color:var(--grey);margin:0;">' + esc(r.apply_advice) + '</p>' +
-        nextStep('Run the <b>Tailored CV Rewrite</b> with this advert to close the gaps you genuinely can.');
+        nextStep('Run the <b>Tailored CV Rewrite</b> with this advert to turn partly shown requirements into clear evidence.');
     },
     cv_rewrite: function (r) {
       var c = r.contact || {};
@@ -504,8 +555,9 @@
         (list(r.additional).length ? '<h5>Additional Information</h5><ul>' + list(r.additional).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') + '</div>';
       return '<div class="result-head"><h2>Your rewritten CV</h2><div class="actions"><button class="btn btn-gold" data-act="docx">Download Word file</button><button class="btn btn-ghost" data-act="copy">Copy text</button></div></div>' +
         (list(r.placeholders_to_fill).length ? '<div class="verdict"><b>Before you send it:</b> fill in the highlighted placeholders with your real figures. We never invent numbers, because employers check.' + ul(r.placeholders_to_fill) + '</div>' : '') +
+        '<div class="banner"><span>Your rewritten CV is now loaded into the CV box above, so the next tool you run uses it.</span></div>' +
         doc + '<h4>What we improved</h4>' + ul(r.changes_made) +
-        nextStep('Next: run the <b>Job Match Score</b> on your new CV, or ask us for an expert review below.');
+        nextStep('<button class="btn btn-navy" data-act="rescore" style="margin-right:10px;">Score my new CV against the job (1 credit)</button> or ask us for an expert review below.');
     },
     interview_prep: function (r) {
       return head('interview_prep') +
@@ -521,13 +573,14 @@
   function nextStep(html) { return '<p style="margin:22px 0 0;padding-top:16px;border-top:1px solid #EEE;font-size:14.5px;color:var(--grey);">' + html + '</p>'; }
 
   function wireResult(tool, r) {
-    if (tool === 'cv_rewrite') lastRewrite = r;
+    if (tool === 'cv_rewrite') { lastRewrite = r; useRewrite(r); }
     Array.prototype.forEach.call($('resultBox').querySelectorAll('[data-act]'), function (b) {
       b.addEventListener('click', function () {
         var a = b.getAttribute('data-act');
         if (a === 'print') window.print();
         if (a === 'copy') copyCv(b);
         if (a === 'docx') downloadDocx(b);
+        if (a === 'rescore') run('job_match');
       });
     });
   }

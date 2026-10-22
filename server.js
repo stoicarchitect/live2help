@@ -2346,6 +2346,16 @@ const emailTransporter = nodemailer.createTransport({
     pass: process.env.BREVO_SMTP_PASS,
   },
 });
+// Every email shows "Live 2 Help Recruitment" as the sender name. Sent over SMTP, the From line decides the name
+// the inbox shows (not the Brevo sender settings), and a bare address made Gmail show "office".
+const EMAIL_FROM_NAME = process.env.EMAIL_FROM_NAME || 'Live 2 Help Recruitment';
+const rawSendMail = emailTransporter.sendMail.bind(emailTransporter);
+emailTransporter.sendMail = (opts, ...rest) => {
+  if (opts && typeof opts.from === 'string' && opts.from.trim() && !opts.from.includes('<')) {
+    opts = { ...opts, from: `"${EMAIL_FROM_NAME}" <${opts.from.trim()}>` };
+  }
+  return rawSendMail(opts, ...rest);
+};
 
 // Restricts invoice create/update/delete to Dan's login. The dashboard sends
 // its role in this header on invoice-mutating requests. Not a real auth
@@ -13336,17 +13346,16 @@ app.post('/api/talent-suite/start', async (req, res) => {
     if (b.consent !== true) return res.status(400).json({ error: 'Please tick the consent box to continue.' });
     if (!tpAllow('ts:em:' + email, 5, 3600000)) return res.status(429).json({ error: 'We have already sent you a code. Please check your inbox and spam folder.' });
     if (!(await tpVerifyTurnstile(b.turnstileToken, ip))) return res.status(400).json({ error: 'We could not confirm you are human. Please refresh and try again.' });
-    const existing = await tsFindUser(email);
-    if (existing && existing.status === 'blocked') return res.status(403).json({ error: 'This email cannot use the toolkit.' });
     const code = String(crypto.randomInt(100000, 1000000));
     tsCodes.set(email, { hash: crypto.createHash('sha256').update(code).digest('hex'), exp: Date.now() + 15 * 60000, tries: 0,
       pending: { name, sector, target_role: tpClean(b.targetRole, 100), source: normaliseSource(b.src, '') } });
-    await emailTransporter.sendMail({
-      from: process.env.BREVO_SENDER_EMAIL, to: email, replyTo: 'office@live2helprecruitment.co.uk',
-      subject: `${code} is your Live 2 Help Talent Suite code`, html: tsCodeEmail(name, code),
-      text: `Your Live 2 Help Talent Suite code is ${code}. It works for 15 minutes.`,
-    });
+    // reply straight away; the email goes out in the background so the page never waits on the mail server
     res.json({ ok: true });
+    emailTransporter.sendMail({
+      from: process.env.BREVO_SENDER_EMAIL, to: email, replyTo: 'office@live2helprecruitment.co.uk',
+      subject: `${code} is your Live 2 Help sign-in code`, html: tsCodeEmail(name, code),
+      text: `Hi ${String(name).split(' ')[0]},\n\nYour Live 2 Help Talent Suite sign-in code is ${code}. It works for 15 minutes.\n\nLive 2 Help Recruitment`,
+    }).catch(e => console.error('Talent Suite code email failed:', e.message));
   } catch (e) {
     console.error('POST /api/talent-suite/start error:', e.message);
     res.status(500).json({ error: 'We could not send your code just now. Please try again in a minute.' });
@@ -13364,6 +13373,7 @@ app.post('/api/talent-suite/verify', async (req, res) => {
     if (given !== rec.hash) return res.status(400).json({ error: 'That code is not right. Please check and try again.' });
     tsCodes.delete(email);
     const ex = (await tsFindUser(email)) || {};
+    if (ex.status === 'blocked') return res.status(403).json({ error: 'This email cannot use the toolkit.' });
     const nowIso = new Date().toISOString();
     let bonus = ex.bonus_credits || '';
     if (!ex.id) {
@@ -13414,7 +13424,9 @@ const TS_TOOLS = {
   cv_check: {
     cost: 1, model: 'quality', maxTokens: 3000, label: 'CV Health Check',
     needs: ['cv'],
-    system: `You are a senior UK recruitment consultant at Live 2 Help Recruitment giving a candidate an honest, expert CV review.\n${TS_ATS_KNOWLEDGE}\n${TS_HOUSE_RULES}`,
+    system: `You are a senior UK recruitment consultant at Live 2 Help Recruitment giving a candidate an honest, expert CV review.
+This tool judges how well the CV is WRITTEN and PRESENTED (structure, clarity, evidence of impact, screening safety), not how suitable the person is for a job. If a job advert is supplied, also judge how well the CV is aimed at it.
+Score anchors (use the full range, be consistent): 85-100 ready to send, only polish needed; 70-84 good, a few clear improvements; 55-69 average, several changes needed; 40-54 weak, major rework; below 40 likely rejected on sight.\n${TS_ATS_KNOWLEDGE}\n${TS_HOUSE_RULES}`,
     tool: { name: 'cv_health_check', description: 'Return the CV review.', input_schema: { type: 'object', properties: {
       overall_score: { type: 'integer', description: '0 to 100, how likely this CV is to win interviews for the target role' },
       ats_score: { type: 'integer', description: '0 to 100, how well it survives automated screening' },
@@ -13428,18 +13440,39 @@ const TS_TOOLS = {
     }, required: ['overall_score', 'ats_score', 'verdict', 'strengths', 'fixes', 'keywords_to_add'] } },
   },
   job_match: {
-    cost: 1, model: 'fast', maxTokens: 2000, label: 'Job Match Score',
+    cost: 1, model: 'quality', maxTokens: 3500, label: 'Job Match Score',
     needs: ['cv', 'job'],
-    system: `You compare a candidate's CV against a specific job advert the way a UK recruiter and an ATS would.\n${TS_ATS_KNOWLEDGE}\n${TS_HOUSE_RULES}`,
-    tool: { name: 'job_match', description: 'Return the match analysis.', input_schema: { type: 'object', properties: {
-      match_score: { type: 'integer', description: '0 to 100' },
+    system: `You assess how well a candidate's CV EVIDENCES the requirements of a specific job advert, the way a UK recruiter and an applicant tracking system would.
+Method:
+1. Extract every distinct requirement from the advert (skills, experience, qualifications, tools, sector knowledge, licences). Mark each essential or desirable as the advert states; if unclear, treat as essential when it appears in the main requirements.
+2. For each requirement, judge the evidence in the CV text only:
+   - strong: clearly shown in a role with context (where, what, ideally a result)
+   - partial: mentioned only in a skills list or profile, implied by a related role, or uses different wording an ATS may miss
+   - none: not in the CV
+3. Quote or closely paraphrase the CV evidence. Placeholders in square brackets are not evidence.
+Be consistent: the same CV and advert must always get the same judgements.\n${TS_ATS_KNOWLEDGE}\n${TS_HOUSE_RULES}`,
+    tool: { name: 'job_match', description: 'Return the requirement by requirement assessment.', input_schema: { type: 'object', properties: {
+      requirements: { type: 'array', description: 'Every requirement in the advert, essential first', items: { type: 'object', properties: {
+        requirement: { type: 'string' }, importance: { type: 'string', enum: ['essential', 'desirable'] },
+        evidence: { type: 'string', enum: ['strong', 'partial', 'none'] }, cv_evidence: { type: 'string', description: 'What in the CV shows it, or empty' } },
+        required: ['requirement', 'importance', 'evidence', 'cv_evidence'] } },
       summary: { type: 'string', description: 'Two sentences on fit' },
-      matched: { type: 'array', items: { type: 'string' }, description: 'Requirements the CV clearly evidences' },
-      missing_essential: { type: 'array', items: { type: 'string' }, description: 'Essential requirements not evidenced in the CV' },
-      missing_desirable: { type: 'array', items: { type: 'string' } },
       tailoring_tips: { type: 'array', items: { type: 'string' }, description: 'Up to 6 concrete edits to raise the score, only where the candidate genuinely has the experience' },
       apply_advice: { type: 'string', description: 'Should they apply, and how to position themselves' },
-    }, required: ['match_score', 'summary', 'matched', 'missing_essential', 'missing_desirable', 'tailoring_tips', 'apply_advice'] } },
+    }, required: ['requirements', 'summary', 'tailoring_tips', 'apply_advice'] } },
+    // the score is calculated here, not guessed by the model, so improvements to the CV move it reliably
+    post(out) {
+      const reqs = Array.isArray(out.requirements) ? out.requirements : [];
+      const W = { essential: 3, desirable: 1 }, E = { strong: 1, partial: 0.5, none: 0 };
+      let got = 0, max = 0;
+      reqs.forEach(r => { const w = W[r.importance] || 1; max += w; got += w * (E[r.evidence] || 0); });
+      out.match_score = max ? Math.round(got / max * 100) : 0;
+      out.matched = reqs.filter(r => r.evidence === 'strong').map(r => r.requirement);
+      out.partial = reqs.filter(r => r.evidence === 'partial').map(r => r.requirement);
+      out.missing_essential = reqs.filter(r => r.evidence === 'none' && r.importance === 'essential').map(r => r.requirement);
+      out.missing_desirable = reqs.filter(r => r.evidence === 'none' && r.importance !== 'essential').map(r => r.requirement);
+      return out;
+    },
   },
   cv_rewrite: {
     cost: 3, model: 'quality', maxTokens: 8000, label: 'Tailored CV Rewrite',
@@ -13536,6 +13569,7 @@ app.post('/api/talent-suite/tool', async (req, res) => {
       console.error(`Talent Suite ${b.tool} failed:`, e.message);
       return res.status(502).json({ error: 'The toolkit could not finish that one. Your credit has been returned. Please try again.' });
     }
+    if (def.post) out = def.post(out);
     const fresh = (await tsFindUser(u.email)) || u;
     res.json({ ok: true, tool: b.tool, result: tsDeepClean(out), user: tsPublicUser(fresh) });
   } catch (e) {
