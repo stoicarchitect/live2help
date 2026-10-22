@@ -360,8 +360,60 @@ if (!API_KEY) {
   process.exit(1);
 }
 
+/* ----------------------------------------------------------------------
+   Public AI proxy - locked down (Talent Suite Phase 1).
+   Previously this forwarded any request body straight to Anthropic, so
+   anyone could choose any model and token count on our API key.
+   Now: only our own sites may call it, the model and output size are
+   fixed server side, input is capped, and usage is rate limited per IP
+   with a global daily ceiling as a hard cost stop.
+---------------------------------------------------------------------- */
+const AI_ALLOWED_ORIGINS = [
+  'https://careers.live2helprecruitment.co.uk',
+  'https://live2helprecruitment.co.uk',
+  'https://www.live2helprecruitment.co.uk',
+];
+const AI_MODELS = { quality: 'claude-sonnet-4-6', fast: 'claude-haiku-4-5' };
+const AI_MAX_TOKENS = 1500;
+const AI_MAX_INPUT_CHARS = 30000;
+const AI_PER_IP_HOURLY = Number(process.env.AI_PER_IP_HOURLY || 15);
+const AI_PER_IP_DAILY = Number(process.env.AI_PER_IP_DAILY || 40);
+const AI_GLOBAL_DAILY = Number(process.env.AI_GLOBAL_DAILY || 400);
+const aiUsage = new Map();
+let aiGlobal = { day: '', count: 0 };
+
+function aiRateCheck(ip) {
+  const now = Date.now();
+  const day = new Date().toISOString().slice(0, 10);
+  if (aiGlobal.day !== day) aiGlobal = { day, count: 0 };
+  if (aiGlobal.count >= AI_GLOBAL_DAILY) return 'The AI tools have reached today\'s limit. Please try again tomorrow.';
+  const u = aiUsage.get(ip) || { hits: [] };
+  u.hits = u.hits.filter(t => now - t < 86400000);
+  if (u.hits.filter(t => now - t < 3600000).length >= AI_PER_IP_HOURLY) return 'You have reached the hourly limit. Please try again later.';
+  if (u.hits.length >= AI_PER_IP_DAILY) return 'You have reached today\'s limit. Please try again tomorrow.';
+  u.hits.push(now);
+  aiUsage.set(ip, u);
+  aiGlobal.count++;
+  if (aiUsage.size > 5000) for (const [k, v] of aiUsage) if (!v.hits.some(t => now - t < 86400000)) aiUsage.delete(k);
+  return null;
+}
+
 app.post('/api/claude', async (req, res) => {
   try {
+    const origin = req.get('origin') || '';
+    if (!AI_ALLOWED_ORIGINS.includes(origin)) return res.status(403).json({ error: 'Not allowed' });
+    const b = req.body || {};
+    if (!Array.isArray(b.messages) || !b.messages.length) return res.status(400).json({ error: 'No message supplied' });
+    const messages = b.messages.slice(-12).map(m => ({
+      role: m && m.role === 'assistant' ? 'assistant' : 'user',
+      content: String(typeof (m && m.content) === 'string' ? m.content : '').slice(0, AI_MAX_INPUT_CHARS),
+    })).filter(m => m.content);
+    const system = String(b.system || '').slice(0, 8000);
+    const total = system.length + messages.reduce((n, m) => n + m.content.length, 0);
+    if (!messages.length) return res.status(400).json({ error: 'No message supplied' });
+    if (total > AI_MAX_INPUT_CHARS) return res.status(413).json({ error: 'That is too long. Please shorten it and try again.' });
+    const limited = aiRateCheck(req.ip);
+    if (limited) return res.status(429).json({ error: limited });
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -369,7 +421,12 @@ app.post('/api/claude', async (req, res) => {
         'x-api-key': API_KEY,
         'anthropic-version': '2023-06-01'
       },
-      body: JSON.stringify(req.body)
+      body: JSON.stringify({
+        model: b.tier === 'fast' ? AI_MODELS.fast : AI_MODELS.quality,
+        max_tokens: Math.min(Number(b.max_tokens) || 1000, AI_MAX_TOKENS),
+        system: system || undefined,
+        messages,
+      })
     });
 
     const data = await response.json();
