@@ -158,6 +158,11 @@
   .plan .price small { font-size: 13px; color: #8D91A0; font-weight: normal; }
   .plan p { color: #C9CCD6; font-size: 14px; margin: 0 0 12px; }
   .plan ul { flex: 1; }
+  .upsell { margin: 0 0 18px; }
+  .result.bare { background: transparent; border: 0; padding: 0; }
+  .upsell h2 { font-size: 19px; line-height: 1.35; max-width: 640px; }
+  .tools.spent .tool { opacity: .6; }
+  .tools.spent .tool:hover { opacity: 1; }
   .paidnote { background: rgba(46,125,79,.18); color: #BFE8CD; border-radius: 8px; padding: 12px 14px; font-size: 14.5px; margin-bottom: 14px; position: relative; z-index: 1; }
   .premium .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   @media (max-width: 600px) { .premium .grid2 { grid-template-columns: 1fr; } }
@@ -282,6 +287,7 @@
     <div class="card" id="toolsCard">
       <h2>2. Choose a tool</h2>
       <p class="sub">Each tool uses credits. Credits refresh on the 1st of every month.</p>
+      <div id="outOfCredits" class="hidden"></div>
       <div class="tools">
         <div class="tool"><span class="cost">1 credit</span><h3>CV Health Check</h3><p>An honest score for interview chances and screening software, your strengths, and the fixes that will make the biggest difference.</p><div class="needs">Needs: your CV</div><button class="btn btn-navy" data-tool="cv_check">Check my CV</button></div>
         <div class="tool"><span class="cost">1 credit</span><h3>Job Match Score</h3><p>How well your CV matches a specific job, the requirements you are missing, and whether it is worth applying.</p><div class="needs">Needs: CV and job advert</div><button class="btn btn-navy" data-tool="job_match">Score my match</button></div>
@@ -291,6 +297,16 @@
     </div>
 
     <div id="resultBox" class="card result hidden"></div>
+
+    <div class="card" id="freeCard">
+      <h2>Free: screening-safe CV checklist</h2>
+      <p class="sub">No credits needed. Tick off each point before you send your CV anywhere.</p>
+      <div class="progress"><i id="clBar" style="width:0"></i></div>
+      <div class="status" id="clStatus" style="margin-bottom:8px;"></div>
+      <div class="checklist" id="checklist"></div>
+      <p style="margin:20px 0 0;font-size:14.5px;">Looking for your next role? <a href="../../">See our live roles</a> or <a href="../../talent-pool/">join our talent pool</a> so we can match you as roles come in.</p>
+    </div>
+  </section>
 
     <div class="card premium" id="premiumCard">
       <p class="eyebrow">Expert services</p>
@@ -307,16 +323,6 @@
           <a class="btn btn-gold" href="../pricing/?tier=cv_review_coaching" data-buy>Choose Review + Coaching</a></div>
       </div>
     </div>
-
-    <div class="card" id="freeCard">
-      <h2>Free: screening-safe CV checklist</h2>
-      <p class="sub">No credits needed. Tick off each point before you send your CV anywhere.</p>
-      <div class="progress"><i id="clBar" style="width:0"></i></div>
-      <div class="status" id="clStatus" style="margin-bottom:8px;"></div>
-      <div class="checklist" id="checklist"></div>
-      <p style="margin:20px 0 0;font-size:14.5px;">Looking for your next role? <a href="../../">See our live roles</a> or <a href="../../talent-pool/">join our talent pool</a> so we can match you as roles come in.</p>
-    </div>
-  </section>
 
 </main>
 
@@ -406,6 +412,14 @@
     $('credBar').style.width = Math.round(c.left / Math.max(1, c.allowance) * 100) + '%';
     var d = new Date(c.resets + 'T00:00:00Z');
     $('credLeft').parentNode.parentNode.title = 'Credits reset on ' + d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
+    var out = c.left <= 0;
+    $('outOfCredits').classList.toggle('hidden', !out);
+    $('outOfCredits').innerHTML = out ? upsellHtml(MSG_OUT) : '';
+    document.querySelector('#toolsCard .tools').classList.toggle('spent', out);
+    Array.prototype.forEach.call(document.querySelectorAll('[data-tool]'), function (b) {
+      if (!b.dataset.label) b.dataset.label = b.textContent;
+      b.textContent = c.left < (COST[b.getAttribute('data-tool')] || 1) ? 'Get it done by a recruiter' : b.dataset.label;
+    });
   }
 
   // ---------- CV and job inputs ----------
@@ -494,8 +508,23 @@
   function stopRunner() { if (timer) clearInterval(timer); timer = null; }
   Array.prototype.forEach.call(document.querySelectorAll('[data-tool]'), function (b) { b.addEventListener('click', function () { run(b.getAttribute('data-tool')); }); });
 
+  var COST = { cv_check: 1, job_match: 1, cv_rewrite: 3, interview_prep: 2 };
+  var MSG_OUT = 'You\u2019ve used this month\u2019s free credits. Credits refresh on the 1st, or get it done by a recruiter now.';
+  function upsellHtml(text) {
+    return '<div class="card premium upsell"><p class="eyebrow">Expert services</p><h2>' + esc(text) + '</h2><div class="plans">' + $('plans').innerHTML + '</div></div>';
+  }
+  function showUpsell(tool) {
+    var left = user ? user.credits.left : 0, cost = COST[tool] || 1;
+    var text = left <= 0 ? MSG_OUT : 'This tool needs ' + cost + ' credits and you have ' + left + ' left. Credits refresh on the 1st, or get it done by a recruiter now.';
+    var box = $('resultBox'); box.classList.remove('hidden'); box.classList.add('bare');
+    box.innerHTML = upsellHtml(text);
+    box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   function run(tool) {
     if (busy) return;
+    if (user && user.credits.left < (COST[tool] || 1)) { showUpsell(tool); return; }
+    $('resultBox').classList.remove('bare');
     var cv = $('cvText').value.trim(), job = $('jobText').value.trim(), role = $('role').value.trim();
     var box = $('resultBox');
     var need = (tool !== 'interview_prep' && words(cv) < 60) ? 'Please add your full CV first.' :
@@ -510,8 +539,9 @@
       if (j.user) { user = j.user; renderCredits(); }
       if (j.code === 'TS_AUTH') { token = ''; store('del', TOKEN_KEY); show('signup'); return; }
       if (!j.ok) {
+        if (j.code === 'TS_CREDITS') { showUpsell(tool); return; }
         box.innerHTML = '<div class="msg err">' + esc(j.error || 'Something went wrong. Please try again.') + '</div>' +
-          (j.code === 'TS_CREDITS' || j._status === 429 ? '<p style="margin:14px 0 0;"><a href="#premiumCard">See our expert services</a></p>' : '');
+          (j._status === 429 ? '<p style="margin:14px 0 0;"><a href="#premiumCard">See our expert services</a></p>' : '');
         return;
       }
       box.innerHTML = RENDER[tool](j.result);
@@ -617,10 +647,10 @@
   }
 
   // ---------- expert services: hand the person's details to the pricing page (same site, never in the URL) ----------
-  Array.prototype.forEach.call(document.querySelectorAll('[data-buy]'), function (a) {
-    a.addEventListener('click', function () {
-      try { sessionStorage.setItem('l2h_ts_prefill', JSON.stringify({ name: user ? user.name : '', email: user ? user.email : '', role: $('role').value || '' })); } catch (e) {}
-    });
+  document.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest ? e.target.closest('[data-buy]') : null;
+    if (!a) return;
+    try { sessionStorage.setItem('l2h_ts_prefill', JSON.stringify({ name: user ? user.name : '', email: user ? user.email : '', role: $('role').value || '' })); } catch (e2) {}
   });
 
   // ---------- free checklist (no AI) ----------
