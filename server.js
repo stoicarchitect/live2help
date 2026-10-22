@@ -12416,7 +12416,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '21 Oct 2026 - build 41 (CRM and People)';
+const SERVER_BUILD = '22 Oct 2026 - build 42 (CRM, People, planning and marketing)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -12903,6 +12903,81 @@ app.post('/api/hr/commission', requireAdmin, async (req, res) => {
     auditLog(auditActorOf(req), existing ? 'updated' : 'created', 'commission', `${row.employee} ${row.candidate}`, row.amount);
     res.json({ ok: true, data: saved });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ---------- build 42: one call for the whole People page ----------
+   Loading People used to make six calls at once. On a cold start, or when the
+   Sheets quota is busy, one of them could fail and the page showed an error.
+   This returns everything in one go, reading each tab once. */
+app.get('/api/hr/bundle', async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    const { key, admin } = hrWho(req);
+    const year = Number(req.query.year) || new Date().getUTCFullYear();
+    const all = await hrEmployees.list();
+    const hol = await hrHolidays.list();
+    const abs = await hrAbsences.list();
+    const docs = await hrDocuments.list();
+    const revs = await hrReviews.list();
+    const com = admin ? await hrCommission.list() : [];
+    const bank = await hrBankHolidays();
+    const people = admin ? all : all.filter(e => e.id === key);
+    const balances = {};
+    for (const e of people) {
+      const ent = await hrEntitlement(e, year);
+      const mine = hol.filter(r => r.employee === e.id && String(r.from_date).startsWith(String(year)));
+      const sum = s => mine.filter(r => r.status === s).reduce((a, r) => a + Number(r.days || 0), 0);
+      const approved = sum('approved'), pending = sum('pending');
+      balances[e.id] = { ...ent, approved, pending, remaining: ent.bookable - approved - pending };
+    }
+    const name = id => { const e = all.find(x => x.id === id); return e ? (e.known_as || e.full_name) : id; };
+    const since = hrISO(new Date(Date.now() - 364 * 86400000));
+    const bradford = {};
+    if (admin) [...new Set(abs.map(r => r.employee))].forEach(emp => {
+      const mine = abs.filter(r => r.employee === emp && r.from_date >= since);
+      const days = mine.reduce((a, r) => a + Number(r.days || 0), 0);
+      bradford[emp] = { spells: mine.length, days, score: mine.length * mine.length * days };
+    });
+    const events = [
+      ...hol.filter(r => ['approved', 'pending'].includes(r.status)).map(r => ({ who: name(r.employee), employee: r.employee, from: r.from_date, to: r.to_date, kind: r.status === 'approved' ? 'holiday' : 'pending' })),
+      ...abs.map(a => ({ who: name(a.employee), employee: a.employee, from: a.from_date, to: a.to_date, kind: 'absence' })),
+    ].map(e => (admin || e.employee === key) ? e : { who: e.who, employee: e.employee, from: e.from, to: e.to, kind: 'away' });
+    const sortDesc = (a, b) => String(b.from_date).localeCompare(String(a.from_date));
+    res.json({
+      me: { key, admin, year, employees: people.map(e => hrCleanEmployee(e, admin)), balances, pendingApprovals: admin ? hol.filter(r => r.status === 'pending').length : 0, isEmployee: all.some(e => e.id === key) },
+      holidays: hol.filter(r => admin || r.employee === key).sort(sortDesc),
+      absences: abs.filter(r => admin || r.employee === key).sort(sortDesc),
+      bradford: admin ? bradford : undefined,
+      documents: docs.filter(d => admin || ((d.employee === key || d.employee === 'all') && !hrTrue(d.admin_only))).map(d => ({ ...d, acknowledged: !!d.acknowledged_at })),
+      reviews: revs.filter(r => admin || r.employee === key).map(r => admin ? r : { ...r, manager_notes: r.status === 'Completed' ? r.manager_notes : '' })
+        .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date))),
+      commission: com,
+      calendar: { events, bank: [...bank.entries()].map(([date, title]) => ({ date, title })) },
+    });
+  } catch (e) { console.error('GET /api/hr/bundle error:', e.message); res.status(500).json({ error: 'People could not load: ' + e.message }); }
+});
+
+// Make the HR tabs ready shortly after the server starts, so the first visit is quick
+if (HR_SHEET_ID) setTimeout(async () => {
+  for (const t of [hrEmployees, hrHolidays, hrAbsences, hrDocuments, hrReviews, hrCommission]) {
+    try { await t.ensure(); } catch (e) { console.error('HR warm-up:', e.message); }
+  }
+}, 15000);
+
+/* ---------- build 42: planning and marketing records (tracker sheet) ---------- */
+const weekPlanTable = makeSimpleTable({
+  tab: 'Week Plans', path: '/api/week-plans', label: 'Plan item',
+  header: ['id', 'person', 'date', 'kind', 'text', 'done', 'created_by', 'updated_at'],
+});
+const roadmapTable = makeSimpleTable({
+  tab: 'Roadmap', path: '/api/roadmap', label: 'Roadmap item', auditType: 'roadmap', auditName: o => o.title,
+  header: ['id', 'title', 'area', 'owner', 'target', 'status', 'notes', 'updated_by', 'updated_at'],
+});
+const marketingTable = makeSimpleTable({
+  tab: 'Marketing', path: '/api/marketing', label: 'Marketing item', auditType: 'marketing', auditName: o => `${o.type} ${o.title}`,
+  header: ['id', 'type', 'title', 'date', 'status', 'owner', 'channel', 'audience', 'location', 'cost', 'link', 'next_step', 'notes', 'updated_by', 'updated_at'],
+  seed: [{ id: 'mk-hiring-toolkit', type: 'magnet', title: 'Hiring Toolkit', status: 'Live', owner: 'ella', channel: 'LinkedIn website button',
+    link: 'https://careers.live2helprecruitment.co.uk/hire/', notes: 'Vacancy cost, process score and offer rating. Leads land in CRM > Funnel leads.', updated_by: 'system' }],
 });
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
