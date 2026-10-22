@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Live 2 Help - Pipeline</title>
+<title>Live 2 Help Workspace</title>
 <style>
   :root{
     --gold:#C9A84C;
@@ -1039,6 +1039,295 @@
     #toast,.toast{bottom:calc(72px + env(safe-area-inset-bottom)) !important;}
     .board-scroll-btn{display:none !important;}
   }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style id="l2h-build41">
+/* ======================================================================
+   Build 41: Live 2 Help Workspace design system (navy and gold)
+   Layout: fixed navy rail (sections) + white top bar (page title, search,
+   user) + section tabs + working canvas. The roles list only shows on the
+   candidate pipeline.
+   ====================================================================== */
+:root{
+  --gold:#B98A2E; --gold-2:#D6A94A; --gold-soft:#F4EAD3;
+  --dark:#0F1F3D; --navy:#0F1F3D; --navy-2:#182C52; --navy-3:#22396A;
+  --grey:#3B4760; --muted:#66718A; --lightbg:#F3F5F9; --border:#DCE1EA; --white:#FFFFFF;
+  --danger:#B03A3A; --success:#2F7A4F; --warn:#A8650C;
+  --ok-bg:#E3F2E9; --warn-bg:#FBEFD9; --bad-bg:#F8E2E2;
+  --f-display:"Newsreader",Georgia,"Times New Roman",serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Calibri,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --radius:8px; --rail:224px;
+  color-scheme:light;
+}
+body{font-family:var(--f-body)!important;background:var(--lightbg);color:var(--grey);-webkit-font-smoothing:antialiased;}
+button,input,select,textarea{font-family:var(--f-body)!important;}
+[style*="border-radius:2px"],[style*="border-radius: 2px"]{border-radius:7px!important;}
+input,select,textarea{border-radius:7px;}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+h1,h2,.view-head h2,#leadClientsHeader h2,#clientsHeader h2,.modal h2{font-family:var(--f-display)!important;font-weight:600!important;color:var(--navy)!important;letter-spacing:0!important;}
+.view-head h2{font-size:24px!important;}
+.view-head{padding:18px 28px 14px!important;background:var(--white);}
+.view-body{padding:20px 28px!important;}
+.gold-btn{background:var(--navy)!important;color:#fff!important;border-radius:7px!important;}
+.gold-btn:hover{background:var(--navy-3)!important;}
+.tile{border-radius:10px!important;border-top:1px solid var(--border)!important;box-shadow:inset 0 3px 0 var(--gold);}
+.tile.warn{box-shadow:inset 0 3px 0 var(--danger);}
+.tile .n{font-family:var(--f-display);font-weight:600;font-variant-numeric:tabular-nums;}
+.modal{border-radius:12px!important;}
+.card{border-radius:8px!important;}
+.client-card,.lead-card,.panel,.p41-panel{border-radius:10px!important;}
+#tabs{background:var(--white);padding:0 20px;gap:2px;}
+.tab-btn{padding:13px 14px!important;margin:0!important;color:var(--muted)!important;font-size:13.5px!important;}
+.tab-btn.active{color:var(--navy)!important;border-bottom-color:var(--gold)!important;font-weight:600!important;}
+.tab-btn:hover{color:var(--navy)!important;}
+
+/* ---- gate and splash ---- */
+#gate{background:radial-gradient(120% 90% at 20% 10%,#1d3462 0%,var(--navy) 55%,#091530 100%)!important;}
+#gate .box{border-radius:14px!important;box-shadow:0 30px 80px rgba(3,10,25,.45);}
+#gate h1{font-family:var(--f-display)!important;color:var(--navy)!important;}
+#gate button{background:var(--navy)!important;border-radius:8px!important;}
+#splashScreen{background:radial-gradient(120% 90% at 20% 10%,#1d3462 0%,var(--navy) 55%,#091530 100%)!important;}
+.splash-btn{border-radius:10px!important;}
+.splash-btn.overview{background:var(--gold)!important;color:#16120a!important;}
+
+#roleBar41 .rb41-roles{flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px;margin-top:2px;}
+/* ---- rail ---- */
+#rail41{display:none;}
+@media (min-width:781px){
+  body.app-on #rail41{display:flex;position:fixed;top:0;left:0;bottom:0;width:var(--rail);background:var(--navy);color:#E8ECF4;flex-direction:column;gap:6px;
+    padding:calc(20px + env(safe-area-inset-top,0px)) 14px calc(16px + env(safe-area-inset-bottom,0px)) max(14px,env(safe-area-inset-left,0px));z-index:6000;overflow-y:auto;}
+  body.app-on #app.visible{margin-left:var(--rail);}
+  body.app-on #groupBtns{display:none!important;}
+  body.app-on:not(.on-pipeline) #sidebar{display:none!important;}
+  body.app-on #sidebar{width:248px;background:#F7F8FB!important;color:var(--grey)!important;border-right:1px solid var(--border);}
+}
+#rail41 .r-brand{display:flex;flex-direction:column;gap:2px;padding:2px 8px 14px;border-bottom:1px solid var(--navy-2);margin-bottom:6px;}
+#rail41 .r-brand b{font-family:var(--f-display);font-size:22px;font-weight:600;color:#fff;letter-spacing:.2px;}
+#rail41 .r-brand span{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold-2);}
+#rail41 .r-sect{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:#8E9BB6;margin:12px 10px 4px;}
+#rail41 button.r-item{all:unset;box-sizing:border-box;cursor:pointer;display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border-radius:8px;color:#E8ECF4;font-size:14px;}
+#rail41 button.r-item:hover{background:var(--navy-2);}
+#rail41 button.r-item.active{background:var(--navy-2);box-shadow:inset 3px 0 0 var(--gold-2);color:#fff;font-weight:500;}
+#rail41 button.r-item:focus-visible{outline:2px solid var(--gold-2);}
+#rail41 .r-item svg{width:17px;height:17px;flex:none;stroke:currentColor;fill:none;stroke-width:1.7;opacity:.85;}
+#rail41 .r-badge{margin-left:auto;font-family:var(--f-mono);font-size:11px;background:var(--gold-2);color:#16120a;border-radius:99px;padding:0 7px;line-height:18px;}
+#rail41 .r-lock{margin-left:auto;font-size:9.5px;letter-spacing:.12em;color:var(--gold-2);}
+#rail41 .r-foot{margin-top:auto;border-top:1px solid var(--navy-2);padding-top:12px;display:flex;flex-direction:column;gap:8px;}
+#rail41 .r-user{display:flex;align-items:center;gap:10px;padding:0 6px;}
+#rail41 .r-av{width:34px;height:34px;border-radius:50%;background:var(--gold-2);color:#16120a;display:grid;place-items:center;font-weight:600;}
+#rail41 .r-user div{display:flex;flex-direction:column;min-width:0;}
+#rail41 .r-user small{color:#8E9BB6;font-size:11.5px;}
+#rail41 .r-out{all:unset;cursor:pointer;font-size:12.5px;color:#B8C2D6;padding:6px 8px;border-radius:6px;}
+#rail41 .r-out:hover{color:#fff;background:var(--navy-2);}
+#rail41 .r-ver{font-size:10.5px;color:#7C89A6;padding:0 8px;}
+
+/* ---- top bar (was the dark group bar) ---- */
+@media (min-width:781px){
+  body.app-on #groupBar{background:var(--white)!important;border-bottom:1px solid var(--border);padding:12px 28px!important;min-height:64px;}
+  body.app-on #groupBar #userChip .who{color:var(--muted)!important;}
+  body.app-on #groupBar #userChip button{border-color:var(--border)!important;color:var(--grey)!important;border-radius:7px!important;}
+}
+#pageTitle41{display:flex;flex-direction:column;gap:1px;min-width:0;}
+#pageTitle41 .e{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);font-weight:600;}
+#pageTitle41 .t{font-family:var(--f-display);font-size:22px;font-weight:600;color:var(--navy);line-height:1.2;}
+#search41{display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:9px;padding:8px 12px;background:var(--lightbg);color:var(--muted);cursor:pointer;min-width:220px;font-size:13px;}
+#search41 kbd{margin-left:auto;font-family:var(--f-mono);font-size:11px;border:1px solid var(--border);border-radius:4px;padding:0 5px;background:#fff;}
+@media (max-width:780px){#pageTitle41,#search41{display:none;}}
+
+/* ---- the roles list next to the pipeline ---- */
+@media (min-width:781px){
+  body.app-on #sidebar .brand{display:none;}
+  body.app-on .company-head{color:var(--navy)!important;}
+  body.app-on .company-head:hover,body.app-on .role-item:hover{background:#ECEFF5!important;color:var(--navy)!important;}
+  body.app-on .role-item{color:var(--grey)!important;}
+  body.app-on .role-item.active{background:var(--gold-soft)!important;color:var(--navy)!important;}
+  body.app-on .role-count{background:#E4E8F0!important;color:var(--grey)!important;}
+  body.app-on .sb-head{color:var(--muted)!important;}
+  body.app-on #addRoleBtn{border-color:var(--border)!important;color:var(--grey)!important;}
+}
+
+/* ---- shared pieces for the new views ---- */
+.p41{flex:1;display:none;flex-direction:column;min-width:0;}
+.p41.visible{display:flex;}
+.p41 .view-body{display:flex;flex-direction:column;gap:16px;}
+#hr41Body,#lib41Body{display:flex;flex-direction:column;gap:16px;}
+.p41-tabs{display:flex;gap:4px;flex-wrap:wrap;}
+.p41-chip{border:1px solid var(--border);background:#fff;border-radius:99px;padding:6px 13px;font-size:13px;color:var(--grey);cursor:pointer;}
+.p41-chip[aria-pressed="true"]{background:var(--navy);border-color:var(--navy);color:#fff;}
+.p41-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.p41-in{border:1px solid var(--border);border-radius:8px;padding:8px 11px;font-size:13.5px;background:#fff;color:var(--grey);min-width:0;}
+.p41-btn{border:1px solid var(--border);background:#fff;border-radius:8px;padding:7px 13px;font-size:13px;color:var(--navy);cursor:pointer;font-weight:500;white-space:nowrap;}
+.p41-btn:hover{border-color:var(--gold);}
+.p41-btn.pri{background:var(--navy);border-color:var(--navy);color:#fff;}
+.p41-btn.pri:hover{background:var(--navy-3);}
+.p41-btn.sm{padding:4px 10px;font-size:12.5px;}
+.p41-btn[disabled]{opacity:.5;cursor:default;}
+.p41-grid{display:grid;gap:16px;grid-template-columns:repeat(2,minmax(0,1fr));}
+.p41-grid.g3{grid-template-columns:repeat(3,minmax(0,1fr));}
+.p41-grid.g4{grid-template-columns:repeat(4,minmax(0,1fr));}
+@media (max-width:1100px){.p41-grid.g4{grid-template-columns:repeat(2,minmax(0,1fr));}.p41-grid.g3{grid-template-columns:1fr;}}
+@media (max-width:860px){.p41-grid{grid-template-columns:1fr!important;}}
+.p41-panel{background:#fff;border:1px solid var(--border);padding:16px 18px;display:flex;flex-direction:column;gap:12px;min-width:0;}
+.p41-panel h3{font-family:var(--f-display);font-size:19px;font-weight:600;color:var(--navy);margin:0;}
+.p41-ph{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;}
+.p41-stat{background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:3px;box-shadow:inset 0 3px 0 var(--gold);}
+.p41-stat .k{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
+.p41-stat .v{font-family:var(--f-display);font-size:30px;font-weight:600;color:var(--navy);font-variant-numeric:tabular-nums;line-height:1.1;}
+.p41-stat .n{font-size:12px;color:var(--muted);}
+.p41-list{display:flex;flex-direction:column;}
+.p41-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--border);}
+.p41-row:first-child{border-top:0;}
+.p41-row .m{min-width:0;}
+.p41-row .m .s{color:var(--muted);font-size:12.5px;}
+.p41-pill{display:inline-flex;align-items:center;font-size:11.5px;font-weight:500;border-radius:99px;padding:2px 9px;white-space:nowrap;background:var(--lightbg);border:1px solid var(--border);color:var(--muted);}
+.p41-pill.ok{background:var(--ok-bg);color:var(--success);border-color:transparent;}
+.p41-pill.warn{background:var(--warn-bg);color:var(--warn);border-color:transparent;}
+.p41-pill.bad{background:var(--bad-bg);color:var(--danger);border-color:transparent;}
+.p41-pill.gold{background:var(--gold-soft);color:#8a6418;border-color:transparent;}
+.p41-tw{overflow-x:auto;border:1px solid var(--border);border-radius:10px;background:#fff;}
+.p41-tw table{width:100%;border-collapse:collapse;font-size:13.5px;}
+.p41-tw th{text-align:left;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:10px 14px;border-bottom:1px solid var(--border);white-space:nowrap;background:#FAFBFD;}
+.p41-tw td{padding:11px 14px;border-bottom:1px solid var(--border);vertical-align:top;color:var(--grey);}
+.p41-tw tr:last-child td{border-bottom:0;}
+.p41-tw tr.click{cursor:pointer;}
+.p41-tw tr.click:hover td{background:#F7F9FC;}
+.p41-tw .co b{display:block;color:var(--navy);}
+.p41-tw .co span{color:var(--muted);font-size:12.5px;}
+.p41-note{background:var(--gold-soft);color:var(--navy);border-radius:8px;padding:10px 12px;font-size:13px;}
+.p41-empty{color:var(--muted);font-size:13px;padding:8px 0;}
+.p41-mono{font-family:var(--f-mono);font-size:12.5px;}
+.p41-kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;margin:0;font-size:13.5px;}
+.p41-kv dt{color:var(--muted);}
+.p41-kv dd{margin:0;color:var(--grey);font-variant-numeric:tabular-nums;min-width:0;overflow-wrap:anywhere;}
+.p41-form{display:grid;gap:10px;}
+.p41-form label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted);}
+.p41-form .two{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+@media (max-width:600px){.p41-form .two{grid-template-columns:1fr;}}
+.p41-bar-track{height:8px;background:var(--lightbg);border-radius:99px;overflow:hidden;border:1px solid var(--border);}
+.p41-bar-track i{display:block;height:100%;background:var(--gold);}
+.p41-err{color:var(--danger);font-size:13px;}
+
+/* ---- account drawer ---- */
+#drawer41{position:fixed;inset:0;z-index:7500;display:none;}
+#drawer41.open{display:block;}
+#drawer41 .bk{position:absolute;inset:0;background:rgba(8,14,28,.45);}
+#drawer41 aside{position:absolute;top:0;right:0;bottom:0;width:min(500px,100%);background:#fff;overflow:auto;display:flex;flex-direction:column;gap:16px;
+  padding:calc(22px + env(safe-area-inset-top,0px)) max(22px,env(safe-area-inset-right,0px)) calc(22px + env(safe-area-inset-bottom,0px)) 22px;box-shadow:-20px 0 60px rgba(3,10,25,.2);}
+#drawer41 h2{font-size:26px!important;margin:0;}
+.d41-sec{border-top:1px solid var(--border);padding-top:14px;display:flex;flex-direction:column;gap:8px;}
+.d41-eyebrow{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600;}
+.d41-contact{border:1px solid var(--border);border-radius:9px;}
+.d41-contact > button{all:unset;box-sizing:border-box;cursor:pointer;display:flex;flex-direction:column;gap:2px;width:100%;padding:10px 12px;}
+.d41-contact > button:hover{background:#F7F9FC;}
+.d41-contact .top{display:flex;justify-content:space-between;gap:8px;}
+.d41-contact .top b{color:var(--navy);}
+.d41-contact .top small,.d41-contact .sub{color:var(--muted);font-size:12.5px;}
+.d41-contact .det{padding:0 12px 12px;}
+.d41-tl{display:flex;flex-direction:column;gap:12px;border-left:2px solid var(--border);margin-left:4px;padding-left:14px;}
+.d41-tl b{font-size:13px;color:var(--navy);}
+.d41-tl div{color:var(--muted);font-size:12.5px;}
+
+/* ---- calendar ---- */
+.c41{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;min-width:560px;}
+.c41 .h{font-size:11px;color:var(--muted);text-align:center;padding:4px 0;}
+.c41 .d{min-height:70px;border:1px solid var(--border);border-radius:7px;padding:4px 5px;font-size:11.5px;background:#fff;display:flex;flex-direction:column;gap:3px;min-width:0;}
+.c41 .d.we{background:var(--lightbg);color:var(--muted);}
+.c41 .d.today{box-shadow:inset 0 0 0 2px var(--gold);}
+.c41 .t{font-size:10.5px;border-radius:4px;padding:1px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.c41 .t.holiday{background:var(--ok-bg);color:var(--success);}
+.c41 .t.pending{background:var(--warn-bg);color:var(--warn);}
+.c41 .t.bank{background:var(--gold-soft);color:#8a6418;}
+.c41 .t.absence{background:var(--bad-bg);color:var(--danger);}
+.c41 .t.away{background:#E8ECF4;color:var(--grey);}
+
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;}}
+
+
+
+/* ===== build 42 ===== */
+/* welcome screen only, then straight to Today */
+#splashScreen .splash-buttons{display:none!important;}
+#splashScreen .splash-logo-img{mix-blend-mode:lighten;}
+/* logos */
+#rail41 .r-brand img{width:100%;max-width:190px;height:auto;mix-blend-mode:lighten;display:block;margin:0 0 6px -4px;}
+#gate .box{background:var(--navy-2)!important;border:1px solid var(--navy-3);}
+#gate .box img{mix-blend-mode:lighten;}
+#gate h1{color:#fff!important;}
+#gate .err{color:#ffb4b4!important;}
+#gate .gate-note{color:#d8deea!important;}
+/* recruitment: no left list on desktop, picker across the top instead */
+@media (min-width:781px){ body.app-on #sidebar{display:none!important;} }
+#roleBar41{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;padding:12px 24px;background:#fff;border-bottom:1px solid var(--border);}
+#roleBar41 .rb41{display:flex;flex-direction:column;gap:3px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);min-width:0;}
+#roleBar41 .rb41 select{min-width:240px;max-width:100%;text-transform:none;letter-spacing:0;font-size:13.5px;}
+@media (max-width:600px){#roleBar41 .rb41,#roleBar41 .rb41 select{width:100%;min-width:0;}}
+/* Today: calm */
+#homeTiles,#homeView .panel:has(#homeAttention),#homeView .panel:has(#homeTasks),#homeView .panel:has(#homeRecent){display:none!important;}
+#homeView .panel-grid{grid-template-columns:1fr!important;}
+.glance42{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:18px;}
+.gl42{all:unset;box-sizing:border-box;cursor:pointer;background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:2px;box-shadow:inset 0 3px 0 var(--gold);transition:transform .15s,box-shadow .15s;}
+.gl42:hover{transform:translateY(-1px);box-shadow:inset 0 3px 0 var(--gold),0 6px 18px rgba(15,31,61,.08);}
+.gl42:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+.gl42 .n{font-family:var(--f-display);font-size:34px;font-weight:600;color:var(--navy);line-height:1.05;font-variant-numeric:tabular-nums;}
+.gl42 .l{font-size:14px;color:var(--navy);font-weight:500;}
+.gl42 .s{font-size:12px;color:var(--muted);}
+.gl42.warn{box-shadow:inset 0 3px 0 var(--danger);}
+.gl42.warn .n{color:var(--danger);}
+/* clients and lead clients as lists */
+#clientsGrid,#leadClientsGrid{display:none!important;}
+.list41{padding:18px 24px;overflow:auto;}
+/* document viewer */
+#viewer41,#rec41{position:fixed;inset:0;z-index:8000;display:none;}
+#viewer41.open,#rec41.open{display:block;}
+#viewer41 .bk,#rec41 .bk{position:absolute;inset:0;background:rgba(8,14,28,.55);}
+#viewer41 .vw{position:absolute;inset:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));background:#fff;border-radius:12px;display:flex;flex-direction:column;overflow:hidden;max-width:1000px;margin:0 auto;}
+#viewer41 .vh{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border);}
+#viewer41 .vh b{font-family:var(--f-display);font-size:19px;color:var(--navy);}
+#viewer41 .vh .sp{flex:1;}
+#viewer41 .vb{flex:1;overflow:auto;background:var(--lightbg);}
+#viewer41 iframe{width:100%;height:100%;border:0;display:block;background:#fff;}
+.doc41{background:#fff;max-width:780px;margin:24px auto;padding:48px 56px;box-shadow:0 2px 14px rgba(15,31,61,.08);border-radius:6px;font-size:14.5px;line-height:1.6;color:#1f2a40;}
+.doc41 h1,.doc41 h2,.doc41 h3{font-family:var(--f-display);color:var(--navy);margin:1em 0 .4em;}
+.doc41 p{margin:0 0 .8em;} .doc41 table{border-collapse:collapse;width:100%;margin:.8em 0;} .doc41 td,.doc41 th{border:1px solid var(--border);padding:6px 8px;vertical-align:top;}
+.doc41 img{max-width:100%;}
+/* build 43: branded Word view, signing panel */
+@font-face{font-family:'Gill Sans MT';src:local('Gill Sans MT'),local('GillSansMT'),local('Gill Sans'),local('GillSans');font-weight:400;}
+@font-face{font-family:'Gill Sans MT';src:local('Gill Sans MT Bold'),local('GillSansMT-Bold'),local('Gill Sans Bold'),local('GillSans-Bold');font-weight:700;}
+.docx41 .docx-wrapper{background:var(--lightbg)!important;padding:20px 12px!important;}
+.docx41 .docx-wrapper>section.docx{box-shadow:0 2px 14px rgba(15,31,61,.10)!important;margin-bottom:20px!important;}
+#viewer41 .sign41{border-top:3px solid var(--gold);background:#fff;padding:14px 18px calc(14px + env(safe-area-inset-bottom,0px));max-height:52vh;overflow:auto;}
+.sign41-h{display:flex;flex-direction:column;gap:2px;margin-bottom:10px;} .sign41-h b{font-family:var(--f-display);font-size:18px;color:var(--navy);} .sign41-h span{font-size:13px;color:var(--muted);}
+.sign41-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:14px;align-items:start;} .sign41-grid label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);}
+.sign41-lab{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);margin-bottom:4px;}
+.sign41-pad{width:100%;height:130px;border:1px dashed var(--gold);border-radius:6px;background:#FCFBF7;touch-action:none;cursor:crosshair;display:block;}
+.sign41-ok{display:flex;gap:8px;align-items:flex-start;font-size:13px;margin:10px 0 4px;color:var(--grey);}
+@media (max-width:700px){.sign41-grid{grid-template-columns:1fr;} #viewer41 .sign41{max-height:60vh;}}
+@media (max-width:700px){.doc41{padding:24px 18px;margin:0;border-radius:0;}}
+/* record editor */
+#rec41 .rp{position:absolute;top:0;right:0;bottom:0;width:min(460px,100%);background:#fff;overflow:auto;display:flex;flex-direction:column;gap:14px;padding:calc(22px + env(safe-area-inset-top,0px)) max(22px,env(safe-area-inset-right,0px)) calc(22px + env(safe-area-inset-bottom,0px)) 22px;}
+#rec41 h3{font-family:var(--f-display);font-size:22px;color:var(--navy);margin:0;}
+/* roadmap board */
+.road42{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:12px;overflow-x:auto;}
+.road42 .rcol{background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:140px;}
+.road42 .rh{display:flex;justify-content:space-between;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:2px 4px;}
+.road42 .rcard{all:unset;box-sizing:border-box;cursor:pointer;border:1px solid var(--border);border-radius:8px;padding:10px 11px;display:flex;flex-direction:column;gap:3px;background:var(--lightbg);}
+.road42 .rcard:hover{border-color:var(--gold);}
+.road42 .rcard b{color:var(--navy);} .road42 .rcard span{font-size:12px;color:var(--muted);}
+/* week */
+.week42{display:grid;grid-template-columns:repeat(5,minmax(180px,1fr));gap:12px;overflow-x:auto;}
+.week42 .wday{background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px;min-height:220px;}
+.week42 .wday.today{box-shadow:inset 0 3px 0 var(--gold);}
+.week42 .wh{display:flex;justify-content:space-between;align-items:baseline;}
+.week42 .wh b{font-family:var(--f-display);font-size:17px;color:var(--navy);} .week42 .wh span{font-size:12px;color:var(--muted);}
+.week42 .witem{display:flex;gap:8px;align-items:flex-start;font-size:13.5px;color:var(--grey);}
+.week42 .witem span{flex:1;min-width:0;overflow-wrap:anywhere;}
+.week42 .witem.done span{text-decoration:line-through;color:var(--muted);}
+.week42 .wx{all:unset;cursor:pointer;color:var(--muted);padding:0 4px;}
+.week42 .wx:hover{color:var(--danger);}
+.week42 .wtask{font-size:12.5px;background:var(--warn-bg);color:var(--warn);border-radius:6px;padding:4px 7px;cursor:pointer;}
+.week42 form input{width:100%;}
 </style>
 </head>
 <body>
@@ -12861,7 +13150,7 @@ function lgShowBanner(name){
   const back = lgReadStore('l2hAdminReturn', false);
   const real = back && back.user ? back.user.name : 'your own account';
   const st = document.createElement('style');
-  st.textContent = 'body.va-active{padding-top:38px;box-sizing:border-box;} #vaBanner{position:fixed;top:0;left:0;right:0;height:38px;z-index:8000;background:var(--gold);color:var(--dark);display:flex;align-items:center;justify-content:center;gap:14px;font-size:13px;padding:0 12px;} #vaBanner button{background:var(--dark);color:#fff;border:none;border-radius:2px;padding:5px 12px;font-size:12px;cursor:pointer;font-family:inherit;}';
+  st.textContent = 'body.va-active{padding-top:38px;box-sizing:border-box;} body.va-active #rail41,body.va-active #mobBar,body.va-active #sidebar{top:38px!important;} #vaBanner{position:fixed;top:0;left:0;right:0;height:38px;z-index:8000;background:var(--gold);color:var(--dark);display:flex;align-items:center;justify-content:center;gap:14px;font-size:13px;padding:0 12px;} #vaBanner button{background:var(--dark);color:#fff;border:none;border-radius:2px;padding:5px 12px;font-size:12px;cursor:pointer;font-family:inherit;}';
   document.head.appendChild(st);
   const bar = document.createElement('div');
   bar.id = 'vaBanner';
@@ -12932,8 +13221,10 @@ function lgTeamRefresh(){ const c = document.getElementById('lgTeamCard'); if(c)
   renderTeam = function(){ _rt.apply(this, arguments); lgTeamCard(); };
 })();
 
-/* ---------- Start up: pick up a View as hop, otherwise show the login ---------- */
-(function lgBoot(){
+/* ---------- Start up: pick up a View as hop, otherwise show the login ----------
+   Build 43: waits until every script on the page has loaded, so the CRM layout,
+   menu and HR views are all wired up before the switched account signs in. */
+(function(){ var run = function lgBoot(){
   const va = lgReadStore('l2hVa', true);
   const back = lgReadStore('l2hRestore', true);
   const go = function(blob, asViewer){
@@ -12947,7 +13238,7 @@ function lgTeamRefresh(){ const c = document.getElementById('lgTeamCard'); if(c)
   if(va && va.token && va.user) go(va, true);
   else if(back && back.token && back.user) go(back, false);
   else lgReadStore('l2hAdminReturn', true);
-})();
+}; if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(run, 0); }); else setTimeout(run, 0); })();
 
 /* ============================================================
    Talent pool Find matches: CV search, 15 mile radius, AI ranking
@@ -16114,7 +16405,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '20 Oct 2026 - build 38';
+var PAGE_BUILD = '22 Oct 2026 - build 43';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -16233,5 +16524,947 @@ function buildTagApply(){
   };
 })();
 </script>
+<script>
+/* ======================================================================
+   Build 41: CRM and People workspace
+   - new navigation rail grouping every existing tab (nothing removed)
+   - CRM Accounts view with full contact, site, term, role and comms detail
+   - People (HR) view and Library view
+   Every existing tab, view and automation is untouched and still reachable.
+   ====================================================================== */
+(function(){
+  const $ = id => document.getElementById(id);
+  const isAdmin41 = () => !!(typeof signedInUser !== 'undefined' && signedInUser && signedInUser.admin);
+  const me41 = () => (typeof signedInUser !== 'undefined' && signedInUser) ? signedInUser : {key:'', name:''};
+  const h = s => (typeof esc === 'function') ? esc(s == null ? '' : String(s)) : String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const todayISO41 = () => { const d = new Date(); return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())).toISOString().slice(0,10); };
+  const D41 = s => new Date(String(s).slice(0,10) + 'T12:00:00Z');
+  const fmt41 = (s, y) => { if(!s) return ''; const d = D41(s); if(isNaN(d)) return h(s); return d.toLocaleDateString('en-GB', y ? {day:'numeric',month:'short',year:'numeric',timeZone:'UTC'} : {day:'numeric',month:'short',timeZone:'UTC'}); };
+  const days41 = s => { const d = D41(s); return isNaN(d) ? null : Math.round((D41(todayISO41()) - d) / 864e5); };
+  const toast41 = m => (typeof showToast === 'function') ? showToast(m) : null;
+  const api41 = (p, o) => b2Api(p, o);
+  const post41 = (p, b) => b2Post(p, b);
+  const norm41 = s => String(s || '').toLowerCase().replace(/\b(ltd|limited|plc|llp|uk|group)\b/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+  const money41 = n => '£' + Number(n || 0).toLocaleString('en-GB', {minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2});
+
+  /* ---------------- navigation ---------------- */
+  const ICON = {
+    today:'<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>',
+    crm:'<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5h8v2"/>',
+    prospecting:'<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/>',
+    recruitment:'<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5"/><path d="M16 11h5M18.5 8.5v5"/>',
+    actions:'<path d="M4 12l5 5L20 6"/>',
+    results:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+    people:'<circle cx="8" cy="9" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M2 20c0-3 3-5 6-5s6 2 6 5M14 15.5c3 0 7 1 7 4.5"/>',
+    library:'<path d="M4 4h6v16H4zM10 4h4v16h-4zM15 5l4-1 3 15-4 1z"/>',
+    marketing:'<path d="M3 10v4h3l6 4V6L6 10H3z"/><path d="M16 9a4 4 0 0 1 0 6M19 6a8 8 0 0 1 0 12"/>',
+    admin:'<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z"/>'
+  };
+  const GROUPS41 = [
+    {key:'today', label:'Today', sect:'Work', tabs:['home','notifications']},
+    {key:'crm', label:'CRM', tabs:['crmAccounts','clients','leadClients','leadPipeline','clientHealth','clientComms','coldCalls','referrals','funnelLeads']},
+    {key:'prospecting', label:'Lead Generation', tabs:['roleFinder','competitors']},
+    {key:'recruitment', label:'Recruitment', tabs:['candidates','candidatePool','roles','interviews','placements','comms','feedback']},
+    {key:'actions', label:'Actions', tabs:['tasks','week','roadmap']},
+    {key:'results', label:'Results', tabs:['kpi','forecast','team','sourcing']},
+    {key:'marketing', label:'Marketing', tabs:['marketing']},
+    {key:'people', label:'People', sect:'Team', tabs:['hr']},
+    {key:'library', label:'Library', tabs:['library','templates']},
+    {key:'admin', label:'Admin', tabs:['invoices','gdpr','audit'], adminOnly:true},
+  ];
+  const TAB_LABELS = {crmAccounts:'Accounts', clients:'Clients', leadClients:'Lead clients', leadPipeline:'Pipeline', clientHealth:'Client health',
+    clientComms:'Client comms', coldCalls:'Cold calls', referrals:'Referrals', funnelLeads:'Funnel leads', roleFinder:'Role Finder', competitors:'Competitors',
+    candidates:'Candidate pipeline', candidatePool:'Talent pool', roles:'Roles', interviews:'Interviews', placements:'Placements', comms:'Candidate comms',
+    feedback:'Client feedback', tasks:'Tasks', kpi:'KPIs and targets', forecast:'Forecast', team:'Team performance', sourcing:'Sourcing and costs',
+    hr:'People', library:'Documents', week:'This week', roadmap:'Roadmap', marketing:'Marketing', templates:'Email templates', invoices:'Invoices', gdpr:'Data and GDPR', audit:'Audit trail', home:'Overview', notifications:'Notifications'};
+
+  if(typeof TAB_GROUPS !== 'undefined'){
+    TAB_GROUPS.length = 0;
+    GROUPS41.forEach(g => TAB_GROUPS.push({key:g.key, label:g.label, tabs:g.tabs, adminOnly:!!g.adminOnly}));
+  }
+
+  // tab buttons for the new views, and friendlier labels on existing ones
+  const tabsBar = $('tabs');
+  [['crmAccounts','Accounts','clients'], ['hr','People',null], ['library','Documents','templates'], ['week','This week',null], ['roadmap','Roadmap',null], ['marketing','Marketing',null]].forEach(([key, label, before]) => {
+    if(!tabsBar || tabsBar.querySelector('.tab-btn[data-tab="' + key + '"]')) return;
+    const b = document.createElement('button');
+    b.className = 'tab-btn'; b.dataset.tab = key; b.textContent = label;
+    b.onclick = () => switchTab(key);
+    const ref = before && tabsBar.querySelector('.tab-btn[data-tab="' + before + '"]');
+    ref ? tabsBar.insertBefore(b, ref) : tabsBar.appendChild(b);
+  });
+  if(tabsBar) tabsBar.querySelectorAll('.tab-btn[data-tab]').forEach(b => {
+    const l = TAB_LABELS[b.dataset.tab];
+    if(l){ const badge = b.querySelector('.tab-badge'); b.textContent = l; if(badge) b.appendChild(badge); }
+  });
+
+  // views
+  const main = $('main');
+  const addView = (id, html) => { if($(id)) return; const v = document.createElement('div'); v.id = id; v.className = 'p41'; v.innerHTML = html; main.appendChild(v); };
+  addView('crmAccountsView', `<div class="view-head"><div><h2>Accounts</h2><div class="sub">Every client and lead in one place. Open a company to see all contacts, sites, terms, roles and history.</div></div>
+    <div class="p41-bar"><button class="p41-btn" onclick="switchTab('leadClients');openAddLeadClientModal()">+ Lead</button><button class="gold-btn" onclick="switchTab('clients');openAddClientModal()">+ Client</button></div></div>
+    <div class="view-body"><div class="p41-bar"><input class="p41-in" id="crm41Q" placeholder="Search companies, contacts, emails or notes" style="flex:1;min-width:200px">
+    <div class="p41-tabs" id="crm41F"></div></div><div id="crm41Stats" class="p41-grid g4"></div><div id="crm41List"><div class="p41-empty">Loading accounts...</div></div></div>`);
+  addView('hrView', `<div class="view-head"><div><h2 id="hr41Title">People</h2><div class="sub" id="hr41Sub">Holidays, absence, documents and reviews.</div></div><div class="p41-bar" id="hr41Who"></div></div>
+    <div class="view-body"><div class="p41-tabs" id="hr41Tabs"></div><div id="hr41Body"><div class="p41-empty">Loading...</div></div></div>`);
+  addView('libraryView', `<div class="view-head"><div><h2>Documents</h2><div class="sub">Policies, guides and reference documents for the team. Personal HR documents are under People.</div></div><div class="p41-bar" id="lib41Admin"></div></div>
+    <div class="view-body" id="lib41Body"><div class="p41-empty">Loading...</div></div>`);
+  addView('weekView', `<div class="view-head"><div><h2>This week</h2><div class="sub">The plan for each day. Add what you will work on, tick it off when done. Tasks due that day show automatically.</div></div><div class="p41-bar" id="wk41Nav"></div></div><div class="view-body" id="wk41Body"><div class="p41-empty">Loading...</div></div>`);
+  addView('roadmapView', `<div class="view-head"><div><h2>Roadmap</h2><div class="sub">Bigger pieces of work and when they are planned. Move them from Later to Now to Done.</div></div><div class="p41-bar"><button class="gold-btn" data-rec-new="road">+ Add to roadmap</button></div></div><div class="view-body" id="rd41Body"><div class="p41-empty">Loading...</div></div>`);
+  addView('marketingView', `<div class="view-head"><div><h2>Marketing</h2><div class="sub">LinkedIn posts, Brevo outreach workflows, lead magnets and events in one place.</div></div><div class="p41-bar" id="mk41Add"></div></div><div class="view-body"><div class="p41-tabs" id="mk41Tabs"></div><div id="mk41Body"><div class="p41-empty">Loading...</div></div></div>`);
+  if(!$('viewer41')){ const v = document.createElement('div'); v.id = 'viewer41'; v.innerHTML = '<div class="bk" data-vw41="close"></div><div class="vw" role="dialog" aria-modal="true"><div class="vh"><b id="vw41Title"></b><span class="sp"></span><button class="p41-btn sm" id="vw41Dl">Download</button><button class="p41-btn sm" data-vw41="close">Close</button></div><div class="vb" id="vw41Body"></div></div>'; document.body.appendChild(v); }
+  if(!$('rec41')){ const v = document.createElement('div'); v.id = 'rec41'; v.innerHTML = '<div class="bk" data-rec41="close"></div><div class="rp" role="dialog" aria-modal="true" id="rec41Body"></div>'; document.body.appendChild(v); }
+  if(!$('drawer41')){ const d = document.createElement('div'); d.id = 'drawer41'; d.innerHTML = '<div class="bk" data-x41="close"></div><aside role="dialog" aria-modal="true" id="drawer41Body"></aside>'; document.body.appendChild(d); }
+
+  // rail
+  const rail = document.createElement('nav');
+  rail.id = 'rail41'; rail.setAttribute('aria-label', 'Sections');
+  document.body.insertBefore(rail, document.body.firstChild);
+  const st41 = { pending: 0, notif: 0, group: 'today' };
+  const LOGO41 = (document.querySelector('#sidebar .brand img') || {}).src || '';
+  const MARK41 = ($('brandLogoImg') || {}).src || '';
+  (function(){ const g = document.querySelector('#gate h1'); if(g) g.textContent = 'Workspace sign in'; })();
+  function renderRail(){
+    const u = me41();
+    let html = `<div class="r-brand">${LOGO41 ? `<img src="${LOGO41}" alt="Live 2 Help">` : '<b>Live 2 Help</b>'}<span>Workspace</span></div>`;
+    GROUPS41.filter(g => !g.adminOnly || isAdmin41()).forEach(g => {
+      if(g.sect) html += `<div class="r-sect">${g.sect}</div>`;
+      let badge = '';
+      if(g.key === 'people' && st41.pending) badge = `<span class="r-badge" title="Holiday requests waiting">${st41.pending}</span>`;
+      if(g.key === 'today' && st41.notif) badge = `<span class="r-badge" title="Notifications">${st41.notif}</span>`;
+      if(g.adminOnly) badge = '<span class="r-lock">ADMIN</span>';
+      html += `<button class="r-item${st41.group === g.key ? ' active' : ''}" data-g41="${g.key}"${st41.group === g.key ? ' aria-current="page"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true">${ICON[g.key]}</svg><span>${g.label}</span>${badge}</button>`;
+    });
+    html += `<div class="r-foot"><div class="r-user"><div class="r-av">${h((u.name || '?').charAt(0).toUpperCase())}</div><div><b>${h(u.name || '')}</b><small>${isAdmin41() ? 'Admin' : 'Team'}</small></div></div>
+      ${(typeof lgViewAs !== 'undefined' && lgViewAs) ? '<button class="r-out" onclick="lgExitViewAs()">Exit View as</button>' : '<button class="r-out" onclick="signOut()">Log out</button>'}<div class="r-ver">Build 43</div></div>`;
+    rail.innerHTML = html;
+  }
+  rail.addEventListener('click', e => {
+    const b = e.target.closest('[data-g41]'); if(!b) return;
+    openGroup(b.dataset.g41);
+  });
+
+  // top bar: page title and search
+  const gb = $('groupBar');
+  if(gb && !$('pageTitle41')){
+    const t = document.createElement('div'); t.id = 'pageTitle41'; t.innerHTML = '<span class="e" id="pt41e"></span><span class="t" id="pt41t"></span>';
+    gb.insertBefore(t, gb.firstChild);
+    const s = document.createElement('div'); s.id = 'search41'; s.setAttribute('role','button'); s.tabIndex = 0;
+    s.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg><span>Search everything</span><kbd>/</kbd>';
+    s.onclick = () => gsOpen(); s.onkeydown = e => { if(e.key === 'Enter') gsOpen(); };
+    const uc = $('userChip'); uc ? gb.insertBefore(s, uc) : gb.appendChild(s);
+  }
+  function setTitle(tab){
+    const g = GROUPS41.find(x => x.tabs.includes(tab));
+    if(g) st41.group = g.key;
+    if($('pt41e')) $('pt41e').textContent = g ? g.label : '';
+    if($('pt41t')) $('pt41t').textContent = TAB_LABELS[tab] || '';
+    renderRail();
+    document.body.classList.toggle('on-pipeline', tab === 'candidates');
+    // keep the section tabs in the order of the section, and hide the bar when a section has one tab
+    if(tabsBar && g){
+      g.tabs.forEach(t => { const b = tabsBar.querySelector('.tab-btn[data-tab="' + t + '"]'); if(b) tabsBar.appendChild(b); });
+      const shown = [...tabsBar.querySelectorAll('.tab-btn[data-tab]')].filter(b => !b.classList.contains('gh') && b.style.display !== 'none');
+      tabsBar.style.display = shown.length > 1 ? '' : 'none';
+    }
+    document.title = (TAB_LABELS[tab] ? TAB_LABELS[tab] + ' · ' : '') + 'Live 2 Help Workspace';
+  }
+
+  const _rgb = renderGroupBar;
+  renderGroupBar = function(){ _rgb(); renderRail(); };
+  const _st = switchTab;
+  switchTab = function(tab){
+    if(tab === 'admin41') tab = 'invoices';
+    _st(tab);
+    NEW_VIEWS41.forEach(t => { const v = $(t + 'View'); if(v) v.classList.toggle('visible', tab === t); });
+    if(NEW_VIEWS41.includes(tab) && $('candidatesView')) $('candidatesView').style.display = 'none';
+    setTitle(tab);
+    if(tab === 'crmAccounts') crmLoad();
+    if(tab === 'hr') hrLoad();
+    if(tab === 'library') libLoad();
+    if(tab === 'home') homeGlance();
+    if(tab === 'clients' || tab === 'leadClients') listLoad(tab);
+    if(tab === 'week') weekLoad();
+    if(tab === 'roadmap') roadLoad();
+    if(tab === 'marketing') mktLoad();
+    if(tab === 'candidates') roleBar41();
+  };
+  const _si = signIn;
+  signIn = function(user){
+    _si(user);
+    renderRail();
+    hrBadge();
+    // welcome screen, then straight into Today
+    const sw = $('splashWelcome'); if(sw) sw.innerHTML = 'Welcome back, <span>' + h(user.name) + '</span>';
+    setTimeout(() => { if(!$('app').classList.contains('visible')) chooseHome(); }, 1700);
+  };
+  const NEW_VIEWS41 = ['crmAccounts','hr','library','week','roadmap','marketing'];
+  document.title = 'Live 2 Help Workspace';
+
+  /* ---------------- CRM: Accounts ---------------- */
+  const CRM = { filter:'all', q:'', accounts:[], open:{}, sel:null, loaded:0 };
+  async function crmLoad(force){
+    if(CRM.loaded && !force && Date.now() - CRM.loaded < 60000){ crmRender(); return; }
+    const safe = p => api41(p).catch(() => ({data:[]}));
+    const [cl, lc, lp, sites, comms, terms, calls, inv] = await Promise.all([
+      safe('/api/clients'), safe('/api/lead-clients'), safe('/api/lead-pipeline'), safe('/api/client-sites'), safe('/api/comms'),
+      safe('/api/client-terms'), safe('/api/cold-calls'), isAdmin41() ? safe('/api/invoices') : Promise.resolve({data:[]}) ]);
+    const map = new Map();
+    const get = (company, type) => {
+      const k = norm41(company); if(!k) return null;
+      if(!map.has(k)) map.set(k, {key:k, name:company, type, contacts:[], sites:[], comms:[], calls:[], invoices:[], address:'', postcode:'', stage:'', lead:null, notes:[]});
+      const a = map.get(k); if(type === 'client') a.type = 'client'; return a;
+    };
+    (cl.data || []).forEach(c => { const a = get(c.company, 'client'); if(!a) return; a.name = c.company; if(!a.address) { a.address = c.address; a.postcode = c.postcode; }
+      a.contacts.push({name:c.contactName, title:c.jobTitle, email:c.email, phone:c.phone, notes:c.notes, src:'Client contact', raw:c}); if(c.folderCreated) a.folder = c.folderCreated; });
+    (lc.data || []).forEach(c => { const a = get(c.company, 'lead'); if(!a) return; if(!a.address) { a.address = c.address; a.postcode = c.postcode; }
+      if(!a.contacts.some(x => x.email && x.email === c.email && x.name === c.contactName)) a.contacts.push({name:c.contactName, title:c.jobTitle, email:c.email, phone:c.phone, notes:c.notes, src:'Lead contact'}); });
+    (lp.data || []).forEach(l => { const a = get(l.company, map.has(norm41(l.company)) ? map.get(norm41(l.company)).type : 'lead'); if(!a) return; a.lead = l; a.stage = l.stage;
+      if(l.contact_name && !a.contacts.some(x => x.name === l.contact_name)) a.contacts.push({name:l.contact_name, title:l.job_title, email:l.email, phone:l.phone, notes:'', src:'Lead pipeline'});
+      if(!a.address && l.address) a.address = l.address; });
+    (sites.data || []).forEach(s => { const a = map.get(norm41(s.company)); if(a) a.sites.push(s); });
+    (comms.data || []).forEach(c => { if(c.entity_type === 'candidate') return; const a = map.get(norm41(c.company)) || map.get(norm41(c.entity_name)); if(a) a.comms.push(c); });
+    (Array.isArray(calls) ? calls : (calls.data || [])).forEach(c => { const a = map.get(norm41(c.company)); if(a) a.calls.push(c); });
+    (inv.data || []).forEach(i => { const a = map.get(norm41(i.company)); if(a) a.invoices.push(i); });
+    const termMap = new Map((terms.data || []).map(t => [norm41(t.company), t.payment_terms_days]));
+    map.forEach(a => {
+      a.terms = termMap.get(a.key) || '';
+      const roles = (typeof DATA !== 'undefined') ? Object.keys(DATA).filter(c => norm41(c) === a.key).flatMap(c => Object.keys(DATA[c]).map(r => ({company:c, role:r, cands:DATA[c][r] || []}))) : [];
+      a.roles = roles;
+      const lastDates = [...a.comms.map(c => String(c.timestamp || '').slice(0,10)), ...a.calls.map(c => String(c.dateCalled || '').slice(0,10)),
+        ...(a.lead && a.lead.updated_at ? [String(a.lead.updated_at).slice(0,10)] : [])].filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+      a.last = lastDates.length ? lastDates[lastDates.length - 1] : '';
+      a.health = a.type === 'client' ? health41(a) : null;
+    });
+    CRM.accounts = [...map.values()].sort((x, y) => (x.type === y.type ? x.name.localeCompare(y.name) : (x.type === 'client' ? -1 : 1)));
+    CRM.loaded = Date.now();
+    crmRender();
+    if(CRM.sel) crmOpen(CRM.sel);
+  }
+  // Same rules as the Client Health tab
+  function health41(a){
+    let s = 0; const why = [];
+    const since = a.last ? days41(a.last) : 999;
+    if(since <= 14) s += 40; else if(since <= 30){ s += 25; why.push('No contact for ' + since + ' days'); } else if(since <= 60){ s += 10; why.push('No contact for ' + since + ' days'); } else why.push(a.last ? 'No contact for ' + since + ' days' : 'No contact logged');
+    const cands = a.roles.flatMap(r => r.cands);
+    const open = a.roles.filter(r => r.cands.some(c => !['rejected','month1'].includes(String(c.stage))) || !r.cands.length);
+    if(open.length) s += 20; else why.push('No open roles');
+    const waiting = cands.filter(c => c.stage === 'submitted').map(c => days41(c.date)).filter(d => d != null);
+    const oldest = waiting.length ? Math.max(...waiting) : 0;
+    if(oldest <= 3) s += 20; else if(oldest <= 7){ s += 10; why.push('Feedback outstanding for ' + oldest + ' days'); } else why.push('Feedback outstanding for ' + oldest + ' days');
+    const placed = cands.filter(c => ['offer','start_date','day1','week1','month1'].includes(String(c.stage))).length;
+    s += placed > 0 ? 10 : 5;
+    const overdue = a.invoices.filter(i => String(i.status || '').toLowerCase() !== 'paid' && i.due_date && i.due_date < todayISO41()).length;
+    if(overdue) why.push(overdue + ' overdue invoice' + (overdue === 1 ? '' : 's')); else s += 10;
+    return {s, band: s >= 70 ? 'Healthy' : (s >= 40 ? 'Watch' : 'At risk'), why};
+  }
+  const hp41 = hl => hl ? `<span class="p41-pill ${hl.band === 'Healthy' ? 'ok' : hl.band === 'Watch' ? 'warn' : 'bad'}">${hl.band} · ${hl.s}</span>` : '';
+  const stageLbl = s => ({identified:'Identified', contacted:'Contacted', interested:'Interested', meeting:'Meeting', terms:'Terms', converted:'Converted', lost:'Lost', archived:'Archived'}[s] || (s ? s : ''));
+  function crmRender(){
+    const F = [['all','All'],['client','Clients'],['lead','Leads'],['risk','Needs attention']];
+    $('crm41F').innerHTML = F.map(([k,l]) => `<button class="p41-chip" data-crmf="${k}" aria-pressed="${CRM.filter === k}">${l}</button>`).join('');
+    const q = CRM.q.toLowerCase();
+    let list = CRM.accounts.filter(a => !q || [a.name, a.address, a.postcode, ...a.contacts.flatMap(c => [c.name, c.email, c.title, c.notes])].join(' ').toLowerCase().includes(q));
+    if(CRM.filter === 'client') list = list.filter(a => a.type === 'client');
+    if(CRM.filter === 'lead') list = list.filter(a => a.type === 'lead');
+    if(CRM.filter === 'risk') list = list.filter(a => a.health && a.health.band !== 'Healthy');
+    const all = CRM.accounts;
+    $('crm41Stats').innerHTML = [
+      ['Clients', all.filter(a => a.type === 'client').length, 'With a signed relationship'],
+      ['Leads', all.filter(a => a.type === 'lead').length, 'Lead clients and pipeline'],
+      ['Contacts', all.reduce((n, a) => n + a.contacts.length, 0), 'Across every account'],
+      ['Need attention', all.filter(a => a.health && a.health.band !== 'Healthy').length, 'From client health']
+    ].map(([k,v,n]) => `<div class="p41-stat"><span class="k">${k}</span><span class="v">${v}</span><span class="n">${n}</span></div>`).join('');
+    if(!list.length){ $('crm41List').innerHTML = `<div class="p41-panel"><div class="p41-empty">${CRM.accounts.length ? 'No accounts match that search.' : 'No accounts yet. Add a client or a lead to get started.'}</div></div>`; return; }
+    $('crm41List').innerHTML = accTable(list);
+  }
+  function accTable(list){
+    return `<div class="p41-tw"><table><thead><tr><th>Company</th><th>Contacts</th><th>Type and stage</th><th>Health</th><th>Live roles</th><th>Last contact</th></tr></thead><tbody>
+      ${list.map(a => `<tr class="click" tabindex="0" data-acc="${h(a.key)}"><td class="co"><b>${h(a.name)}</b><span>${h([a.address, a.postcode].filter(Boolean).join(', ') || 'No address yet')}</span></td>
+        <td>${a.contacts.length} · ${h((a.contacts[0] || {}).name || 'None')}</td>
+        <td>${a.type === 'client' ? '<span class="p41-pill ok">Client</span>' : '<span class="p41-pill">Lead</span>'} ${a.stage ? `<span class="p41-pill gold">${h(stageLbl(a.stage))}</span>` : ''}</td>
+        <td>${hp41(a.health) || '<span class="p41-pill">Not scored</span>'}</td><td>${a.roles.length}</td><td>${a.last ? fmt41(a.last, true) : '<span class="p41-pill warn">Never</span>'}</td></tr>`).join('')}
+      </tbody></table></div>`;
+  }
+  // Clients and Lead clients use the same list as Accounts
+  async function listLoad(tab){
+    const isC = tab === 'clients';
+    const grid = $(isC ? 'clientsGrid' : 'leadClientsGrid'); if(!grid) return;
+    let host = $(isC ? 'clientsList41' : 'leadsList41');
+    if(!host){ host = document.createElement('div'); host.id = isC ? 'clientsList41' : 'leadsList41'; host.className = 'list41'; grid.parentNode.insertBefore(host, grid);
+      host.innerHTML = `<div class="p41-bar" style="margin-bottom:14px"><input class="p41-in" data-lq41="${tab}" placeholder="Search ${isC ? 'clients' : 'lead clients'}, contacts or emails" style="flex:1;min-width:200px"></div><div class="lst"><div class="p41-empty">Loading...</div></div>`; }
+    await crmLoad();
+    listRender(tab);
+  }
+  function listRender(tab){
+    const isC = tab === 'clients'; const host = $(isC ? 'clientsList41' : 'leadsList41'); if(!host) return;
+    const q = ((host.querySelector('[data-lq41]') || {}).value || '').toLowerCase();
+    const list = CRM.accounts.filter(a => a.type === (isC ? 'client' : 'lead')).filter(a => !q || [a.name, a.address, a.postcode, ...a.contacts.flatMap(c => [c.name, c.email, c.title])].join(' ').toLowerCase().includes(q));
+    host.querySelector('.lst').innerHTML = list.length ? accTable(list) : `<div class="p41-panel"><div class="p41-empty">${q ? 'Nothing matches that search.' : (isC ? 'No clients yet.' : 'No lead clients yet.')}</div></div>`;
+  }
+  document.addEventListener('input', e => { const t = e.target; if(t && t.dataset && t.dataset.lq41) listRender(t.dataset.lq41); });
+  ['loadClients','loadLeadClients'].forEach(fn => { const orig = window[fn]; if(typeof orig !== 'function') return; window[fn] = async function(){ const r = await orig.apply(this, arguments); CRM.loaded = 0; const t = fn === 'loadClients' ? 'clients' : 'leadClients'; if($(t === 'clients' ? 'clientsView' : 'leadClientsView') && $(t === 'clients' ? 'clientsView' : 'leadClientsView').classList.contains('visible')) listLoad(t); return r; }; });
+
+  function crmOpen(key){
+    const a = CRM.accounts.find(x => x.key === key); if(!a) return;
+    CRM.sel = key;
+    const lead = a.lead;
+    const commsSorted = a.comms.slice().sort((x, y) => String(y.timestamp).localeCompare(String(x.timestamp))).slice(0, 15);
+    const hist = lead ? String(lead.history || '').split('\n').filter(Boolean).reverse().map(x => { const [d, s, who] = x.split('|'); return {d, s, who}; }) : [];
+    $('drawer41Body').innerHTML = `
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${a.type === 'client' ? '<span class="p41-pill ok">Client</span>' : '<span class="p41-pill">Lead</span>'}${a.stage ? `<span class="p41-pill gold">${h(stageLbl(a.stage))}</span>` : ''}${hp41(a.health)}<button class="p41-btn sm" data-x41="close" style="margin-left:auto">Close</button></div>
+      <div><h2>${h(a.name)}</h2><div style="color:var(--muted)">${h([a.address, a.postcode].filter(Boolean).join(', ') || 'No address recorded')}</div></div>
+      <div class="p41-bar"><button class="p41-btn pri sm" data-x41="log">Log contact</button>${a.type === 'client' ? '<button class="p41-btn sm" data-x41="edit">Edit client</button>' : ''}<button class="p41-btn sm" data-x41="addc">+ Contact</button>${lead ? '<button class="p41-btn sm" data-x41="lead">Open in pipeline</button>' : ''}<button class="p41-btn sm" data-x41="task">+ Task</button></div>
+      ${a.health && a.health.why.length ? `<div class="p41-note"><b>Health:</b> ${h(a.health.why.join(', '))}</div>` : ''}
+      <div class="d41-sec"><span class="d41-eyebrow">Contacts (${a.contacts.length})</span>
+        ${a.contacts.map((c, i) => { const k = a.key + '|' + i, o = !!CRM.open[k]; return `<div class="d41-contact"><button data-ctc41="${h(k)}" aria-expanded="${o}"><span class="top"><b>${h(c.name || 'Unnamed contact')}</b><small>${o ? 'Hide' : 'Show'} details</small></span><span class="sub">${h(c.title || c.src)}</span></button>
+          ${o ? `<div class="det"><dl class="p41-kv"><dt>Job title</dt><dd>${h(c.title || 'Not recorded')}</dd><dt>Email</dt><dd>${c.email ? `<a href="mailto:${h(c.email)}">${h(c.email)}</a>` : 'Not recorded'}</dd><dt>Phone</dt><dd>${c.phone ? `<a href="tel:${h(c.phone)}">${h(c.phone)}</a>` : 'Not recorded'}</dd><dt>Source</dt><dd>${h(c.src)}</dd><dt>Notes</dt><dd>${h(c.notes || 'None')}</dd></dl>
+            <div class="p41-bar" style="margin-top:8px">${c.email ? `<button class="p41-btn sm" data-copy41="${h(c.email)}">Copy email</button>` : ''}<button class="p41-btn sm" data-x41="logc" data-name="${h(c.name || '')}">Log contact</button>${c.src === 'Lead contact' ? `<button class="p41-btn sm" data-x41="mv" data-name="${h(c.name || '')}">Move to clients</button><button class="p41-btn sm" data-x41="dl" data-name="${h(c.name || '')}">Delete contact</button>` : ''}</div></div>` : ''}</div>`; }).join('') || '<div class="p41-empty">No contacts yet.</div>'}
+      </div>
+      ${a.type === 'client' ? `<div class="d41-sec"><span class="d41-eyebrow">Live roles (${a.roles.length})</span>
+        ${a.roles.map(r => `<div class="p41-row"><div class="m"><div><b>${h(r.role)}</b></div><div class="s">${r.cands.length} candidate${r.cands.length === 1 ? '' : 's'} · ${r.cands.filter(c => c.stage === 'submitted').length} awaiting feedback</div></div><button class="p41-btn sm" data-role41="${h(r.company)}|${h(r.role)}">Open pipeline</button></div>`).join('') || '<div class="p41-empty">No roles yet.</div>'}</div>
+      <div class="d41-sec"><span class="d41-eyebrow">Sites (${a.sites.length})</span>
+        ${a.sites.map(s => `<div class="p41-row"><div class="m"><div><b>${h(s.site_name || 'Site')}</b></div><div class="s">${h([s.address, s.postcode].filter(Boolean).join(', '))}</div></div>${s.pdf_file_id ? '<span class="p41-pill ok">Onboarding PDF</span>' : '<span class="p41-pill warn">No PDF</span>'}</div>`).join('') || '<div class="p41-empty">No sites yet. Add them on the Clients tab.</div>'}</div>
+      <div class="d41-sec"><span class="d41-eyebrow">Terms and money</span><dl class="p41-kv"><dt>Payment terms</dt><dd><select class="p41-in" data-terms41="${h(a.name)}">${['','14','30'].map(v => `<option value="${v}"${String(a.terms) === v ? ' selected' : ''}>${v ? v + ' days' : 'Not set'}</option>`).join('')}</select></dd><dt>Drive folder</dt><dd>${h(a.folder || 'Not recorded')}</dd>
+        ${isAdmin41() ? `<dt>Invoices</dt><dd>${a.invoices.length} · ${money41(a.invoices.reduce((n, i) => n + Number(i.amount || 0), 0))} total · ${a.invoices.filter(i => String(i.status || '').toLowerCase() !== 'paid').length} unpaid</dd>` : ''}</dl></div>` :
+      `<div class="d41-sec"><span class="d41-eyebrow">Business development</span><dl class="p41-kv"><dt>Stage</dt><dd>${h(stageLbl(a.stage) || 'Not in pipeline')}</dd><dt>Owner</dt><dd>${h((lead && lead.owner) || 'Not set')}</dd><dt>Source</dt><dd>${h((lead && lead.source) || 'Lead Clients')}</dd><dt>Cold call attempts</dt><dd>${a.calls.length}</dd><dt>Notes</dt><dd>${h((lead && lead.notes) || 'None')}</dd></dl></div>`}
+      ${a.type === 'client' ? '<div class="p41-bar"><button class="p41-btn sm" data-x41="delc" style="color:var(--danger)">Delete client</button></div>' : ''}
+      <div class="d41-sec"><span class="d41-eyebrow">History</span><div class="d41-tl">
+        ${[...commsSorted.map(c => ({d:String(c.timestamp).slice(0,10), t:`${h(c.channel || 'Contact')} · ${h(c.direction || '')}`, x:h(c.summary || ''), who:c.user})),
+           ...a.calls.map(c => ({d:String(c.dateCalled || '').slice(0,10), t:'Cold call · ' + h(c.contactType || ''), x:h([c.contactNames, c.outcome, c.notes].filter(Boolean).join(' · ')), who:''})),
+           ...hist.map(x => ({d:x.d, t:'Pipeline: ' + h(stageLbl(x.s)), x:'', who:x.who}))]
+          .filter(x => x.d).sort((x, y) => y.d.localeCompare(x.d)).slice(0, 25)
+          .map(x => `<div><b>${x.t}</b><div>${fmt41(x.d, true)}${x.who ? ' · ' + h(typeof userLabel === 'function' ? userLabel(x.who) : x.who) : ''}${x.x ? ' · ' + x.x : ''}</div></div>`).join('') || '<div class="p41-empty">No history yet.</div>'}
+      </div></div>`;
+    $('drawer41').classList.add('open');
+  }
+  document.addEventListener('click', e => {
+    const t = e.target.closest('[data-crmf],[data-acc],[data-x41],[data-ctc41],[data-copy41],[data-role41]');
+    if(!t) return;
+    if(t.dataset.crmf){ CRM.filter = t.dataset.crmf; crmRender(); return; }
+    if(t.dataset.acc){ crmOpen(t.dataset.acc); return; }
+    if(t.dataset.ctc41){ CRM.open[t.dataset.ctc41] = !CRM.open[t.dataset.ctc41]; crmOpen(CRM.sel); return; }
+    if(t.dataset.copy41){ const v = t.dataset.copy41; (navigator.clipboard ? navigator.clipboard.writeText(v) : Promise.reject()).then(() => toast41('Email copied'), () => toast41(v)); return; }
+    if(t.dataset.role41){ const [c, r] = t.dataset.role41.split('|'); closeDrawer41(); switchTab('candidates'); selectRole(c, r); return; }
+    const a = CRM.accounts.find(x => x.key === CRM.sel);
+    const x = t.dataset.x41;
+    if(x === 'close'){ closeDrawer41(); return; }
+    if(!a) return;
+    if(x === 'log' || x === 'logc'){ closeDrawer41(); openCommModal({type:'client', company:a.name, name:t.dataset.name || ((a.contacts[0] || {}).name || '')}); return; }
+    if(x === 'edit'){ closeDrawer41(); switchTab('clients'); editClient(a.name); return; }
+    if(x === 'addc'){ closeDrawer41(); if(a.type === 'client'){ switchTab('clients'); openAddClientModal(); setTimeout(() => { const i = $('clientCompanyInput'); if(i) i.value = a.name; const ad = $('clientAddressInput'); if(ad && !ad.value) ad.value = a.address || ''; }, 50); } else { switchTab('leadClients'); openAddLeadClientModal(); setTimeout(() => { const i = document.querySelector('#addLeadClientOverlay input'); if(i && !i.value) i.value = a.name; }, 50); } return; }
+    if(x === 'lead'){ closeDrawer41(); switchTab('leadPipeline'); setTimeout(() => { if(typeof lpxOpen === 'function' && a.lead) lpxOpen(a.lead.id); }, 600); return; }
+    if(x === 'mv'){ closeDrawer41(); moveLeadToClient(a.name, t.dataset.name); return; }
+    if(x === 'dl'){ closeDrawer41(); deleteLeadClient(a.name, t.dataset.name); return; }
+    if(x === 'delc'){ closeDrawer41(); deleteClient(a.name); return; }
+    if(x === 'task'){ closeDrawer41(); switchTab('tasks'); toast41('Add the task for ' + a.name); return; }
+  });
+  function closeDrawer41(){ $('drawer41').classList.remove('open'); CRM.sel = null; }
+  document.addEventListener('keydown', e => {
+    if(e.key === 'Escape' && $('drawer41').classList.contains('open')) closeDrawer41();
+    if(e.key === 'Enter' && e.target.matches && e.target.matches('tr[data-acc]')) crmOpen(e.target.dataset.acc);
+  });
+  document.addEventListener('input', e => { if(e.target && e.target.id === 'crm41Q'){ CRM.q = e.target.value; crmRender(); } });
+  document.addEventListener('change', e => { const t = e.target; if(t && t.dataset && t.dataset.terms41 !== undefined && t.value){ saveClientTerms(t.dataset.terms41, t.value); const a = CRM.accounts.find(x => x.key === CRM.sel); if(a) a.terms = t.value; } });
+
+  /* ---------------- People (HR) ---------------- */
+  const HR = { tab:'overview', emp:null, me:null, hol:[], abs:[], bradford:{}, docs:[], revs:[], com:[], cal:null, month:null, err:'' };
+  const HR_TABS = [['overview','Overview'],['holidays','Holidays'],['calendar','Team calendar'],['sickness','Sickness'],['documents','Documents'],['pay','Pay and tax'],['reviews','Probation and reviews'],['profile','Profile'],['commission','Commission']];
+  async function hrBadge(){
+    try{ const m = await api41('/api/hr/me'); HR.me = HR.me || m; st41.pending = m.pendingApprovals || 0; renderRail(); }catch(e){}
+  }
+  async function hrLoad(retry){
+    if(!retry) $('hr41Body').innerHTML = '<div class="p41-empty">Loading...</div>';
+    try{
+      const j = await api41('/api/hr/bundle');
+      HR.me = j.me; HR.hol = j.holidays || []; HR.abs = j.absences || []; HR.bradford = j.bradford || {}; HR.docs = j.documents || []; HR.revs = j.reviews || []; HR.cal = j.calendar; HR.com = j.commission || [];
+      if(!HR.emp || !HR.me.employees.some(e => e.id === HR.emp)) HR.emp = (HR.me.employees.find(e => e.id === HR.me.key) || HR.me.employees[0] || {}).id || null;
+      st41.pending = HR.me.pendingApprovals || 0; renderRail(); HR.err = ''; HR.at = Date.now();
+    }catch(e){
+      if(!retry){ setTimeout(() => hrLoad(true), 2500); $('hr41Body').innerHTML = '<div class="p41-empty">The server is waking up. Trying again...</div>'; return; }
+      HR.err = e.message;
+    }
+    hrRender();
+  }
+  const empOf = id => (HR.me && HR.me.employees || []).find(e => e.id === id) || null;
+  const nameOf = id => { const e = empOf(id); return e ? (e.known_as || e.full_name) : (id === 'dan' ? 'Daniel' : id); };
+  function hrRender(){
+    const admin = !!(HR.me && HR.me.admin);
+    $('hr41Title').textContent = admin ? 'People' : 'My HR';
+    $('hr41Sub').textContent = admin ? 'Holidays, approvals, absence, documents, reviews and commission. Only you see other people\'s records.' : 'Your holidays, absences, documents and reviews. Only you and Daniel can see this.';
+    if(HR.err){ $('hr41Tabs').innerHTML = ''; $('hr41Body').innerHTML = `<div class="p41-panel"><div class="p41-err">${h(HR.err)}</div><div class="p41-bar"><button class="p41-btn pri sm" data-hrretry="1">Try again</button></div></div>`; return; }
+    const tabs = HR_TABS.filter(([k]) => k !== 'commission' || admin);
+    $('hr41Tabs').innerHTML = tabs.map(([k,l]) => `<button class="p41-chip" data-hrt="${k}" aria-pressed="${HR.tab === k}">${l}${k === 'holidays' && admin && st41.pending ? ' · ' + st41.pending : ''}</button>`).join('');
+    $('hr41Who').innerHTML = admin && HR.me.employees.length > 1 ? `<select class="p41-in" id="hr41Emp">${HR.me.employees.map(e => `<option value="${h(e.id)}"${e.id === HR.emp ? ' selected' : ''}>${h(e.known_as || e.full_name)}</option>`).join('')}</select>` : '';
+    if(!HR.me.employees.length){ $('hr41Body').innerHTML = `<div class="p41-panel"><div class="p41-empty">${admin ? 'No employee records yet.' : 'You do not have an HR record yet. Ask Daniel to add you.'}</div></div>`; return; }
+    const fn = {overview:hrOverview, holidays:hrHolidays, calendar:hrCalendar, sickness:hrSickness, documents:hrDocs, pay:hrPay, reviews:hrReviews, profile:hrProfile, commission:hrCommission}[HR.tab] || hrOverview;
+    $('hr41Body').innerHTML = fn(admin);
+    hrWire();
+  }
+  const bal = () => (HR.me && HR.me.balances && HR.me.balances[HR.emp]) || null;
+  function balTiles(){
+    const b = bal(); if(!b) return '';
+    return `<div class="p41-grid g4">
+      <div class="p41-stat"><span class="k">${b.year} entitlement</span><span class="v">${b.total}</span><span class="n">${b.proRata ? 'Pro rata from ' + fmt41(b.from) : '26 days plus bank holidays'}</span></div>
+      <div class="p41-stat"><span class="k">Bank holidays</span><span class="v">${b.bankDays}</span><span class="n">Included and booked for you</span></div>
+      <div class="p41-stat"><span class="k">Approved and pending</span><span class="v">${b.approved + b.pending}</span><span class="n">${b.approved} approved, ${b.pending} pending</span></div>
+      <div class="p41-stat"><span class="k">Left to book</span><span class="v" style="color:var(--gold)">${b.remaining}</span><span class="n">Use by 31 Dec. No carry-over.</span></div></div>`;
+  }
+  function holRow(r, admin){
+    const pill = {pending:'<span class="p41-pill warn">Waiting for Daniel</span>', approved:'<span class="p41-pill ok">Approved</span>', declined:'<span class="p41-pill bad">Declined</span>', cancelled:'<span class="p41-pill">Cancelled</span>'}[r.status] || '';
+    const actions = r.status === 'pending' ? (admin ? `<button class="p41-btn pri sm" data-hdec="${h(r.id)}|approved">Approve</button><button class="p41-btn sm" data-hdec="${h(r.id)}|declined">Decline</button>` : `<button class="p41-btn sm" data-hcan="${h(r.id)}">Cancel</button>`)
+      : (r.status === 'approved' && admin ? `<button class="p41-btn sm" data-hcan="${h(r.id)}">Cancel</button>` : '');
+    return `<div class="p41-row"><div class="m"><div><b>${fmt41(r.from_date)}${r.to_date !== r.from_date ? ' to ' + fmt41(r.to_date) : ''}</b> · ${r.days} day${Number(r.days) === 1 ? '' : 's'}${admin ? ' · ' + h(nameOf(r.employee)) : ''}</div><div class="s">${h(r.note || 'Holiday')}${r.comment ? ' · Daniel: ' + h(r.comment) : ''}</div></div><div class="p41-bar">${pill}${actions}</div></div>`;
+  }
+  function hrOverview(admin){
+    const e = empOf(HR.emp); const b = bal();
+    const pend = HR.hol.filter(r => r.status === 'pending');
+    const nextRev = HR.revs.filter(r => r.employee === HR.emp && r.status !== 'Completed')[0];
+    const unread = HR.docs.filter(d => d.needs_ack === 'TRUE' && !d.needs_sign && !d.acknowledged && (d.employee === HR.emp || d.employee === 'all'));
+    const toSign = HR.docs.filter(d => d.employee === HR.emp && (admin ? d.sign_status === 'awaiting_countersign' : d.sign_status === 'awaiting_employee'));
+    const prob = e && e.probation_start && e.probation_end ? (() => { const t = (D41(e.probation_end) - D41(e.probation_start)) / 864e5 + 1; const d = Math.min(t, Math.max(0, (D41(todayISO41()) - D41(e.probation_start)) / 864e5 + 1)); return {t, d}; })() : null;
+    return `${balTiles()}<div class="p41-grid">
+      <div class="p41-panel"><div class="p41-ph"><h3>${admin ? 'Waiting for your decision' : 'My requests'}</h3><button class="p41-btn sm" data-hrt="holidays">Holidays</button></div>
+        <div class="p41-list">${(admin ? pend : HR.hol.filter(r => r.employee === HR.emp).slice(0, 4)).map(r => holRow(r, admin)).join('') || `<div class="p41-empty">${admin ? 'Nothing waiting.' : 'No requests yet.'}</div>`}</div></div>
+      <div class="p41-panel"><div class="p41-ph"><h3>Coming up</h3></div><div class="p41-list">
+        ${e && e.start_date > todayISO41() ? `<div class="p41-row"><div class="m"><div>${h(nameOf(HR.emp))} becomes employed</div><div class="s">Contract starts, holiday year begins</div></div><span class="p41-pill">${fmt41(e.start_date)}</span></div>` : ''}
+        ${nextRev ? `<div class="p41-row"><div class="m"><div>${h(nextRev.kind)}</div><div class="s">${admin ? 'With ' + h(nameOf(nextRev.employee)) : 'With Daniel'}</div></div><span class="p41-pill ${days41(nextRev.due_date) >= -7 ? 'warn' : ''}">${fmt41(nextRev.due_date)}</span></div>` : ''}
+        ${toSign.length ? `<div class="p41-row"><div class="m"><div>${admin ? 'Documents to countersign' : 'Documents to sign'}</div><div class="s">${toSign.map(d => h(d.name)).join(', ')}</div></div><button class="p41-btn pri sm" data-hrt="documents">Open</button></div>` : ''}
+        ${unread.length ? `<div class="p41-row"><div class="m"><div>Documents to read and acknowledge</div><div class="s">${unread.map(d => h(d.name)).join(', ')}</div></div><button class="p41-btn sm" data-hrt="documents">Open</button></div>` : ''}
+        ${prob ? `<div class="p41-row"><div class="m" style="flex:1"><div>Probation</div><div class="s">${fmt41(e.probation_start, true)} to ${fmt41(e.probation_end, true)} · day ${Math.round(prob.d)} of ${Math.round(prob.t)}</div><div class="p41-bar-track" style="margin-top:6px"><i style="width:${Math.round(prob.d / prob.t * 100)}%"></i></div></div></div>` : ''}
+      </div></div></div>
+      ${b ? `<div class="p41-note"><b>How ${b.year} is worked out.</b> <span class="p41-mono">${h(b.workings)}</span> = ${b.total} days including ${b.bankDays} bank holidays.</div>` : ''}`;
+  }
+  function hrHolidays(admin){
+    const mine = HR.hol.filter(r => admin ? (r.employee === HR.emp || r.status === 'pending') : r.employee === HR.emp);
+    const e = empOf(HR.emp) || {};
+    const minD = e.holiday_from && e.holiday_from > todayISO41() ? e.holiday_from : todayISO41();
+    return `${balTiles()}<div class="p41-grid">
+      <div class="p41-panel"><h3>${admin ? 'Requests' : 'My requests'}</h3><div class="p41-list">${mine.map(r => holRow(r, admin)).join('') || '<div class="p41-empty">No requests yet.</div>'}</div></div>
+      <div class="p41-panel"><h3>${admin ? 'Book holiday for ' + h(nameOf(HR.emp)) : 'Request holiday'}</h3>
+        <form class="p41-form" id="hol41Form"><div class="two"><label for="hol41From">First day<input class="p41-in" type="date" id="hol41From" min="${minD}" value="${minD}"></label><label for="hol41To">Last day<input class="p41-in" type="date" id="hol41To" min="${minD}" value="${minD}"></label></div>
+        <div class="two"><label for="hol41Hs" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="hol41Hs"> Start with a half day</label><label for="hol41He" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="hol41He"> End with a half day</label></div>
+        <label for="hol41Note">${admin ? 'Note' : 'Note for Daniel'}<input class="p41-in" id="hol41Note" placeholder="Optional"></label>
+        ${admin ? '<label for="hol41Now" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="hol41Now" checked> Approve straight away</label>' : ''}
+        <div class="p41-mono" id="hol41Calc"></div><div class="p41-err" id="hol41Err"></div>
+        <button class="p41-btn pri" type="submit">${admin ? 'Book holiday' : 'Send to Daniel'}</button></form>
+        <div class="p41-note">Two weeks' notice for a week or more. Holiday runs January to December and does not carry over.</div></div></div>`;
+  }
+  let BANK41 = new Set();
+  function wd41(a, b, hs, he){ let n = 0; for(let d = D41(a); d <= D41(b); d.setUTCDate(d.getUTCDate() + 1)){ const w = d.getUTCDay(); if(w === 0 || w === 6 || BANK41.has(d.toISOString().slice(0,10))) continue; n++; } if(n > 0 && hs) n -= .5; if(n > 0 && he && b !== a) n -= .5; return n; }
+  function holCalc(){
+    const el = $('hol41Calc'); if(!el) return;
+    const a = $('hol41From').value, b = $('hol41To').value;
+    if(!a || !b || b < a){ el.textContent = 'Choose a last day on or after the first day.'; return; }
+    const n = wd41(a, b, $('hol41Hs').checked, $('hol41He').checked); const left = bal() ? bal().remaining : 0;
+    el.textContent = `${n} working day${n === 1 ? '' : 's'}, weekends and bank holidays skipped · ${left - n >= 0 ? (left - n) + ' left after this' : 'that is ' + (n - left) + ' more than is left'}`;
+  }
+  function hrCalendar(admin){
+    const now = HR.month || todayISO41().slice(0,7);
+    const [y, m] = now.split('-').map(Number);
+    const first = new Date(Date.UTC(y, m - 1, 1)); const lead = (first.getUTCDay() + 6) % 7; const len = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const bank = new Map((HR.cal && HR.cal.bank || []).map(b => [b.date, b.title]));
+    const ev = (HR.cal && HR.cal.events) || [];
+    let cells = ''; for(let i = 0; i < lead; i++) cells += '<div class="d we" aria-hidden="true"></div>';
+    for(let d = 1; d <= len; d++){
+      const iso = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`; const w = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); const we = w === 0 || w === 6;
+      const tags = [];
+      if(bank.has(iso)) tags.push(`<span class="t bank" title="${h(bank.get(iso))}">${h(bank.get(iso))}</span>`);
+      if(!we && !bank.has(iso)) ev.filter(x => iso >= x.from && iso <= x.to).forEach(x => tags.push(`<span class="t ${x.kind}">${h(x.who)} ${({holiday:'off', pending:'pending', absence:'absent', away:'away'})[x.kind]}</span>`));
+      cells += `<div class="d${we ? ' we' : ''}${iso === todayISO41() ? ' today' : ''}"><span>${d}</span>${tags.join('')}</div>`;
+    }
+    const label = first.toLocaleDateString('en-GB', {month:'long', year:'numeric', timeZone:'UTC'});
+    return `<div class="p41-panel"><div class="p41-ph"><h3>${label}</h3><div class="p41-bar"><button class="p41-btn sm" data-hmon="-1">Previous</button><button class="p41-btn sm" data-hmon="0">This month</button><button class="p41-btn sm" data-hmon="1">Next</button></div></div>
+      <div style="overflow-x:auto"><div class="c41">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => `<div class="h">${d}</div>`).join('')}${cells}</div></div>
+      <div class="p41-bar" style="font-size:12px;color:var(--muted)"><span class="c41"><span class="t holiday">Approved</span></span><span class="c41"><span class="t pending">Pending</span></span><span class="c41"><span class="t bank">Bank holiday</span></span><span class="c41"><span class="t absence">Absence</span></span>${admin ? '' : '<span class="c41"><span class="t away">Colleague away</span></span>'}</div></div>`;
+  }
+  function hrSickness(admin){
+    const rows = HR.abs.filter(r => r.employee === HR.emp);
+    const bf = HR.bradford[HR.emp];
+    return `<div class="p41-grid"><div class="p41-panel"><div class="p41-ph"><h3>Absence record</h3>${admin && bf ? `<span class="p41-pill gold">Bradford Factor ${bf.score} · ${bf.spells} spells, ${bf.days} days</span>` : ''}</div>
+      <div class="p41-list">${rows.map(r => { const cal = (D41(r.to_date) - D41(r.from_date)) / 864e5 + 1; return `<div class="p41-row"><div class="m"><div><b>${fmt41(r.from_date)}${r.to_date !== r.from_date ? ' to ' + fmt41(r.to_date) : ''}</b> · ${r.days} working day${Number(r.days) === 1 ? '' : 's'}</div>
+        <div class="s">${h(r.certification)}${r.fit_note_name ? ' · ' + h(r.fit_note_name) : ''} · ${r.rtw_done === 'TRUE' ? 'Return to work done' + (r.rtw_date ? ' ' + fmt41(r.rtw_date) : '') : 'Return to work chat to do'}${admin && r.reason ? ' · ' + h(r.reason) : ''}</div></div>
+        <div class="p41-bar">${cal > 7 && !r.fit_note_file_id ? `<label class="p41-btn sm" style="cursor:pointer">Upload fit note<input type="file" data-fit41="${h(r.id)}" accept=".pdf,image/*" hidden></label>` : ''}${admin && r.rtw_done !== 'TRUE' ? `<button class="p41-btn sm" data-rtw41="${h(r.id)}">Return to work done</button>` : ''}</div></div>`; }).join('') || '<div class="p41-empty">No absences recorded.</div>'}</div>
+      <div class="p41-note">Tell Daniel by phone or Teams by 9:30am on your first day off, then log it here. Up to 7 calendar days you self-certify. Longer than that, upload a fit note. Pay is Statutory Sick Pay only.</div></div>
+      <div class="p41-panel"><h3>Log an absence</h3><form class="p41-form" id="abs41Form"><div class="two"><label for="abs41From">First day off<input class="p41-in" type="date" id="abs41From" value="${todayISO41()}"></label><label for="abs41To">Last day off<input class="p41-in" type="date" id="abs41To" value="${todayISO41()}"></label></div>
+      <label for="abs41Reason">Reason (only Daniel sees this)<input class="p41-in" id="abs41Reason" placeholder="Brief description"></label><div class="p41-err" id="abs41Err"></div><button class="p41-btn pri" type="submit">Log absence</button></form></div></div>`;
+  }
+  const PAY41 = ['Payslip','P60','P45','P11D','Tax code notice','Pension','Other pay or tax'];
+  const isPay41 = d => PAY41.includes(d.category);
+  function signCell41(d, admin){
+    const who = h(nameOf(d.employee));
+    const signedCopy = d.has_signed_copy ? `<button class="p41-btn sm" data-hsigned="${h(d.id)}">Signed copy</button>` : '';
+    if(d.sign_status === 'awaiting_employee') return admin ? `<span class="p41-pill warn">Waiting for ${who} to sign</span>` : `<button class="p41-btn pri sm" data-hsign="${h(d.id)}">Review and sign</button>`;
+    if(d.sign_status === 'awaiting_countersign') return signedCopy + (admin ? `<button class="p41-btn pri sm" data-hsign="${h(d.id)}">Countersign</button>` : '<span class="p41-pill warn">Signed by you, waiting for Daniel</span>');
+    if(d.sign_status === 'signed') return signedCopy + '<span class="p41-pill ok">Signed by both</span>';
+    return '';
+  }
+  function hrDocs(admin){
+    const list = HR.docs.filter(d => !isPay41(d) && (admin ? (d.employee === HR.emp || d.employee === 'all') && d.category !== 'Library' : d.category !== 'Library'));
+    return `<div class="p41-panel"><div class="p41-ph"><h3>Documents</h3>${admin ? '<button class="p41-btn sm" data-hadd="1">+ Add document</button>' : ''}</div><div class="p41-list">
+      ${list.map(d => {
+        const sub = d.needs_sign
+          ? (d.emp_signed_at ? 'Signed by ' + h(d.emp_signed_name) + ' ' + fmt41(String(d.emp_signed_at).slice(0,10), true) : 'Needs signing') + (d.admin_signed_at ? ' · countersigned by ' + h(d.admin_signed_name) + ' ' + fmt41(String(d.admin_signed_at).slice(0,10), true) : '')
+          : (d.acknowledged ? 'acknowledged ' + h(String(d.acknowledged_at).split(' ')[1] ? fmt41(String(d.acknowledged_at).split(' ')[1], true) : '') : '');
+        const actions = d.needs_sign ? signCell41(d, admin)
+          : (d.needs_ack === 'TRUE' && !d.acknowledged && !admin ? `<button class="p41-btn pri sm" data-hack="${h(d.id)}">I have read this</button>` : '') + (d.needs_ack === 'TRUE' && !d.acknowledged && admin ? '<span class="p41-pill warn">Not yet acknowledged</span>' : '') + (d.acknowledged ? '<span class="p41-pill ok">Acknowledged</span>' : '');
+        return `<div class="p41-row"><div class="m"><div><b>${h(d.name)}</b> ${d.admin_only === 'TRUE' ? '<span class="p41-pill gold">Admin only</span>' : ''}</div><div class="s">${h(d.category)}${d.employee === 'all' ? ' · everyone' : ''}${sub ? ' · ' + sub : ''}</div></div>
+        <div class="p41-bar"><button class="p41-btn sm" data-hdoc="${h(d.id)}">Open</button>${actions}</div></div>`; }).join('') || '<div class="p41-empty">No documents yet.</div>'}</div>
+      <div id="hrAdd41"></div></div>`;
+  }
+  function hrPay(admin){
+    const list = HR.docs.filter(d => isPay41(d) && d.employee === HR.emp)
+      .sort((a, b) => String(b.added_at).localeCompare(String(a.added_at)));
+    const groups = {}; list.forEach(d => { (groups[d.category] = groups[d.category] || []).push(d); });
+    const order = PAY41.filter(c => groups[c]);
+    const upload = admin ? `<div class="p41-panel"><div class="p41-ph"><h3>Add a pay or tax document for ${h(nameOf(HR.emp))}</h3></div>
+      <form class="p41-form" id="pay41Form">
+        <div class="two"><label>Type<select class="p41-in" name="category">${PAY41.map(c => `<option>${c}</option>`).join('')}</select></label>
+        <label>Period<input class="p41-in" name="period" placeholder="For example October 2026 or 2026 to 2027 tax year"></label></div>
+        <div class="two"><label>Name (optional)<input class="p41-in" name="name" placeholder="Left blank, it is named from the type and period"></label>
+        <label>File (PDF from the accountant)<input class="p41-in" type="file" name="file" accept=".pdf,.png,.jpg,.jpeg,.docx,.xlsx" required></label></div>
+        <label style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="notify" checked> Email ${h(nameOf(HR.emp))} to say it is ready</label>
+        <div class="p41-err" id="pay41Err"></div>
+        <button class="p41-btn pri sm" type="submit" style="justify-self:start">Upload</button></form>
+      <div class="p41-note">Saved to the HR folder in Google Drive. Only ${h(nameOf(HR.emp))} and you can see it.</div></div>` : '';
+    const lists = order.map(c => `<div class="p41-panel"><div class="p41-ph"><h3>${h(c === 'Payslip' ? 'Payslips' : c === 'Other pay or tax' ? 'Other pay and tax documents' : c + (c === 'Pension' ? ' documents' : 's'))}</h3></div><div class="p41-list">
+      ${groups[c].map(d => `<div class="p41-row"><div class="m"><div><b>${h(d.name)}</b></div><div class="s">${d.period ? h(d.period) + ' · ' : ''}Added ${fmt41(String(d.added_at).slice(0,10), true)}</div></div>
+        <div class="p41-bar"><button class="p41-btn sm" data-hdoc="${h(d.id)}">Open</button><button class="p41-btn sm" data-hdl="${h(d.id)}">Download</button>${admin ? `<button class="p41-btn sm" data-hpdel="${h(d.id)}">Remove</button>` : ''}</div></div>`).join('')}</div></div>`).join('');
+    return upload + (lists || `<div class="p41-panel"><div class="p41-empty">${admin ? 'Nothing uploaded yet. Payslips and tax documents from the accountant appear here.' : 'No payslips or tax documents yet. They will appear here once Daniel adds them.'}</div></div>`);
+  }
+  function hrReviews(admin){
+    const rows = HR.revs.filter(r => r.employee === HR.emp);
+    return `<div class="p41-grid">${rows.map(r => `<div class="p41-panel"><div class="p41-ph"><h3>${h(r.kind)}</h3><span class="p41-pill ${r.status === 'Completed' ? 'ok' : r.status === 'Due' ? 'warn' : ''}">${h(r.status)} · ${fmt41(r.due_date, true)}</span></div>
+      <form class="p41-form" data-rev41="${h(r.id)}">
+        ${admin ? `<label>Objectives<textarea class="p41-in" rows="3" name="objectives">${h(r.objectives)}</textarea></label><label>Manager notes<textarea class="p41-in" rows="3" name="manager_notes">${h(r.manager_notes)}</textarea></label>
+        <div class="two"><label>Outcome<select class="p41-in" name="outcome">${['','On track','Needs support','Pass probation','Extend probation','Fail probation'].map(o => `<option${o === r.outcome ? ' selected' : ''}>${o}</option>`).join('')}</select></label>
+        <label>Status<select class="p41-in" name="status">${['Upcoming','Due','Completed'].map(o => `<option${o === r.status ? ' selected' : ''}>${o}</option>`).join('')}</select></label></div>
+        <div class="s" style="color:var(--muted);font-size:12.5px">${h(nameOf(r.employee))}'s notes: ${h(r.employee_notes || 'None yet')}</div>` :
+        `${r.objectives ? `<div><b>Objectives</b><div class="s">${h(r.objectives)}</div></div>` : ''}${r.status === 'Completed' && r.manager_notes ? `<div><b>Daniel's notes</b><div class="s">${h(r.manager_notes)}</div></div>` : ''}${r.outcome ? `<div><b>Outcome:</b> ${h(r.outcome)}</div>` : ''}
+        <label>Your notes for Daniel<textarea class="p41-in" rows="3" name="employee_notes" placeholder="What went well, what you need">${h(r.employee_notes)}</textarea></label>`}
+        <button class="p41-btn pri sm" type="submit" style="justify-self:start">Save</button></form></div>`).join('') || '<div class="p41-panel"><div class="p41-empty">No reviews scheduled.</div></div>'}</div>`;
+  }
+  function hrProfile(admin){
+    const e = empOf(HR.emp); if(!e) return '';
+    const yrs = s => s ? fmt41(s, true) : 'Not recorded';
+    return `<div class="p41-grid"><div class="p41-panel"><div class="p41-ph"><h3>${h(e.full_name)}</h3><span class="p41-pill gold">Known as ${h(e.known_as || e.full_name)}</span></div>
+      <dl class="p41-kv"><dt>Job title</dt><dd>${h(e.title)}</dd><dt>Reports to</dt><dd>${h(nameOf(e.manager))}</dd><dt>Employed from</dt><dd>${yrs(e.start_date)}</dd><dt>Continuous service</dt><dd>From ${yrs(e.continuous_date)}</dd><dt>Hours</dt><dd>${h(e.hours)} a week, ${h(e.work_pattern)}</dd><dt>Place of work</dt><dd>${h(e.place_of_work)}</dd><dt>Email</dt><dd>${h(e.email)}</dd><dt>Phone</dt><dd>${h(e.phone)}</dd><dt>Emergency contact</dt><dd>${h(e.emergency_contact || 'Not recorded')}</dd></dl></div>
+      <div class="p41-panel"><h3>Contract terms</h3><dl class="p41-kv"><dt>Salary</dt><dd>${e.salary ? money41(e.salary) + ' a year, paid ' + h(String(e.pay_frequency || '').toLowerCase()) : 'Not recorded'}</dd>${admin ? `<dt>Commission</dt><dd>${h(e.commission_rate)}% of placement fees, uncapped</dd>` : ''}<dt>Pension</dt><dd>${h(e.pension)}</dd><dt>Notice</dt><dd>${h(e.notice)}</dd><dt>Sick pay</dt><dd>${h(e.sick_pay)}</dd><dt>Probation</dt><dd>${yrs(e.probation_start)} to ${yrs(e.probation_end)}</dd><dt>Restrictive covenant</dt><dd>${h(e.restrictive_covenant)}</dd><dt>Holiday</dt><dd>${h(e.holiday_days)} days plus bank holidays, January to December</dd></dl>
+      ${admin ? '<div class="p41-note">To change these details, edit the Employees tab in the L2H HR sheet in the HR folder on Google Drive.</div>' : ''}</div></div>`;
+  }
+  function hrCommission(admin){
+    if(!admin) return '';
+    const rows = HR.com.filter(r => r.employee === HR.emp);
+    const due = rows.filter(r => r.status === 'Payable next payroll').reduce((n, r) => n + Number(r.amount || 0), 0);
+    return `<div class="p41-grid g3"><div class="p41-stat"><span class="k">Rate</span><span class="v">${h((empOf(HR.emp) || {}).commission_rate || 15)}%</span><span class="n">Of the fee invoiced, uncapped</span></div>
+      <div class="p41-stat"><span class="k">Payable next payroll</span><span class="v">${money41(due)}</span><span class="n">Client has paid</span></div>
+      <div class="p41-stat"><span class="k">Paid to date</span><span class="v">${money41(rows.filter(r => r.status === 'Paid').reduce((n, r) => n + Number(r.amount || 0), 0))}</span><span class="n">Through payroll</span></div></div>
+      <div class="p41-panel"><div class="p41-ph"><h3>Commission lines</h3><span class="p41-pill gold">Admin only. Never sent to ${h(nameOf(HR.emp))}'s login</span></div>
+      <div class="p41-tw"><table><thead><tr><th>Candidate</th><th>Client</th><th>Invoice</th><th>Fee</th><th>Commission</th><th>Status</th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td>${h(r.candidate)}</td><td>${h(r.client)}</td><td class="p41-mono">${h(r.invoice_number)}</td><td class="p41-mono">${money41(r.fee)}</td><td class="p41-mono">${money41(r.amount)}</td><td><select class="p41-in" data-com41="${h(r.id)}">${['Awaiting client payment','Payable next payroll','Paid','Clawed back'].map(o => `<option${o === r.status ? ' selected' : ''}>${o}</option>`).join('')}</select></td></tr>`).join('') || '<tr><td colspan="6"><span class="p41-empty">No commission lines yet.</span></td></tr>'}</tbody></table></div>
+      <form class="p41-form" id="com41Form"><div class="two"><label>Candidate<input class="p41-in" name="candidate" required></label><label>Client<input class="p41-in" name="client" required></label></div>
+      <div class="two"><label>Invoice number<input class="p41-in" name="invoice_number"></label><label>Fee invoiced, excluding VAT (£)<input class="p41-in" name="fee" type="number" step="0.01" min="0" required></label></div>
+      <button class="p41-btn pri sm" type="submit" style="justify-self:start">Add commission line</button></form></div>`;
+  }
+  function hrWire(){
+    const pf = $('pay41Form'); if(pf) pf.onsubmit = e => { e.preventDefault(); const f = e.target; const file = f.file.files[0]; $('pay41Err').textContent = '';
+      if(!file){ $('pay41Err').textContent = 'Choose a file'; return; }
+      if(file.size > 10 * 1024 * 1024){ $('pay41Err').textContent = 'Keep the file under 10MB'; return; }
+      const btn = f.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Uploading...';
+      const rd = new FileReader(); rd.onload = async () => {
+        try{ await post41('/api/hr/documents/upload', {employee:HR.emp, category:f.category.value, period:f.period.value, name:f.name.value, notify:f.notify.checked, file:{name:file.name, type:file.type, base64:String(rd.result).split(',')[1]}});
+          toast41('Uploaded'); HR.tab = 'pay'; hrLoad(); }
+        catch(err){ $('pay41Err').textContent = err.message; btn.disabled = false; btn.textContent = 'Upload'; } };
+      rd.readAsDataURL(file); };
+    ['hol41From','hol41To','hol41Hs','hol41He'].forEach(id => { const el = $(id); if(el) el.oninput = el.onchange = holCalc; });
+    if($('hol41From')){ api41('/api/hr/bank-holidays').then(j => { BANK41 = new Set((j.data || []).map(b => b.date)); holCalc(); }).catch(() => holCalc()); }
+    const hf = $('hol41Form'); if(hf) hf.onsubmit = async e => { e.preventDefault(); $('hol41Err').textContent = '';
+      try{ await post41('/api/hr/holidays', {employee:HR.emp, from_date:$('hol41From').value, to_date:$('hol41To').value, half_start:$('hol41Hs').checked, half_end:$('hol41He').checked, note:$('hol41Note').value, approve_now: $('hol41Now') ? $('hol41Now').checked : false});
+        toast41(HR.me.admin ? 'Holiday booked' : 'Sent to Daniel for approval'); hrLoad(); }catch(err){ $('hol41Err').textContent = err.message; } };
+    const af = $('abs41Form'); if(af) af.onsubmit = async e => { e.preventDefault(); $('abs41Err').textContent = '';
+      try{ await post41('/api/hr/absences', {employee:HR.emp, from_date:$('abs41From').value, to_date:$('abs41To').value, reason:$('abs41Reason').value}); toast41('Absence logged'); hrLoad(); }catch(err){ $('abs41Err').textContent = err.message; } };
+    const ef = $('hr41Emp'); if(ef) ef.onchange = () => { HR.emp = ef.value; hrRender(); };
+    document.querySelectorAll('form[data-rev41]').forEach(f => f.onsubmit = async e => { e.preventDefault();
+      const body = {id:f.dataset.rev41}; new FormData(f).forEach((v, k) => body[k] = v);
+      try{ await post41('/api/hr/reviews', body); toast41('Review saved'); hrLoad(); }catch(err){ toast41(err.message); } });
+    const cf = $('com41Form'); if(cf) cf.onsubmit = async e => { e.preventDefault(); const body = {employee:HR.emp, rate:(empOf(HR.emp) || {}).commission_rate || 15}; new FormData(cf).forEach((v, k) => body[k] = v);
+      try{ await post41('/api/hr/commission', body); toast41('Commission line added'); hrLoad(); }catch(err){ toast41(err.message); } };
+    document.querySelectorAll('[data-com41]').forEach(s => s.onchange = async () => { const r = HR.com.find(x => x.id === s.dataset.com41); try{ await post41('/api/hr/commission', {...r, status:s.value}); toast41('Updated'); hrLoad(); }catch(err){ toast41(err.message); } });
+    document.querySelectorAll('[data-fit41]').forEach(inp => inp.onchange = () => { const f = inp.files[0]; if(!f) return; if(f.size > 10 * 1024 * 1024){ toast41('Keep the fit note under 10MB'); return; }
+      const rd = new FileReader(); rd.onload = async () => { try{ await post41('/api/hr/absences/' + encodeURIComponent(inp.dataset.fit41), {fit_note:{name:f.name, type:f.type, base64:String(rd.result).split(',')[1]}}); toast41('Fit note uploaded'); hrLoad(); }catch(err){ toast41(err.message); } }; rd.readAsDataURL(f); });
+  }
+  let MAMMOTH41 = null;
+  function loadMammoth(){
+    if(window.mammoth) return Promise.resolve(window.mammoth);
+    if(MAMMOTH41) return MAMMOTH41;
+    MAMMOTH41 = new Promise((ok, bad) => { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js'; sc.onload = () => ok(window.mammoth); sc.onerror = () => { MAMMOTH41 = null; bad(new Error('The document viewer could not load')); }; document.head.appendChild(sc); });
+    return MAMMOTH41;
+  }
+  /* build 43: Word files are drawn page by page with their own header, logo, fonts, colours and tables */
+  let DOCXP41 = null;
+  function loadScript41(src){ return new Promise((ok, bad) => { const sc = document.createElement('script'); sc.src = src; sc.onload = ok; sc.onerror = () => bad(new Error('The document viewer could not load')); document.head.appendChild(sc); }); }
+  function loadDocxPreview(){
+    if(window.docx && window.docx.renderAsync) return Promise.resolve(window.docx);
+    if(DOCXP41) return DOCXP41;
+    DOCXP41 = (window.JSZip ? Promise.resolve() : loadScript41('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js'))
+      .then(() => loadScript41('https://cdn.jsdelivr.net/npm/docx-preview@0.3.7/dist/docx-preview.min.js')).then(() => window.docx)
+      .catch(e => { DOCXP41 = null; throw e; });
+    return DOCXP41;
+  }
+  async function renderDocx41(blob, host){
+    try{
+      const lib = await loadDocxPreview();
+      host.innerHTML = '<div class="docx41"></div>';
+      const box = host.firstChild;
+      await lib.renderAsync(await blob.arrayBuffer(), box, null, {className:'docx', inWrapper:true, ignoreWidth:false, ignoreHeight:false, breakPages:true, renderHeaders:true, renderFooters:true, renderFootnotes:true, useBase64URL:true});
+      const fit = () => { const page = box.querySelector('section.docx'); const wrap = box.querySelector('.docx-wrapper'); if(!page || !wrap) return; wrap.style.zoom = ''; const room = host.clientWidth - 24; const w = page.offsetWidth; wrap.style.zoom = w > room ? (room / w).toFixed(3) : ''; };
+      fit(); setTimeout(fit, 300);
+    }catch(e){
+      const m = await loadMammoth();
+      const out = await m.convertToHtml({arrayBuffer: await blob.arrayBuffer()});
+      host.innerHTML = `<article class="doc41">${out.value}</article>`;
+    }
+  }
+  async function openDoc41(id){
+    const d = (HR.docs || []).find(x => x.id === id) || {};
+    $('vw41Title').textContent = d.name || 'Document';
+    { const old = $('sign41'); if(old) old.remove(); }
+    $('vw41Body').innerHTML = '<div class="p41-empty" style="padding:24px">Opening...</div>';
+    $('viewer41').classList.add('open');
+    $('vw41Dl').onclick = () => downloadDoc41(id, d.name);
+    try{
+      const r = await fetch(API_BASE + '/api/hr/documents/' + encodeURIComponent(id) + '/file');
+      if(!r.ok){ const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Could not open the document'); }
+      const type = (r.headers.get('Content-Type') || '').toLowerCase();
+      const blob = await r.blob();
+      if(type.includes('pdf')){ const url = URL.createObjectURL(blob); $('vw41Body').innerHTML = `<iframe title="${h(d.name || 'Document')}" src="${url}"></iframe>`; return; }
+      if(type.startsWith('image/')){ const url = URL.createObjectURL(blob); $('vw41Body').innerHTML = `<div class="doc41"><img src="${url}" alt="${h(d.name || '')}"></div>`; return; }
+      if(type.includes('wordprocessingml') || /\.docx$/i.test(d.name || '')){
+        await renderDocx41(blob, $('vw41Body')); return;
+      }
+      $('vw41Body').innerHTML = '<div class="p41-empty" style="padding:24px">This file type cannot be shown here. Use Download.</div>';
+    }catch(e){ $('vw41Body').innerHTML = `<div style="padding:24px"><div class="p41-err">${h(e.message)}</div></div>`; }
+  }
+  async function openSigned41(id){
+    const d = (HR.docs || []).find(x => x.id === id) || {};
+    $('vw41Title').textContent = (d.name || 'Document') + ' (signed)';
+    { const old = $('sign41'); if(old) old.remove(); }
+    $('vw41Body').innerHTML = '<div class="p41-empty" style="padding:24px">Opening...</div>';
+    $('viewer41').classList.add('open');
+    $('vw41Dl').onclick = async () => { try{ const r = await fetch(API_BASE + '/api/hr/documents/' + encodeURIComponent(id) + '/signed?download=1'); if(!r.ok) throw new Error('Could not download the signed copy'); const url = URL.createObjectURL(await r.blob()); const a = document.createElement('a'); a.href = url; a.download = (d.name || 'document') + ' Signed.pdf'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000); }catch(e){ toast41(e.message); } };
+    try{
+      const r = await fetch(API_BASE + '/api/hr/documents/' + encodeURIComponent(id) + '/signed');
+      if(!r.ok){ const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Could not open the signed copy'); }
+      const url = URL.createObjectURL(await r.blob()); $('vw41Body').innerHTML = `<iframe title="Signed copy" src="${url}"></iframe>`;
+    }catch(e){ $('vw41Body').innerHTML = `<div style="padding:24px"><div class="p41-err">${h(e.message)}</div></div>`; }
+  }
+  async function openSign41(id){
+    const d = (HR.docs || []).find(x => x.id === id) || {};
+    const admin = !!(HR.me && HR.me.admin);
+    if(typeof lgViewAs !== 'undefined' && lgViewAs){ toast41('Exit View as to sign as yourself'); }
+    await openDoc41(id);
+    const me = (typeof USERS !== 'undefined' ? USERS.find(u => u.key === (me41().key)) : null) || {};
+    const panel = document.createElement('div'); panel.className = 'sign41'; panel.id = 'sign41';
+    panel.innerHTML = `<div class="sign41-in">
+      <div class="sign41-h"><b>${admin ? 'Countersign for Live 2 Help Recruitment' : 'Sign this document'}</b><span>${admin ? h(nameOf(d.employee)) + ' signed on ' + fmt41(String(d.emp_signed_at).slice(0,10), true) + '. Read it through above, then add your signature.' : 'Read the whole document above first. Your signature is added to a signed copy, then Daniel countersigns.'}</span></div>
+      <div class="sign41-grid">
+        <label>Full name<input class="p41-in" id="sg41Name" value="${h(me.fullName || me41().name || '')}" autocomplete="name"></label>
+        <div><div class="sign41-lab">Signature <button type="button" class="p41-btn sm" id="sg41Clear">Clear</button></div><canvas id="sg41Pad" class="sign41-pad" aria-label="Draw your signature here"></canvas></div>
+      </div>
+      <label class="sign41-ok"><input type="checkbox" id="sg41Agree"> I have read this document and agree to its terms. I understand this is my electronic signature.</label>
+      <div class="p41-err" id="sg41Err"></div>
+      <div class="p41-bar"><button class="p41-btn pri" id="sg41Go">${admin ? 'Countersign' : 'Sign'}</button><button class="p41-btn" data-vw41="close">Not now</button></div></div>`;
+    $('vw41Body').parentNode.appendChild(panel);
+    const pad = $('sg41Pad'); const ctx = pad.getContext('2d'); let strokes = 0, drawing = false, last = null;
+    const size = () => { const r = pad.getBoundingClientRect(); const dpr = window.devicePixelRatio || 1; pad.width = Math.round(r.width * dpr); pad.height = Math.round(r.height * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#0B0B18'; strokes = 0; };
+    size();
+    const pt = e => { const r = pad.getBoundingClientRect(); return {x: e.clientX - r.left, y: e.clientY - r.top}; };
+    pad.onpointerdown = e => { e.preventDefault(); pad.setPointerCapture(e.pointerId); drawing = true; last = pt(e); ctx.beginPath(); ctx.arc(last.x, last.y, 1.1, 0, Math.PI * 2); ctx.fillStyle = '#0B0B18'; ctx.fill(); strokes++; };
+    pad.onpointermove = e => { if(!drawing) return; const p = pt(e); ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; };
+    pad.onpointerup = pad.onpointercancel = () => { drawing = false; };
+    $('sg41Clear').onclick = () => { ctx.clearRect(0, 0, pad.width, pad.height); strokes = 0; };
+    $('sg41Go').onclick = async () => {
+      const err = $('sg41Err'); err.textContent = '';
+      if(!strokes){ err.textContent = 'Please draw your signature in the box'; return; }
+      if(!$('sg41Agree').checked){ err.textContent = 'Please tick to confirm you have read and agree'; return; }
+      const btn = $('sg41Go'); btn.disabled = true; btn.textContent = 'Signing...';
+      try{
+        await post41('/api/hr/documents/' + encodeURIComponent(id) + '/sign', {name: $('sg41Name').value, signature: pad.toDataURL('image/png'), agree: true});
+        $('viewer41').classList.remove('open'); toast41(admin ? 'Countersigned. The signed copy is saved and they have been emailed.' : 'Signed. Daniel has been asked to countersign.');
+        hrLoad();
+      }catch(e2){ err.textContent = e2.message; btn.disabled = false; btn.textContent = admin ? 'Countersign' : 'Sign'; }
+    };
+  }
+  async function downloadDoc41(id, name){
+    try{
+      const r = await fetch(API_BASE + '/api/hr/documents/' + encodeURIComponent(id) + '/file?download=1');
+      if(!r.ok) throw new Error('Could not download the document');
+      const url = URL.createObjectURL(await r.blob()); const a = document.createElement('a'); a.href = url; a.download = (name || 'document').replace(/[\\/:*?"<>|]/g, '') + (/\.\w+$/.test(name || '') ? '' : '.docx'); document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
+    }catch(e){ toast41(e.message); }
+  }
+  document.addEventListener('click', e => { if(e.target.closest('[data-vw41="close"]')) $('viewer41').classList.remove('open'); });
+  document.addEventListener('keydown', e => { if(e.key === 'Escape' && $('viewer41').classList.contains('open')) $('viewer41').classList.remove('open'); });
+  document.addEventListener('click', async e => {
+    if(e.target.closest('[data-hrretry]')){ hrLoad(); return; }
+    const t = e.target.closest('[data-hrt],[data-hdec],[data-hcan],[data-hmon],[data-hdoc],[data-hack],[data-rtw41],[data-hadd],[data-libadd],[data-hsign],[data-hsigned],[data-hdl],[data-hpdel]');
+    if(!t) return;
+    if(t.dataset.hrt){ HR.tab = t.dataset.hrt; if(!$('hrView').classList.contains('visible')) switchTab('hr'); else hrRender(); return; }
+    if(t.dataset.hmon){ const n = Number(t.dataset.hmon); if(!n) HR.month = null; else { const [y, m] = (HR.month || todayISO41().slice(0,7)).split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); HR.month = d.toISOString().slice(0,7); } hrRender(); return; }
+    if(t.dataset.hdoc){ openDoc41(t.dataset.hdoc); return; }
+    if(t.dataset.hsign){ openSign41(t.dataset.hsign); return; }
+    if(t.dataset.hsigned){ openSigned41(t.dataset.hsigned); return; }
+    if(t.dataset.hdl){ const d = (HR.docs || []).find(x => x.id === t.dataset.hdl) || {}; downloadDoc41(t.dataset.hdl, d.name); return; }
+    try{
+      if(t.dataset.hdec){ const [id, decision] = t.dataset.hdec.split('|'); const comment = decision === 'declined' ? (window.prompt ? (window.prompt('Reason for declining (shown to the employee)') || '') : '') : ''; await post41('/api/hr/holidays/' + encodeURIComponent(id) + '/decision', {decision, comment}); toast41(decision === 'approved' ? 'Approved. They have been emailed.' : 'Declined. They have been emailed.'); hrLoad(); return; }
+      if(t.dataset.hcan){ await post41('/api/hr/holidays/' + encodeURIComponent(t.dataset.hcan) + '/cancel', {}); toast41('Request cancelled'); hrLoad(); return; }
+      if(t.dataset.hpdel){ if(!confirm('Remove this document from the dashboard? The file stays in the HR folder in Drive.')) return; await api41('/api/hr/documents/' + encodeURIComponent(t.dataset.hpdel), {method:'DELETE'}); toast41('Removed'); hrLoad(); return; }
+      if(t.dataset.hack){ await post41('/api/hr/documents/' + encodeURIComponent(t.dataset.hack) + '/ack', {}); toast41('Marked as read'); hrLoad(); return; }
+      if(t.dataset.rtw41){ await post41('/api/hr/absences/' + encodeURIComponent(t.dataset.rtw41), {rtw_done:'TRUE', rtw_date:todayISO41()}); toast41('Return to work recorded'); hrLoad(); return; }
+      if(t.dataset.hadd || t.dataset.libadd){ docAddForm(t.dataset.libadd ? 'lib41Form' : 'hrAdd41', !!t.dataset.libadd); return; }
+    }catch(err){ toast41(err.message); }
+  });
+  function docAddForm(host, lib){
+    const el = $(host); if(!el) return;
+    el.innerHTML = `<form class="p41-form" id="doc41Form" style="border-top:1px solid var(--border);padding-top:12px"><div class="two"><label>Name<input class="p41-in" name="name" required></label><label>Google Drive link<input class="p41-in" name="link" required placeholder="https://drive.google.com/..."></label></div>
+      <div class="two"><label>Category<select class="p41-in" name="category">${(lib ? ['Library','Policy','Guide','Template'] : ['Contract','Policy','Pay','Letter','Other']).map(c => `<option>${c}</option>`).join('')}</select></label>
+      <label>Who sees it<select class="p41-in" name="employee"><option value="all">Everyone</option>${(HR.me && HR.me.employees || []).map(e => `<option value="${h(e.id)}"${!lib && e.id === HR.emp ? ' selected' : ''}>${h(e.known_as || e.full_name)} only</option>`).join('')}</select></label></div>
+      <div class="two"><label style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="needs_ack"> Ask them to acknowledge it</label>${lib ? '' : '<label style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="needs_sign"> Requires signature (they sign, you countersign)</label>'}<label style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="admin_only"> Admin only</label></div>
+      <div class="p41-note">Keep the file in the HR folder in Google Drive so the dashboard can open it.</div><button class="p41-btn pri sm" type="submit" style="justify-self:start">Add document</button></form>`;
+    $('doc41Form').onsubmit = async e => { e.preventDefault(); const f = e.target; const body = {}; new FormData(f).forEach((v, k) => body[k] = v); body.needs_ack = !!f.needs_ack.checked; body.admin_only = !!f.admin_only.checked; body.needs_sign = !!(f.needs_sign && f.needs_sign.checked);
+      try{ await post41('/api/hr/documents', body); toast41('Document added'); lib ? libLoad() : hrLoad(); }catch(err){ toast41(err.message); } };
+  }
+
+  /* ---------------- Library ---------------- */
+  async function libLoad(){
+    const body = $('lib41Body');
+    $('lib41Admin').innerHTML = isAdmin41() ? '<button class="p41-btn sm" data-libadd="1">+ Add document</button>' : '';
+    let docs = [];
+    try{ docs = (await api41('/api/hr/documents')).data || []; HR.docs = docs; }catch(e){ body.innerHTML = `<div class="p41-panel"><div class="p41-err">${h(e.message)}</div></div>`; return; }
+    if(!HR.me){ try{ HR.me = await api41('/api/hr/me'); }catch(e){} }
+    const lib = docs.filter(d => d.employee === 'all' && d.admin_only !== 'TRUE');
+    const groups = {};
+    lib.forEach(d => { (groups[d.category] = groups[d.category] || []).push(d); });
+    body.innerHTML = `<div id="lib41Form"></div><div class="p41-grid g3">
+      <div class="p41-panel"><h3>Email templates</h3><div class="s" style="color:var(--muted)">Submission, interview, offer and rejection emails, editable by the team.</div><button class="p41-btn sm" style="justify-self:start" onclick="switchTab('templates')">Open templates</button></div>
+      <div class="p41-panel"><h3>Role briefs</h3><div class="s" style="color:var(--muted)">Job descriptions and key requirements, entered once per role.</div><button class="p41-btn sm" style="justify-self:start" onclick="switchTab('roles')">Open roles</button></div>
+      <div class="p41-panel"><h3>Hiring Toolkit</h3><div class="s" style="color:var(--muted)">The public toolkit page that feeds Funnel leads.</div><a class="p41-btn sm" style="justify-self:start;text-decoration:none" href="../hire/" target="_blank" rel="noopener">Open the toolkit</a></div></div>
+      ${Object.keys(groups).sort().map(cat => `<div class="p41-panel"><h3>${h(cat === 'Library' ? 'Guides and reference' : cat + (cat.endsWith('y') ? '' : 's'))}</h3><div class="p41-list">${groups[cat].map(d => `<div class="p41-row"><div class="m"><div><b>${h(d.name)}</b></div><div class="s">Added ${fmt41(String(d.added_at).slice(0,10), true)}</div></div><button class="p41-btn sm" data-hdoc="${h(d.id)}">Open</button></div>`).join('')}</div></div>`).join('') || '<div class="p41-panel"><div class="p41-empty">No shared documents yet.</div></div>'}`;
+  }
+
+  /* ================= build 42 ================= */
+
+  /* ---------- Today: simple at-a-glance links ---------- */
+  let glanceHR = { at: 0, m: null };
+  async function homeGlance(){
+    const host = $('homeView'); if(!host) return;
+    const body = host.querySelector('.view-body') || host;
+    let g = $('home42'); if(!g){ g = document.createElement('div'); g.id = 'home42'; body.insertBefore(g, body.firstChild); }
+    const old = $('home41People'); if(old) old.remove();
+    const cands = (typeof flatCandidates === 'function') ? flatCandidates() : [];
+    const count = st => cands.filter(x => st.includes(x.c.stage) && !(typeof isTestCand === 'function' && isTestCand(x.c))).length;
+    const today = (typeof opsToday === 'function') ? opsToday() : todayISO41();
+    const tasks = (typeof OPS !== 'undefined' ? OPS.tasks : []).filter(t => t.status !== 'Complete' && !t.archived);
+    const due = tasks.filter(t => { const d = typeof opsDateOnly === 'function' ? opsDateOnly(t.dueDate) : t.dueDate; return d && d <= today; }).length;
+    const notes = typeof OPS !== 'undefined' ? OPS.notes : [];
+    const urgent = notes.filter(n => n.sev === 'high').length;
+    if(!glanceHR.m || Date.now() - glanceHR.at > 60000){ try{ glanceHR = { at: Date.now(), m: await api41('/api/hr/me') }; st41.pending = glanceHR.m.pendingApprovals || 0; renderRail(); }catch(e){} }
+    const m = glanceHR.m; const mine = m && m.employees.find(x => x.id === m.key); const b = mine ? m.balances[mine.id] : null;
+    const items = [
+      {n: notes.length, l: 'Needs attention', s: urgent ? urgent + ' urgent' : 'All notifications', go: "switchTab('notifications')", warn: urgent > 0},
+      {n: due, l: 'Tasks due or overdue', s: tasks.length + ' open in total', go: "switchTab('tasks')", warn: due > 0},
+      {n: count(['applied']), l: 'New applications', s: 'Waiting to be screened', go: "openCandidatesView('applications')"},
+      {n: count(['submitted']), l: 'Awaiting client feedback', s: 'Submitted candidates', go: "openCandidatesView('submitted')"},
+      {n: count(['interview_requested','interview_scheduled','interviewed']), l: 'In interviews', s: 'Requested, booked or done', go: "openCandidatesView('interviews')"},
+      m && m.admin ? {n: m.pendingApprovals || 0, l: 'Holiday requests', s: 'Waiting for your decision', go: "switchTab('hr')", warn: (m.pendingApprovals || 0) > 0}
+        : (b ? {n: b.remaining, l: 'Holiday left to book', s: b.year + ', after pending requests', go: "switchTab('hr')"} : null),
+    ].filter(Boolean);
+    g.innerHTML = `<div class="glance42">${items.map(i => `<button class="gl42${i.warn ? ' warn' : ''}" onclick="${i.go}"><span class="n">${h(i.n)}</span><span class="l">${h(i.l)}</span><span class="s">${h(i.s)}</span></button>`).join('')}</div>`;
+  }
+  if(typeof renderHome === 'function'){ const _rh = renderHome; renderHome = function(){ _rh.apply(this, arguments); if($('homeView') && $('homeView').classList.contains('visible')) homeGlance(); }; }
+
+  /* ---------- Recruitment: company and role picker across the top ---------- */
+  var RB41 = { co: '' };
+  function roleBar41(){
+    const view = $('candidatesView'); if(!view || typeof mergedRoles !== 'function') return;
+    let bar = $('roleBar41');
+    if(!bar){ bar = document.createElement('div'); bar.id = 'roleBar41'; view.insertBefore(bar, view.firstChild); }
+    const roles = mergedRoles().filter(r => r.status === 'open' || r.status === 'hold');
+    const cnt = (c, r) => (typeof sbCandidatesFor === 'function' ? sbCandidatesFor(c, r) : []).filter(x => x.stage !== 'rejected').length;
+    const byCo = {}; roles.forEach(r => { (byCo[r.company] = byCo[r.company] || []).push(r); });
+    const cos = Object.keys(byCo).sort((a, b) => a.localeCompare(b));
+    const unassigned = (typeof DATA !== 'undefined' && typeof UNASSIGNED_LABEL !== 'undefined' && DATA[UNASSIGNED_LABEL]) ? Object.keys(DATA[UNASSIGNED_LABEL]).reduce((n, r) => n + DATA[UNASSIGNED_LABEL][r].length, 0) : 0;
+    const all = typeof boardScope !== 'undefined' && boardScope.all;
+    const curCo = RB41.co || (all ? '' : (typeof currentCompany !== 'undefined' ? currentCompany : ''));
+    const coKey = cos.find(c => typeof sbSame === 'function' ? sbSame(c, curCo) : c === curCo) || (curCo === (typeof UNASSIGNED_LABEL !== 'undefined' ? UNASSIGNED_LABEL : '') ? curCo : '');
+    const rlist = coKey && byCo[coKey] ? byCo[coKey] : [];
+    const curRole = all ? '' : (typeof currentRole !== 'undefined' ? currentRole : '');
+    const total = roles.reduce((n, r) => n + cnt(r.company, r.role), 0);
+    bar.innerHTML = `<button class="p41-chip" data-rb41="all" aria-pressed="${!!all}">All candidates · ${total}</button>
+      <label class="rb41"><span>Company</span><select class="p41-in" id="rb41Co"><option value="">Choose a company (${cos.length} with live roles)</option>${cos.map(c => `<option value="${h(c)}"${c === coKey ? ' selected' : ''}>${h(c)} · ${byCo[c].length} role${byCo[c].length === 1 ? '' : 's'}</option>`).join('')}${unassigned ? `<option value="__un"${coKey && coKey === UNASSIGNED_LABEL ? ' selected' : ''}>Needs a company assigned · ${unassigned}</option>` : ''}</select></label>
+      <label class="rb41"><span>Role</span><select class="p41-in" id="rb41Role"${rlist.length ? '' : ' disabled'}><option value="">${rlist.length ? 'Choose a role' : 'Pick a company first'}</option>${rlist.map(r => `<option value="${h(r.role)}"${(typeof sbSame === 'function' ? sbSame(r.role, curRole) : r.role === curRole) ? ' selected' : ''}>${h(r.role)} · ${cnt(r.company, r.role)} candidate${cnt(r.company, r.role) === 1 ? '' : 's'}${r.status === 'hold' ? ' (on hold)' : ''}</option>`).join('')}</select></label>
+      <button class="p41-btn sm" onclick="switchTab('roles');openRoleModal()">+ New role</button>`;
+    // Build 43: the chosen company's roles also show as one-click buttons
+    if(coKey && rlist.length > 1){
+      const chips = document.createElement('div'); chips.className = 'rb41-roles';
+      chips.innerHTML = rlist.map(r => `<button class="p41-chip" data-rb41role="${h(r.role)}" aria-pressed="${(typeof sbSame === 'function' ? sbSame(r.role, curRole) : r.role === curRole) && !all}">${h(r.role)} · ${cnt(r.company, r.role)}${r.status === 'hold' ? ' (on hold)' : ''}</button>`).join('');
+      bar.appendChild(chips);
+      chips.onclick = e => { const b = e.target.closest('[data-rb41role]'); if(b) selectRole(rlist[0].company, b.dataset.rb41role); };
+    }
+    $('rb41Co').onchange = e => {
+      const v = e.target.value; RB41.co = v === '__un' ? '' : v;
+      if(!v){ roleBar41(); return; }
+      if(v === '__un'){ const first = Object.keys(DATA[UNASSIGNED_LABEL])[0]; if(first) selectRole(UNASSIGNED_LABEL, first); return; }
+      const rs = byCo[v] || []; if(rs.length === 1) selectRole(rs[0].company, rs[0].role); else { roleBar41(); const rr = $('rb41Role'); if(rr) rr.focus(); }
+    };
+    $('rb41Role').onchange = e => { const v = e.target.value; const c = $('rb41Co').value; if(v && c && byCo[c]) selectRole(byCo[c][0].company, v); };
+  }
+  document.addEventListener('click', e => { if(e.target.closest('[data-rb41="all"]')){ RB41.co = ''; openCandidatesView('all'); } });
+  if(typeof renderSidebar === 'function'){ const _rs = renderSidebar; renderSidebar = function(){ _rs.apply(this, arguments); roleBar41(); }; }
+
+  /* ---------- Tasks: select all ---------- */
+  function taskSelectAll(){
+    const bar = document.querySelector('#tasksView > div'); if(!bar || $('tk41All')) return;
+    const l = document.createElement('label'); l.id = 'tk41All'; l.className = 'p41-chip'; l.style.cssText = 'display:inline-flex;gap:8px;align-items:center;cursor:pointer';
+    l.innerHTML = '<input type="checkbox" id="tk41AllBox"> Select all';
+    bar.firstElementChild.appendChild(l);
+    $('tk41AllBox').onchange = e => { document.querySelectorAll('#tasksBody .tk-sel').forEach(c => { c.checked = e.target.checked; }); if(typeof tkUpdateBar === 'function') tkUpdateBar(); };
+  }
+  taskSelectAll();
+  if(typeof loadTasks === 'function'){ const _lt = loadTasks; loadTasks = async function(){ const r = await _lt.apply(this, arguments); const b = $('tk41AllBox'); if(b) b.checked = false; return r; }; }
+
+  /* ---------- generic records (roadmap, marketing) ---------- */
+  const REC = { cfg: null, row: null };
+  const REC_CFG = {
+    road: {api: '/api/roadmap', title: 'Roadmap item', fields: [
+      {k:'title', l:'What', req:1}, {k:'area', l:'Area', opts:['Recruitment','Sales','Marketing','Operations','People','Systems and automation']},
+      {k:'owner', l:'Owner', opts:['dan','ella','both']}, {k:'target', l:'Target month', type:'month'},
+      {k:'status', l:'Status', opts:['Later','Next','Now','Done']}, {k:'notes', l:'Notes', type:'area'}], after: roadLoad},
+    post: {api: '/api/marketing', type:'post', title: 'LinkedIn post', fields: [
+      {k:'date', l:'Post date', type:'date'}, {k:'title', l:'Hook or topic', req:1}, {k:'channel', l:'Where', opts:['Company page','Dan','Ella']},
+      {k:'owner', l:'Owner', opts:['dan','ella']}, {k:'status', l:'Status', opts:['Idea','Drafted','Scheduled','Posted']},
+      {k:'next_step', l:'Call to action'}, {k:'link', l:'Link to post or draft'}, {k:'notes', l:'Draft or notes', type:'area'}], after: mktLoad},
+    brevo: {api: '/api/marketing', type:'brevo', title: 'Brevo workflow', fields: [
+      {k:'title', l:'Workflow name', req:1}, {k:'audience', l:'Audience'}, {k:'status', l:'Status', opts:['Planning','Building','Live','Paused']},
+      {k:'owner', l:'Owner', opts:['dan','ella']}, {k:'next_step', l:'Next step'}, {k:'link', l:'Brevo link'}, {k:'notes', l:'Emails in the sequence', type:'area'}], after: mktLoad},
+    magnet: {api: '/api/marketing', type:'magnet', title: 'Lead magnet', fields: [
+      {k:'title', l:'Name', req:1}, {k:'status', l:'Status', opts:['Idea','Building','Live','Retired']}, {k:'channel', l:'Where it is promoted'},
+      {k:'owner', l:'Owner', opts:['dan','ella']}, {k:'link', l:'Link'}, {k:'notes', l:'Notes', type:'area'}], after: mktLoad},
+    event: {api: '/api/marketing', type:'event', title: 'Event', fields: [
+      {k:'date', l:'Date', type:'date'}, {k:'title', l:'Event', req:1}, {k:'location', l:'Location'}, {k:'cost', l:'Cost'},
+      {k:'status', l:'Status', opts:['Considering','Booked','Attended','Skipped']}, {k:'owner', l:'Who is going', opts:['dan','ella','both']},
+      {k:'link', l:'Organiser link'}, {k:'next_step', l:'Follow-up'}, {k:'notes', l:'Notes and contacts met', type:'area'}], after: mktLoad},
+  };
+  const who41 = v => v === 'both' ? 'Dan and Ella' : (typeof userLabel === 'function' && v ? userLabel(v) : (v || ''));
+  function recOpen(kind, row){
+    const c = REC_CFG[kind]; REC.cfg = kind; REC.row = row || null;
+    const v = k => row ? (row[k] || '') : (k === 'owner' ? me41().key : (k === 'status' ? (c.fields.find(f => f.k === 'status') || {opts:['']}).opts[0] : ''));
+    $('rec41Body').innerHTML = `<div class="p41-ph"><h3>${row ? 'Edit' : 'New'} ${h(c.title.toLowerCase())}</h3><button class="p41-btn sm" data-rec41="close">Close</button></div>
+      <form class="p41-form" id="rec41Form">${c.fields.map(f => `<label>${h(f.l)}${f.opts ? `<select class="p41-in" name="${f.k}">${f.opts.map(o => `<option value="${h(o)}"${v(f.k) === o ? ' selected' : ''}>${h(f.k === 'owner' ? who41(o) : o)}</option>`).join('')}</select>`
+        : f.type === 'area' ? `<textarea class="p41-in" rows="4" name="${f.k}">${h(v(f.k))}</textarea>` : `<input class="p41-in" name="${f.k}" type="${f.type || 'text'}" value="${h(v(f.k))}"${f.req ? ' required' : ''}>`}</label>`).join('')}
+      <div class="p41-bar"><button class="p41-btn pri" type="submit">Save</button>${row ? '<button class="p41-btn" type="button" data-rec41="del" style="color:var(--danger)">Delete</button>' : ''}</div></form>`;
+    $('rec41').classList.add('open');
+    $('rec41Form').onsubmit = async e => { e.preventDefault(); const body = Object.assign({}, REC.row || {}, {id: (REC.row && REC.row.id) || ('rec-' + Date.now().toString(36)), updated_by: me41().key, updated_at: new Date().toISOString()});
+      if(c.type) body.type = c.type; new FormData(e.target).forEach((val, k) => body[k] = val);
+      try{ await post41(c.api, body); $('rec41').classList.remove('open'); toast41('Saved'); c.after(); }catch(err){ toast41(err.message); } };
+  }
+  document.addEventListener('click', async e => {
+    const t = e.target.closest('[data-rec41],[data-rec-new],[data-rec-edit]'); if(!t) return;
+    if(t.dataset.recNew){ recOpen(t.dataset.recNew); return; }
+    if(t.dataset.recEdit){ const [kind, id] = t.dataset.recEdit.split('|'); const list = kind === 'road' ? ROAD.rows : MKT.rows; recOpen(kind, list.find(r => r.id === id)); return; }
+    if(t.dataset.rec41 === 'close'){ $('rec41').classList.remove('open'); return; }
+    if(t.dataset.rec41 === 'del' && REC.row){ const c = REC_CFG[REC.cfg]; try{ await b2Del(c.api, REC.row.id); $('rec41').classList.remove('open'); toast41('Deleted'); c.after(); }catch(err){ toast41(err.message); } }
+  });
+
+  /* ---------- Roadmap ---------- */
+  const ROAD = { rows: [] };
+  async function roadLoad(){
+    try{ ROAD.rows = b2List(await api41('/api/roadmap')); }catch(e){ $('rd41Body').innerHTML = `<div class="p41-panel"><div class="p41-err">${h(e.message)}</div></div>`; return; }
+    const cols = ['Now','Next','Later','Done'];
+    $('rd41Body').innerHTML = `<div class="road42">${cols.map(c => { const rs = ROAD.rows.filter(r => (r.status || 'Later') === c).sort((a, b) => String(a.target).localeCompare(String(b.target)));
+      return `<div class="rcol"><div class="rh"><span>${c}</span><span>${rs.length}</span></div>${rs.map(r => `<button class="rcard" data-rec-edit="road|${h(r.id)}"><b>${h(r.title)}</b><span>${h(r.area || '')}${r.target ? ' · ' + h(new Date(r.target + '-01T12:00:00Z').toLocaleDateString('en-GB', {month:'short', year:'numeric', timeZone:'UTC'})) : ''}</span><span>${h(who41(r.owner))}</span></button>`).join('') || '<div class="p41-empty">Nothing here.</div>'}</div>`; }).join('')}</div>`;
+  }
+
+  /* ---------- This week ---------- */
+  const WK = { start: null, rows: [], person: null };
+  const mondayOf = iso => { const d = D41(iso); const w = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - w); return d.toISOString().slice(0,10); };
+  const addD = (iso, n) => { const d = D41(iso); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0,10); };
+  async function weekLoad(){
+    WK.start = WK.start || mondayOf(todayISO41());
+    WK.person = WK.person || me41().key || 'dan';
+    try{ WK.rows = b2List(await api41('/api/week-plans')); }catch(e){ $('wk41Body').innerHTML = `<div class="p41-panel"><div class="p41-err">${h(e.message)}</div></div>`; return; }
+    weekRender();
+  }
+  function weekRender(){
+    const people = (typeof USERS !== 'undefined' && Array.isArray(USERS) && USERS.length) ? USERS.map(u => u.key) : ['dan','ella'];
+    $('wk41Nav').innerHTML = `<div class="p41-tabs">${people.map(p => `<button class="p41-chip" data-wkp="${h(p)}" aria-pressed="${WK.person === p}">${h(who41(p))}</button>`).join('')}</div>
+      <button class="p41-btn sm" data-wkn="-7">Previous week</button><button class="p41-btn sm" data-wkn="0">This week</button><button class="p41-btn sm" data-wkn="7">Next week</button>`;
+    const days = [0,1,2,3,4].map(i => addD(WK.start, i));
+    const mine = WK.rows.filter(r => r.person === WK.person);
+    const focus = mine.find(r => r.kind === 'focus' && r.date === WK.start);
+    const tasks = (typeof OPS !== 'undefined' ? OPS.tasks : []).filter(t => t.status !== 'Complete' && !t.archived && (!t.user || String(t.user).toLowerCase() === WK.person));
+    const canEdit = WK.person === me41().key || isAdmin41();
+    $('wk41Body').innerHTML = `<div class="p41-panel"><div class="p41-ph"><h3>Focus for the week of ${fmt41(WK.start, true)}</h3></div>
+      ${canEdit ? `<form class="p41-bar" data-wkfocus="1"><input class="p41-in" name="text" style="flex:1;min-width:200px" placeholder="The one or two things that matter most this week" value="${h(focus ? focus.text : '')}"><button class="p41-btn sm" type="submit">Save focus</button></form>` : `<div>${h(focus ? focus.text : 'No focus set.')}</div>`}</div>
+      <div class="week42">${days.map(d => { const items = mine.filter(r => r.kind !== 'focus' && r.date === d); const due = tasks.filter(t => (typeof opsDateOnly === 'function' ? opsDateOnly(t.dueDate) : String(t.dueDate).slice(0,10)) === d);
+        return `<div class="wday${d === todayISO41() ? ' today' : ''}"><div class="wh"><b>${D41(d).toLocaleDateString('en-GB', {weekday:'long', timeZone:'UTC'})}</b><span>${fmt41(d)}</span></div>
+          ${items.map(r => `<label class="witem${r.done === 'TRUE' ? ' done' : ''}"><input type="checkbox" data-wkdone="${h(r.id)}"${r.done === 'TRUE' ? ' checked' : ''}${canEdit ? '' : ' disabled'}><span>${h(r.text)}</span>${canEdit ? `<button type="button" class="wx" data-wkdel="${h(r.id)}" aria-label="Remove">×</button>` : ''}</label>`).join('')}
+          ${due.map(t => `<div class="wtask" onclick="switchTab('tasks')">Task due: ${h(t.title)}</div>`).join('')}
+          ${canEdit ? `<form data-wkadd="${d}"><input class="p41-in" name="text" placeholder="Add to ${D41(d).toLocaleDateString('en-GB', {weekday:'short', timeZone:'UTC'})}"></form>` : ''}
+          ${!items.length && !due.length && !canEdit ? '<div class="p41-empty">Nothing planned.</div>' : ''}</div>`; }).join('')}</div>`;
+  }
+  document.addEventListener('click', async e => {
+    const t = e.target.closest('[data-wkp],[data-wkn],[data-wkdel]'); if(!t) return;
+    if(t.dataset.wkp){ WK.person = t.dataset.wkp; weekRender(); return; }
+    if(t.dataset.wkn !== undefined){ const n = Number(t.dataset.wkn); WK.start = n ? addD(WK.start, n) : mondayOf(todayISO41()); weekRender(); return; }
+    if(t.dataset.wkdel){ e.preventDefault(); try{ await b2Del('/api/week-plans', t.dataset.wkdel); WK.rows = WK.rows.filter(r => r.id !== t.dataset.wkdel); weekRender(); }catch(err){ toast41(err.message); } }
+  });
+  document.addEventListener('change', async e => {
+    const t = e.target; if(!t.dataset || !t.dataset.wkdone) return;
+    const r = WK.rows.find(x => x.id === t.dataset.wkdone); if(!r) return;
+    r.done = t.checked ? 'TRUE' : 'FALSE'; weekRender();
+    try{ await post41('/api/week-plans', {...r, updated_at: new Date().toISOString()}); }catch(err){ toast41(err.message); }
+  });
+  document.addEventListener('submit', async e => {
+    const f = e.target; if(!f.dataset || !(f.dataset.wkadd || f.dataset.wkfocus)) return;
+    e.preventDefault(); const text = (f.text.value || '').trim();
+    if(f.dataset.wkadd && !text) return;
+    const ex = f.dataset.wkfocus ? WK.rows.find(r => r.person === WK.person && r.kind === 'focus' && r.date === WK.start) : null;
+    const row = {...(ex || {}), id: ex ? ex.id : 'wk-' + Date.now().toString(36), person: WK.person, date: f.dataset.wkadd || WK.start, kind: f.dataset.wkfocus ? 'focus' : 'item', text, done: ex ? ex.done : 'FALSE', created_by: me41().key, updated_at: new Date().toISOString()};
+    try{ await post41('/api/week-plans', row); WK.rows = WK.rows.filter(r => r.id !== row.id).concat([row]); weekRender(); if(f.dataset.wkfocus) toast41('Focus saved'); else { const nf = document.querySelector(`form[data-wkadd="${row.date}"] input`); if(nf) nf.focus(); } }catch(err){ toast41(err.message); }
+  });
+
+  /* ---------- Marketing ---------- */
+  const MKT = { tab: 'post', rows: [], funnel: 0 };
+  const MKT_TABS = [['post','LinkedIn posts'],['brevo','Brevo workflows'],['magnet','Lead magnets'],['event','Events']];
+  async function mktLoad(){
+    try{
+      MKT.rows = b2List(await api41('/api/marketing'));
+      MKT.funnel = b2List(await api41('/api/funnel-leads').catch(() => ({data:[]}))).length;
+    }catch(e){ $('mk41Body').innerHTML = `<div class="p41-panel"><div class="p41-err">${h(e.message)}</div></div>`; return; }
+    mktRender();
+  }
+  function mktRender(){
+    $('mk41Tabs').innerHTML = MKT_TABS.map(([k, l]) => `<button class="p41-chip" data-mkt="${k}" aria-pressed="${MKT.tab === k}">${l} · ${MKT.rows.filter(r => r.type === k).length}</button>`).join('');
+    $('mk41Add').innerHTML = `<button class="gold-btn" data-rec-new="${MKT.tab}">+ Add ${REC_CFG[MKT.tab].title.toLowerCase()}</button>`;
+    const rows = MKT.rows.filter(r => r.type === MKT.tab).sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')));
+    const pill = s => `<span class="p41-pill ${['Posted','Live','Attended'].includes(s) ? 'ok' : ['Scheduled','Booked','Building','Drafted'].includes(s) ? 'gold' : ['Paused','Skipped','Retired'].includes(s) ? 'bad' : ''}">${h(s || 'Idea')}</span>`;
+    const link = r => r.link ? `<a href="${h(r.link)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Open</a>` : '';
+    const heads = {post:['Date','Post','Where','Status','Call to action',''], brevo:['Workflow','Audience','Status','Next step','Owner',''], magnet:['Lead magnet','Promoted','Status','Leads','Owner',''], event:['Date','Event','Location','Cost','Status','']}[MKT.tab];
+    const cells = r => ({
+      post: [r.date ? fmt41(r.date, true) : 'No date', `<b>${h(r.title)}</b>`, h(r.channel), pill(r.status), h(r.next_step), link(r)],
+      brevo: [`<b>${h(r.title)}</b>`, h(r.audience), pill(r.status), h(r.next_step), h(who41(r.owner)), link(r)],
+      magnet: [`<b>${h(r.title)}</b>`, h(r.channel), pill(r.status), /toolkit/i.test(r.title) ? `${MKT.funnel} <a onclick="event.stopPropagation();switchTab('funnelLeads')" style="cursor:pointer;color:var(--gold)">view</a>` : '', h(who41(r.owner)), link(r)],
+      event: [r.date ? fmt41(r.date, true) : 'No date', `<b>${h(r.title)}</b>`, h(r.location), h(r.cost), pill(r.status), link(r)],
+    })[MKT.tab];
+    $('mk41Body').innerHTML = rows.length ? `<div class="p41-tw"><table><thead><tr>${heads.map(x => `<th>${x}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr class="click" data-rec-edit="${MKT.tab}|${h(r.id)}">${cells(r).map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
+      : `<div class="p41-panel"><div class="p41-empty">Nothing here yet. Use the add button to start.</div></div>`;
+  }
+  document.addEventListener('click', e => { const t = e.target.closest('[data-mkt]'); if(t){ MKT.tab = t.dataset.mkt; mktRender(); } });
+
+  // land on the new layout straight after sign in (the splash buttons still work)
+  if(typeof signedInUser !== 'undefined' && signedInUser){ renderRail(); }
+})();
+</script>
+
 </body>
 </html>
