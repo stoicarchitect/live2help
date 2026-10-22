@@ -1092,6 +1092,7 @@ h1,h2,.view-head h2,#leadClientsHeader h2,#clientsHeader h2,.modal h2{font-famil
 .splash-btn{border-radius:10px!important;}
 .splash-btn.overview{background:var(--gold)!important;color:#16120a!important;}
 
+#roleBar41 .rb41-roles{flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px;margin-top:2px;}
 /* ---- rail ---- */
 #rail41{display:none;}
 @media (min-width:781px){
@@ -1291,6 +1292,18 @@ h1,h2,.view-head h2,#leadClientsHeader h2,#clientsHeader h2,.modal h2{font-famil
 .doc41 h1,.doc41 h2,.doc41 h3{font-family:var(--f-display);color:var(--navy);margin:1em 0 .4em;}
 .doc41 p{margin:0 0 .8em;} .doc41 table{border-collapse:collapse;width:100%;margin:.8em 0;} .doc41 td,.doc41 th{border:1px solid var(--border);padding:6px 8px;vertical-align:top;}
 .doc41 img{max-width:100%;}
+/* build 43: branded Word view, signing panel */
+@font-face{font-family:'Gill Sans MT';src:local('Gill Sans MT'),local('GillSansMT'),local('Gill Sans'),local('GillSans');font-weight:400;}
+@font-face{font-family:'Gill Sans MT';src:local('Gill Sans MT Bold'),local('GillSansMT-Bold'),local('Gill Sans Bold'),local('GillSans-Bold');font-weight:700;}
+.docx41 .docx-wrapper{background:var(--lightbg)!important;padding:20px 12px!important;}
+.docx41 .docx-wrapper>section.docx{box-shadow:0 2px 14px rgba(15,31,61,.10)!important;margin-bottom:20px!important;}
+#viewer41 .sign41{border-top:3px solid var(--gold);background:#fff;padding:14px 18px calc(14px + env(safe-area-inset-bottom,0px));max-height:52vh;overflow:auto;}
+.sign41-h{display:flex;flex-direction:column;gap:2px;margin-bottom:10px;} .sign41-h b{font-family:var(--f-display);font-size:18px;color:var(--navy);} .sign41-h span{font-size:13px;color:var(--muted);}
+.sign41-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:14px;align-items:start;} .sign41-grid label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);}
+.sign41-lab{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);margin-bottom:4px;}
+.sign41-pad{width:100%;height:130px;border:1px dashed var(--gold);border-radius:6px;background:#FCFBF7;touch-action:none;cursor:crosshair;display:block;}
+.sign41-ok{display:flex;gap:8px;align-items:flex-start;font-size:13px;margin:10px 0 4px;color:var(--grey);}
+@media (max-width:700px){.sign41-grid{grid-template-columns:1fr;} #viewer41 .sign41{max-height:60vh;}}
 @media (max-width:700px){.doc41{padding:24px 18px;margin:0;border-radius:0;}}
 /* record editor */
 #rec41 .rp{position:absolute;top:0;right:0;bottom:0;width:min(460px,100%);background:#fff;overflow:auto;display:flex;flex-direction:column;gap:14px;padding:calc(22px + env(safe-area-inset-top,0px)) max(22px,env(safe-area-inset-right,0px)) calc(22px + env(safe-area-inset-bottom,0px)) 22px;}
@@ -13137,7 +13150,7 @@ function lgShowBanner(name){
   const back = lgReadStore('l2hAdminReturn', false);
   const real = back && back.user ? back.user.name : 'your own account';
   const st = document.createElement('style');
-  st.textContent = 'body.va-active{padding-top:38px;box-sizing:border-box;} #vaBanner{position:fixed;top:0;left:0;right:0;height:38px;z-index:8000;background:var(--gold);color:var(--dark);display:flex;align-items:center;justify-content:center;gap:14px;font-size:13px;padding:0 12px;} #vaBanner button{background:var(--dark);color:#fff;border:none;border-radius:2px;padding:5px 12px;font-size:12px;cursor:pointer;font-family:inherit;}';
+  st.textContent = 'body.va-active{padding-top:38px;box-sizing:border-box;} body.va-active #rail41,body.va-active #mobBar,body.va-active #sidebar{top:38px!important;} #vaBanner{position:fixed;top:0;left:0;right:0;height:38px;z-index:8000;background:var(--gold);color:var(--dark);display:flex;align-items:center;justify-content:center;gap:14px;font-size:13px;padding:0 12px;} #vaBanner button{background:var(--dark);color:#fff;border:none;border-radius:2px;padding:5px 12px;font-size:12px;cursor:pointer;font-family:inherit;}';
   document.head.appendChild(st);
   const bar = document.createElement('div');
   bar.id = 'vaBanner';
@@ -13208,8 +13221,10 @@ function lgTeamRefresh(){ const c = document.getElementById('lgTeamCard'); if(c)
   renderTeam = function(){ _rt.apply(this, arguments); lgTeamCard(); };
 })();
 
-/* ---------- Start up: pick up a View as hop, otherwise show the login ---------- */
-(function lgBoot(){
+/* ---------- Start up: pick up a View as hop, otherwise show the login ----------
+   Build 43: waits until every script on the page has loaded, so the CRM layout,
+   menu and HR views are all wired up before the switched account signs in. */
+(function(){ var run = function lgBoot(){
   const va = lgReadStore('l2hVa', true);
   const back = lgReadStore('l2hRestore', true);
   const go = function(blob, asViewer){
@@ -13223,7 +13238,7 @@ function lgTeamRefresh(){ const c = document.getElementById('lgTeamCard'); if(c)
   if(va && va.token && va.user) go(va, true);
   else if(back && back.token && back.user) go(back, false);
   else lgReadStore('l2hAdminReturn', true);
-})();
+}; if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(run, 0); }); else setTimeout(run, 0); })();
 
 /* ============================================================
    Talent pool Find matches: CV search, 15 mile radius, AI ranking
@@ -16390,7 +16405,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '22 Oct 2026 - build 42';
+var PAGE_BUILD = '22 Oct 2026 - build 43';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -16621,7 +16636,7 @@ function buildTagApply(){
       html += `<button class="r-item${st41.group === g.key ? ' active' : ''}" data-g41="${g.key}"${st41.group === g.key ? ' aria-current="page"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true">${ICON[g.key]}</svg><span>${g.label}</span>${badge}</button>`;
     });
     html += `<div class="r-foot"><div class="r-user"><div class="r-av">${h((u.name || '?').charAt(0).toUpperCase())}</div><div><b>${h(u.name || '')}</b><small>${isAdmin41() ? 'Admin' : 'Team'}</small></div></div>
-      <button class="r-out" onclick="signOut()">Log out</button><div class="r-ver">Build 42</div></div>`;
+      ${(typeof lgViewAs !== 'undefined' && lgViewAs) ? '<button class="r-out" onclick="lgExitViewAs()">Exit View as</button>' : '<button class="r-out" onclick="signOut()">Log out</button>'}<div class="r-ver">Build 43</div></div>`;
     rail.innerHTML = html;
   }
   rail.addEventListener('click', e => {
@@ -16854,7 +16869,7 @@ function buildTagApply(){
 
   /* ---------------- People (HR) ---------------- */
   const HR = { tab:'overview', emp:null, me:null, hol:[], abs:[], bradford:{}, docs:[], revs:[], com:[], cal:null, month:null, err:'' };
-  const HR_TABS = [['overview','Overview'],['holidays','Holidays'],['calendar','Team calendar'],['sickness','Sickness'],['documents','Documents'],['reviews','Probation and reviews'],['profile','Profile'],['commission','Commission']];
+  const HR_TABS = [['overview','Overview'],['holidays','Holidays'],['calendar','Team calendar'],['sickness','Sickness'],['documents','Documents'],['pay','Pay and tax'],['reviews','Probation and reviews'],['profile','Profile'],['commission','Commission']];
   async function hrBadge(){
     try{ const m = await api41('/api/hr/me'); HR.me = HR.me || m; st41.pending = m.pendingApprovals || 0; renderRail(); }catch(e){}
   }
@@ -16882,7 +16897,7 @@ function buildTagApply(){
     $('hr41Tabs').innerHTML = tabs.map(([k,l]) => `<button class="p41-chip" data-hrt="${k}" aria-pressed="${HR.tab === k}">${l}${k === 'holidays' && admin && st41.pending ? ' · ' + st41.pending : ''}</button>`).join('');
     $('hr41Who').innerHTML = admin && HR.me.employees.length > 1 ? `<select class="p41-in" id="hr41Emp">${HR.me.employees.map(e => `<option value="${h(e.id)}"${e.id === HR.emp ? ' selected' : ''}>${h(e.known_as || e.full_name)}</option>`).join('')}</select>` : '';
     if(!HR.me.employees.length){ $('hr41Body').innerHTML = `<div class="p41-panel"><div class="p41-empty">${admin ? 'No employee records yet.' : 'You do not have an HR record yet. Ask Daniel to add you.'}</div></div>`; return; }
-    const fn = {overview:hrOverview, holidays:hrHolidays, calendar:hrCalendar, sickness:hrSickness, documents:hrDocs, reviews:hrReviews, profile:hrProfile, commission:hrCommission}[HR.tab] || hrOverview;
+    const fn = {overview:hrOverview, holidays:hrHolidays, calendar:hrCalendar, sickness:hrSickness, documents:hrDocs, pay:hrPay, reviews:hrReviews, profile:hrProfile, commission:hrCommission}[HR.tab] || hrOverview;
     $('hr41Body').innerHTML = fn(admin);
     hrWire();
   }
@@ -16905,7 +16920,8 @@ function buildTagApply(){
     const e = empOf(HR.emp); const b = bal();
     const pend = HR.hol.filter(r => r.status === 'pending');
     const nextRev = HR.revs.filter(r => r.employee === HR.emp && r.status !== 'Completed')[0];
-    const unread = HR.docs.filter(d => d.needs_ack === 'TRUE' && !d.acknowledged && (d.employee === HR.emp || d.employee === 'all'));
+    const unread = HR.docs.filter(d => d.needs_ack === 'TRUE' && !d.needs_sign && !d.acknowledged && (d.employee === HR.emp || d.employee === 'all'));
+    const toSign = HR.docs.filter(d => d.employee === HR.emp && (admin ? d.sign_status === 'awaiting_countersign' : d.sign_status === 'awaiting_employee'));
     const prob = e && e.probation_start && e.probation_end ? (() => { const t = (D41(e.probation_end) - D41(e.probation_start)) / 864e5 + 1; const d = Math.min(t, Math.max(0, (D41(todayISO41()) - D41(e.probation_start)) / 864e5 + 1)); return {t, d}; })() : null;
     return `${balTiles()}<div class="p41-grid">
       <div class="p41-panel"><div class="p41-ph"><h3>${admin ? 'Waiting for your decision' : 'My requests'}</h3><button class="p41-btn sm" data-hrt="holidays">Holidays</button></div>
@@ -16913,6 +16929,7 @@ function buildTagApply(){
       <div class="p41-panel"><div class="p41-ph"><h3>Coming up</h3></div><div class="p41-list">
         ${e && e.start_date > todayISO41() ? `<div class="p41-row"><div class="m"><div>${h(nameOf(HR.emp))} becomes employed</div><div class="s">Contract starts, holiday year begins</div></div><span class="p41-pill">${fmt41(e.start_date)}</span></div>` : ''}
         ${nextRev ? `<div class="p41-row"><div class="m"><div>${h(nextRev.kind)}</div><div class="s">${admin ? 'With ' + h(nameOf(nextRev.employee)) : 'With Daniel'}</div></div><span class="p41-pill ${days41(nextRev.due_date) >= -7 ? 'warn' : ''}">${fmt41(nextRev.due_date)}</span></div>` : ''}
+        ${toSign.length ? `<div class="p41-row"><div class="m"><div>${admin ? 'Documents to countersign' : 'Documents to sign'}</div><div class="s">${toSign.map(d => h(d.name)).join(', ')}</div></div><button class="p41-btn pri sm" data-hrt="documents">Open</button></div>` : ''}
         ${unread.length ? `<div class="p41-row"><div class="m"><div>Documents to read and acknowledge</div><div class="s">${unread.map(d => h(d.name)).join(', ')}</div></div><button class="p41-btn sm" data-hrt="documents">Open</button></div>` : ''}
         ${prob ? `<div class="p41-row"><div class="m" style="flex:1"><div>Probation</div><div class="s">${fmt41(e.probation_start, true)} to ${fmt41(e.probation_end, true)} · day ${Math.round(prob.d)} of ${Math.round(prob.t)}</div><div class="p41-bar-track" style="margin-top:6px"><i style="width:${Math.round(prob.d / prob.t * 100)}%"></i></div></div></div>` : ''}
       </div></div></div>
@@ -16972,12 +16989,48 @@ function buildTagApply(){
       <div class="p41-panel"><h3>Log an absence</h3><form class="p41-form" id="abs41Form"><div class="two"><label for="abs41From">First day off<input class="p41-in" type="date" id="abs41From" value="${todayISO41()}"></label><label for="abs41To">Last day off<input class="p41-in" type="date" id="abs41To" value="${todayISO41()}"></label></div>
       <label for="abs41Reason">Reason (only Daniel sees this)<input class="p41-in" id="abs41Reason" placeholder="Brief description"></label><div class="p41-err" id="abs41Err"></div><button class="p41-btn pri" type="submit">Log absence</button></form></div></div>`;
   }
+  const PAY41 = ['Payslip','P60','P45','P11D','Tax code notice','Pension','Other pay or tax'];
+  const isPay41 = d => PAY41.includes(d.category);
+  function signCell41(d, admin){
+    const who = h(nameOf(d.employee));
+    const signedCopy = d.has_signed_copy ? `<button class="p41-btn sm" data-hsigned="${h(d.id)}">Signed copy</button>` : '';
+    if(d.sign_status === 'awaiting_employee') return admin ? `<span class="p41-pill warn">Waiting for ${who} to sign</span>` : `<button class="p41-btn pri sm" data-hsign="${h(d.id)}">Review and sign</button>`;
+    if(d.sign_status === 'awaiting_countersign') return signedCopy + (admin ? `<button class="p41-btn pri sm" data-hsign="${h(d.id)}">Countersign</button>` : '<span class="p41-pill warn">Signed by you, waiting for Daniel</span>');
+    if(d.sign_status === 'signed') return signedCopy + '<span class="p41-pill ok">Signed by both</span>';
+    return '';
+  }
   function hrDocs(admin){
-    const list = HR.docs.filter(d => admin ? (d.employee === HR.emp || d.employee === 'all') && d.category !== 'Library' : d.category !== 'Library');
+    const list = HR.docs.filter(d => !isPay41(d) && (admin ? (d.employee === HR.emp || d.employee === 'all') && d.category !== 'Library' : d.category !== 'Library'));
     return `<div class="p41-panel"><div class="p41-ph"><h3>Documents</h3>${admin ? '<button class="p41-btn sm" data-hadd="1">+ Add document</button>' : ''}</div><div class="p41-list">
-      ${list.map(d => `<div class="p41-row"><div class="m"><div><b>${h(d.name)}</b> ${d.admin_only === 'TRUE' ? '<span class="p41-pill gold">Admin only</span>' : ''}</div><div class="s">${h(d.category)}${d.employee === 'all' ? ' · everyone' : ''}${d.acknowledged ? ' · acknowledged ' + h(String(d.acknowledged_at).split(' ')[1] ? fmt41(String(d.acknowledged_at).split(' ')[1], true) : '') : ''}</div></div>
-        <div class="p41-bar"><button class="p41-btn sm" data-hdoc="${h(d.id)}">Open</button>${d.needs_ack === 'TRUE' && !d.acknowledged && !admin ? `<button class="p41-btn pri sm" data-hack="${h(d.id)}">I have read this</button>` : ''}${d.needs_ack === 'TRUE' && !d.acknowledged && admin ? '<span class="p41-pill warn">Not yet acknowledged</span>' : ''}${d.acknowledged ? '<span class="p41-pill ok">Acknowledged</span>' : ''}</div></div>`).join('') || '<div class="p41-empty">No documents yet.</div>'}</div>
+      ${list.map(d => {
+        const sub = d.needs_sign
+          ? (d.emp_signed_at ? 'Signed by ' + h(d.emp_signed_name) + ' ' + fmt41(String(d.emp_signed_at).slice(0,10), true) : 'Needs signing') + (d.admin_signed_at ? ' · countersigned by ' + h(d.admin_signed_name) + ' ' + fmt41(String(d.admin_signed_at).slice(0,10), true) : '')
+          : (d.acknowledged ? 'acknowledged ' + h(String(d.acknowledged_at).split(' ')[1] ? fmt41(String(d.acknowledged_at).split(' ')[1], true) : '') : '');
+        const actions = d.needs_sign ? signCell41(d, admin)
+          : (d.needs_ack === 'TRUE' && !d.acknowledged && !admin ? `<button class="p41-btn pri sm" data-hack="${h(d.id)}">I have read this</button>` : '') + (d.needs_ack === 'TRUE' && !d.acknowledged && admin ? '<span class="p41-pill warn">Not yet acknowledged</span>' : '') + (d.acknowledged ? '<span class="p41-pill ok">Acknowledged</span>' : '');
+        return `<div class="p41-row"><div class="m"><div><b>${h(d.name)}</b> ${d.admin_only === 'TRUE' ? '<span class="p41-pill gold">Admin only</span>' : ''}</div><div class="s">${h(d.category)}${d.employee === 'all' ? ' · everyone' : ''}${sub ? ' · ' + sub : ''}</div></div>
+        <div class="p41-bar"><button class="p41-btn sm" data-hdoc="${h(d.id)}">Open</button>${actions}</div></div>`; }).join('') || '<div class="p41-empty">No documents yet.</div>'}</div>
       <div id="hrAdd41"></div></div>`;
+  }
+  function hrPay(admin){
+    const list = HR.docs.filter(d => isPay41(d) && d.employee === HR.emp)
+      .sort((a, b) => String(b.added_at).localeCompare(String(a.added_at)));
+    const groups = {}; list.forEach(d => { (groups[d.category] = groups[d.category] || []).push(d); });
+    const order = PAY41.filter(c => groups[c]);
+    const upload = admin ? `<div class="p41-panel"><div class="p41-ph"><h3>Add a pay or tax document for ${h(nameOf(HR.emp))}</h3></div>
+      <form class="p41-form" id="pay41Form">
+        <div class="two"><label>Type<select class="p41-in" name="category">${PAY41.map(c => `<option>${c}</option>`).join('')}</select></label>
+        <label>Period<input class="p41-in" name="period" placeholder="For example October 2026 or 2026 to 2027 tax year"></label></div>
+        <div class="two"><label>Name (optional)<input class="p41-in" name="name" placeholder="Left blank, it is named from the type and period"></label>
+        <label>File (PDF from the accountant)<input class="p41-in" type="file" name="file" accept=".pdf,.png,.jpg,.jpeg,.docx,.xlsx" required></label></div>
+        <label style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="notify" checked> Email ${h(nameOf(HR.emp))} to say it is ready</label>
+        <div class="p41-err" id="pay41Err"></div>
+        <button class="p41-btn pri sm" type="submit" style="justify-self:start">Upload</button></form>
+      <div class="p41-note">Saved to the HR folder in Google Drive. Only ${h(nameOf(HR.emp))} and you can see it.</div></div>` : '';
+    const lists = order.map(c => `<div class="p41-panel"><div class="p41-ph"><h3>${h(c === 'Payslip' ? 'Payslips' : c === 'Other pay or tax' ? 'Other pay and tax documents' : c + (c === 'Pension' ? ' documents' : 's'))}</h3></div><div class="p41-list">
+      ${groups[c].map(d => `<div class="p41-row"><div class="m"><div><b>${h(d.name)}</b></div><div class="s">${d.period ? h(d.period) + ' · ' : ''}Added ${fmt41(String(d.added_at).slice(0,10), true)}</div></div>
+        <div class="p41-bar"><button class="p41-btn sm" data-hdoc="${h(d.id)}">Open</button><button class="p41-btn sm" data-hdl="${h(d.id)}">Download</button>${admin ? `<button class="p41-btn sm" data-hpdel="${h(d.id)}">Remove</button>` : ''}</div></div>`).join('')}</div></div>`).join('');
+    return upload + (lists || `<div class="p41-panel"><div class="p41-empty">${admin ? 'Nothing uploaded yet. Payslips and tax documents from the accountant appear here.' : 'No payslips or tax documents yet. They will appear here once Daniel adds them.'}</div></div>`);
   }
   function hrReviews(admin){
     const rows = HR.revs.filter(r => r.employee === HR.emp);
@@ -17014,6 +17067,15 @@ function buildTagApply(){
       <button class="p41-btn pri sm" type="submit" style="justify-self:start">Add commission line</button></form></div>`;
   }
   function hrWire(){
+    const pf = $('pay41Form'); if(pf) pf.onsubmit = e => { e.preventDefault(); const f = e.target; const file = f.file.files[0]; $('pay41Err').textContent = '';
+      if(!file){ $('pay41Err').textContent = 'Choose a file'; return; }
+      if(file.size > 10 * 1024 * 1024){ $('pay41Err').textContent = 'Keep the file under 10MB'; return; }
+      const btn = f.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Uploading...';
+      const rd = new FileReader(); rd.onload = async () => {
+        try{ await post41('/api/hr/documents/upload', {employee:HR.emp, category:f.category.value, period:f.period.value, name:f.name.value, notify:f.notify.checked, file:{name:file.name, type:file.type, base64:String(rd.result).split(',')[1]}});
+          toast41('Uploaded'); HR.tab = 'pay'; hrLoad(); }
+        catch(err){ $('pay41Err').textContent = err.message; btn.disabled = false; btn.textContent = 'Upload'; } };
+      rd.readAsDataURL(file); };
     ['hol41From','hol41To','hol41Hs','hol41He'].forEach(id => { const el = $(id); if(el) el.oninput = el.onchange = holCalc; });
     if($('hol41From')){ api41('/api/hr/bank-holidays').then(j => { BANK41 = new Set((j.data || []).map(b => b.date)); holCalc(); }).catch(() => holCalc()); }
     const hf = $('hol41Form'); if(hf) hf.onsubmit = async e => { e.preventDefault(); $('hol41Err').textContent = '';
@@ -17038,9 +17100,35 @@ function buildTagApply(){
     MAMMOTH41 = new Promise((ok, bad) => { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js'; sc.onload = () => ok(window.mammoth); sc.onerror = () => { MAMMOTH41 = null; bad(new Error('The document viewer could not load')); }; document.head.appendChild(sc); });
     return MAMMOTH41;
   }
+  /* build 43: Word files are drawn page by page with their own header, logo, fonts, colours and tables */
+  let DOCXP41 = null;
+  function loadScript41(src){ return new Promise((ok, bad) => { const sc = document.createElement('script'); sc.src = src; sc.onload = ok; sc.onerror = () => bad(new Error('The document viewer could not load')); document.head.appendChild(sc); }); }
+  function loadDocxPreview(){
+    if(window.docx && window.docx.renderAsync) return Promise.resolve(window.docx);
+    if(DOCXP41) return DOCXP41;
+    DOCXP41 = (window.JSZip ? Promise.resolve() : loadScript41('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js'))
+      .then(() => loadScript41('https://cdn.jsdelivr.net/npm/docx-preview@0.3.7/dist/docx-preview.min.js')).then(() => window.docx)
+      .catch(e => { DOCXP41 = null; throw e; });
+    return DOCXP41;
+  }
+  async function renderDocx41(blob, host){
+    try{
+      const lib = await loadDocxPreview();
+      host.innerHTML = '<div class="docx41"></div>';
+      const box = host.firstChild;
+      await lib.renderAsync(await blob.arrayBuffer(), box, null, {className:'docx', inWrapper:true, ignoreWidth:false, ignoreHeight:false, breakPages:true, renderHeaders:true, renderFooters:true, renderFootnotes:true, useBase64URL:true});
+      const fit = () => { const page = box.querySelector('section.docx'); const wrap = box.querySelector('.docx-wrapper'); if(!page || !wrap) return; wrap.style.zoom = ''; const room = host.clientWidth - 24; const w = page.offsetWidth; wrap.style.zoom = w > room ? (room / w).toFixed(3) : ''; };
+      fit(); setTimeout(fit, 300);
+    }catch(e){
+      const m = await loadMammoth();
+      const out = await m.convertToHtml({arrayBuffer: await blob.arrayBuffer()});
+      host.innerHTML = `<article class="doc41">${out.value}</article>`;
+    }
+  }
   async function openDoc41(id){
     const d = (HR.docs || []).find(x => x.id === id) || {};
     $('vw41Title').textContent = d.name || 'Document';
+    { const old = $('sign41'); if(old) old.remove(); }
     $('vw41Body').innerHTML = '<div class="p41-empty" style="padding:24px">Opening...</div>';
     $('viewer41').classList.add('open');
     $('vw41Dl').onclick = () => downloadDoc41(id, d.name);
@@ -17052,12 +17140,60 @@ function buildTagApply(){
       if(type.includes('pdf')){ const url = URL.createObjectURL(blob); $('vw41Body').innerHTML = `<iframe title="${h(d.name || 'Document')}" src="${url}"></iframe>`; return; }
       if(type.startsWith('image/')){ const url = URL.createObjectURL(blob); $('vw41Body').innerHTML = `<div class="doc41"><img src="${url}" alt="${h(d.name || '')}"></div>`; return; }
       if(type.includes('wordprocessingml') || /\.docx$/i.test(d.name || '')){
-        const m = await loadMammoth();
-        const out = await m.convertToHtml({arrayBuffer: await blob.arrayBuffer()});
-        $('vw41Body').innerHTML = `<article class="doc41">${out.value}</article>`; return;
+        await renderDocx41(blob, $('vw41Body')); return;
       }
       $('vw41Body').innerHTML = '<div class="p41-empty" style="padding:24px">This file type cannot be shown here. Use Download.</div>';
     }catch(e){ $('vw41Body').innerHTML = `<div style="padding:24px"><div class="p41-err">${h(e.message)}</div></div>`; }
+  }
+  async function openSigned41(id){
+    const d = (HR.docs || []).find(x => x.id === id) || {};
+    $('vw41Title').textContent = (d.name || 'Document') + ' (signed)';
+    { const old = $('sign41'); if(old) old.remove(); }
+    $('vw41Body').innerHTML = '<div class="p41-empty" style="padding:24px">Opening...</div>';
+    $('viewer41').classList.add('open');
+    $('vw41Dl').onclick = async () => { try{ const r = await fetch(API_BASE + '/api/hr/documents/' + encodeURIComponent(id) + '/signed?download=1'); if(!r.ok) throw new Error('Could not download the signed copy'); const url = URL.createObjectURL(await r.blob()); const a = document.createElement('a'); a.href = url; a.download = (d.name || 'document') + ' Signed.pdf'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000); }catch(e){ toast41(e.message); } };
+    try{
+      const r = await fetch(API_BASE + '/api/hr/documents/' + encodeURIComponent(id) + '/signed');
+      if(!r.ok){ const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Could not open the signed copy'); }
+      const url = URL.createObjectURL(await r.blob()); $('vw41Body').innerHTML = `<iframe title="Signed copy" src="${url}"></iframe>`;
+    }catch(e){ $('vw41Body').innerHTML = `<div style="padding:24px"><div class="p41-err">${h(e.message)}</div></div>`; }
+  }
+  async function openSign41(id){
+    const d = (HR.docs || []).find(x => x.id === id) || {};
+    const admin = !!(HR.me && HR.me.admin);
+    if(typeof lgViewAs !== 'undefined' && lgViewAs){ toast41('Exit View as to sign as yourself'); }
+    await openDoc41(id);
+    const me = (typeof USERS !== 'undefined' ? USERS.find(u => u.key === (me41().key)) : null) || {};
+    const panel = document.createElement('div'); panel.className = 'sign41'; panel.id = 'sign41';
+    panel.innerHTML = `<div class="sign41-in">
+      <div class="sign41-h"><b>${admin ? 'Countersign for Live 2 Help Recruitment' : 'Sign this document'}</b><span>${admin ? h(nameOf(d.employee)) + ' signed on ' + fmt41(String(d.emp_signed_at).slice(0,10), true) + '. Read it through above, then add your signature.' : 'Read the whole document above first. Your signature is added to a signed copy, then Daniel countersigns.'}</span></div>
+      <div class="sign41-grid">
+        <label>Full name<input class="p41-in" id="sg41Name" value="${h(me.fullName || me41().name || '')}" autocomplete="name"></label>
+        <div><div class="sign41-lab">Signature <button type="button" class="p41-btn sm" id="sg41Clear">Clear</button></div><canvas id="sg41Pad" class="sign41-pad" aria-label="Draw your signature here"></canvas></div>
+      </div>
+      <label class="sign41-ok"><input type="checkbox" id="sg41Agree"> I have read this document and agree to its terms. I understand this is my electronic signature.</label>
+      <div class="p41-err" id="sg41Err"></div>
+      <div class="p41-bar"><button class="p41-btn pri" id="sg41Go">${admin ? 'Countersign' : 'Sign'}</button><button class="p41-btn" data-vw41="close">Not now</button></div></div>`;
+    $('vw41Body').parentNode.appendChild(panel);
+    const pad = $('sg41Pad'); const ctx = pad.getContext('2d'); let strokes = 0, drawing = false, last = null;
+    const size = () => { const r = pad.getBoundingClientRect(); const dpr = window.devicePixelRatio || 1; pad.width = Math.round(r.width * dpr); pad.height = Math.round(r.height * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#0B0B18'; strokes = 0; };
+    size();
+    const pt = e => { const r = pad.getBoundingClientRect(); return {x: e.clientX - r.left, y: e.clientY - r.top}; };
+    pad.onpointerdown = e => { e.preventDefault(); pad.setPointerCapture(e.pointerId); drawing = true; last = pt(e); ctx.beginPath(); ctx.arc(last.x, last.y, 1.1, 0, Math.PI * 2); ctx.fillStyle = '#0B0B18'; ctx.fill(); strokes++; };
+    pad.onpointermove = e => { if(!drawing) return; const p = pt(e); ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; };
+    pad.onpointerup = pad.onpointercancel = () => { drawing = false; };
+    $('sg41Clear').onclick = () => { ctx.clearRect(0, 0, pad.width, pad.height); strokes = 0; };
+    $('sg41Go').onclick = async () => {
+      const err = $('sg41Err'); err.textContent = '';
+      if(!strokes){ err.textContent = 'Please draw your signature in the box'; return; }
+      if(!$('sg41Agree').checked){ err.textContent = 'Please tick to confirm you have read and agree'; return; }
+      const btn = $('sg41Go'); btn.disabled = true; btn.textContent = 'Signing...';
+      try{
+        await post41('/api/hr/documents/' + encodeURIComponent(id) + '/sign', {name: $('sg41Name').value, signature: pad.toDataURL('image/png'), agree: true});
+        $('viewer41').classList.remove('open'); toast41(admin ? 'Countersigned. The signed copy is saved and they have been emailed.' : 'Signed. Daniel has been asked to countersign.');
+        hrLoad();
+      }catch(e2){ err.textContent = e2.message; btn.disabled = false; btn.textContent = admin ? 'Countersign' : 'Sign'; }
+    };
   }
   async function downloadDoc41(id, name){
     try{
@@ -17070,14 +17206,18 @@ function buildTagApply(){
   document.addEventListener('keydown', e => { if(e.key === 'Escape' && $('viewer41').classList.contains('open')) $('viewer41').classList.remove('open'); });
   document.addEventListener('click', async e => {
     if(e.target.closest('[data-hrretry]')){ hrLoad(); return; }
-    const t = e.target.closest('[data-hrt],[data-hdec],[data-hcan],[data-hmon],[data-hdoc],[data-hack],[data-rtw41],[data-hadd],[data-libadd]');
+    const t = e.target.closest('[data-hrt],[data-hdec],[data-hcan],[data-hmon],[data-hdoc],[data-hack],[data-rtw41],[data-hadd],[data-libadd],[data-hsign],[data-hsigned],[data-hdl],[data-hpdel]');
     if(!t) return;
     if(t.dataset.hrt){ HR.tab = t.dataset.hrt; if(!$('hrView').classList.contains('visible')) switchTab('hr'); else hrRender(); return; }
     if(t.dataset.hmon){ const n = Number(t.dataset.hmon); if(!n) HR.month = null; else { const [y, m] = (HR.month || todayISO41().slice(0,7)).split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); HR.month = d.toISOString().slice(0,7); } hrRender(); return; }
     if(t.dataset.hdoc){ openDoc41(t.dataset.hdoc); return; }
+    if(t.dataset.hsign){ openSign41(t.dataset.hsign); return; }
+    if(t.dataset.hsigned){ openSigned41(t.dataset.hsigned); return; }
+    if(t.dataset.hdl){ const d = (HR.docs || []).find(x => x.id === t.dataset.hdl) || {}; downloadDoc41(t.dataset.hdl, d.name); return; }
     try{
       if(t.dataset.hdec){ const [id, decision] = t.dataset.hdec.split('|'); const comment = decision === 'declined' ? (window.prompt ? (window.prompt('Reason for declining (shown to the employee)') || '') : '') : ''; await post41('/api/hr/holidays/' + encodeURIComponent(id) + '/decision', {decision, comment}); toast41(decision === 'approved' ? 'Approved. They have been emailed.' : 'Declined. They have been emailed.'); hrLoad(); return; }
       if(t.dataset.hcan){ await post41('/api/hr/holidays/' + encodeURIComponent(t.dataset.hcan) + '/cancel', {}); toast41('Request cancelled'); hrLoad(); return; }
+      if(t.dataset.hpdel){ if(!confirm('Remove this document from the dashboard? The file stays in the HR folder in Drive.')) return; await api41('/api/hr/documents/' + encodeURIComponent(t.dataset.hpdel), {method:'DELETE'}); toast41('Removed'); hrLoad(); return; }
       if(t.dataset.hack){ await post41('/api/hr/documents/' + encodeURIComponent(t.dataset.hack) + '/ack', {}); toast41('Marked as read'); hrLoad(); return; }
       if(t.dataset.rtw41){ await post41('/api/hr/absences/' + encodeURIComponent(t.dataset.rtw41), {rtw_done:'TRUE', rtw_date:todayISO41()}); toast41('Return to work recorded'); hrLoad(); return; }
       if(t.dataset.hadd || t.dataset.libadd){ docAddForm(t.dataset.libadd ? 'lib41Form' : 'hrAdd41', !!t.dataset.libadd); return; }
@@ -17088,9 +17228,9 @@ function buildTagApply(){
     el.innerHTML = `<form class="p41-form" id="doc41Form" style="border-top:1px solid var(--border);padding-top:12px"><div class="two"><label>Name<input class="p41-in" name="name" required></label><label>Google Drive link<input class="p41-in" name="link" required placeholder="https://drive.google.com/..."></label></div>
       <div class="two"><label>Category<select class="p41-in" name="category">${(lib ? ['Library','Policy','Guide','Template'] : ['Contract','Policy','Pay','Letter','Other']).map(c => `<option>${c}</option>`).join('')}</select></label>
       <label>Who sees it<select class="p41-in" name="employee"><option value="all">Everyone</option>${(HR.me && HR.me.employees || []).map(e => `<option value="${h(e.id)}"${!lib && e.id === HR.emp ? ' selected' : ''}>${h(e.known_as || e.full_name)} only</option>`).join('')}</select></label></div>
-      <div class="two"><label style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="needs_ack"> Ask them to acknowledge it</label><label style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="admin_only"> Admin only</label></div>
+      <div class="two"><label style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="needs_ack"> Ask them to acknowledge it</label>${lib ? '' : '<label style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="needs_sign"> Requires signature (they sign, you countersign)</label>'}<label style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="admin_only"> Admin only</label></div>
       <div class="p41-note">Keep the file in the HR folder in Google Drive so the dashboard can open it.</div><button class="p41-btn pri sm" type="submit" style="justify-self:start">Add document</button></form>`;
-    $('doc41Form').onsubmit = async e => { e.preventDefault(); const f = e.target; const body = {}; new FormData(f).forEach((v, k) => body[k] = v); body.needs_ack = !!f.needs_ack.checked; body.admin_only = !!f.admin_only.checked;
+    $('doc41Form').onsubmit = async e => { e.preventDefault(); const f = e.target; const body = {}; new FormData(f).forEach((v, k) => body[k] = v); body.needs_ack = !!f.needs_ack.checked; body.admin_only = !!f.admin_only.checked; body.needs_sign = !!(f.needs_sign && f.needs_sign.checked);
       try{ await post41('/api/hr/documents', body); toast41('Document added'); lib ? libLoad() : hrLoad(); }catch(err){ toast41(err.message); } };
   }
 
@@ -17143,6 +17283,7 @@ function buildTagApply(){
   if(typeof renderHome === 'function'){ const _rh = renderHome; renderHome = function(){ _rh.apply(this, arguments); if($('homeView') && $('homeView').classList.contains('visible')) homeGlance(); }; }
 
   /* ---------- Recruitment: company and role picker across the top ---------- */
+  var RB41 = { co: '' };
   function roleBar41(){
     const view = $('candidatesView'); if(!view || typeof mergedRoles !== 'function') return;
     let bar = $('roleBar41');
@@ -17153,7 +17294,7 @@ function buildTagApply(){
     const cos = Object.keys(byCo).sort((a, b) => a.localeCompare(b));
     const unassigned = (typeof DATA !== 'undefined' && typeof UNASSIGNED_LABEL !== 'undefined' && DATA[UNASSIGNED_LABEL]) ? Object.keys(DATA[UNASSIGNED_LABEL]).reduce((n, r) => n + DATA[UNASSIGNED_LABEL][r].length, 0) : 0;
     const all = typeof boardScope !== 'undefined' && boardScope.all;
-    const curCo = all ? '' : (typeof currentCompany !== 'undefined' ? currentCompany : '');
+    const curCo = RB41.co || (all ? '' : (typeof currentCompany !== 'undefined' ? currentCompany : ''));
     const coKey = cos.find(c => typeof sbSame === 'function' ? sbSame(c, curCo) : c === curCo) || (curCo === (typeof UNASSIGNED_LABEL !== 'undefined' ? UNASSIGNED_LABEL : '') ? curCo : '');
     const rlist = coKey && byCo[coKey] ? byCo[coKey] : [];
     const curRole = all ? '' : (typeof currentRole !== 'undefined' ? currentRole : '');
@@ -17162,14 +17303,22 @@ function buildTagApply(){
       <label class="rb41"><span>Company</span><select class="p41-in" id="rb41Co"><option value="">Choose a company (${cos.length} with live roles)</option>${cos.map(c => `<option value="${h(c)}"${c === coKey ? ' selected' : ''}>${h(c)} · ${byCo[c].length} role${byCo[c].length === 1 ? '' : 's'}</option>`).join('')}${unassigned ? `<option value="__un"${coKey && coKey === UNASSIGNED_LABEL ? ' selected' : ''}>Needs a company assigned · ${unassigned}</option>` : ''}</select></label>
       <label class="rb41"><span>Role</span><select class="p41-in" id="rb41Role"${rlist.length ? '' : ' disabled'}><option value="">${rlist.length ? 'Choose a role' : 'Pick a company first'}</option>${rlist.map(r => `<option value="${h(r.role)}"${(typeof sbSame === 'function' ? sbSame(r.role, curRole) : r.role === curRole) ? ' selected' : ''}>${h(r.role)} · ${cnt(r.company, r.role)} candidate${cnt(r.company, r.role) === 1 ? '' : 's'}${r.status === 'hold' ? ' (on hold)' : ''}</option>`).join('')}</select></label>
       <button class="p41-btn sm" onclick="switchTab('roles');openRoleModal()">+ New role</button>`;
+    // Build 43: the chosen company's roles also show as one-click buttons
+    if(coKey && rlist.length > 1){
+      const chips = document.createElement('div'); chips.className = 'rb41-roles';
+      chips.innerHTML = rlist.map(r => `<button class="p41-chip" data-rb41role="${h(r.role)}" aria-pressed="${(typeof sbSame === 'function' ? sbSame(r.role, curRole) : r.role === curRole) && !all}">${h(r.role)} · ${cnt(r.company, r.role)}${r.status === 'hold' ? ' (on hold)' : ''}</button>`).join('');
+      bar.appendChild(chips);
+      chips.onclick = e => { const b = e.target.closest('[data-rb41role]'); if(b) selectRole(rlist[0].company, b.dataset.rb41role); };
+    }
     $('rb41Co').onchange = e => {
-      const v = e.target.value; if(!v) return;
+      const v = e.target.value; RB41.co = v === '__un' ? '' : v;
+      if(!v){ roleBar41(); return; }
       if(v === '__un'){ const first = Object.keys(DATA[UNASSIGNED_LABEL])[0]; if(first) selectRole(UNASSIGNED_LABEL, first); return; }
-      const rs = byCo[v] || []; if(rs.length === 1) selectRole(rs[0].company, rs[0].role); else { currentCompany = v; roleBar41(); const rr = $('rb41Role'); if(rr) rr.focus(); }
+      const rs = byCo[v] || []; if(rs.length === 1) selectRole(rs[0].company, rs[0].role); else { roleBar41(); const rr = $('rb41Role'); if(rr) rr.focus(); }
     };
     $('rb41Role').onchange = e => { const v = e.target.value; const c = $('rb41Co').value; if(v && c && byCo[c]) selectRole(byCo[c][0].company, v); };
   }
-  document.addEventListener('click', e => { if(e.target.closest('[data-rb41="all"]')) openCandidatesView('all'); });
+  document.addEventListener('click', e => { if(e.target.closest('[data-rb41="all"]')){ RB41.co = ''; openCandidatesView('all'); } });
   if(typeof renderSidebar === 'function'){ const _rs = renderSidebar; renderSidebar = function(){ _rs.apply(this, arguments); roleBar41(); }; }
 
   /* ---------- Tasks: select all ---------- */

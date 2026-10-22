@@ -12416,7 +12416,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '22 Oct 2026 - build 42 (CRM, People, planning and marketing)';
+const SERVER_BUILD = '22 Oct 2026 - build 43 (document signing, pay and tax documents)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -12485,10 +12485,11 @@ const hrAbsences = makeSimpleTable({
 });
 const hrDocuments = makeSimpleTable({
   sheetId: HR_SHEET_ID || null, tab: 'HR Documents', path: null, label: 'HR document',
-  header: ['id', 'employee', 'name', 'category', 'file_id', 'admin_only', 'needs_ack', 'acknowledged_at', 'added_at', 'added_by'],
+  header: ['id', 'employee', 'name', 'category', 'file_id', 'admin_only', 'needs_ack', 'acknowledged_at', 'added_at', 'added_by',
+    'needs_sign', 'period', 'signed_file_id', 'emp_signed_at', 'emp_signed_name', 'emp_sig_file_id', 'admin_signed_at', 'admin_signed_name'],
   seed: [
-    { id: 'doc-contract', employee: 'ella', name: 'Contract of Employment', category: 'Contract', file_id: '1CpSA9wEBdQok3dbypqQJY89c-SspAiuy', admin_only: 'FALSE', needs_ack: 'TRUE', added_at: '2026-10-21', added_by: 'dan' },
-    { id: 'doc-offer', employee: 'ella', name: 'Offer of Employment Letter', category: 'Contract', file_id: '1_godffMxkc9MnYD07uBohTcbY4c2gck8', admin_only: 'FALSE', needs_ack: 'TRUE', added_at: '2026-10-21', added_by: 'dan' },
+    { id: 'doc-contract', employee: 'ella', name: 'Contract of Employment', category: 'Contract', file_id: '1CpSA9wEBdQok3dbypqQJY89c-SspAiuy', admin_only: 'FALSE', needs_ack: 'TRUE', needs_sign: 'TRUE', added_at: '2026-10-21', added_by: 'dan' },
+    { id: 'doc-offer', employee: 'ella', name: 'Offer of Employment Letter', category: 'Contract', file_id: '1_godffMxkc9MnYD07uBohTcbY4c2gck8', admin_only: 'FALSE', needs_ack: 'TRUE', needs_sign: 'TRUE', added_at: '2026-10-21', added_by: 'dan' },
     { id: 'doc-policies', employee: 'all', name: 'Employee Policies', category: 'Policy', file_id: '1ydy_VTwkSnUQrt4I220AmB6MtAEa9OJb', admin_only: 'FALSE', needs_ack: 'TRUE', added_at: '2026-10-21', added_by: 'dan' },
     { id: 'doc-termination', employee: 'ella', name: 'Termination of Self-Employed Agreement', category: 'Contract', file_id: '1ddmNJVYqaX-tLh8UNJroqaahjgEfw0HV', admin_only: 'FALSE', needs_ack: 'FALSE', added_at: '2026-10-21', added_by: 'dan' },
     { id: 'doc-commission', employee: 'ella', name: 'Commission Scheme', category: 'Pay', file_id: '1vlSsDpVjSvVl4rhWdS00Z2KY7NQtEF2J', admin_only: 'TRUE', needs_ack: 'FALSE', added_at: '2026-10-21', added_by: 'dan' },
@@ -12800,7 +12801,7 @@ app.get('/api/hr/documents', async (req, res) => {
     if (hrNeedSheet(res)) return;
     const { key, admin } = hrWho(req);
     const rows = (await hrDocuments.list()).filter(d => admin || ((d.employee === key || d.employee === 'all') && !hrTrue(d.admin_only)));
-    res.json({ data: rows.map(d => ({ ...d, acknowledged: !!d.acknowledged_at })) });
+    res.json({ data: rows.map(hrDocOut) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -12843,9 +12844,217 @@ app.post('/api/hr/documents', requireAdmin, async (req, res) => {
     const m = String(b.link || b.file_id || '').match(/[-\w]{25,}/);
     if (!m || !b.name) return res.status(400).json({ error: 'Give the document a name and paste its Google Drive link' });
     const row = { id: b.id || hrId('doc'), employee: b.employee || 'all', name: String(b.name).slice(0, 120), category: b.category || 'Policy', file_id: m[0],
-      admin_only: hrTrue(b.admin_only) ? 'TRUE' : 'FALSE', needs_ack: hrTrue(b.needs_ack) ? 'TRUE' : 'FALSE', acknowledged_at: '', added_at: hrNow(), added_by: actorOf(req) };
+      admin_only: hrTrue(b.admin_only) ? 'TRUE' : 'FALSE', needs_ack: hrTrue(b.needs_ack) || hrTrue(b.needs_sign) ? 'TRUE' : 'FALSE', acknowledged_at: '', added_at: hrNow(), added_by: actorOf(req),
+      needs_sign: hrTrue(b.needs_sign) ? 'TRUE' : 'FALSE', period: String(b.period || '').slice(0, 40) };
     const saved = await hrDocuments.upsert(row);
     res.json({ ok: true, data: saved });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ---------- build 43: signing contracts, pay and tax documents ----------
+   Contracts and offer letters are signed in the dashboard: the employee signs first,
+   then Dan countersigns. Each step rebuilds one signed PDF in the HR folder: the branded
+   document itself (converted by Google Drive) followed by a Live 2 Help signature page.
+   A signature can only be given by the real person, never while Dan is using View as. */
+const HR_SIGN_DEFAULT = new Set(['doc-contract', 'doc-offer']);
+const hrNeedsSign = d => d.needs_sign === '' || d.needs_sign == null ? HR_SIGN_DEFAULT.has(d.id) : hrTrue(d.needs_sign);
+function hrSignStatus(d) {
+  if (!hrNeedsSign(d)) return '';
+  if (d.admin_signed_at) return 'signed';
+  if (d.emp_signed_at) return 'awaiting_countersign';
+  return 'awaiting_employee';
+}
+function hrDocOut(d) {
+  const { emp_sig_file_id, ...rest } = d;
+  return { ...rest, acknowledged: !!d.acknowledged_at, needs_sign: hrNeedsSign(d), sign_status: hrSignStatus(d), has_signed_copy: !!d.signed_file_id };
+}
+const hrUkTime = iso => new Date(iso).toLocaleString('en-GB', { timeZone: 'Europe/London', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+// The document as a PDF, with its own branding. Word files are converted by Google Drive.
+async function hrDocumentPdf(fileId) {
+  const drive = getDriveClient();
+  const meta = await drive.files.get({ fileId, fields: 'name,mimeType' });
+  const mime = String(meta.data.mimeType || '');
+  const toBuf = async r => Buffer.from(r.data);
+  if (mime === 'application/pdf') return toBuf(await drive.files.get({ fileId, alt: 'media' }, { responseType: 'arraybuffer' }));
+  if (mime.startsWith('application/vnd.google-apps')) return toBuf(await drive.files.export({ fileId, mimeType: 'application/pdf' }, { responseType: 'arraybuffer' }));
+  const up = getUploadDriveClient();
+  const tmp = await up.files.copy({ fileId, requestBody: { name: `Converting ${meta.data.name}`, mimeType: 'application/vnd.google-apps.document', parents: [HR_FOLDER_ID] }, fields: 'id' });
+  try {
+    return toBuf(await up.files.export({ fileId: tmp.data.id, mimeType: 'application/pdf' }, { responseType: 'arraybuffer' }));
+  } finally {
+    up.files.delete({ fileId: tmp.data.id }).catch(() => {});
+  }
+}
+function hrPngFromDataUrl(v) {
+  const m = String(v || '').match(/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/);
+  if (!m) return null;
+  const buf = Buffer.from(m[1], 'base64');
+  return buf.length > 50 && buf.length < 600 * 1024 ? buf : null;
+}
+async function hrDriveBuffer(fileId) {
+  const r = await getUploadDriveClient().files.get({ fileId, alt: 'media' }, { responseType: 'arraybuffer' });
+  return Buffer.from(r.data);
+}
+
+// Branded signature page added to the end of the document
+async function hrSignedPdf(d, empSig, adminSig) {
+  const lib = await getPdfLib();
+  if (!lib) throw new Error('The PDF tools are not installed on the server');
+  const { PDFDocument, StandardFonts, rgb } = lib;
+  const base = await PDFDocument.load(await hrDocumentPdf(d.file_id), { ignoreEncryption: true });
+  const out = await PDFDocument.create();
+  (await out.copyPages(base, base.getPageIndices())).forEach(pg => out.addPage(pg));
+  const navy = rgb(0x0B / 255, 0x0B / 255, 0x18 / 255), gold = rgb(0xC9 / 255, 0xA8 / 255, 0x4C / 255), grey = rgb(0x44 / 255, 0x44 / 255, 0x44 / 255), light = rgb(0xF7 / 255, 0xF6 / 255, 0xF3 / 255);
+  const reg = await out.embedFont(StandardFonts.Helvetica), bold = await out.embedFont(StandardFonts.HelveticaBold), ital = await out.embedFont(StandardFonts.HelveticaOblique);
+  const pg = out.addPage([595.28, 841.89]);
+  const W = 595.28, M = 56;
+  pg.drawRectangle({ x: 0, y: 841.89 - 92, width: W, height: 92, color: navy });
+  try {
+    const logo = await out.embedJpg(Buffer.from(EMBEDDED_LOGO_B64, 'base64'));
+    const lh = 62, lw = lh * logo.width / logo.height;
+    pg.drawImage(logo, { x: M, y: 841.89 - 77, width: lw, height: lh });
+  } catch (e) { pg.drawText('LIVE 2 HELP RECRUITMENT', { x: M, y: 841.89 - 52, size: 14, font: bold, color: rgb(1, 1, 1) }); }
+  pg.drawRectangle({ x: 0, y: 841.89 - 95, width: W, height: 3, color: gold });
+  let y = 841.89 - 140;
+  pg.drawText('SIGNATURE PAGE', { x: M, y, size: 10, font: bold, color: gold }); y -= 26;
+  pg.drawText(d.name, { x: M, y, size: 20, font: bold, color: navy }); y -= 20;
+  pg.drawText('Signed electronically through the Live 2 Help Workspace', { x: M, y, size: 10, font: ital, color: grey }); y -= 34;
+  const block = (title, sig, img) => {
+    pg.drawRectangle({ x: M, y: y - 150, width: W - 2 * M, height: 150, color: light, borderColor: rgb(0.867, 0.867, 0.867), borderWidth: 1 });
+    pg.drawRectangle({ x: M, y: y - 150, width: 3, height: 150, color: gold });
+    pg.drawText(title.toUpperCase(), { x: M + 18, y: y - 22, size: 9, font: bold, color: gold });
+    if (sig && img) {
+      const ih = 58, iw = Math.min(220, ih * img.width / img.height);
+      pg.drawImage(img, { x: M + 18, y: y - 92, width: iw, height: iw * img.height / img.width });
+      pg.drawLine({ start: { x: M + 18, y: y - 98 }, end: { x: M + 260, y: y - 98 }, thickness: 0.8, color: grey });
+      pg.drawText(sig.name, { x: M + 18, y: y - 114, size: 11, font: bold, color: navy });
+      pg.drawText('Signed ' + hrUkTime(sig.at) + ' (UK time)', { x: M + 18, y: y - 130, size: 9, font: reg, color: grey });
+      pg.drawText('Signed in as ' + sig.account + ' after reading the document and agreeing to its terms', { x: M + 18, y: y - 143, size: 8, font: reg, color: grey });
+    } else {
+      pg.drawText('Awaiting signature', { x: M + 18, y: y - 80, size: 12, font: ital, color: grey });
+    }
+    y -= 172;
+  };
+  const empImg = empSig ? await out.embedPng(empSig.png) : null;
+  const admImg = adminSig ? await out.embedPng(adminSig.png) : null;
+  block('Employee', empSig, empImg);
+  block('For and on behalf of Live 2 Help Recruitment Ltd', adminSig, admImg);
+  pg.drawText('Document reference: ' + d.id, { x: M, y: 70, size: 8, font: reg, color: grey });
+  pg.drawText('Live 2 Help Recruitment Ltd · Company No. 11731080 · Anyone · Anywhere · Anytime', { x: M, y: 48, size: 8, font: ital, color: grey });
+  return Buffer.from(await out.save());
+}
+async function hrSaveSignedPdf(d, buf) {
+  const up = getUploadDriveClient();
+  const name = `${d.name} ${d.employee === 'all' ? '' : '(' + titleCase(d.employee) + ') '}Signed.pdf`.replace(/\s+/g, ' ');
+  if (d.signed_file_id) {
+    try {
+      await up.files.update({ fileId: d.signed_file_id, requestBody: { name }, media: { mimeType: 'application/pdf', body: Readable.from(buf) } });
+      return d.signed_file_id;
+    } catch (e) { /* fall through and make a new file */ }
+  }
+  const f = await up.files.create({ requestBody: { name, parents: [HR_FOLDER_ID] }, media: { mimeType: 'application/pdf', body: Readable.from(buf) }, fields: 'id' });
+  return f.data.id;
+}
+
+app.post('/api/hr/documents/:id/sign', async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    const { key, admin } = hrWho(req);
+    if (req.user && req.user.va) return res.status(403).json({ error: 'Signatures cannot be given while using View as. Exit View as and sign as yourself.' });
+    const b = req.body || {};
+    const d = (await hrDocuments.list()).find(x => x.id === req.params.id);
+    if (!d || !hrNeedsSign(d)) return res.status(404).json({ error: 'Document not found' });
+    const png = hrPngFromDataUrl(b.signature);
+    const name = String(b.name || '').trim().slice(0, 80);
+    if (!png) return res.status(400).json({ error: 'Please draw your signature in the box' });
+    if (name.length < 3) return res.status(400).json({ error: 'Please type your full name' });
+    if (!hrTrue(b.agree)) return res.status(400).json({ error: 'Please tick to confirm you have read and agree to the document' });
+    const status = hrSignStatus(d);
+    const now = hrNow();
+    const account = profileOf(key).fullName || key;
+    if (status === 'awaiting_employee') {
+      if (d.employee !== key) return res.status(403).json({ error: admin ? `${titleCase(d.employee)} needs to sign this first, then you can countersign` : 'This document is not yours to sign' });
+      const up = getUploadDriveClient();
+      const sigFile = await up.files.create({ requestBody: { name: `Signature ${key} ${d.id}.png`, parents: [HR_FOLDER_ID] }, media: { mimeType: 'image/png', body: Readable.from(png) }, fields: 'id' });
+      const pdf = await hrSignedPdf(d, { png, name, at: now, account }, null);
+      const fileId = await hrSaveSignedPdf(d, pdf);
+      const saved = await hrDocuments.upsert({ ...d, emp_signed_at: now, emp_signed_name: name, emp_sig_file_id: sigFile.data.id, signed_file_id: fileId,
+        acknowledged_at: d.acknowledged_at || `${key} ${now}` });
+      auditLog(auditActorOf(req), 'signed', 'hr document', d.name, name);
+      const dan = (AUTH_USERS || []).find(u => u.admin);
+      await hrMailTo(dan ? dan.key : 'dan', `${name} has signed: ${d.name}`,
+        `${name} signed "${d.name}" on ${hrUkTime(now)}.\n\nOpen People > Documents in the Live 2 Help Workspace to countersign it.`);
+      return res.json({ ok: true, data: hrDocOut(saved) });
+    }
+    if (status === 'awaiting_countersign') {
+      if (!admin) return res.status(403).json({ error: 'This is waiting for Dan to countersign' });
+      const empPng = await hrDriveBuffer(d.emp_sig_file_id);
+      const pdf = await hrSignedPdf(d, { png: empPng, name: d.emp_signed_name, at: d.emp_signed_at, account: profileOf(d.employee).fullName || d.employee },
+        { png, name, at: now, account });
+      const fileId = await hrSaveSignedPdf(d, pdf);
+      const saved = await hrDocuments.upsert({ ...d, admin_signed_at: now, admin_signed_name: name, signed_file_id: fileId });
+      auditLog(auditActorOf(req), 'countersigned', 'hr document', d.name, name);
+      if (d.employee !== 'all') await hrMailTo(d.employee, `Fully signed: ${d.name}`,
+        `Hi ${profileOf(d.employee).name},\n\n"${d.name}" has now been countersigned by ${name}. You can open your signed copy any time under People > Documents in the Live 2 Help Workspace.`);
+      return res.json({ ok: true, data: hrDocOut(saved) });
+    }
+    res.status(400).json({ error: 'This document has already been signed by everyone' });
+  } catch (e) { console.error('HR sign error:', e.message); res.status(500).json({ error: friendlyDriveError(e) }); }
+});
+
+app.get('/api/hr/documents/:id/signed', async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    const { key, admin } = hrWho(req);
+    const d = (await hrDocuments.list()).find(x => x.id === req.params.id);
+    if (!d || !d.signed_file_id || !(admin || ((d.employee === key || d.employee === 'all') && !hrTrue(d.admin_only)))) return res.status(404).json({ error: 'No signed copy yet' });
+    const buf = await hrDriveBuffer(d.signed_file_id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="${String(d.name + ' Signed.pdf').replace(/"/g, '')}"`);
+    res.end(buf);
+  } catch (e) { res.status(500).json({ error: friendlyDriveError(e) }); }
+});
+
+// Payslips, P60s, P45s and other pay or tax files from the accountant: Dan uploads the file,
+// it is saved in the HR folder and only that employee (and Dan) can see it.
+const HR_PAY_CATEGORIES = ['Payslip', 'P60', 'P45', 'P11D', 'Tax code notice', 'Pension', 'Other pay or tax'];
+app.post('/api/hr/documents/upload', requireAdmin, async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    const b = req.body || {};
+    const f = b.file || {};
+    if (!f.base64 || !f.name) return res.status(400).json({ error: 'Choose a file to upload' });
+    if (!b.employee || b.employee === 'all') return res.status(400).json({ error: 'Choose who the document is for' });
+    const buf = Buffer.from(String(f.base64), 'base64');
+    if (buf.length > 10 * 1024 * 1024) return res.status(400).json({ error: 'Keep the file under 10MB' });
+    const category = HR_PAY_CATEGORIES.includes(b.category) ? b.category : (b.category ? String(b.category).slice(0, 40) : 'Other pay or tax');
+    const period = String(b.period || '').slice(0, 40);
+    const label = String(b.name || '').trim() || `${category}${period ? ' ' + period : ''}`;
+    const up = getUploadDriveClient();
+    const created = await up.files.create({
+      requestBody: { name: `${label} ${titleCase(b.employee)}${/\.\w+$/.test(f.name) ? f.name.match(/\.\w+$/)[0] : ''}`, parents: [HR_FOLDER_ID] },
+      media: { mimeType: String(f.type || 'application/octet-stream'), body: Readable.from(buf) }, fields: 'id',
+    });
+    const row = { id: hrId('pay'), employee: b.employee, name: label.slice(0, 120), category, file_id: created.data.id, admin_only: 'FALSE', needs_ack: 'FALSE',
+      acknowledged_at: '', added_at: hrNow(), added_by: actorOf(req), needs_sign: 'FALSE', period };
+    const saved = await hrDocuments.upsert(row);
+    auditLog(auditActorOf(req), 'uploaded', 'hr document', `${row.name} for ${b.employee}`, category);
+    if (hrTrue(b.notify)) await hrMailTo(b.employee, `New document: ${row.name}`,
+      `Hi ${profileOf(b.employee).name},\n\nA new ${category.toLowerCase()} has been added for you. You can open it under People > Pay and tax in the Live 2 Help Workspace.`);
+    res.json({ ok: true, data: hrDocOut(saved) });
+  } catch (e) { console.error('HR upload error:', e.message); res.status(500).json({ error: friendlyDriveError(e) }); }
+});
+
+app.delete('/api/hr/documents/:id', requireAdmin, async (req, res) => {
+  try {
+    if (hrNeedSheet(res)) return;
+    const d = (await hrDocuments.list()).find(x => x.id === req.params.id);
+    if (!d) return res.status(404).json({ error: 'Document not found' });
+    if (d.emp_signed_at) return res.status(400).json({ error: 'Signed documents are kept as a record and cannot be removed here' });
+    await hrDocuments.remove(d.id);
+    auditLog(auditActorOf(req), 'removed', 'hr document', d.name, '');
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -12948,7 +13157,7 @@ app.get('/api/hr/bundle', async (req, res) => {
       holidays: hol.filter(r => admin || r.employee === key).sort(sortDesc),
       absences: abs.filter(r => admin || r.employee === key).sort(sortDesc),
       bradford: admin ? bradford : undefined,
-      documents: docs.filter(d => admin || ((d.employee === key || d.employee === 'all') && !hrTrue(d.admin_only))).map(d => ({ ...d, acknowledged: !!d.acknowledged_at })),
+      documents: docs.filter(d => admin || ((d.employee === key || d.employee === 'all') && !hrTrue(d.admin_only))).map(hrDocOut),
       reviews: revs.filter(r => admin || r.employee === key).map(r => admin ? r : { ...r, manager_notes: r.status === 'Completed' ? r.manager_notes : '' })
         .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date))),
       commission: com,
