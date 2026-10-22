@@ -1242,8 +1242,80 @@ h1,h2,.view-head h2,#leadClientsHeader h2,#clientsHeader h2,.modal h2{font-famil
 .c41 .t.away{background:#E8ECF4;color:var(--grey);}
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;}}
-</style>
 
+
+
+/* ===== build 42 ===== */
+/* welcome screen only, then straight to Today */
+#splashScreen .splash-buttons{display:none!important;}
+#splashScreen .splash-logo-img{mix-blend-mode:lighten;}
+/* logos */
+#rail41 .r-brand img{width:100%;max-width:190px;height:auto;mix-blend-mode:lighten;display:block;margin:0 0 6px -4px;}
+#gate .box{background:var(--navy-2)!important;border:1px solid var(--navy-3);}
+#gate .box img{mix-blend-mode:lighten;}
+#gate h1{color:#fff!important;}
+#gate .err{color:#ffb4b4!important;}
+#gate .gate-note{color:#d8deea!important;}
+/* recruitment: no left list on desktop, picker across the top instead */
+@media (min-width:781px){ body.app-on #sidebar{display:none!important;} }
+#roleBar41{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;padding:12px 24px;background:#fff;border-bottom:1px solid var(--border);}
+#roleBar41 .rb41{display:flex;flex-direction:column;gap:3px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);min-width:0;}
+#roleBar41 .rb41 select{min-width:240px;max-width:100%;text-transform:none;letter-spacing:0;font-size:13.5px;}
+@media (max-width:600px){#roleBar41 .rb41,#roleBar41 .rb41 select{width:100%;min-width:0;}}
+/* Today: calm */
+#homeTiles,#homeView .panel:has(#homeAttention),#homeView .panel:has(#homeTasks),#homeView .panel:has(#homeRecent){display:none!important;}
+#homeView .panel-grid{grid-template-columns:1fr!important;}
+.glance42{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:18px;}
+.gl42{all:unset;box-sizing:border-box;cursor:pointer;background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:2px;box-shadow:inset 0 3px 0 var(--gold);transition:transform .15s,box-shadow .15s;}
+.gl42:hover{transform:translateY(-1px);box-shadow:inset 0 3px 0 var(--gold),0 6px 18px rgba(15,31,61,.08);}
+.gl42:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+.gl42 .n{font-family:var(--f-display);font-size:34px;font-weight:600;color:var(--navy);line-height:1.05;font-variant-numeric:tabular-nums;}
+.gl42 .l{font-size:14px;color:var(--navy);font-weight:500;}
+.gl42 .s{font-size:12px;color:var(--muted);}
+.gl42.warn{box-shadow:inset 0 3px 0 var(--danger);}
+.gl42.warn .n{color:var(--danger);}
+/* clients and lead clients as lists */
+#clientsGrid,#leadClientsGrid{display:none!important;}
+.list41{padding:18px 24px;overflow:auto;}
+/* document viewer */
+#viewer41,#rec41{position:fixed;inset:0;z-index:8000;display:none;}
+#viewer41.open,#rec41.open{display:block;}
+#viewer41 .bk,#rec41 .bk{position:absolute;inset:0;background:rgba(8,14,28,.55);}
+#viewer41 .vw{position:absolute;inset:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));background:#fff;border-radius:12px;display:flex;flex-direction:column;overflow:hidden;max-width:1000px;margin:0 auto;}
+#viewer41 .vh{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border);}
+#viewer41 .vh b{font-family:var(--f-display);font-size:19px;color:var(--navy);}
+#viewer41 .vh .sp{flex:1;}
+#viewer41 .vb{flex:1;overflow:auto;background:var(--lightbg);}
+#viewer41 iframe{width:100%;height:100%;border:0;display:block;background:#fff;}
+.doc41{background:#fff;max-width:780px;margin:24px auto;padding:48px 56px;box-shadow:0 2px 14px rgba(15,31,61,.08);border-radius:6px;font-size:14.5px;line-height:1.6;color:#1f2a40;}
+.doc41 h1,.doc41 h2,.doc41 h3{font-family:var(--f-display);color:var(--navy);margin:1em 0 .4em;}
+.doc41 p{margin:0 0 .8em;} .doc41 table{border-collapse:collapse;width:100%;margin:.8em 0;} .doc41 td,.doc41 th{border:1px solid var(--border);padding:6px 8px;vertical-align:top;}
+.doc41 img{max-width:100%;}
+@media (max-width:700px){.doc41{padding:24px 18px;margin:0;border-radius:0;}}
+/* record editor */
+#rec41 .rp{position:absolute;top:0;right:0;bottom:0;width:min(460px,100%);background:#fff;overflow:auto;display:flex;flex-direction:column;gap:14px;padding:calc(22px + env(safe-area-inset-top,0px)) max(22px,env(safe-area-inset-right,0px)) calc(22px + env(safe-area-inset-bottom,0px)) 22px;}
+#rec41 h3{font-family:var(--f-display);font-size:22px;color:var(--navy);margin:0;}
+/* roadmap board */
+.road42{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:12px;overflow-x:auto;}
+.road42 .rcol{background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:140px;}
+.road42 .rh{display:flex;justify-content:space-between;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:2px 4px;}
+.road42 .rcard{all:unset;box-sizing:border-box;cursor:pointer;border:1px solid var(--border);border-radius:8px;padding:10px 11px;display:flex;flex-direction:column;gap:3px;background:var(--lightbg);}
+.road42 .rcard:hover{border-color:var(--gold);}
+.road42 .rcard b{color:var(--navy);} .road42 .rcard span{font-size:12px;color:var(--muted);}
+/* week */
+.week42{display:grid;grid-template-columns:repeat(5,minmax(180px,1fr));gap:12px;overflow-x:auto;}
+.week42 .wday{background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px;min-height:220px;}
+.week42 .wday.today{box-shadow:inset 0 3px 0 var(--gold);}
+.week42 .wh{display:flex;justify-content:space-between;align-items:baseline;}
+.week42 .wh b{font-family:var(--f-display);font-size:17px;color:var(--navy);} .week42 .wh span{font-size:12px;color:var(--muted);}
+.week42 .witem{display:flex;gap:8px;align-items:flex-start;font-size:13.5px;color:var(--grey);}
+.week42 .witem span{flex:1;min-width:0;overflow-wrap:anywhere;}
+.week42 .witem.done span{text-decoration:line-through;color:var(--muted);}
+.week42 .wx{all:unset;cursor:pointer;color:var(--muted);padding:0 4px;}
+.week42 .wx:hover{color:var(--danger);}
+.week42 .wtask{font-size:12.5px;background:var(--warn-bg);color:var(--warn);border-radius:6px;padding:4px 7px;cursor:pointer;}
+.week42 form input{width:100%;}
+</style>
 </head>
 <body>
 
@@ -16318,7 +16390,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '21 Oct 2026 - build 41';
+var PAGE_BUILD = '22 Oct 2026 - build 42';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -16470,15 +16542,17 @@ function buildTagApply(){
     results:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
     people:'<circle cx="8" cy="9" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M2 20c0-3 3-5 6-5s6 2 6 5M14 15.5c3 0 7 1 7 4.5"/>',
     library:'<path d="M4 4h6v16H4zM10 4h4v16h-4zM15 5l4-1 3 15-4 1z"/>',
+    marketing:'<path d="M3 10v4h3l6 4V6L6 10H3z"/><path d="M16 9a4 4 0 0 1 0 6M19 6a8 8 0 0 1 0 12"/>',
     admin:'<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z"/>'
   };
   const GROUPS41 = [
     {key:'today', label:'Today', sect:'Work', tabs:['home','notifications']},
     {key:'crm', label:'CRM', tabs:['crmAccounts','clients','leadClients','leadPipeline','clientHealth','clientComms','coldCalls','referrals','funnelLeads']},
-    {key:'prospecting', label:'Prospecting', tabs:['roleFinder','competitors']},
+    {key:'prospecting', label:'Lead Generation', tabs:['roleFinder','competitors']},
     {key:'recruitment', label:'Recruitment', tabs:['candidates','candidatePool','roles','interviews','placements','comms','feedback']},
-    {key:'actions', label:'Actions', tabs:['tasks']},
+    {key:'actions', label:'Actions', tabs:['tasks','week','roadmap']},
     {key:'results', label:'Results', tabs:['kpi','forecast','team','sourcing']},
+    {key:'marketing', label:'Marketing', tabs:['marketing']},
     {key:'people', label:'People', sect:'Team', tabs:['hr']},
     {key:'library', label:'Library', tabs:['library','templates']},
     {key:'admin', label:'Admin', tabs:['invoices','gdpr','audit'], adminOnly:true},
@@ -16487,7 +16561,7 @@ function buildTagApply(){
     clientComms:'Client comms', coldCalls:'Cold calls', referrals:'Referrals', funnelLeads:'Funnel leads', roleFinder:'Role Finder', competitors:'Competitors',
     candidates:'Candidate pipeline', candidatePool:'Talent pool', roles:'Roles', interviews:'Interviews', placements:'Placements', comms:'Candidate comms',
     feedback:'Client feedback', tasks:'Tasks', kpi:'KPIs and targets', forecast:'Forecast', team:'Team performance', sourcing:'Sourcing and costs',
-    hr:'People', library:'Documents', templates:'Email templates', invoices:'Invoices', gdpr:'Data and GDPR', audit:'Audit trail', home:'Overview', notifications:'Notifications'};
+    hr:'People', library:'Documents', week:'This week', roadmap:'Roadmap', marketing:'Marketing', templates:'Email templates', invoices:'Invoices', gdpr:'Data and GDPR', audit:'Audit trail', home:'Overview', notifications:'Notifications'};
 
   if(typeof TAB_GROUPS !== 'undefined'){
     TAB_GROUPS.length = 0;
@@ -16496,7 +16570,7 @@ function buildTagApply(){
 
   // tab buttons for the new views, and friendlier labels on existing ones
   const tabsBar = $('tabs');
-  [['crmAccounts','Accounts','clients'], ['hr','People',null], ['library','Documents','templates']].forEach(([key, label, before]) => {
+  [['crmAccounts','Accounts','clients'], ['hr','People',null], ['library','Documents','templates'], ['week','This week',null], ['roadmap','Roadmap',null], ['marketing','Marketing',null]].forEach(([key, label, before]) => {
     if(!tabsBar || tabsBar.querySelector('.tab-btn[data-tab="' + key + '"]')) return;
     const b = document.createElement('button');
     b.className = 'tab-btn'; b.dataset.tab = key; b.textContent = label;
@@ -16520,6 +16594,11 @@ function buildTagApply(){
     <div class="view-body"><div class="p41-tabs" id="hr41Tabs"></div><div id="hr41Body"><div class="p41-empty">Loading...</div></div></div>`);
   addView('libraryView', `<div class="view-head"><div><h2>Documents</h2><div class="sub">Policies, guides and reference documents for the team. Personal HR documents are under People.</div></div><div class="p41-bar" id="lib41Admin"></div></div>
     <div class="view-body" id="lib41Body"><div class="p41-empty">Loading...</div></div>`);
+  addView('weekView', `<div class="view-head"><div><h2>This week</h2><div class="sub">The plan for each day. Add what you will work on, tick it off when done. Tasks due that day show automatically.</div></div><div class="p41-bar" id="wk41Nav"></div></div><div class="view-body" id="wk41Body"><div class="p41-empty">Loading...</div></div>`);
+  addView('roadmapView', `<div class="view-head"><div><h2>Roadmap</h2><div class="sub">Bigger pieces of work and when they are planned. Move them from Later to Now to Done.</div></div><div class="p41-bar"><button class="gold-btn" data-rec-new="road">+ Add to roadmap</button></div></div><div class="view-body" id="rd41Body"><div class="p41-empty">Loading...</div></div>`);
+  addView('marketingView', `<div class="view-head"><div><h2>Marketing</h2><div class="sub">LinkedIn posts, Brevo outreach workflows, lead magnets and events in one place.</div></div><div class="p41-bar" id="mk41Add"></div></div><div class="view-body"><div class="p41-tabs" id="mk41Tabs"></div><div id="mk41Body"><div class="p41-empty">Loading...</div></div></div>`);
+  if(!$('viewer41')){ const v = document.createElement('div'); v.id = 'viewer41'; v.innerHTML = '<div class="bk" data-vw41="close"></div><div class="vw" role="dialog" aria-modal="true"><div class="vh"><b id="vw41Title"></b><span class="sp"></span><button class="p41-btn sm" id="vw41Dl">Download</button><button class="p41-btn sm" data-vw41="close">Close</button></div><div class="vb" id="vw41Body"></div></div>'; document.body.appendChild(v); }
+  if(!$('rec41')){ const v = document.createElement('div'); v.id = 'rec41'; v.innerHTML = '<div class="bk" data-rec41="close"></div><div class="rp" role="dialog" aria-modal="true" id="rec41Body"></div>'; document.body.appendChild(v); }
   if(!$('drawer41')){ const d = document.createElement('div'); d.id = 'drawer41'; d.innerHTML = '<div class="bk" data-x41="close"></div><aside role="dialog" aria-modal="true" id="drawer41Body"></aside>'; document.body.appendChild(d); }
 
   // rail
@@ -16527,9 +16606,12 @@ function buildTagApply(){
   rail.id = 'rail41'; rail.setAttribute('aria-label', 'Sections');
   document.body.insertBefore(rail, document.body.firstChild);
   const st41 = { pending: 0, notif: 0, group: 'today' };
+  const LOGO41 = (document.querySelector('#sidebar .brand img') || {}).src || '';
+  const MARK41 = ($('brandLogoImg') || {}).src || '';
+  (function(){ const g = document.querySelector('#gate h1'); if(g) g.textContent = 'Workspace sign in'; })();
   function renderRail(){
     const u = me41();
-    let html = `<div class="r-brand"><b>Live 2 Help</b><span>Workspace</span></div>`;
+    let html = `<div class="r-brand">${LOGO41 ? `<img src="${LOGO41}" alt="Live 2 Help">` : '<b>Live 2 Help</b>'}<span>Workspace</span></div>`;
     GROUPS41.filter(g => !g.adminOnly || isAdmin41()).forEach(g => {
       if(g.sect) html += `<div class="r-sect">${g.sect}</div>`;
       let badge = '';
@@ -16539,7 +16621,7 @@ function buildTagApply(){
       html += `<button class="r-item${st41.group === g.key ? ' active' : ''}" data-g41="${g.key}"${st41.group === g.key ? ' aria-current="page"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true">${ICON[g.key]}</svg><span>${g.label}</span>${badge}</button>`;
     });
     html += `<div class="r-foot"><div class="r-user"><div class="r-av">${h((u.name || '?').charAt(0).toUpperCase())}</div><div><b>${h(u.name || '')}</b><small>${isAdmin41() ? 'Admin' : 'Team'}</small></div></div>
-      <button class="r-out" onclick="signOut()">Log out</button><div class="r-ver">Build 41 · CRM and People</div></div>`;
+      <button class="r-out" onclick="signOut()">Log out</button><div class="r-ver">Build 42</div></div>`;
     rail.innerHTML = html;
   }
   rail.addEventListener('click', e => {
@@ -16579,20 +16661,29 @@ function buildTagApply(){
   switchTab = function(tab){
     if(tab === 'admin41') tab = 'invoices';
     _st(tab);
-    ['crmAccounts','hr','library'].forEach(t => { const v = $(t + 'View'); if(v) v.classList.toggle('visible', tab === t); });
-    if(['crmAccounts','hr','library'].includes(tab) && $('candidatesView')) $('candidatesView').style.display = 'none';
+    NEW_VIEWS41.forEach(t => { const v = $(t + 'View'); if(v) v.classList.toggle('visible', tab === t); });
+    if(NEW_VIEWS41.includes(tab) && $('candidatesView')) $('candidatesView').style.display = 'none';
     setTitle(tab);
     if(tab === 'crmAccounts') crmLoad();
     if(tab === 'hr') hrLoad();
     if(tab === 'library') libLoad();
-    if(tab === 'home') homePeople();
+    if(tab === 'home') homeGlance();
+    if(tab === 'clients' || tab === 'leadClients') listLoad(tab);
+    if(tab === 'week') weekLoad();
+    if(tab === 'roadmap') roadLoad();
+    if(tab === 'marketing') mktLoad();
+    if(tab === 'candidates') roleBar41();
   };
   const _si = signIn;
   signIn = function(user){
     _si(user);
     renderRail();
     hrBadge();
+    // welcome screen, then straight into Today
+    const sw = $('splashWelcome'); if(sw) sw.innerHTML = 'Welcome back, <span>' + h(user.name) + '</span>';
+    setTimeout(() => { if(!$('app').classList.contains('visible')) chooseHome(); }, 1700);
   };
+  const NEW_VIEWS41 = ['crmAccounts','hr','library','week','roadmap','marketing'];
   document.title = 'Live 2 Help Workspace';
 
   /* ---------------- CRM: Accounts ---------------- */
@@ -16670,13 +16761,35 @@ function buildTagApply(){
       ['Need attention', all.filter(a => a.health && a.health.band !== 'Healthy').length, 'From client health']
     ].map(([k,v,n]) => `<div class="p41-stat"><span class="k">${k}</span><span class="v">${v}</span><span class="n">${n}</span></div>`).join('');
     if(!list.length){ $('crm41List').innerHTML = `<div class="p41-panel"><div class="p41-empty">${CRM.accounts.length ? 'No accounts match that search.' : 'No accounts yet. Add a client or a lead to get started.'}</div></div>`; return; }
-    $('crm41List').innerHTML = `<div class="p41-tw"><table><thead><tr><th>Company</th><th>Contacts</th><th>Type and stage</th><th>Health</th><th>Live roles</th><th>Last contact</th></tr></thead><tbody>
+    $('crm41List').innerHTML = accTable(list);
+  }
+  function accTable(list){
+    return `<div class="p41-tw"><table><thead><tr><th>Company</th><th>Contacts</th><th>Type and stage</th><th>Health</th><th>Live roles</th><th>Last contact</th></tr></thead><tbody>
       ${list.map(a => `<tr class="click" tabindex="0" data-acc="${h(a.key)}"><td class="co"><b>${h(a.name)}</b><span>${h([a.address, a.postcode].filter(Boolean).join(', ') || 'No address yet')}</span></td>
         <td>${a.contacts.length} · ${h((a.contacts[0] || {}).name || 'None')}</td>
         <td>${a.type === 'client' ? '<span class="p41-pill ok">Client</span>' : '<span class="p41-pill">Lead</span>'} ${a.stage ? `<span class="p41-pill gold">${h(stageLbl(a.stage))}</span>` : ''}</td>
         <td>${hp41(a.health) || '<span class="p41-pill">Not scored</span>'}</td><td>${a.roles.length}</td><td>${a.last ? fmt41(a.last, true) : '<span class="p41-pill warn">Never</span>'}</td></tr>`).join('')}
       </tbody></table></div>`;
   }
+  // Clients and Lead clients use the same list as Accounts
+  async function listLoad(tab){
+    const isC = tab === 'clients';
+    const grid = $(isC ? 'clientsGrid' : 'leadClientsGrid'); if(!grid) return;
+    let host = $(isC ? 'clientsList41' : 'leadsList41');
+    if(!host){ host = document.createElement('div'); host.id = isC ? 'clientsList41' : 'leadsList41'; host.className = 'list41'; grid.parentNode.insertBefore(host, grid);
+      host.innerHTML = `<div class="p41-bar" style="margin-bottom:14px"><input class="p41-in" data-lq41="${tab}" placeholder="Search ${isC ? 'clients' : 'lead clients'}, contacts or emails" style="flex:1;min-width:200px"></div><div class="lst"><div class="p41-empty">Loading...</div></div>`; }
+    await crmLoad();
+    listRender(tab);
+  }
+  function listRender(tab){
+    const isC = tab === 'clients'; const host = $(isC ? 'clientsList41' : 'leadsList41'); if(!host) return;
+    const q = ((host.querySelector('[data-lq41]') || {}).value || '').toLowerCase();
+    const list = CRM.accounts.filter(a => a.type === (isC ? 'client' : 'lead')).filter(a => !q || [a.name, a.address, a.postcode, ...a.contacts.flatMap(c => [c.name, c.email, c.title])].join(' ').toLowerCase().includes(q));
+    host.querySelector('.lst').innerHTML = list.length ? accTable(list) : `<div class="p41-panel"><div class="p41-empty">${q ? 'Nothing matches that search.' : (isC ? 'No clients yet.' : 'No lead clients yet.')}</div></div>`;
+  }
+  document.addEventListener('input', e => { const t = e.target; if(t && t.dataset && t.dataset.lq41) listRender(t.dataset.lq41); });
+  ['loadClients','loadLeadClients'].forEach(fn => { const orig = window[fn]; if(typeof orig !== 'function') return; window[fn] = async function(){ const r = await orig.apply(this, arguments); CRM.loaded = 0; const t = fn === 'loadClients' ? 'clients' : 'leadClients'; if($(t === 'clients' ? 'clientsView' : 'leadClientsView') && $(t === 'clients' ? 'clientsView' : 'leadClientsView').classList.contains('visible')) listLoad(t); return r; }; });
+
   function crmOpen(key){
     const a = CRM.accounts.find(x => x.key === key); if(!a) return;
     CRM.sel = key;
@@ -16691,15 +16804,16 @@ function buildTagApply(){
       <div class="d41-sec"><span class="d41-eyebrow">Contacts (${a.contacts.length})</span>
         ${a.contacts.map((c, i) => { const k = a.key + '|' + i, o = !!CRM.open[k]; return `<div class="d41-contact"><button data-ctc41="${h(k)}" aria-expanded="${o}"><span class="top"><b>${h(c.name || 'Unnamed contact')}</b><small>${o ? 'Hide' : 'Show'} details</small></span><span class="sub">${h(c.title || c.src)}</span></button>
           ${o ? `<div class="det"><dl class="p41-kv"><dt>Job title</dt><dd>${h(c.title || 'Not recorded')}</dd><dt>Email</dt><dd>${c.email ? `<a href="mailto:${h(c.email)}">${h(c.email)}</a>` : 'Not recorded'}</dd><dt>Phone</dt><dd>${c.phone ? `<a href="tel:${h(c.phone)}">${h(c.phone)}</a>` : 'Not recorded'}</dd><dt>Source</dt><dd>${h(c.src)}</dd><dt>Notes</dt><dd>${h(c.notes || 'None')}</dd></dl>
-            <div class="p41-bar" style="margin-top:8px">${c.email ? `<button class="p41-btn sm" data-copy41="${h(c.email)}">Copy email</button>` : ''}<button class="p41-btn sm" data-x41="logc" data-name="${h(c.name || '')}">Log contact</button></div></div>` : ''}</div>`; }).join('') || '<div class="p41-empty">No contacts yet.</div>'}
+            <div class="p41-bar" style="margin-top:8px">${c.email ? `<button class="p41-btn sm" data-copy41="${h(c.email)}">Copy email</button>` : ''}<button class="p41-btn sm" data-x41="logc" data-name="${h(c.name || '')}">Log contact</button>${c.src === 'Lead contact' ? `<button class="p41-btn sm" data-x41="mv" data-name="${h(c.name || '')}">Move to clients</button><button class="p41-btn sm" data-x41="dl" data-name="${h(c.name || '')}">Delete contact</button>` : ''}</div></div>` : ''}</div>`; }).join('') || '<div class="p41-empty">No contacts yet.</div>'}
       </div>
       ${a.type === 'client' ? `<div class="d41-sec"><span class="d41-eyebrow">Live roles (${a.roles.length})</span>
         ${a.roles.map(r => `<div class="p41-row"><div class="m"><div><b>${h(r.role)}</b></div><div class="s">${r.cands.length} candidate${r.cands.length === 1 ? '' : 's'} · ${r.cands.filter(c => c.stage === 'submitted').length} awaiting feedback</div></div><button class="p41-btn sm" data-role41="${h(r.company)}|${h(r.role)}">Open pipeline</button></div>`).join('') || '<div class="p41-empty">No roles yet.</div>'}</div>
       <div class="d41-sec"><span class="d41-eyebrow">Sites (${a.sites.length})</span>
         ${a.sites.map(s => `<div class="p41-row"><div class="m"><div><b>${h(s.site_name || 'Site')}</b></div><div class="s">${h([s.address, s.postcode].filter(Boolean).join(', '))}</div></div>${s.pdf_file_id ? '<span class="p41-pill ok">Onboarding PDF</span>' : '<span class="p41-pill warn">No PDF</span>'}</div>`).join('') || '<div class="p41-empty">No sites yet. Add them on the Clients tab.</div>'}</div>
-      <div class="d41-sec"><span class="d41-eyebrow">Terms and money</span><dl class="p41-kv"><dt>Payment terms</dt><dd>${a.terms ? h(a.terms) + ' days' : 'Not set'}</dd><dt>Drive folder</dt><dd>${h(a.folder || 'Not recorded')}</dd>
+      <div class="d41-sec"><span class="d41-eyebrow">Terms and money</span><dl class="p41-kv"><dt>Payment terms</dt><dd><select class="p41-in" data-terms41="${h(a.name)}">${['','14','30'].map(v => `<option value="${v}"${String(a.terms) === v ? ' selected' : ''}>${v ? v + ' days' : 'Not set'}</option>`).join('')}</select></dd><dt>Drive folder</dt><dd>${h(a.folder || 'Not recorded')}</dd>
         ${isAdmin41() ? `<dt>Invoices</dt><dd>${a.invoices.length} · ${money41(a.invoices.reduce((n, i) => n + Number(i.amount || 0), 0))} total · ${a.invoices.filter(i => String(i.status || '').toLowerCase() !== 'paid').length} unpaid</dd>` : ''}</dl></div>` :
       `<div class="d41-sec"><span class="d41-eyebrow">Business development</span><dl class="p41-kv"><dt>Stage</dt><dd>${h(stageLbl(a.stage) || 'Not in pipeline')}</dd><dt>Owner</dt><dd>${h((lead && lead.owner) || 'Not set')}</dd><dt>Source</dt><dd>${h((lead && lead.source) || 'Lead Clients')}</dd><dt>Cold call attempts</dt><dd>${a.calls.length}</dd><dt>Notes</dt><dd>${h((lead && lead.notes) || 'None')}</dd></dl></div>`}
+      ${a.type === 'client' ? '<div class="p41-bar"><button class="p41-btn sm" data-x41="delc" style="color:var(--danger)">Delete client</button></div>' : ''}
       <div class="d41-sec"><span class="d41-eyebrow">History</span><div class="d41-tl">
         ${[...commsSorted.map(c => ({d:String(c.timestamp).slice(0,10), t:`${h(c.channel || 'Contact')} · ${h(c.direction || '')}`, x:h(c.summary || ''), who:c.user})),
            ...a.calls.map(c => ({d:String(c.dateCalled || '').slice(0,10), t:'Cold call · ' + h(c.contactType || ''), x:h([c.contactNames, c.outcome, c.notes].filter(Boolean).join(' · ')), who:''})),
@@ -16725,6 +16839,9 @@ function buildTagApply(){
     if(x === 'edit'){ closeDrawer41(); switchTab('clients'); editClient(a.name); return; }
     if(x === 'addc'){ closeDrawer41(); if(a.type === 'client'){ switchTab('clients'); openAddClientModal(); setTimeout(() => { const i = $('clientCompanyInput'); if(i) i.value = a.name; const ad = $('clientAddressInput'); if(ad && !ad.value) ad.value = a.address || ''; }, 50); } else { switchTab('leadClients'); openAddLeadClientModal(); setTimeout(() => { const i = document.querySelector('#addLeadClientOverlay input'); if(i && !i.value) i.value = a.name; }, 50); } return; }
     if(x === 'lead'){ closeDrawer41(); switchTab('leadPipeline'); setTimeout(() => { if(typeof lpxOpen === 'function' && a.lead) lpxOpen(a.lead.id); }, 600); return; }
+    if(x === 'mv'){ closeDrawer41(); moveLeadToClient(a.name, t.dataset.name); return; }
+    if(x === 'dl'){ closeDrawer41(); deleteLeadClient(a.name, t.dataset.name); return; }
+    if(x === 'delc'){ closeDrawer41(); deleteClient(a.name); return; }
     if(x === 'task'){ closeDrawer41(); switchTab('tasks'); toast41('Add the task for ' + a.name); return; }
   });
   function closeDrawer41(){ $('drawer41').classList.remove('open'); CRM.sel = null; }
@@ -16733,23 +16850,25 @@ function buildTagApply(){
     if(e.key === 'Enter' && e.target.matches && e.target.matches('tr[data-acc]')) crmOpen(e.target.dataset.acc);
   });
   document.addEventListener('input', e => { if(e.target && e.target.id === 'crm41Q'){ CRM.q = e.target.value; crmRender(); } });
+  document.addEventListener('change', e => { const t = e.target; if(t && t.dataset && t.dataset.terms41 !== undefined && t.value){ saveClientTerms(t.dataset.terms41, t.value); const a = CRM.accounts.find(x => x.key === CRM.sel); if(a) a.terms = t.value; } });
 
   /* ---------------- People (HR) ---------------- */
   const HR = { tab:'overview', emp:null, me:null, hol:[], abs:[], bradford:{}, docs:[], revs:[], com:[], cal:null, month:null, err:'' };
   const HR_TABS = [['overview','Overview'],['holidays','Holidays'],['calendar','Team calendar'],['sickness','Sickness'],['documents','Documents'],['reviews','Probation and reviews'],['profile','Profile'],['commission','Commission']];
   async function hrBadge(){
-    try{ const m = await api41('/api/hr/me'); st41.pending = m.pendingApprovals || 0; renderRail(); }catch(e){}
+    try{ const m = await api41('/api/hr/me'); HR.me = HR.me || m; st41.pending = m.pendingApprovals || 0; renderRail(); }catch(e){}
   }
-  async function hrLoad(){
-    $('hr41Body').innerHTML = '<div class="p41-empty">Loading...</div>';
+  async function hrLoad(retry){
+    if(!retry) $('hr41Body').innerHTML = '<div class="p41-empty">Loading...</div>';
     try{
-      const [me, hol, abs, docs, revs, cal] = await Promise.all([api41('/api/hr/me'), api41('/api/hr/holidays'), api41('/api/hr/absences'), api41('/api/hr/documents'), api41('/api/hr/reviews'), api41('/api/hr/calendar')]);
-      HR.me = me; HR.hol = hol.data || []; HR.abs = abs.data || []; HR.bradford = abs.bradford || {}; HR.docs = docs.data || []; HR.revs = revs.data || []; HR.cal = cal;
-      HR.com = me.admin ? ((await api41('/api/hr/commission').catch(() => ({data:[]}))).data || []) : [];
-      if(!HR.emp || !me.employees.some(e => e.id === HR.emp)) HR.emp = (me.employees.find(e => e.id === me.key) || me.employees[0] || {}).id || null;
-      st41.pending = me.pendingApprovals || 0; renderRail();
-      HR.err = '';
-    }catch(e){ HR.err = e.message; }
+      const j = await api41('/api/hr/bundle');
+      HR.me = j.me; HR.hol = j.holidays || []; HR.abs = j.absences || []; HR.bradford = j.bradford || {}; HR.docs = j.documents || []; HR.revs = j.reviews || []; HR.cal = j.calendar; HR.com = j.commission || [];
+      if(!HR.emp || !HR.me.employees.some(e => e.id === HR.emp)) HR.emp = (HR.me.employees.find(e => e.id === HR.me.key) || HR.me.employees[0] || {}).id || null;
+      st41.pending = HR.me.pendingApprovals || 0; renderRail(); HR.err = ''; HR.at = Date.now();
+    }catch(e){
+      if(!retry){ setTimeout(() => hrLoad(true), 2500); $('hr41Body').innerHTML = '<div class="p41-empty">The server is waking up. Trying again...</div>'; return; }
+      HR.err = e.message;
+    }
     hrRender();
   }
   const empOf = id => (HR.me && HR.me.employees || []).find(e => e.id === id) || null;
@@ -16758,7 +16877,7 @@ function buildTagApply(){
     const admin = !!(HR.me && HR.me.admin);
     $('hr41Title').textContent = admin ? 'People' : 'My HR';
     $('hr41Sub').textContent = admin ? 'Holidays, approvals, absence, documents, reviews and commission. Only you see other people\'s records.' : 'Your holidays, absences, documents and reviews. Only you and Daniel can see this.';
-    if(HR.err){ $('hr41Tabs').innerHTML = ''; $('hr41Body').innerHTML = `<div class="p41-panel"><div class="p41-err">${h(HR.err)}</div><div class="p41-empty">If this says HR is not switched on, add HR_SHEET_ID on Render (see the deploy notes).</div></div>`; return; }
+    if(HR.err){ $('hr41Tabs').innerHTML = ''; $('hr41Body').innerHTML = `<div class="p41-panel"><div class="p41-err">${h(HR.err)}</div><div class="p41-bar"><button class="p41-btn pri sm" data-hrretry="1">Try again</button></div></div>`; return; }
     const tabs = HR_TABS.filter(([k]) => k !== 'commission' || admin);
     $('hr41Tabs').innerHTML = tabs.map(([k,l]) => `<button class="p41-chip" data-hrt="${k}" aria-pressed="${HR.tab === k}">${l}${k === 'holidays' && admin && st41.pending ? ' · ' + st41.pending : ''}</button>`).join('');
     $('hr41Who').innerHTML = admin && HR.me.employees.length > 1 ? `<select class="p41-in" id="hr41Emp">${HR.me.employees.map(e => `<option value="${h(e.id)}"${e.id === HR.emp ? ' selected' : ''}>${h(e.known_as || e.full_name)}</option>`).join('')}</select>` : '';
@@ -16912,16 +17031,45 @@ function buildTagApply(){
     document.querySelectorAll('[data-fit41]').forEach(inp => inp.onchange = () => { const f = inp.files[0]; if(!f) return; if(f.size > 10 * 1024 * 1024){ toast41('Keep the fit note under 10MB'); return; }
       const rd = new FileReader(); rd.onload = async () => { try{ await post41('/api/hr/absences/' + encodeURIComponent(inp.dataset.fit41), {fit_note:{name:f.name, type:f.type, base64:String(rd.result).split(',')[1]}}); toast41('Fit note uploaded'); hrLoad(); }catch(err){ toast41(err.message); } }; rd.readAsDataURL(f); });
   }
+  let MAMMOTH41 = null;
+  function loadMammoth(){
+    if(window.mammoth) return Promise.resolve(window.mammoth);
+    if(MAMMOTH41) return MAMMOTH41;
+    MAMMOTH41 = new Promise((ok, bad) => { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js'; sc.onload = () => ok(window.mammoth); sc.onerror = () => { MAMMOTH41 = null; bad(new Error('The document viewer could not load')); }; document.head.appendChild(sc); });
+    return MAMMOTH41;
+  }
   async function openDoc41(id){
+    const d = (HR.docs || []).find(x => x.id === id) || {};
+    $('vw41Title').textContent = d.name || 'Document';
+    $('vw41Body').innerHTML = '<div class="p41-empty" style="padding:24px">Opening...</div>';
+    $('viewer41').classList.add('open');
+    $('vw41Dl').onclick = () => downloadDoc41(id, d.name);
     try{
       const r = await fetch(API_BASE + '/api/hr/documents/' + encodeURIComponent(id) + '/file');
       if(!r.ok){ const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Could not open the document'); }
-      const blob = await r.blob(); const url = URL.createObjectURL(blob);
-      const w = window.open(url, '_blank'); if(!w){ const a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      const type = (r.headers.get('Content-Type') || '').toLowerCase();
+      const blob = await r.blob();
+      if(type.includes('pdf')){ const url = URL.createObjectURL(blob); $('vw41Body').innerHTML = `<iframe title="${h(d.name || 'Document')}" src="${url}"></iframe>`; return; }
+      if(type.startsWith('image/')){ const url = URL.createObjectURL(blob); $('vw41Body').innerHTML = `<div class="doc41"><img src="${url}" alt="${h(d.name || '')}"></div>`; return; }
+      if(type.includes('wordprocessingml') || /\.docx$/i.test(d.name || '')){
+        const m = await loadMammoth();
+        const out = await m.convertToHtml({arrayBuffer: await blob.arrayBuffer()});
+        $('vw41Body').innerHTML = `<article class="doc41">${out.value}</article>`; return;
+      }
+      $('vw41Body').innerHTML = '<div class="p41-empty" style="padding:24px">This file type cannot be shown here. Use Download.</div>';
+    }catch(e){ $('vw41Body').innerHTML = `<div style="padding:24px"><div class="p41-err">${h(e.message)}</div></div>`; }
+  }
+  async function downloadDoc41(id, name){
+    try{
+      const r = await fetch(API_BASE + '/api/hr/documents/' + encodeURIComponent(id) + '/file?download=1');
+      if(!r.ok) throw new Error('Could not download the document');
+      const url = URL.createObjectURL(await r.blob()); const a = document.createElement('a'); a.href = url; a.download = (name || 'document').replace(/[\\/:*?"<>|]/g, '') + (/\.\w+$/.test(name || '') ? '' : '.docx'); document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
     }catch(e){ toast41(e.message); }
   }
+  document.addEventListener('click', e => { if(e.target.closest('[data-vw41="close"]')) $('viewer41').classList.remove('open'); });
+  document.addEventListener('keydown', e => { if(e.key === 'Escape' && $('viewer41').classList.contains('open')) $('viewer41').classList.remove('open'); });
   document.addEventListener('click', async e => {
+    if(e.target.closest('[data-hrretry]')){ hrLoad(); return; }
     const t = e.target.closest('[data-hrt],[data-hdec],[data-hcan],[data-hmon],[data-hdoc],[data-hack],[data-rtw41],[data-hadd],[data-libadd]');
     if(!t) return;
     if(t.dataset.hrt){ HR.tab = t.dataset.hrt; if(!$('hrView').classList.contains('visible')) switchTab('hr'); else hrRender(); return; }
@@ -16951,7 +17099,7 @@ function buildTagApply(){
     const body = $('lib41Body');
     $('lib41Admin').innerHTML = isAdmin41() ? '<button class="p41-btn sm" data-libadd="1">+ Add document</button>' : '';
     let docs = [];
-    try{ docs = (await api41('/api/hr/documents')).data || []; }catch(e){ body.innerHTML = `<div class="p41-panel"><div class="p41-err">${h(e.message)}</div></div>`; return; }
+    try{ docs = (await api41('/api/hr/documents')).data || []; HR.docs = docs; }catch(e){ body.innerHTML = `<div class="p41-panel"><div class="p41-err">${h(e.message)}</div></div>`; return; }
     if(!HR.me){ try{ HR.me = await api41('/api/hr/me'); }catch(e){} }
     const lib = docs.filter(d => d.employee === 'all' && d.admin_only !== 'TRUE');
     const groups = {};
@@ -16963,22 +17111,206 @@ function buildTagApply(){
       ${Object.keys(groups).sort().map(cat => `<div class="p41-panel"><h3>${h(cat === 'Library' ? 'Guides and reference' : cat + (cat.endsWith('y') ? '' : 's'))}</h3><div class="p41-list">${groups[cat].map(d => `<div class="p41-row"><div class="m"><div><b>${h(d.name)}</b></div><div class="s">Added ${fmt41(String(d.added_at).slice(0,10), true)}</div></div><button class="p41-btn sm" data-hdoc="${h(d.id)}">Open</button></div>`).join('')}</div></div>`).join('') || '<div class="p41-panel"><div class="p41-empty">No shared documents yet.</div></div>'}`;
   }
 
-  /* ---------------- Today: people card on the overview ---------------- */
-  async function homePeople(){
+  /* ================= build 42 ================= */
+
+  /* ---------- Today: simple at-a-glance links ---------- */
+  let glanceHR = { at: 0, m: null };
+  async function homeGlance(){
     const host = $('homeView'); if(!host) return;
-    let card = $('home41People');
-    if(!card){ card = document.createElement('div'); card.id = 'home41People'; card.style.cssText = 'margin-bottom:16px'; const body = host.querySelector('.view-body'); (body || host).insertBefore(card, (body || host).firstChild); }
-    try{
-      const m = await api41('/api/hr/me'); HR.me = m;
-      const e = m.employees.find(x => x.id === m.key);
-      const b = e ? m.balances[e.id] : null;
-      card.innerHTML = `<div class="p41-panel"><div class="p41-ph"><h3>People</h3><button class="p41-btn sm" data-hrt="overview">Open People</button></div><div class="p41-list">
-        ${m.admin ? `<div class="p41-row"><div class="m"><div>Holiday requests waiting for you</div><div class="s">Approve or decline under People</div></div><span class="p41-pill ${m.pendingApprovals ? 'warn' : 'ok'}">${m.pendingApprovals || 'None'}</span></div>` : ''}
-        ${b ? `<div class="p41-row"><div class="m"><div>Your holiday left to book in ${b.year}</div><div class="s">${b.approved} approved, ${b.pending} pending, ${b.bankDays} bank holidays included</div></div><span class="p41-pill gold">${b.remaining} days</span></div>` : ''}
-      </div></div>`;
-      st41.pending = m.pendingApprovals || 0; renderRail();
-    }catch(err){ card.innerHTML = ''; }
+    const body = host.querySelector('.view-body') || host;
+    let g = $('home42'); if(!g){ g = document.createElement('div'); g.id = 'home42'; body.insertBefore(g, body.firstChild); }
+    const old = $('home41People'); if(old) old.remove();
+    const cands = (typeof flatCandidates === 'function') ? flatCandidates() : [];
+    const count = st => cands.filter(x => st.includes(x.c.stage) && !(typeof isTestCand === 'function' && isTestCand(x.c))).length;
+    const today = (typeof opsToday === 'function') ? opsToday() : todayISO41();
+    const tasks = (typeof OPS !== 'undefined' ? OPS.tasks : []).filter(t => t.status !== 'Complete' && !t.archived);
+    const due = tasks.filter(t => { const d = typeof opsDateOnly === 'function' ? opsDateOnly(t.dueDate) : t.dueDate; return d && d <= today; }).length;
+    const notes = typeof OPS !== 'undefined' ? OPS.notes : [];
+    const urgent = notes.filter(n => n.sev === 'high').length;
+    if(!glanceHR.m || Date.now() - glanceHR.at > 60000){ try{ glanceHR = { at: Date.now(), m: await api41('/api/hr/me') }; st41.pending = glanceHR.m.pendingApprovals || 0; renderRail(); }catch(e){} }
+    const m = glanceHR.m; const mine = m && m.employees.find(x => x.id === m.key); const b = mine ? m.balances[mine.id] : null;
+    const items = [
+      {n: notes.length, l: 'Needs attention', s: urgent ? urgent + ' urgent' : 'All notifications', go: "switchTab('notifications')", warn: urgent > 0},
+      {n: due, l: 'Tasks due or overdue', s: tasks.length + ' open in total', go: "switchTab('tasks')", warn: due > 0},
+      {n: count(['applied']), l: 'New applications', s: 'Waiting to be screened', go: "openCandidatesView('applications')"},
+      {n: count(['submitted']), l: 'Awaiting client feedback', s: 'Submitted candidates', go: "openCandidatesView('submitted')"},
+      {n: count(['interview_requested','interview_scheduled','interviewed']), l: 'In interviews', s: 'Requested, booked or done', go: "openCandidatesView('interviews')"},
+      m && m.admin ? {n: m.pendingApprovals || 0, l: 'Holiday requests', s: 'Waiting for your decision', go: "switchTab('hr')", warn: (m.pendingApprovals || 0) > 0}
+        : (b ? {n: b.remaining, l: 'Holiday left to book', s: b.year + ', after pending requests', go: "switchTab('hr')"} : null),
+    ].filter(Boolean);
+    g.innerHTML = `<div class="glance42">${items.map(i => `<button class="gl42${i.warn ? ' warn' : ''}" onclick="${i.go}"><span class="n">${h(i.n)}</span><span class="l">${h(i.l)}</span><span class="s">${h(i.s)}</span></button>`).join('')}</div>`;
   }
+  if(typeof renderHome === 'function'){ const _rh = renderHome; renderHome = function(){ _rh.apply(this, arguments); if($('homeView') && $('homeView').classList.contains('visible')) homeGlance(); }; }
+
+  /* ---------- Recruitment: company and role picker across the top ---------- */
+  function roleBar41(){
+    const view = $('candidatesView'); if(!view || typeof mergedRoles !== 'function') return;
+    let bar = $('roleBar41');
+    if(!bar){ bar = document.createElement('div'); bar.id = 'roleBar41'; view.insertBefore(bar, view.firstChild); }
+    const roles = mergedRoles().filter(r => r.status === 'open' || r.status === 'hold');
+    const cnt = (c, r) => (typeof sbCandidatesFor === 'function' ? sbCandidatesFor(c, r) : []).filter(x => x.stage !== 'rejected').length;
+    const byCo = {}; roles.forEach(r => { (byCo[r.company] = byCo[r.company] || []).push(r); });
+    const cos = Object.keys(byCo).sort((a, b) => a.localeCompare(b));
+    const unassigned = (typeof DATA !== 'undefined' && typeof UNASSIGNED_LABEL !== 'undefined' && DATA[UNASSIGNED_LABEL]) ? Object.keys(DATA[UNASSIGNED_LABEL]).reduce((n, r) => n + DATA[UNASSIGNED_LABEL][r].length, 0) : 0;
+    const all = typeof boardScope !== 'undefined' && boardScope.all;
+    const curCo = all ? '' : (typeof currentCompany !== 'undefined' ? currentCompany : '');
+    const coKey = cos.find(c => typeof sbSame === 'function' ? sbSame(c, curCo) : c === curCo) || (curCo === (typeof UNASSIGNED_LABEL !== 'undefined' ? UNASSIGNED_LABEL : '') ? curCo : '');
+    const rlist = coKey && byCo[coKey] ? byCo[coKey] : [];
+    const curRole = all ? '' : (typeof currentRole !== 'undefined' ? currentRole : '');
+    const total = roles.reduce((n, r) => n + cnt(r.company, r.role), 0);
+    bar.innerHTML = `<button class="p41-chip" data-rb41="all" aria-pressed="${!!all}">All candidates · ${total}</button>
+      <label class="rb41"><span>Company</span><select class="p41-in" id="rb41Co"><option value="">Choose a company (${cos.length} with live roles)</option>${cos.map(c => `<option value="${h(c)}"${c === coKey ? ' selected' : ''}>${h(c)} · ${byCo[c].length} role${byCo[c].length === 1 ? '' : 's'}</option>`).join('')}${unassigned ? `<option value="__un"${coKey && coKey === UNASSIGNED_LABEL ? ' selected' : ''}>Needs a company assigned · ${unassigned}</option>` : ''}</select></label>
+      <label class="rb41"><span>Role</span><select class="p41-in" id="rb41Role"${rlist.length ? '' : ' disabled'}><option value="">${rlist.length ? 'Choose a role' : 'Pick a company first'}</option>${rlist.map(r => `<option value="${h(r.role)}"${(typeof sbSame === 'function' ? sbSame(r.role, curRole) : r.role === curRole) ? ' selected' : ''}>${h(r.role)} · ${cnt(r.company, r.role)} candidate${cnt(r.company, r.role) === 1 ? '' : 's'}${r.status === 'hold' ? ' (on hold)' : ''}</option>`).join('')}</select></label>
+      <button class="p41-btn sm" onclick="switchTab('roles');openRoleModal()">+ New role</button>`;
+    $('rb41Co').onchange = e => {
+      const v = e.target.value; if(!v) return;
+      if(v === '__un'){ const first = Object.keys(DATA[UNASSIGNED_LABEL])[0]; if(first) selectRole(UNASSIGNED_LABEL, first); return; }
+      const rs = byCo[v] || []; if(rs.length === 1) selectRole(rs[0].company, rs[0].role); else { currentCompany = v; roleBar41(); const rr = $('rb41Role'); if(rr) rr.focus(); }
+    };
+    $('rb41Role').onchange = e => { const v = e.target.value; const c = $('rb41Co').value; if(v && c && byCo[c]) selectRole(byCo[c][0].company, v); };
+  }
+  document.addEventListener('click', e => { if(e.target.closest('[data-rb41="all"]')) openCandidatesView('all'); });
+  if(typeof renderSidebar === 'function'){ const _rs = renderSidebar; renderSidebar = function(){ _rs.apply(this, arguments); roleBar41(); }; }
+
+  /* ---------- Tasks: select all ---------- */
+  function taskSelectAll(){
+    const bar = document.querySelector('#tasksView > div'); if(!bar || $('tk41All')) return;
+    const l = document.createElement('label'); l.id = 'tk41All'; l.className = 'p41-chip'; l.style.cssText = 'display:inline-flex;gap:8px;align-items:center;cursor:pointer';
+    l.innerHTML = '<input type="checkbox" id="tk41AllBox"> Select all';
+    bar.firstElementChild.appendChild(l);
+    $('tk41AllBox').onchange = e => { document.querySelectorAll('#tasksBody .tk-sel').forEach(c => { c.checked = e.target.checked; }); if(typeof tkUpdateBar === 'function') tkUpdateBar(); };
+  }
+  taskSelectAll();
+  if(typeof loadTasks === 'function'){ const _lt = loadTasks; loadTasks = async function(){ const r = await _lt.apply(this, arguments); const b = $('tk41AllBox'); if(b) b.checked = false; return r; }; }
+
+  /* ---------- generic records (roadmap, marketing) ---------- */
+  const REC = { cfg: null, row: null };
+  const REC_CFG = {
+    road: {api: '/api/roadmap', title: 'Roadmap item', fields: [
+      {k:'title', l:'What', req:1}, {k:'area', l:'Area', opts:['Recruitment','Sales','Marketing','Operations','People','Systems and automation']},
+      {k:'owner', l:'Owner', opts:['dan','ella','both']}, {k:'target', l:'Target month', type:'month'},
+      {k:'status', l:'Status', opts:['Later','Next','Now','Done']}, {k:'notes', l:'Notes', type:'area'}], after: roadLoad},
+    post: {api: '/api/marketing', type:'post', title: 'LinkedIn post', fields: [
+      {k:'date', l:'Post date', type:'date'}, {k:'title', l:'Hook or topic', req:1}, {k:'channel', l:'Where', opts:['Company page','Dan','Ella']},
+      {k:'owner', l:'Owner', opts:['dan','ella']}, {k:'status', l:'Status', opts:['Idea','Drafted','Scheduled','Posted']},
+      {k:'next_step', l:'Call to action'}, {k:'link', l:'Link to post or draft'}, {k:'notes', l:'Draft or notes', type:'area'}], after: mktLoad},
+    brevo: {api: '/api/marketing', type:'brevo', title: 'Brevo workflow', fields: [
+      {k:'title', l:'Workflow name', req:1}, {k:'audience', l:'Audience'}, {k:'status', l:'Status', opts:['Planning','Building','Live','Paused']},
+      {k:'owner', l:'Owner', opts:['dan','ella']}, {k:'next_step', l:'Next step'}, {k:'link', l:'Brevo link'}, {k:'notes', l:'Emails in the sequence', type:'area'}], after: mktLoad},
+    magnet: {api: '/api/marketing', type:'magnet', title: 'Lead magnet', fields: [
+      {k:'title', l:'Name', req:1}, {k:'status', l:'Status', opts:['Idea','Building','Live','Retired']}, {k:'channel', l:'Where it is promoted'},
+      {k:'owner', l:'Owner', opts:['dan','ella']}, {k:'link', l:'Link'}, {k:'notes', l:'Notes', type:'area'}], after: mktLoad},
+    event: {api: '/api/marketing', type:'event', title: 'Event', fields: [
+      {k:'date', l:'Date', type:'date'}, {k:'title', l:'Event', req:1}, {k:'location', l:'Location'}, {k:'cost', l:'Cost'},
+      {k:'status', l:'Status', opts:['Considering','Booked','Attended','Skipped']}, {k:'owner', l:'Who is going', opts:['dan','ella','both']},
+      {k:'link', l:'Organiser link'}, {k:'next_step', l:'Follow-up'}, {k:'notes', l:'Notes and contacts met', type:'area'}], after: mktLoad},
+  };
+  const who41 = v => v === 'both' ? 'Dan and Ella' : (typeof userLabel === 'function' && v ? userLabel(v) : (v || ''));
+  function recOpen(kind, row){
+    const c = REC_CFG[kind]; REC.cfg = kind; REC.row = row || null;
+    const v = k => row ? (row[k] || '') : (k === 'owner' ? me41().key : (k === 'status' ? (c.fields.find(f => f.k === 'status') || {opts:['']}).opts[0] : ''));
+    $('rec41Body').innerHTML = `<div class="p41-ph"><h3>${row ? 'Edit' : 'New'} ${h(c.title.toLowerCase())}</h3><button class="p41-btn sm" data-rec41="close">Close</button></div>
+      <form class="p41-form" id="rec41Form">${c.fields.map(f => `<label>${h(f.l)}${f.opts ? `<select class="p41-in" name="${f.k}">${f.opts.map(o => `<option value="${h(o)}"${v(f.k) === o ? ' selected' : ''}>${h(f.k === 'owner' ? who41(o) : o)}</option>`).join('')}</select>`
+        : f.type === 'area' ? `<textarea class="p41-in" rows="4" name="${f.k}">${h(v(f.k))}</textarea>` : `<input class="p41-in" name="${f.k}" type="${f.type || 'text'}" value="${h(v(f.k))}"${f.req ? ' required' : ''}>`}</label>`).join('')}
+      <div class="p41-bar"><button class="p41-btn pri" type="submit">Save</button>${row ? '<button class="p41-btn" type="button" data-rec41="del" style="color:var(--danger)">Delete</button>' : ''}</div></form>`;
+    $('rec41').classList.add('open');
+    $('rec41Form').onsubmit = async e => { e.preventDefault(); const body = Object.assign({}, REC.row || {}, {id: (REC.row && REC.row.id) || ('rec-' + Date.now().toString(36)), updated_by: me41().key, updated_at: new Date().toISOString()});
+      if(c.type) body.type = c.type; new FormData(e.target).forEach((val, k) => body[k] = val);
+      try{ await post41(c.api, body); $('rec41').classList.remove('open'); toast41('Saved'); c.after(); }catch(err){ toast41(err.message); } };
+  }
+  document.addEventListener('click', async e => {
+    const t = e.target.closest('[data-rec41],[data-rec-new],[data-rec-edit]'); if(!t) return;
+    if(t.dataset.recNew){ recOpen(t.dataset.recNew); return; }
+    if(t.dataset.recEdit){ const [kind, id] = t.dataset.recEdit.split('|'); const list = kind === 'road' ? ROAD.rows : MKT.rows; recOpen(kind, list.find(r => r.id === id)); return; }
+    if(t.dataset.rec41 === 'close'){ $('rec41').classList.remove('open'); return; }
+    if(t.dataset.rec41 === 'del' && REC.row){ const c = REC_CFG[REC.cfg]; try{ await b2Del(c.api, REC.row.id); $('rec41').classList.remove('open'); toast41('Deleted'); c.after(); }catch(err){ toast41(err.message); } }
+  });
+
+  /* ---------- Roadmap ---------- */
+  const ROAD = { rows: [] };
+  async function roadLoad(){
+    try{ ROAD.rows = b2List(await api41('/api/roadmap')); }catch(e){ $('rd41Body').innerHTML = `<div class="p41-panel"><div class="p41-err">${h(e.message)}</div></div>`; return; }
+    const cols = ['Now','Next','Later','Done'];
+    $('rd41Body').innerHTML = `<div class="road42">${cols.map(c => { const rs = ROAD.rows.filter(r => (r.status || 'Later') === c).sort((a, b) => String(a.target).localeCompare(String(b.target)));
+      return `<div class="rcol"><div class="rh"><span>${c}</span><span>${rs.length}</span></div>${rs.map(r => `<button class="rcard" data-rec-edit="road|${h(r.id)}"><b>${h(r.title)}</b><span>${h(r.area || '')}${r.target ? ' · ' + h(new Date(r.target + '-01T12:00:00Z').toLocaleDateString('en-GB', {month:'short', year:'numeric', timeZone:'UTC'})) : ''}</span><span>${h(who41(r.owner))}</span></button>`).join('') || '<div class="p41-empty">Nothing here.</div>'}</div>`; }).join('')}</div>`;
+  }
+
+  /* ---------- This week ---------- */
+  const WK = { start: null, rows: [], person: null };
+  const mondayOf = iso => { const d = D41(iso); const w = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - w); return d.toISOString().slice(0,10); };
+  const addD = (iso, n) => { const d = D41(iso); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0,10); };
+  async function weekLoad(){
+    WK.start = WK.start || mondayOf(todayISO41());
+    WK.person = WK.person || me41().key || 'dan';
+    try{ WK.rows = b2List(await api41('/api/week-plans')); }catch(e){ $('wk41Body').innerHTML = `<div class="p41-panel"><div class="p41-err">${h(e.message)}</div></div>`; return; }
+    weekRender();
+  }
+  function weekRender(){
+    const people = (typeof USERS !== 'undefined' && Array.isArray(USERS) && USERS.length) ? USERS.map(u => u.key) : ['dan','ella'];
+    $('wk41Nav').innerHTML = `<div class="p41-tabs">${people.map(p => `<button class="p41-chip" data-wkp="${h(p)}" aria-pressed="${WK.person === p}">${h(who41(p))}</button>`).join('')}</div>
+      <button class="p41-btn sm" data-wkn="-7">Previous week</button><button class="p41-btn sm" data-wkn="0">This week</button><button class="p41-btn sm" data-wkn="7">Next week</button>`;
+    const days = [0,1,2,3,4].map(i => addD(WK.start, i));
+    const mine = WK.rows.filter(r => r.person === WK.person);
+    const focus = mine.find(r => r.kind === 'focus' && r.date === WK.start);
+    const tasks = (typeof OPS !== 'undefined' ? OPS.tasks : []).filter(t => t.status !== 'Complete' && !t.archived && (!t.user || String(t.user).toLowerCase() === WK.person));
+    const canEdit = WK.person === me41().key || isAdmin41();
+    $('wk41Body').innerHTML = `<div class="p41-panel"><div class="p41-ph"><h3>Focus for the week of ${fmt41(WK.start, true)}</h3></div>
+      ${canEdit ? `<form class="p41-bar" data-wkfocus="1"><input class="p41-in" name="text" style="flex:1;min-width:200px" placeholder="The one or two things that matter most this week" value="${h(focus ? focus.text : '')}"><button class="p41-btn sm" type="submit">Save focus</button></form>` : `<div>${h(focus ? focus.text : 'No focus set.')}</div>`}</div>
+      <div class="week42">${days.map(d => { const items = mine.filter(r => r.kind !== 'focus' && r.date === d); const due = tasks.filter(t => (typeof opsDateOnly === 'function' ? opsDateOnly(t.dueDate) : String(t.dueDate).slice(0,10)) === d);
+        return `<div class="wday${d === todayISO41() ? ' today' : ''}"><div class="wh"><b>${D41(d).toLocaleDateString('en-GB', {weekday:'long', timeZone:'UTC'})}</b><span>${fmt41(d)}</span></div>
+          ${items.map(r => `<label class="witem${r.done === 'TRUE' ? ' done' : ''}"><input type="checkbox" data-wkdone="${h(r.id)}"${r.done === 'TRUE' ? ' checked' : ''}${canEdit ? '' : ' disabled'}><span>${h(r.text)}</span>${canEdit ? `<button type="button" class="wx" data-wkdel="${h(r.id)}" aria-label="Remove">×</button>` : ''}</label>`).join('')}
+          ${due.map(t => `<div class="wtask" onclick="switchTab('tasks')">Task due: ${h(t.title)}</div>`).join('')}
+          ${canEdit ? `<form data-wkadd="${d}"><input class="p41-in" name="text" placeholder="Add to ${D41(d).toLocaleDateString('en-GB', {weekday:'short', timeZone:'UTC'})}"></form>` : ''}
+          ${!items.length && !due.length && !canEdit ? '<div class="p41-empty">Nothing planned.</div>' : ''}</div>`; }).join('')}</div>`;
+  }
+  document.addEventListener('click', async e => {
+    const t = e.target.closest('[data-wkp],[data-wkn],[data-wkdel]'); if(!t) return;
+    if(t.dataset.wkp){ WK.person = t.dataset.wkp; weekRender(); return; }
+    if(t.dataset.wkn !== undefined){ const n = Number(t.dataset.wkn); WK.start = n ? addD(WK.start, n) : mondayOf(todayISO41()); weekRender(); return; }
+    if(t.dataset.wkdel){ e.preventDefault(); try{ await b2Del('/api/week-plans', t.dataset.wkdel); WK.rows = WK.rows.filter(r => r.id !== t.dataset.wkdel); weekRender(); }catch(err){ toast41(err.message); } }
+  });
+  document.addEventListener('change', async e => {
+    const t = e.target; if(!t.dataset || !t.dataset.wkdone) return;
+    const r = WK.rows.find(x => x.id === t.dataset.wkdone); if(!r) return;
+    r.done = t.checked ? 'TRUE' : 'FALSE'; weekRender();
+    try{ await post41('/api/week-plans', {...r, updated_at: new Date().toISOString()}); }catch(err){ toast41(err.message); }
+  });
+  document.addEventListener('submit', async e => {
+    const f = e.target; if(!f.dataset || !(f.dataset.wkadd || f.dataset.wkfocus)) return;
+    e.preventDefault(); const text = (f.text.value || '').trim();
+    if(f.dataset.wkadd && !text) return;
+    const ex = f.dataset.wkfocus ? WK.rows.find(r => r.person === WK.person && r.kind === 'focus' && r.date === WK.start) : null;
+    const row = {...(ex || {}), id: ex ? ex.id : 'wk-' + Date.now().toString(36), person: WK.person, date: f.dataset.wkadd || WK.start, kind: f.dataset.wkfocus ? 'focus' : 'item', text, done: ex ? ex.done : 'FALSE', created_by: me41().key, updated_at: new Date().toISOString()};
+    try{ await post41('/api/week-plans', row); WK.rows = WK.rows.filter(r => r.id !== row.id).concat([row]); weekRender(); if(f.dataset.wkfocus) toast41('Focus saved'); else { const nf = document.querySelector(`form[data-wkadd="${row.date}"] input`); if(nf) nf.focus(); } }catch(err){ toast41(err.message); }
+  });
+
+  /* ---------- Marketing ---------- */
+  const MKT = { tab: 'post', rows: [], funnel: 0 };
+  const MKT_TABS = [['post','LinkedIn posts'],['brevo','Brevo workflows'],['magnet','Lead magnets'],['event','Events']];
+  async function mktLoad(){
+    try{
+      MKT.rows = b2List(await api41('/api/marketing'));
+      MKT.funnel = b2List(await api41('/api/funnel-leads').catch(() => ({data:[]}))).length;
+    }catch(e){ $('mk41Body').innerHTML = `<div class="p41-panel"><div class="p41-err">${h(e.message)}</div></div>`; return; }
+    mktRender();
+  }
+  function mktRender(){
+    $('mk41Tabs').innerHTML = MKT_TABS.map(([k, l]) => `<button class="p41-chip" data-mkt="${k}" aria-pressed="${MKT.tab === k}">${l} · ${MKT.rows.filter(r => r.type === k).length}</button>`).join('');
+    $('mk41Add').innerHTML = `<button class="gold-btn" data-rec-new="${MKT.tab}">+ Add ${REC_CFG[MKT.tab].title.toLowerCase()}</button>`;
+    const rows = MKT.rows.filter(r => r.type === MKT.tab).sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')));
+    const pill = s => `<span class="p41-pill ${['Posted','Live','Attended'].includes(s) ? 'ok' : ['Scheduled','Booked','Building','Drafted'].includes(s) ? 'gold' : ['Paused','Skipped','Retired'].includes(s) ? 'bad' : ''}">${h(s || 'Idea')}</span>`;
+    const link = r => r.link ? `<a href="${h(r.link)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Open</a>` : '';
+    const heads = {post:['Date','Post','Where','Status','Call to action',''], brevo:['Workflow','Audience','Status','Next step','Owner',''], magnet:['Lead magnet','Promoted','Status','Leads','Owner',''], event:['Date','Event','Location','Cost','Status','']}[MKT.tab];
+    const cells = r => ({
+      post: [r.date ? fmt41(r.date, true) : 'No date', `<b>${h(r.title)}</b>`, h(r.channel), pill(r.status), h(r.next_step), link(r)],
+      brevo: [`<b>${h(r.title)}</b>`, h(r.audience), pill(r.status), h(r.next_step), h(who41(r.owner)), link(r)],
+      magnet: [`<b>${h(r.title)}</b>`, h(r.channel), pill(r.status), /toolkit/i.test(r.title) ? `${MKT.funnel} <a onclick="event.stopPropagation();switchTab('funnelLeads')" style="cursor:pointer;color:var(--gold)">view</a>` : '', h(who41(r.owner)), link(r)],
+      event: [r.date ? fmt41(r.date, true) : 'No date', `<b>${h(r.title)}</b>`, h(r.location), h(r.cost), pill(r.status), link(r)],
+    })[MKT.tab];
+    $('mk41Body').innerHTML = rows.length ? `<div class="p41-tw"><table><thead><tr>${heads.map(x => `<th>${x}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr class="click" data-rec-edit="${MKT.tab}|${h(r.id)}">${cells(r).map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
+      : `<div class="p41-panel"><div class="p41-empty">Nothing here yet. Use the add button to start.</div></div>`;
+  }
+  document.addEventListener('click', e => { const t = e.target.closest('[data-mkt]'); if(t){ MKT.tab = t.dataset.mkt; mktRender(); } });
 
   // land on the new layout straight after sign in (the splash buttons still work)
   if(typeof signedInUser !== 'undefined' && signedInUser){ renderRail(); }
