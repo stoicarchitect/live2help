@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Career Toolkit - Live 2 Help Talent Suite</title>
+<meta name="description" content="Free expert tools from Live 2 Help Recruitment to get your CV past screening software and in front of hiring managers: CV health check, job match score, tailored CV rewrite and interview prep.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Live 2 Help Recruitment">
+<meta property="og:title" content="Career Toolkit - Live 2 Help Talent Suite">
+<meta property="og:description" content="Get your CV past the screening software and in front of hiring managers. Free tools built by working recruiters.">
+<meta property="og:image" content="https://careers.live2helprecruitment.co.uk/assets/og-image.png">
+<link rel="icon" href="../assets/logo.png" type="image/png">
+<style>
+  :root {
+    --gold: #C9A84C; --gold-l: #E8C96A; --gold-bg: #FBF6E8;
+    --navy: #0B0B18; --navy-2: #151528; --dark: #1A1A1A; --grey: #444444; --muted: #6B6F7B;
+    --lightbg: #F7F6F3; --border: #DDDDDD; --ok: #2E7D4F; --warn: #B7791F; --bad: #B23B3B;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Gill Sans MT', 'Gill Sans', Calibri, sans-serif; background: var(--lightbg); color: var(--dark); line-height: 1.5; }
+  a { color: var(--navy); text-decoration-color: var(--gold); text-underline-offset: 3px; }
+  .hidden { display: none !important; }
+
+  .topbar { background: var(--navy); padding: 18px 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .topbar img { height: 44px; width: auto; display: block; }
+  .topbar .links a { color: #B4B8C4; font-size: 14px; margin-left: 18px; text-decoration: none; }
+  .topbar .links a:hover { color: var(--gold); }
+
+  .hero { background: linear-gradient(180deg, var(--navy) 0%, var(--navy-2) 100%); color: #fff; padding: 46px 20px 56px; border-bottom: 3px solid var(--gold); }
+  .hero-in { max-width: 980px; margin: 0 auto; }
+  .eyebrow { color: var(--gold); letter-spacing: 3px; font-size: 12px; font-weight: bold; text-transform: uppercase; margin: 0 0 10px; }
+  .hero h1 { font-size: clamp(30px, 5vw, 44px); margin: 0 0 12px; line-height: 1.15; }
+  .hero h1 span { color: var(--gold); }
+  .hero p.lead { color: #C9CCD6; font-size: 17px; max-width: 640px; margin: 0 0 26px; }
+  .props { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+  .prop { border: 1px solid rgba(201,168,76,.35); border-radius: 10px; padding: 14px 16px; background: rgba(255,255,255,.03); }
+  .prop b { color: var(--gold); display: block; font-size: 15px; margin-bottom: 2px; }
+  .prop span { color: #B4B8C4; font-size: 13.5px; }
+
+  .wrap { max-width: 980px; margin: 0 auto; padding: 30px 20px 80px; }
+  .card { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 26px 24px; margin-bottom: 22px; }
+  .card h2 { font-size: 21px; margin: 0 0 6px; color: var(--navy); }
+  .card .sub { color: var(--grey); font-size: 14.5px; margin: 0 0 20px; }
+  .narrow { max-width: 560px; margin-left: auto; margin-right: auto; }
+
+  .field { margin-bottom: 18px; }
+  label { display: block; font-weight: bold; font-size: 14px; margin-bottom: 6px; }
+  .req { color: var(--gold); }
+  .hint { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+  input[type=text], input[type=email], input[type=tel], select, textarea {
+    width: 100%; padding: 12px 13px; border: 1px solid var(--border); border-radius: 8px; font-size: 15px; font-family: inherit; background: #fff; color: var(--dark);
+  }
+  textarea { min-height: 150px; resize: vertical; font-size: 14px; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--gold); outline-offset: 0; border-color: var(--gold); }
+  .check { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; color: var(--grey); font-weight: normal; }
+  .check input { margin-top: 3px; accent-color: var(--navy); width: 17px; height: 17px; flex: none; }
+  .hp { position: absolute; left: -5000px; }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 8px; padding: 13px 22px; font-size: 15px; font-weight: bold; font-family: inherit; cursor: pointer; text-decoration: none; }
+  .btn-gold { background: var(--gold); color: var(--navy); }
+  .btn-gold:hover { background: var(--gold-l); }
+  .btn-navy { background: var(--navy); color: #fff; }
+  .btn-navy:hover { background: #22223A; }
+  .btn-ghost { background: transparent; color: var(--navy); border: 1px solid var(--border); }
+  .btn-ghost:hover { border-color: var(--gold); }
+  .btn[disabled] { opacity: .55; cursor: not-allowed; }
+  .btn-block { width: 100%; }
+  .msg { font-size: 14px; margin-top: 12px; padding: 10px 12px; border-radius: 8px; }
+  .msg.err { background: #FBEDED; color: var(--bad); }
+  .msg.ok { background: #EAF5EE; color: var(--ok); }
+  .code-input { font-size: 28px !important; letter-spacing: 12px; text-align: center; font-weight: bold; }
+  .linkish { background: none; border: 0; color: var(--navy); text-decoration: underline; text-decoration-color: var(--gold); cursor: pointer; font: inherit; font-size: 14px; padding: 0; }
+
+  .userbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 22px; }
+  .userbar h2 { margin: 0; font-size: 22px; color: var(--navy); }
+  .credits { display: flex; align-items: center; gap: 12px; background: var(--navy); color: #fff; padding: 10px 16px; border-radius: 999px; font-size: 14px; }
+  .credits b { color: var(--gold); font-size: 17px; }
+  .credits .bar { width: 90px; height: 6px; background: rgba(255,255,255,.15); border-radius: 3px; overflow: hidden; }
+  .credits .bar i { display: block; height: 100%; background: var(--gold); }
+
+  .inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  @media (max-width: 760px) { .inputs { grid-template-columns: 1fr; } }
+  .drop { border: 2px dashed var(--border); border-radius: 10px; padding: 18px; text-align: center; background: var(--lightbg); margin-bottom: 10px; cursor: pointer; }
+  .drop:hover, .drop.over { border-color: var(--gold); background: var(--gold-bg); }
+  .drop b { color: var(--navy); }
+  .status { font-size: 13px; color: var(--muted); margin-top: 6px; min-height: 18px; }
+  .status.good { color: var(--ok); }
+
+  .tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+  .tool { border: 1px solid var(--border); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; background: #fff; position: relative; }
+  .tool:hover { border-color: var(--gold); }
+  .tool .cost { position: absolute; top: 14px; right: 14px; font-size: 11.5px; background: var(--gold-bg); color: #7A6420; border: 1px solid #EADBB0; border-radius: 999px; padding: 2px 9px; font-weight: bold; }
+  .tool h3 { font-size: 16.5px; margin: 0 0 6px; color: var(--navy); padding-right: 64px; }
+  .tool p { font-size: 13.5px; color: var(--grey); margin: 0 0 14px; flex: 1; }
+  .tool .needs { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  .tool.featured { border: 2px solid var(--gold); }
+  .tool.featured::before { content: 'Most popular'; position: absolute; top: -11px; left: 16px; background: var(--gold); color: var(--navy); font-size: 11px; font-weight: bold; padding: 2px 10px; border-radius: 999px; }
+
+  .result { border-left: 4px solid var(--gold); }
+  .result-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .result-head h2 { margin: 0; }
+  .scores { display: flex; flex-wrap: wrap; gap: 14px; margin: 6px 0 18px; }
+  .score { flex: 1; min-width: 150px; background: var(--lightbg); border-radius: 10px; padding: 14px 16px; }
+  .score .n { font-size: 34px; font-weight: bold; line-height: 1; }
+  .score .l { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .g { color: var(--ok); } .a { color: var(--warn); } .r { color: var(--bad); }
+  .verdict { font-size: 15.5px; background: var(--gold-bg); border-radius: 8px; padding: 14px 16px; margin-bottom: 18px; }
+  h4 { font-size: 15px; color: var(--navy); margin: 20px 0 8px; text-transform: uppercase; letter-spacing: .6px; }
+  ul.clean { margin: 0; padding-left: 20px; } ul.clean li { margin-bottom: 6px; font-size: 14.5px; color: var(--grey); }
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .chip { font-size: 13px; border-radius: 999px; padding: 4px 11px; border: 1px solid var(--border); background: #fff; }
+  .chip.yes { border-color: #BFE0CB; background: #EAF5EE; color: var(--ok); }
+  .chip.no { border-color: #F0C9C9; background: #FBEDED; color: var(--bad); }
+  .chip.maybe { border-color: #EADBB0; background: var(--gold-bg); color: #7A6420; }
+  .fix { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+  .fix .top { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; font-weight: bold; color: var(--navy); }
+  .pri { font-size: 11px; border-radius: 4px; padding: 1px 7px; color: #fff; }
+  .pri.High { background: var(--bad); } .pri.Medium { background: var(--warn); } .pri.Low { background: var(--muted); }
+  .fix .p { font-size: 14px; color: var(--grey); } .fix .f { font-size: 14px; margin-top: 4px; }
+  .qa { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; overflow: hidden; }
+  .qa summary { padding: 13px 15px; cursor: pointer; font-weight: bold; color: var(--navy); list-style: none; }
+  .qa summary::-webkit-details-marker { display: none; }
+  .qa summary::before { content: '+'; color: var(--gold); margin-right: 10px; font-size: 18px; }
+  .qa[open] summary::before { content: '-'; }
+  .qa .in { padding: 0 15px 14px 35px; font-size: 14px; color: var(--grey); }
+  .qa .in b { color: var(--dark); }
+
+  .cvdoc { background: #fff; border: 1px solid var(--border); box-shadow: 0 2px 14px rgba(0,0,0,.06); padding: 34px 38px; border-radius: 4px; font-family: Calibri, 'Gill Sans MT', sans-serif; margin: 6px 0 18px; }
+  @media (max-width: 600px) { .cvdoc { padding: 22px 18px; } }
+  .cvdoc .nm { text-align: center; font-size: 26px; font-weight: bold; }
+  .cvdoc .hl { text-align: center; color: var(--grey); font-size: 16px; }
+  .cvdoc .ct { text-align: center; color: var(--grey); font-size: 13px; margin-bottom: 8px; }
+  .cvdoc h5 { font-size: 13px; letter-spacing: 1px; text-transform: uppercase; border-bottom: 2px solid var(--gold); padding-bottom: 3px; margin: 18px 0 8px; }
+  .cvdoc p, .cvdoc li { font-size: 14px; color: var(--grey); }
+  .cvdoc ul { margin: 4px 0 8px; padding-left: 20px; }
+  .cvdoc .job { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+  .cvdoc .job b { color: var(--dark); }
+  .ph { background: var(--gold-bg); color: #7A6420; border-radius: 3px; padding: 0 3px; font-weight: bold; }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+  .premium { background: var(--navy); color: #fff; border: 0; position: relative; overflow: hidden; }
+  .premium::after { content: ''; position: absolute; right: -60px; top: -60px; width: 220px; height: 220px; border: 2px solid rgba(201,168,76,.25); border-radius: 50%; }
+  .premium h2 { color: #fff; } .premium .sub { color: #C9CCD6; }
+  .premium .eyebrow { margin-bottom: 6px; }
+  .premium ul { color: #C9CCD6; font-size: 14.5px; padding-left: 20px; margin: 0 0 18px; }
+  .premium ul li::marker { color: var(--gold); }
+  .premium label { color: #fff; }
+  .premium input, .premium textarea { background: #15152A; border-color: #2C2C48; color: #fff; }
+  .premium .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 600px) { .premium .grid2 { grid-template-columns: 1fr; } }
+
+  .checklist label { display: flex; gap: 10px; align-items: flex-start; font-weight: normal; font-size: 14.5px; color: var(--grey); padding: 9px 0; border-bottom: 1px solid #EEE; cursor: pointer; margin: 0; }
+  .checklist input { accent-color: var(--gold); width: 18px; height: 18px; margin-top: 2px; flex: none; }
+  .progress { height: 8px; background: #EEE; border-radius: 4px; overflow: hidden; margin: 6px 0 4px; }
+  .progress i { display: block; height: 100%; background: var(--gold); transition: width .3s; }
+
+  .loading { display: flex; align-items: center; gap: 14px; color: var(--grey); font-size: 15px; }
+  .spin { width: 26px; height: 26px; border: 3px solid #EEE; border-top-color: var(--gold); border-radius: 50%; animation: s 0.8s linear infinite; flex: none; }
+  @keyframes s { to { transform: rotate(360deg); } }
+
+  .foot { background: var(--navy); color: #8D91A0; text-align: center; font-size: 12.5px; padding: 26px 20px; }
+  .foot a { color: var(--gold); }
+  @media print { .topbar, .hero, .foot, #toolsCard, #inputsCard, .premium, .userbar, .actions, #freeCard { display: none !important; } body { background: #fff; } .card { border: 0; } }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a href="../"><img src="../assets/logo.png" alt="Live 2 Help Recruitment"></a>
+  <nav class="links"><a href="../">Live roles</a><a href="../talent-pool/">Talent pool</a></nav>
+</header>
+
+<section class="hero">
+  <div class="hero-in">
+    <p class="eyebrow">Live 2 Help Talent Suite</p>
+    <h1>Career Toolkit: <span>get past the screening software</span> and in front of hiring managers</h1>
+    <p class="lead">Most CVs are rejected before a person ever reads them. These tools are built by recruiters who screen and place candidates every week, so you see your CV the way employers do, then fix it.</p>
+    <div class="props">
+      <div class="prop"><b>CV Health Check</b><span>An honest score and the exact fixes that matter most</span></div>
+      <div class="prop"><b>Job Match Score</b><span>See which requirements you evidence and which you are missing</span></div>
+      <div class="prop"><b>Tailored CV Rewrite</b><span>A screening-safe rewrite aimed at the job you want, as a Word file</span></div>
+      <div class="prop"><b>Interview Prep Pack</b><span>Likely questions with answer plans built on your real experience</span></div>
+    </div>
+  </div>
+</section>
+
+<main class="wrap">
+
+  <!-- 1. SIGN UP -->
+  <section id="signup" class="card narrow">
+    <h2>Open your free Career Toolkit</h2>
+    <p class="sub">Free credits every month. We email you a code to confirm it is you, which keeps the toolkit fast and free for genuine job seekers.</p>
+    <form id="signupForm" novalidate>
+      <div class="field"><label for="name">Full name <span class="req">*</span></label><input type="text" id="name" autocomplete="name" required></div>
+      <div class="field"><label for="email">Email <span class="req">*</span></label><input type="email" id="email" autocomplete="email" required></div>
+      <div class="field"><label for="sector">Your field <span class="req">*</span></label>
+        <select id="sector" required>
+          <option value="">Choose one</option>
+          <option>Engineering</option><option>Technical and CAD</option><option>Sales and Business Development</option>
+          <option>Operations and Logistics</option><option>Purchasing and Supply Chain</option><option>Office, Admin and Finance</option>
+          <option>IT and Technology</option><option>Other</option>
+        </select></div>
+      <div class="field"><label for="targetRole">Role you are aiming for</label><input type="text" id="targetRole" placeholder="e.g. Senior Controls Engineer"></div>
+      <input type="text" id="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <div class="field"><label class="check"><input type="checkbox" id="consent"> <span>I agree to Live 2 Help Recruitment storing my name, email and toolkit activity to run this service and to contact me about relevant roles and career support. I can ask for my details to be deleted at any time by emailing office@live2helprecruitment.co.uk.</span></label></div>
+      <div id="turnstileBox" style="margin-bottom:14px;"></div>
+      <button class="btn btn-gold btn-block" id="signupBtn" type="submit">Email me my code</button>
+      <div id="signupMsg" class="msg hidden"></div>
+    </form>
+  </section>
+
+  <!-- 2. VERIFY -->
+  <section id="verify" class="card narrow hidden">
+    <h2>Check your inbox</h2>
+    <p class="sub">We sent a 6 digit code to <b id="verifyEmail"></b>. It works for 15 minutes. Check your spam folder if it has not arrived.</p>
+    <form id="verifyForm" novalidate>
+      <div class="field"><input type="text" id="code" class="code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000"></div>
+      <button class="btn btn-gold btn-block" id="verifyBtn" type="submit">Open my toolkit</button>
+      <div id="verifyMsg" class="msg hidden"></div>
+      <p style="text-align:center;margin:16px 0 0;"><button type="button" class="linkish" id="backBtn">Use a different email or resend</button></p>
+    </form>
+  </section>
+
+  <!-- 3. TOOLKIT -->
+  <section id="toolkit" class="hidden">
+    <div class="userbar">
+      <h2 id="hello">Your Career Toolkit</h2>
+      <div class="credits" title="Credits reset on the 1st of each month">
+        <span><b id="credLeft">0</b> of <span id="credAll">0</span> credits left</span>
+        <span class="bar"><i id="credBar" style="width:0"></i></span>
+        <button class="linkish" id="signOut" style="color:#B4B8C4;font-size:13px;">Sign out</button>
+      </div>
+    </div>
+
+    <div class="card" id="inputsCard">
+      <h2>1. Add your CV and the job</h2>
+      <p class="sub">Your CV stays in this browser session. We only send it to our tools when you run one.</p>
+      <div class="inputs">
+        <div>
+          <label>Your CV <span class="req">*</span></label>
+          <div class="drop" id="drop"><b>Upload your CV</b><br><span style="font-size:13px;color:var(--muted);">PDF or Word (.docx), or paste the text below</span></div>
+          <input type="file" id="cvFile" accept=".pdf,.docx" class="hidden">
+          <textarea id="cvText" placeholder="Or paste the full text of your CV here"></textarea>
+          <div class="status" id="cvStatus"></div>
+        </div>
+        <div>
+          <div class="field" style="margin-bottom:12px;"><label for="role">Job title you are applying for</label><input type="text" id="role" placeholder="e.g. Sales Manager"></div>
+          <label for="jobText">Job advert or description</label>
+          <textarea id="jobText" placeholder="Paste the job advert here. Needed for Job Match and Interview Prep, and makes the CV Rewrite far stronger." style="min-height:198px;"></textarea>
+          <div class="status" id="jobStatus"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="toolsCard">
+      <h2>2. Choose a tool</h2>
+      <p class="sub">Each tool uses credits. Credits refresh on the 1st of every month.</p>
+      <div class="tools">
+        <div class="tool"><span class="cost">1 credit</span><h3>CV Health Check</h3><p>An honest score for interview chances and screening software, your strengths, and the fixes that will make the biggest difference.</p><div class="needs">Needs: your CV</div><button class="btn btn-navy" data-tool="cv_check">Check my CV</button></div>
+        <div class="tool"><span class="cost">1 credit</span><h3>Job Match Score</h3><p>How well your CV matches a specific job, the requirements you are missing, and whether it is worth applying.</p><div class="needs">Needs: CV and job advert</div><button class="btn btn-navy" data-tool="job_match">Score my match</button></div>
+        <div class="tool featured"><span class="cost">3 credits</span><h3>Tailored CV Rewrite</h3><p>Your CV rewritten to a professional standard, screening-safe and aimed at the job. Nothing invented. Download it as a Word file.</p><div class="needs">Needs: your CV (job advert recommended)</div><button class="btn btn-gold" data-tool="cv_rewrite">Rewrite my CV</button></div>
+        <div class="tool"><span class="cost">2 credits</span><h3>Interview Prep Pack</h3><p>The questions you are likely to face, answer plans using your own experience, and smart questions to ask them.</p><div class="needs">Needs: job advert (CV recommended)</div><button class="btn btn-navy" data-tool="interview_prep">Prepare me</button></div>
+      </div>
+    </div>
+
+    <div id="resultBox" class="card result hidden"></div>
+
+    <div class="card premium" id="premiumCard">
+      <p class="eyebrow">Expert service</p>
+      <h2>Want it done by a recruiter?</h2>
+      <p class="sub">The toolkit gets you most of the way. For roles that really matter, a Live 2 Help consultant can review and polish your CV by hand.</p>
+      <ul>
+        <li>A line-by-line review by someone who screens CVs for UK employers every week</li>
+        <li>Your CV tailored to your target roles, with every placeholder filled in properly</li>
+        <li>Honest advice on positioning, salary and where to apply</li>
+      </ul>
+      <form id="reviewForm" novalidate>
+        <div class="grid2">
+          <div class="field"><label for="rvRole">Roles you are targeting</label><input type="text" id="rvRole"></div>
+          <div class="field"><label for="rvPhone">Phone (optional)</label><input type="tel" id="rvPhone"></div>
+        </div>
+        <div class="field"><label for="rvNotes">Anything we should know?</label><textarea id="rvNotes" style="min-height:80px;" placeholder="e.g. returning after a career break, changing sector, deadline next week"></textarea></div>
+        <button class="btn btn-gold" id="reviewBtn" type="submit">Request an expert review</button>
+        <div id="reviewMsg" class="msg hidden"></div>
+      </form>
+    </div>
+
+    <div class="card" id="freeCard">
+      <h2>Free: screening-safe CV checklist</h2>
+      <p class="sub">No credits needed. Tick off each point before you send your CV anywhere.</p>
+      <div class="progress"><i id="clBar" style="width:0"></i></div>
+      <div class="status" id="clStatus" style="margin-bottom:8px;"></div>
+      <div class="checklist" id="checklist"></div>
+      <p style="margin:20px 0 0;font-size:14.5px;">Looking for your next role? <a href="../">See our live roles</a> or <a href="../talent-pool/">join our talent pool</a> so we can match you as roles come in.</p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  Live 2 Help Talent Suite is a service of Live 2 Help Recruitment Ltd, Company No. 11731080. Anyone, Anywhere, Anytime.<br>
+  Questions or data requests: <a href="mailto:office@live2helprecruitment.co.uk">office@live2helprecruitment.co.uk</a>
+</footer>
+
+<script>
+(function () {
+  var API = 'https://l2h-api.onrender.com';
+  var TURNSTILE_SITE_KEY = '';
+  var TOKEN_KEY = 'l2h_ts_token', CV_KEY = 'l2h_ts_inputs', CL_KEY = 'l2h_ts_checklist';
+  var token = store('get', TOKEN_KEY) || '';
+  var user = null, pendingEmail = '', lastRewrite = null, busy = false, turnstileWidget = null;
+
+  function $(id) { return document.getElementById(id); }
+  function store(op, k, v, session) {
+    try { var s = session ? window.sessionStorage : window.localStorage;
+      if (op === 'get') return s.getItem(k); if (op === 'set') s.setItem(k, v); if (op === 'del') s.removeItem(k);
+    } catch (e) { return null; }
+  }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function ph(s) { return esc(s).replace(/\[([^\]]{1,80})\]/g, '<span class="ph">[$1]</span>'); }
+  function list(a) { return Array.isArray(a) ? a : []; }
+  function show(id) { ['signup', 'verify', 'toolkit'].forEach(function (x) { $(x).classList.toggle('hidden', x !== id); }); }
+  function msg(id, text, ok) { var el = $(id); el.textContent = text || ''; el.className = 'msg ' + (ok ? 'ok' : 'err') + (text ? '' : ' hidden'); }
+  function src() { try { var q = new URLSearchParams(location.search); return q.get('src') || q.get('utm_source') || document.referrer || ''; } catch (e) { return ''; } }
+
+  function api(path, body) {
+    return fetch(API + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-ts-token': token }, body: JSON.stringify(body || {}) })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { j._status = r.status; return j; }); })
+      .catch(function () { return { _status: 0, error: 'We could not reach the toolkit. Check your connection and try again.' }; });
+  }
+
+  // Turnstile only loads if a site key is set
+  if (TURNSTILE_SITE_KEY) {
+    var s = document.createElement('script');
+    s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'; s.async = true;
+    s.onload = function () { try { turnstileWidget = window.turnstile.render('#turnstileBox', { sitekey: TURNSTILE_SITE_KEY }); } catch (e) {} };
+    document.head.appendChild(s);
+  }
+
+  // ---------- sign up and verify ----------
+  $('signupForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var name = $('name').value.trim(), email = $('email').value.trim(), sector = $('sector').value;
+    if (name.length < 2 || !/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(email) || !sector) return msg('signupMsg', 'Please add your name, a valid email and your field.');
+    if (!$('consent').checked) return msg('signupMsg', 'Please tick the consent box to continue.');
+    var t = (window.turnstile && turnstileWidget !== null) ? window.turnstile.getResponse(turnstileWidget) : '';
+    $('signupBtn').disabled = true; $('signupBtn').textContent = 'Sending your code...'; msg('signupMsg', '');
+    api('/api/talent-suite/start', { name: name, email: email, sector: sector, targetRole: $('targetRole').value.trim(), consent: true, website: $('website').value, turnstileToken: t, src: src() })
+      .then(function (j) {
+        $('signupBtn').disabled = false; $('signupBtn').textContent = 'Email me my code';
+        if (window.turnstile && turnstileWidget !== null) try { window.turnstile.reset(turnstileWidget); } catch (e) {}
+        if (!j.ok) return msg('signupMsg', j.error || 'Something went wrong. Please try again.');
+        pendingEmail = email.toLowerCase(); $('verifyEmail').textContent = email; $('code').value = ''; msg('verifyMsg', '');
+        if ($('targetRole').value.trim() && !$('role').value) $('role').value = $('targetRole').value.trim();
+        show('verify'); $('code').focus();
+      });
+  });
+  $('code').addEventListener('input', function () { this.value = this.value.replace(/\D/g, '').slice(0, 6); if (this.value.length === 6) $('verifyForm').requestSubmit ? $('verifyForm').requestSubmit() : null; });
+  $('verifyForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    if ($('code').value.length !== 6 || busy) return;
+    busy = true; $('verifyBtn').disabled = true; $('verifyBtn').textContent = 'Checking...';
+    api('/api/talent-suite/verify', { email: pendingEmail, code: $('code').value }).then(function (j) {
+      busy = false; $('verifyBtn').disabled = false; $('verifyBtn').textContent = 'Open my toolkit';
+      if (!j.ok) return msg('verifyMsg', j.error || 'That did not work. Please try again.');
+      token = j.token; store('set', TOKEN_KEY, token); enter(j.user);
+    });
+  });
+  $('backBtn').addEventListener('click', function () { show('signup'); });
+  $('signOut').addEventListener('click', function () { token = ''; store('del', TOKEN_KEY); user = null; show('signup'); window.scrollTo(0, 0); });
+
+  function enter(u) {
+    user = u; renderCredits();
+    $('hello').textContent = 'Welcome, ' + u.firstName;
+    if (u.reviewRequested) reviewDone();
+    show('toolkit'); restoreInputs(); buildChecklist();
+  }
+  function renderCredits() {
+    if (!user) return; var c = user.credits;
+    $('credLeft').textContent = c.left; $('credAll').textContent = c.allowance;
+    $('credBar').style.width = Math.round(c.left / Math.max(1, c.allowance) * 100) + '%';
+    var d = new Date(c.resets + 'T00:00:00Z');
+    $('credLeft').parentNode.parentNode.title = 'Credits reset on ' + d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
+  }
+
+  // ---------- CV and job inputs ----------
+  function saveInputs() { store('set', CV_KEY, JSON.stringify({ cv: $('cvText').value, job: $('jobText').value, role: $('role').value }), true); }
+  function restoreInputs() {
+    try { var s = JSON.parse(store('get', CV_KEY, null, true) || 'null'); if (s) { if (!$('cvText').value) $('cvText').value = s.cv || ''; if (!$('jobText').value) $('jobText').value = s.job || ''; if (!$('role').value) $('role').value = s.role || ''; } } catch (e) {}
+    cvStatus(); jobStatus();
+  }
+  function words(t) { return (t.trim().match(/\S+/g) || []).length; }
+  function cvStatus() { var n = words($('cvText').value); var el = $('cvStatus'); el.className = 'status' + (n >= 60 ? ' good' : ''); el.textContent = n ? (n >= 60 ? 'CV ready (' + n + ' words)' : 'This looks short. Make sure the whole CV is here.') : ''; }
+  function jobStatus() { var n = words($('jobText').value); var el = $('jobStatus'); el.className = 'status' + (n >= 30 ? ' good' : ''); el.textContent = n ? (n >= 30 ? 'Job advert added (' + n + ' words)' : 'Paste the full advert for the best results.') : ''; }
+  ['cvText', 'jobText', 'role'].forEach(function (id) { $(id).addEventListener('input', function () { saveInputs(); cvStatus(); jobStatus(); }); });
+
+  var drop = $('drop');
+  drop.addEventListener('click', function () { $('cvFile').click(); });
+  drop.addEventListener('dragover', function (e) { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', function () { drop.classList.remove('over'); });
+  drop.addEventListener('drop', function (e) { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]); });
+  $('cvFile').addEventListener('change', function () { if (this.files[0]) readFile(this.files[0]); this.value = ''; });
+
+  function loadScript(url) { return new Promise(function (ok, no) { var s = document.createElement('script'); s.src = url; s.onload = ok; s.onerror = no; document.head.appendChild(s); }); }
+  function readFile(f) {
+    var el = $('cvStatus'); el.className = 'status'; el.textContent = 'Reading ' + f.name + '...';
+    if (f.size > 8 * 1024 * 1024) { el.textContent = 'That file is over 8MB. Please use a smaller file or paste the text.'; return; }
+    var n = f.name.toLowerCase();
+    f.arrayBuffer().then(function (buf) {
+      if (n.endsWith('.docx')) {
+        return (window.mammoth ? Promise.resolve() : loadScript('https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js'))
+          .then(function () { return window.mammoth.extractRawText({ arrayBuffer: buf }); }).then(function (r) { return r.value; });
+      }
+      if (n.endsWith('.pdf')) {
+        var base = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+        return (window.pdfjsLib ? Promise.resolve() : loadScript(base + 'pdf.min.js')).then(function () {
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = base + 'pdf.worker.min.js';
+          return window.pdfjsLib.getDocument({ data: buf }).promise;
+        }).then(function (pdf) {
+          var pages = []; for (var i = 1; i <= Math.min(pdf.numPages, 8); i++) pages.push(pdf.getPage(i).then(function (p) { return p.getTextContent(); }).then(function (tc) {
+            var out = '', lastY = null; tc.items.forEach(function (it) { var y = it.transform[5]; if (lastY !== null && Math.abs(y - lastY) > 4) out += '\n'; else if (out && !/\s$/.test(out)) out += ' '; out += it.str; lastY = y; }); return out; }));
+          return Promise.all(pages).then(function (a) { return a.join('\n\n'); });
+        });
+      }
+      throw new Error('type');
+    }).then(function (text) {
+      text = String(text || '').replace(/\n{3,}/g, '\n\n').trim();
+      if (words(text) < 40) { el.textContent = 'We could not read much text from that file (it may be a scanned image). Please paste your CV text instead.'; return; }
+      $('cvText').value = text; saveInputs(); cvStatus();
+    }).catch(function (e) {
+      el.textContent = e && e.message === 'type' ? 'Please upload a PDF or Word (.docx) file, or paste the text.' : 'We could not read that file. Please paste your CV text instead.';
+    });
+  }
+
+  // ---------- run tools ----------
+  var LABELS = { cv_check: 'CV Health Check', job_match: 'Job Match Score', cv_rewrite: 'Tailored CV Rewrite', interview_prep: 'Interview Prep Pack' };
+  var WAIT = { cv_check: 'Reviewing your CV like a recruiter would...', job_match: 'Comparing your CV with the job...', cv_rewrite: 'Rewriting your CV. This takes up to a minute...', interview_prep: 'Building your interview prep pack...' };
+  Array.prototype.forEach.call(document.querySelectorAll('[data-tool]'), function (b) { b.addEventListener('click', function () { run(b.getAttribute('data-tool')); }); });
+
+  function run(tool) {
+    if (busy) return;
+    var cv = $('cvText').value.trim(), job = $('jobText').value.trim(), role = $('role').value.trim();
+    var box = $('resultBox');
+    var need = (tool !== 'interview_prep' && words(cv) < 60) ? 'Please add your full CV first.' :
+      ((tool === 'job_match' || (tool === 'interview_prep' && !role)) && words(job) < 25) ? 'Please paste the job advert first.' : '';
+    if (need) { box.classList.remove('hidden'); box.innerHTML = '<div class="msg err">' + esc(need) + '</div>'; box.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+    busy = true; setButtons(true);
+    box.classList.remove('hidden');
+    box.innerHTML = '<div class="loading"><div class="spin"></div><div>' + esc(WAIT[tool]) + '</div></div>';
+    box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    api('/api/talent-suite/tool', { tool: tool, cv: cv, job: job, role: role }).then(function (j) {
+      busy = false; setButtons(false);
+      if (j.user) { user = j.user; renderCredits(); }
+      if (j.code === 'TS_AUTH') { token = ''; store('del', TOKEN_KEY); show('signup'); return; }
+      if (!j.ok) {
+        box.innerHTML = '<div class="msg err">' + esc(j.error || 'Something went wrong. Please try again.') + '</div>' +
+          (j.code === 'TS_CREDITS' ? '<p style="margin:14px 0 0;"><a href="#premiumCard">Request an expert review</a></p>' : '');
+        return;
+      }
+      box.innerHTML = RENDER[tool](j.result);
+      wireResult(tool, j.result);
+    });
+  }
+  function setButtons(dis) { Array.prototype.forEach.call(document.querySelectorAll('[data-tool]'), function (b) { b.disabled = dis; }); }
+  function head(tool) { return '<div class="result-head"><h2>' + LABELS[tool] + '</h2><div class="actions"><button class="btn btn-ghost" data-act="print">Print or save PDF</button></div></div>'; }
+  function band(n) { n = Number(n) || 0; return n >= 75 ? 'g' : n >= 55 ? 'a' : 'r'; }
+  function chips(a, cls) { return '<div class="chips">' + list(a).map(function (x) { return '<span class="chip ' + cls + '">' + esc(x) + '</span>'; }).join('') + '</div>'; }
+  function ul(a) { return '<ul class="clean">' + list(a).map(function (x) { return '<li>' + ph(x) + '</li>'; }).join('') + '</ul>'; }
+
+  var RENDER = {
+    cv_check: function (r) {
+      return head('cv_check') +
+        '<div class="scores"><div class="score"><div class="n ' + band(r.overall_score) + '">' + esc(r.overall_score) + '<small style="font-size:16px;color:var(--muted)">/100</small></div><div class="l">Interview potential</div></div>' +
+        '<div class="score"><div class="n ' + band(r.ats_score) + '">' + esc(r.ats_score) + '<small style="font-size:16px;color:var(--muted)">/100</small></div><div class="l">Screening software readiness</div></div></div>' +
+        '<div class="verdict">' + esc(r.verdict) + '</div>' +
+        '<h4>What is working</h4>' + ul(r.strengths) +
+        '<h4>Fix these first</h4>' + list(r.fixes).map(function (f) { return '<div class="fix"><div class="top"><span class="pri ' + esc(f.priority) + '">' + esc(f.priority) + '</span>' + esc(f.area) + '</div><div class="p">' + esc(f.problem) + '</div><div class="f"><b>Fix:</b> ' + ph(f.fix) + '</div></div>'; }).join('') +
+        (list(r.keywords_to_add).length ? '<h4>Keywords to work in (only where true)</h4>' + chips(r.keywords_to_add, 'maybe') : '') +
+        nextStep('Ready to fix it? Run the <b>Tailored CV Rewrite</b> to apply these changes for you.');
+    },
+    job_match: function (r) {
+      return head('job_match') +
+        '<div class="scores"><div class="score"><div class="n ' + band(r.match_score) + '">' + esc(r.match_score) + '%</div><div class="l">Match to this job</div></div></div>' +
+        '<div class="verdict">' + esc(r.summary) + '</div>' +
+        '<h4>Requirements you evidence</h4>' + chips(r.matched, 'yes') +
+        (list(r.missing_essential).length ? '<h4>Essential gaps</h4>' + chips(r.missing_essential, 'no') : '') +
+        (list(r.missing_desirable).length ? '<h4>Desirable gaps</h4>' + chips(r.missing_desirable, 'maybe') : '') +
+        '<h4>How to raise your score</h4>' + ul(r.tailoring_tips) +
+        '<h4>Should you apply?</h4><p style="font-size:14.5px;color:var(--grey);margin:0;">' + esc(r.apply_advice) + '</p>' +
+        nextStep('Run the <b>Tailored CV Rewrite</b> with this advert to close the gaps you genuinely can.');
+    },
+    cv_rewrite: function (r) {
+      var c = r.contact || {};
+      var doc = '<div class="cvdoc"><div class="nm">' + esc(r.full_name) + '</div><div class="hl">' + esc(r.headline) + '</div>' +
+        '<div class="ct">' + [c.location, c.phone, c.email, c.linkedin].filter(Boolean).map(esc).join(' &nbsp;|&nbsp; ') + '</div>' +
+        '<h5>Profile</h5><p>' + ph(r.profile) + '</p>' +
+        '<h5>Key Skills</h5><p>' + list(r.key_skills).map(esc).join(' &nbsp;&bull;&nbsp; ') + '</p>' +
+        '<h5>Employment History</h5>' + list(r.experience).map(function (x) {
+          return '<div class="job"><b>' + esc(x.title) + '</b><span>' + esc(x.dates) + '</span></div><div style="font-size:14px;color:var(--grey)">' + esc([x.company, x.location].filter(Boolean).join(', ')) + '</div><ul>' + list(x.bullets).map(function (b) { return '<li>' + ph(b) + '</li>'; }).join('') + '</ul>';
+        }).join('') +
+        (list(r.education).length ? '<h5>Education</h5>' + list(r.education).map(function (e) { return '<p style="margin:2px 0">' + esc([e.qualification, e.institution, e.dates].filter(Boolean).join(', ')) + '</p>'; }).join('') : '') +
+        (list(r.certifications).length ? '<h5>Certifications</h5><ul>' + list(r.certifications).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
+        (list(r.additional).length ? '<h5>Additional Information</h5><ul>' + list(r.additional).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') + '</div>';
+      return '<div class="result-head"><h2>Your rewritten CV</h2><div class="actions"><button class="btn btn-gold" data-act="docx">Download Word file</button><button class="btn btn-ghost" data-act="copy">Copy text</button></div></div>' +
+        (list(r.placeholders_to_fill).length ? '<div class="verdict"><b>Before you send it:</b> fill in the highlighted placeholders with your real figures. We never invent numbers, because employers check.' + ul(r.placeholders_to_fill) + '</div>' : '') +
+        doc + '<h4>What we improved</h4>' + ul(r.changes_made) +
+        nextStep('Next: run the <b>Job Match Score</b> on your new CV, or ask us for an expert review below.');
+    },
+    interview_prep: function (r) {
+      return head('interview_prep') +
+        '<div class="verdict"><b>What they are really looking for:</b> ' + esc(r.role_insight) + '</div>' +
+        '<h4>Your opening: tell me about yourself</h4><p style="font-size:14.5px;color:var(--grey);margin:0;">' + ph(r.opening_pitch) + '</p>' +
+        '<h4>Likely questions</h4>' + list(r.questions).map(function (q, i) {
+          return '<details class="qa"' + (i === 0 ? ' open' : '') + '><summary>' + esc(q.question) + '</summary><div class="in"><p><b>Why they ask:</b> ' + esc(q.why_asked) + '</p><p><b>How to answer:</b> ' + ph(q.answer_plan) + '</p><p style="margin:0"><b>Avoid:</b> ' + esc(q.avoid) + '</p></div></details>';
+        }).join('') +
+        '<h4>Questions to ask them</h4>' + ul(r.questions_to_ask) +
+        '<h4>Prep checklist</h4>' + ul(r.prep_checklist);
+    },
+  };
+  function nextStep(html) { return '<p style="margin:22px 0 0;padding-top:16px;border-top:1px solid #EEE;font-size:14.5px;color:var(--grey);">' + html + '</p>'; }
+
+  function wireResult(tool, r) {
+    if (tool === 'cv_rewrite') lastRewrite = r;
+    Array.prototype.forEach.call($('resultBox').querySelectorAll('[data-act]'), function (b) {
+      b.addEventListener('click', function () {
+        var a = b.getAttribute('data-act');
+        if (a === 'print') window.print();
+        if (a === 'copy') copyCv(b);
+        if (a === 'docx') downloadDocx(b);
+      });
+    });
+  }
+  function cvText(r) {
+    var c = r.contact || {}, L = [r.full_name, r.headline, [c.location, c.phone, c.email, c.linkedin].filter(Boolean).join(' | '), '', 'PROFILE', r.profile, '', 'KEY SKILLS', list(r.key_skills).join(' | '), '', 'EMPLOYMENT HISTORY'];
+    list(r.experience).forEach(function (x) { L.push('', x.title + ' | ' + x.dates, [x.company, x.location].filter(Boolean).join(', ')); list(x.bullets).forEach(function (b) { L.push('- ' + b); }); });
+    if (list(r.education).length) { L.push('', 'EDUCATION'); list(r.education).forEach(function (e) { L.push([e.qualification, e.institution, e.dates].filter(Boolean).join(', ')); }); }
+    if (list(r.certifications).length) { L.push('', 'CERTIFICATIONS'); list(r.certifications).forEach(function (x) { L.push('- ' + x); }); }
+    if (list(r.additional).length) { L.push('', 'ADDITIONAL INFORMATION'); list(r.additional).forEach(function (x) { L.push('- ' + x); }); }
+    return L.join('\n');
+  }
+  function copyCv(b) {
+    var t = cvText(lastRewrite || {});
+    (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy text'; }, 1800); })
+      .catch(function () { b.textContent = 'Copy failed'; });
+  }
+  function downloadDocx(b) {
+    b.disabled = true; b.textContent = 'Building...';
+    api('/api/talent-suite/cv-docx', { cv: lastRewrite }).then(function (j) {
+      b.disabled = false; b.textContent = 'Download Word file';
+      if (!j.ok) { alert(j.error || 'The Word file could not be built.'); return; }
+      var bin = atob(j.data), arr = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      var url = URL.createObjectURL(new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }));
+      var a = document.createElement('a'); a.href = url; a.download = j.fileName || 'My CV.docx'; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    });
+  }
+
+  // ---------- expert review ----------
+  $('reviewForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    $('reviewBtn').disabled = true; $('reviewBtn').textContent = 'Sending...';
+    api('/api/talent-suite/review-request', { role: $('rvRole').value || $('role').value, phone: $('rvPhone').value, notes: $('rvNotes').value }).then(function (j) {
+      $('reviewBtn').disabled = false; $('reviewBtn').textContent = 'Request an expert review';
+      if (!j.ok) return msg('reviewMsg', j.error || 'Something went wrong. Please try again.');
+      reviewDone();
+    });
+  });
+  function reviewDone() {
+    $('reviewForm').innerHTML = '<div class="msg ok" style="background:rgba(46,125,79,.18);color:#BFE8CD;">Thank you. A Live 2 Help consultant will be in touch within one working day with the next steps and pricing.</div>';
+  }
+
+  // ---------- free checklist (no AI) ----------
+  var CHECKS = [
+    'My profile names the exact job title I am applying for',
+    'Section headings are standard: Profile, Key Skills, Employment History, Education',
+    'No tables, text boxes, columns, photos or icons holding important details',
+    'My contact details are in the main body, not in the header or footer',
+    'Dates are consistent (e.g. Jan 2021 - Mar 2024) and gaps are explained',
+    'Each recent role has bullets that start with an action verb and show a result',
+    'At least three bullets include a number: money, time, volume, team size or %',
+    'Keywords from the job advert appear where my experience genuinely supports them',
+    'It is two pages or less, saved as Word or a text-based PDF',
+    'The file name is professional, e.g. "Firstname Lastname CV.docx"',
+    'Spelling and grammar checked, in UK English',
+    'Tailored to this specific role, not a one-size-fits-all version',
+  ];
+  function buildChecklist() {
+    var state = {}; try { state = JSON.parse(store('get', CL_KEY) || '{}') || {}; } catch (e) {}
+    $('checklist').innerHTML = CHECKS.map(function (t, i) { return '<label><input type="checkbox" data-i="' + i + '"' + (state[i] ? ' checked' : '') + '> <span>' + esc(t) + '</span></label>'; }).join('');
+    Array.prototype.forEach.call($('checklist').querySelectorAll('input'), function (c) {
+      c.addEventListener('change', function () { state[c.getAttribute('data-i')] = c.checked; store('set', CL_KEY, JSON.stringify(state)); clProgress(); });
+    });
+    clProgress();
+  }
+  function clProgress() {
+    var all = $('checklist').querySelectorAll('input'), n = $('checklist').querySelectorAll('input:checked').length;
+    $('clBar').style.width = Math.round(n / all.length * 100) + '%';
+    $('clStatus').textContent = n + ' of ' + all.length + ' done' + (n === all.length ? '. Your CV is ready to send.' : '');
+  }
+
+  // ---------- resume a session ----------
+  if (token) {
+    api('/api/talent-suite/me', {}).then(function (j) { if (j.ok) enter(j.user); else { token = ''; store('del', TOKEN_KEY); } });
+  }
+})();
+</script>
+</body>
+</html>
