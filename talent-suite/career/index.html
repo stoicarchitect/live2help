@@ -148,6 +148,17 @@
   .premium ul li::marker { color: var(--gold); }
   .premium label { color: #fff; }
   .premium input, .premium textarea { background: #15152A; border-color: #2C2C48; color: #fff; }
+  .plans { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; position: relative; z-index: 1; }
+  @media (max-width: 700px) { .plans { grid-template-columns: 1fr; } }
+  .plan { border: 1px solid #2C2C48; border-radius: 12px; padding: 20px; background: rgba(255,255,255,.03); display: flex; flex-direction: column; }
+  .plan.best { border-color: var(--gold); }
+  .plan .tag { align-self: flex-start; font-size: 11px; font-weight: bold; background: var(--gold); color: var(--navy); border-radius: 999px; padding: 2px 10px; margin-bottom: 8px; }
+  .plan h3 { margin: 0 0 4px; color: #fff; font-size: 18px; }
+  .plan .price { font-size: 34px; font-weight: bold; color: var(--gold); line-height: 1.1; margin: 4px 0 6px; }
+  .plan .price small { font-size: 13px; color: #8D91A0; font-weight: normal; }
+  .plan p { color: #C9CCD6; font-size: 14px; margin: 0 0 12px; }
+  .plan ul { flex: 1; }
+  .paidnote { background: rgba(46,125,79,.18); color: #BFE8CD; border-radius: 8px; padding: 12px 14px; font-size: 14.5px; margin-bottom: 14px; position: relative; z-index: 1; }
   .premium .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   @media (max-width: 600px) { .premium .grid2 { grid-template-columns: 1fr; } }
 
@@ -282,22 +293,21 @@
     <div id="resultBox" class="card result hidden"></div>
 
     <div class="card premium" id="premiumCard">
-      <p class="eyebrow">Expert service</p>
+      <p class="eyebrow">Expert services</p>
       <h2>Want it done by a recruiter?</h2>
-      <p class="sub">The toolkit gets you most of the way. For roles that really matter, a Live 2 Help consultant can review and polish your CV by hand.</p>
-      <ul>
-        <li>A line-by-line review by someone who screens CVs for UK employers every week</li>
-        <li>Your CV tailored to your target roles, with every placeholder filled in properly</li>
-        <li>Honest advice on positioning, salary and where to apply</li>
-      </ul>
-      <form id="reviewForm" novalidate>
+      <p class="sub">The toolkit gets you most of the way. For roles that really matter, a Live 2 Help recruiter can do it with you, by hand.</p>
+      <div class="plans" id="plans"><div class="loading" style="color:#C9CCD6;"><div class="spin"></div><div>Loading services...</div></div></div>
+      <form id="orderForm" class="hidden" novalidate>
+        <h3 id="orderTitle" style="margin:0 0 12px;color:#fff;font-size:18px;"></h3>
         <div class="grid2">
           <div class="field"><label for="rvRole">Roles you are targeting</label><input type="text" id="rvRole"></div>
           <div class="field"><label for="rvPhone">Phone (optional)</label><input type="tel" id="rvPhone"></div>
         </div>
         <div class="field"><label for="rvNotes">Anything we should know?</label><textarea id="rvNotes" style="min-height:80px;" placeholder="e.g. returning after a career break, changing sector, deadline next week"></textarea></div>
-        <button class="btn btn-gold" id="reviewBtn" type="submit">Request an expert review</button>
-        <div id="reviewMsg" class="msg hidden"></div>
+        <div class="field"><label class="check" style="color:#C9CCD6;"><input type="checkbox" id="rvAgree"> <span>I ask Live 2 Help to start this service straight away. I understand I can cancel for a full refund until work on my CV has started, and that once the service has been fully delivered I lose my right to cancel. If you cannot help with my CV, you will refund me in full.</span></label></div>
+        <div class="actions"><button class="btn btn-gold" id="orderBtn" type="submit"></button><button type="button" class="btn btn-ghost" id="orderBack" style="color:#C9CCD6;border-color:#2C2C48;">Back</button></div>
+        <p class="hint" id="orderHint" style="color:#8D91A0;margin-top:10px;"></p>
+        <div id="orderMsg" class="msg hidden"></div>
       </form>
     </div>
 
@@ -391,8 +401,7 @@
   function enter(u) {
     user = u; renderCredits();
     $('hello').textContent = 'Welcome, ' + u.firstName;
-    if (u.reviewRequested) reviewDone();
-    show('toolkit'); restoreInputs(); buildChecklist();
+    show('toolkit'); restoreInputs(); buildChecklist(); if (!SERVICES) loadServices(); paymentReturn();
   }
   function renderCredits() {
     if (!user) return; var c = user.credits;
@@ -505,7 +514,7 @@
       if (j.code === 'TS_AUTH') { token = ''; store('del', TOKEN_KEY); show('signup'); return; }
       if (!j.ok) {
         box.innerHTML = '<div class="msg err">' + esc(j.error || 'Something went wrong. Please try again.') + '</div>' +
-          (j.code === 'TS_CREDITS' || j._status === 429 ? '<p style="margin:14px 0 0;"><a href="#premiumCard">Request an expert review</a></p>' : '');
+          (j.code === 'TS_CREDITS' || j._status === 429 ? '<p style="margin:14px 0 0;"><a href="#premiumCard">See our expert services</a></p>' : '');
         return;
       }
       box.innerHTML = RENDER[tool](j.result);
@@ -610,19 +619,51 @@
     });
   }
 
-  // ---------- expert review ----------
-  $('reviewForm').addEventListener('submit', function (e) {
+  // ---------- expert services (paid) ----------
+  var SERVICES = null, chosen = null, payments = false;
+  function loadServices() {
+    fetch(API + '/api/talent-suite/services').then(function (r) { return r.json(); }).then(function (j) {
+      SERVICES = j.services || []; payments = !!j.payments; renderPlans();
+    }).catch(function () { $('plans').innerHTML = '<p class="sub">Services could not load. Email office@live2helprecruitment.co.uk and we will help.</p>'; });
+  }
+  function renderPlans() {
+    $('plans').innerHTML = SERVICES.map(function (s, i) {
+      return '<div class="plan' + (i === 1 ? ' best' : '') + '">' + (i === 1 ? '<span class="tag">Best value</span>' : '') +
+        '<h3>' + esc(s.name) + '</h3><div class="price">' + esc(s.priceLabel) + ' <small>one-off</small></div><p>' + esc(s.summary) + '</p>' +
+        '<ul>' + s.includes.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' +
+        '<button class="btn ' + (i === 1 ? 'btn-gold' : 'btn-ghost') + '" data-plan="' + esc(s.id) + '"' + (i === 1 ? '' : ' style="color:#fff;border-color:#C9A84C;"') + '>Choose ' + esc(s.name) + '</button></div>';
+    }).join('');
+    Array.prototype.forEach.call($('plans').querySelectorAll('[data-plan]'), function (b) { b.addEventListener('click', function () { choose(b.getAttribute('data-plan')); }); });
+  }
+  function choose(id) {
+    chosen = SERVICES.filter(function (s) { return s.id === id; })[0]; if (!chosen) return;
+    $('plans').classList.add('hidden'); $('orderForm').classList.remove('hidden'); msg('orderMsg', '');
+    $('orderTitle').textContent = chosen.name + ' - ' + chosen.priceLabel;
+    if (!$('rvRole').value) $('rvRole').value = $('role').value || '';
+    $('orderBtn').textContent = payments ? 'Continue to secure payment' : 'Request this service';
+    $('orderHint').textContent = payments ? 'You will pay securely by card through Stripe. Live 2 Help never sees your card details.' : 'We will email you a secure payment link within one working day.';
+    $('orderForm').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  $('orderBack').addEventListener('click', function () { $('orderForm').classList.add('hidden'); $('plans').classList.remove('hidden'); });
+  $('orderForm').addEventListener('submit', function (e) {
     e.preventDefault();
-    $('reviewBtn').disabled = true; $('reviewBtn').textContent = 'Sending...';
-    api('/api/talent-suite/review-request', { role: $('rvRole').value || $('role').value, phone: $('rvPhone').value, notes: $('rvNotes').value }).then(function (j) {
-      $('reviewBtn').disabled = false; $('reviewBtn').textContent = 'Request an expert review';
-      if (!j.ok) return msg('reviewMsg', j.error || 'Something went wrong. Please try again.');
-      reviewDone();
+    if (!$('rvAgree').checked) return msg('orderMsg', 'Please tick the box to confirm.');
+    $('orderBtn').disabled = true; $('orderBtn').textContent = payments ? 'Opening secure payment...' : 'Sending...';
+    api('/api/talent-suite/checkout', { service: chosen.id, role: $('rvRole').value, phone: $('rvPhone').value, notes: $('rvNotes').value, agree: true }).then(function (j) {
+      $('orderBtn').disabled = false; $('orderBtn').textContent = payments ? 'Continue to secure payment' : 'Request this service';
+      if (!j.ok) return msg('orderMsg', j.error || 'Something went wrong. Please try again.');
+      if (j.url) { window.location.href = j.url; return; }
+      $('orderForm').innerHTML = '<div class="paidnote">Thank you. Your request for the ' + esc(chosen.name) + ' is in (reference ' + esc(j.orderId) + '). We will email you a secure payment link within one working day.</div>';
     });
   });
-  function reviewDone() {
-    $('reviewForm').innerHTML = '<div class="msg ok" style="background:rgba(46,125,79,.18);color:#BFE8CD;">Thank you. A Live 2 Help consultant will be in touch within one working day with the next steps and pricing.</div>';
+  function paymentReturn() {
+    var q; try { q = new URLSearchParams(location.search); } catch (e) { return; }
+    var note = '';
+    if (q.get('paid')) note = '<div class="paidnote"><b>Payment received, thank you.</b> Check your email for your booking confirmation, then reply to it with your latest CV and the job adverts you are targeting. Reference ' + esc(q.get('paid')) + '.</div>';
+    if (q.get('cancelled')) note = '<div class="paidnote" style="background:rgba(201,168,76,.15);color:#E8C96A;">Payment cancelled. Nothing has been charged. You can choose a service again whenever you are ready.</div>';
+    if (note) { $('plans').insertAdjacentHTML('beforebegin', note); setTimeout(function () { $('premiumCard').scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 400); try { history.replaceState(null, '', location.pathname); } catch (e) {} }
   }
+  function reviewDone() {}
 
   // ---------- free checklist (no AI) ----------
   var CHECKS = [

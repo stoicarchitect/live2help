@@ -29,7 +29,8 @@ google.options({
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '15mb' }));
+// keep the exact bytes for the Stripe webhook so its signature can be checked
+app.use(express.json({ limit: '15mb', verify: (req, res, buf) => { if (req.originalUrl.startsWith('/api/stripe/webhook')) req.rawBody = buf; } }));
 
 /* ======================================================================
    Server-side login (Batch 3)
@@ -235,7 +236,9 @@ const PUBLIC_API = [
   { method: 'POST', re: /^\/api\/talent-pool$/ },
   { method: 'POST', re: /^\/api\/funnel-lead$/ },
   { method: 'POST', re: /^\/api\/claude$/ },
-  { method: 'POST', re: /^\/api\/talent-suite\/(start|verify|me|tool|cv-docx|review-request)$/ },
+  { method: 'POST', re: /^\/api\/talent-suite\/(start|verify|me|tool|cv-docx|review-request|checkout)$/ },
+  { method: 'GET', re: /^\/api\/talent-suite\/services$/ },
+  { method: 'POST', re: /^\/api\/stripe\/webhook$/ },
   { method: 'GET', re: /^\/api\/public\/roles(\/[a-z0-9-]+)?$/ },
   { method: 'GET', re: /^\/api\/public\/forms\/[a-z0-9-]+$/ },
   { method: 'GET', re: /^\/api\/health$/ },
@@ -13593,7 +13596,7 @@ async function tsDigestSection() {
   const fresh = all.filter(u => Date.parse(u.verified_at || u.date) >= weekAgo);
   const active = all.filter(u => Date.parse(u.last_seen) >= weekAgo);
   const open = all.filter(u => u.status === 'review requested');
-  return `TALENT SUITE (CAREER TOOLKIT)\n- New users this week: ${fresh.length} (${all.length} in total)\n- Used it this week: ${active.length}\n- Expert review requests waiting: ${open.length}${open.length ? '\n' + open.slice(0, 8).map(u => `  ${u.name} (${u.email}), ${u.sector}`).join('\n') : ''}`;
+  return `TALENT SUITE (CAREER TOOLKIT)\n- New users this week: ${fresh.length} (${all.length} in total)\n- Used it this week: ${active.length}\n- Expert review requests waiting: ${open.length}${open.length ? '\n' + open.slice(0, 8).map(u => `  ${u.name} (${u.email}), ${u.sector}`).join('\n') : ''}\n${await tsOrdersDigest()}`;
 }
 
 /* ---------- Word download of a rewritten CV (no AI, no credits) ---------- */
@@ -13672,6 +13675,210 @@ app.post('/api/talent-suite/review-request', async (req, res) => {
     res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 });
+
+
+/* ======================================================================
+   TALENT SUITE PHASE 3 - PAID EXPERT SERVICES (Stripe)
+   Two services, human delivered by Live 2 Help. Prices in pence, can be changed on Render:
+     TS_PRICE_REVIEW (default 2500 = £25), TS_PRICE_COACHING (default 4900 = £49)
+   Stripe switches on when these are set on Render:
+     STRIPE_SECRET_KEY      (sk_live_... or sk_test_...)
+     STRIPE_WEBHOOK_SECRET  (whsec_..., from the webhook endpoint pointing at /api/stripe/webhook)
+   Without them, an order is saved as "requested" and Ella sends a payment link by hand.
+   Orders live in the "Talent Suite Orders" tab (staff API /api/talent-suite-orders).
+   ====================================================================== */
+
+const TS_TURNAROUND_DAYS = Number(process.env.TS_TURNAROUND_DAYS || 3);
+const TS_SERVICES = {
+  cv_review: {
+    name: 'Expert CV Review', price: Number(process.env.TS_PRICE_REVIEW || 2500),
+    summary: 'A Live 2 Help recruiter reviews your CV line by line and returns a polished, screening-safe version with written feedback.',
+    includes: ['Line-by-line review by a working UK recruiter', 'Your CV rewritten and polished, every placeholder filled with you', 'Written feedback on positioning and where to apply', `Delivered within ${TS_TURNAROUND_DAYS} working days`],
+  },
+  cv_coaching: {
+    name: 'CV Review + Interview Coaching', price: Number(process.env.TS_PRICE_COACHING || 4900),
+    summary: 'Everything in the Expert CV Review, plus a 30 minute one to one call to prepare you for interviews.',
+    includes: ['Everything in the Expert CV Review', '30 minute video or phone coaching call', 'Practice on the questions you are most likely to face', 'Honest advice on salary and offers'],
+  },
+};
+function tsStripeOn() { return !!process.env.STRIPE_SECRET_KEY; }
+function tsGbp(p) { return '£' + (Number(p) / 100).toFixed(Number(p) % 100 ? 2 : 0); }
+function tsAddWorkingDays(n) {
+  const d = new Date();
+  let left = n;
+  while (left > 0) { d.setUTCDate(d.getUTCDate() + 1); if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) left--; }
+  return d.toISOString().slice(0, 10);
+}
+
+const tsOrdersTable = makeSimpleTable({
+  tab: 'Talent Suite Orders',
+  header: ['id', 'created_at', 'user_id', 'name', 'email', 'phone', 'service', 'service_name', 'amount', 'status',
+    'target_role', 'customer_notes', 'stripe_session', 'paid_at', 'due_by', 'delivered_at', 'owner', 'notes'],
+  path: '/api/talent-suite-orders',
+  label: 'Talent Suite order',
+  auditType: 'talent_suite_order',
+  auditName: o => `${o.service_name} for ${o.name}`,
+});
+
+app.get('/api/talent-suite/services', (req, res) => {
+  res.json({
+    payments: tsStripeOn(), turnaround: TS_TURNAROUND_DAYS,
+    services: Object.entries(TS_SERVICES).map(([id, s]) => ({ id, name: s.name, price: s.price, priceLabel: tsGbp(s.price), summary: s.summary, includes: s.includes })),
+  });
+});
+
+async function tsTask(title, context, due, priority) {
+  try {
+    const task = { id: `task-ts-${Date.now()}-${crypto.randomBytes(2).toString('hex')}`, user: 'ella', title, priority: priority || 'High',
+      dueDate: due || flNextWorkingDay(), context, status: 'Open', recurring: 'none', archived: false };
+    await getSheetsClient().spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: TASKS_RANGE, valueInputOption: 'RAW', requestBody: { values: [taskToRow(task)] } });
+  } catch (e) { console.error('Talent Suite task failed:', e.message); }
+}
+
+function tsOrderEmail(o) {
+  return `<div style="background:#0B0B18;padding:32px 24px;font-family:'Gill Sans MT','Gill Sans',Calibri,sans-serif;color:#fff;">
+  <div style="max-width:560px;margin:0 auto;">
+    <p style="color:#C9A84C;letter-spacing:2px;font-size:12px;margin:0 0 6px;">LIVE 2 HELP TALENT SUITE</p>
+    <h1 style="font-size:22px;margin:0 0 14px;color:#fff;">Thank you, your ${flEsc(o.service_name)} is booked</h1>
+    <p style="color:#C9CCD6;margin:0 0 14px;">Hi ${flEsc(String(o.name).split(' ')[0])}, we have received your payment of ${flEsc(tsGbp(o.amount))}. Here is what happens next:</p>
+    <ol style="color:#C9CCD6;padding-left:20px;margin:0 0 16px;line-height:1.6;">
+      <li><b style="color:#fff;">Reply to this email</b> with your latest CV (Word or PDF) and links to, or copies of, the job adverts you are targeting.</li>
+      <li>A Live 2 Help recruiter reviews everything and may email you a few quick questions so nothing is guessed.</li>
+      <li>You receive your polished CV and written feedback within ${TS_TURNAROUND_DAYS} working days of sending your CV${o.service === 'cv_coaching' ? ', and we will book your 30 minute coaching call at a time that suits you' : ''}.</li>
+    </ol>
+    <p style="color:#B4B8C4;font-size:13px;margin:0 0 6px;">Order reference: ${flEsc(o.id)}</p>
+    <p style="color:#B4B8C4;font-size:12px;margin:0;">Live 2 Help Recruitment Ltd, Company No. 11731080. Questions? Just reply to this email.</p>
+  </div></div>`;
+}
+
+app.post('/api/talent-suite/checkout', async (req, res) => {
+  try {
+    const u = await tsAuth(req, res);
+    if (!u) return;
+    const b = req.body || {};
+    const svc = TS_SERVICES[b.service];
+    if (!svc) return res.status(400).json({ error: 'Please choose a service.' });
+    if (b.agree !== true) return res.status(400).json({ error: 'Please tick the box to confirm the terms.' });
+    if (!tpAllow('ts:order:' + u.email, 6, 3600000)) return res.status(429).json({ error: 'Please try again shortly.' });
+    const nowIso = new Date().toISOString();
+    const order = {
+      id: 'TS-' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase(),
+      created_at: nowIso, user_id: u.id, name: u.name, email: u.email, phone: tpClean(b.phone, 30),
+      service: b.service, service_name: svc.name, amount: String(svc.price), status: tsStripeOn() ? 'awaiting payment' : 'requested',
+      target_role: tpClean(b.role, 120) || u.target_role || '', customer_notes: tpClean(b.notes, 800),
+      stripe_session: '', paid_at: '', due_by: '', delivered_at: '', owner: 'ella', notes: '',
+    };
+
+    if (!tsStripeOn()) {
+      await tsOrdersTable.upsert(order);
+      await tsUsersTable.updateWhere(o => o.id === u.id, o => { o.review_requested = 'Yes'; o.status = 'review requested'; return o; });
+      await tsTask(`Talent Suite order to invoice: ${svc.name} for ${u.name}`,
+        `${u.name} (${u.email}${order.phone ? ', ' + order.phone : ''}) wants the ${svc.name} at ${tsGbp(svc.price)}${order.target_role ? ' for ' + order.target_role + ' roles' : ''}. Online payment is not switched on yet, so send them a payment link or invoice, then set the order to Paid in the Talent Suite tab. ${order.customer_notes}`.trim());
+      mailDan(`Talent Suite order (payment needed): ${svc.name}, ${u.name}`, `${u.name} (${u.email}) ordered the ${svc.name} at ${tsGbp(svc.price)}.\nOnline payment is not switched on yet, so they need a payment link or invoice.\nOrder ${order.id}. A task has been created for Ella.`);
+      return res.json({ ok: true, manual: true, orderId: order.id });
+    }
+
+    const base = 'https://careers.live2helprecruitment.co.uk/talent-suite/career/';
+    const form = new URLSearchParams({
+      mode: 'payment',
+      'line_items[0][quantity]': '1',
+      'line_items[0][price_data][currency]': 'gbp',
+      'line_items[0][price_data][unit_amount]': String(svc.price),
+      'line_items[0][price_data][product_data][name]': `Live 2 Help ${svc.name}`,
+      'line_items[0][price_data][product_data][description]': svc.summary,
+      customer_email: u.email,
+      client_reference_id: order.id,
+      'metadata[order_id]': order.id,
+      'payment_intent_data[metadata][order_id]': order.id,
+      'payment_intent_data[description]': `Live 2 Help ${svc.name} (${order.id})`,
+      success_url: `${base}?paid=${encodeURIComponent(order.id)}`,
+      cancel_url: `${base}?cancelled=1`,
+    });
+    const r = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString(),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.url) {
+      console.error('Stripe checkout failed:', (j.error && j.error.message) || r.status);
+      return res.status(502).json({ error: 'The payment page could not be opened. Please try again in a minute.' });
+    }
+    order.stripe_session = j.id;
+    await tsOrdersTable.upsert(order);
+    res.json({ ok: true, url: j.url, orderId: order.id });
+  } catch (e) {
+    console.error('POST /api/talent-suite/checkout error:', e.message);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
+  }
+});
+
+function tsStripeSignatureOk(raw, header, secret) {
+  if (!raw || !header || !secret) return false;
+  const parts = Object.fromEntries(String(header).split(',').map(p => p.split('=')).filter(p => p.length === 2).map(([k, v]) => [k.trim(), v.trim()]));
+  const sigs = String(header).split(',').filter(p => p.trim().startsWith('v1=')).map(p => p.trim().slice(3));
+  const t = Number(parts.t);
+  if (!t || !sigs.length || Math.abs(Date.now() / 1000 - t) > 300) return false;
+  const expected = crypto.createHmac('sha256', secret).update(`${t}.${raw.toString('utf8')}`).digest('hex');
+  return sigs.some(s => s.length === expected.length && crypto.timingSafeEqual(Buffer.from(s), Buffer.from(expected)));
+}
+
+async function tsMarkPaid(orderId, sessionId) {
+  const order = (await tsOrdersTable.list()).find(o => o.id === orderId);
+  if (!order || order.paid_at) return false;
+  const nowIso = new Date().toISOString();
+  const due = tsAddWorkingDays(TS_TURNAROUND_DAYS);
+  await tsOrdersTable.updateWhere(o => o.id === orderId, o => {
+    o.status = 'paid'; o.paid_at = nowIso; o.due_by = due; if (sessionId) o.stripe_session = sessionId; return o;
+  });
+  await tsUsersTable.updateWhere(o => o.id === order.user_id, o => { o.review_requested = 'Yes'; o.status = 'review requested'; return o; });
+  await tsTask(`PAID: ${order.service_name} for ${order.name} (due ${due})`,
+    `${order.name} (${order.email}${order.phone ? ', ' + order.phone : ''}) paid ${tsGbp(order.amount)} for the ${order.service_name}${order.target_role ? ', targeting ' + order.target_role : ''}. They have been asked to reply with their CV and target adverts. Deliver by ${due}. Order ${order.id}. ${order.customer_notes}`.trim(), flNextWorkingDay(), 'High');
+  try {
+    await emailTransporter.sendMail({ from: process.env.BREVO_SENDER_EMAIL, to: order.email, replyTo: 'office@live2helprecruitment.co.uk',
+      subject: `Your ${order.service_name} is booked (${order.id})`, html: tsOrderEmail(order),
+      text: `Thank you, your ${order.service_name} is booked. Please reply to this email with your latest CV and the job adverts you are targeting. We will deliver within ${TS_TURNAROUND_DAYS} working days of receiving your CV. Order ${order.id}.` });
+  } catch (e) { console.error('Talent Suite order email failed:', e.message); }
+  mailDan(`New paid order: ${order.service_name}, ${tsGbp(order.amount)}`, `${order.name} (${order.email}) paid ${tsGbp(order.amount)} for the ${order.service_name}.\nDue by ${due}. Order ${order.id}.\nA task has been created for Ella and the customer has been asked to send their CV.`);
+  auditLog('website', 'talent_suite_paid', 'talent_suite', order.name, `${order.service_name} ${tsGbp(order.amount)}`);
+  return true;
+}
+
+app.post('/api/stripe/webhook', async (req, res) => {
+  if (!tsStripeSignatureOk(req.rawBody, req.get('stripe-signature'), process.env.STRIPE_WEBHOOK_SECRET)) {
+    return res.status(400).json({ error: 'Invalid signature' });
+  }
+  try {
+    const ev = req.body || {};
+    const s = ev.data && ev.data.object;
+    if ((ev.type === 'checkout.session.completed' || ev.type === 'checkout.session.async_payment_succeeded') && s && s.payment_status === 'paid') {
+      const orderId = (s.metadata && s.metadata.order_id) || s.client_reference_id;
+      if (orderId) await tsMarkPaid(orderId, s.id);
+    }
+    res.json({ received: true });
+  } catch (e) {
+    console.error('Stripe webhook error:', e.message);
+    res.status(500).json({ error: 'Webhook handling failed' }); // Stripe retries
+  }
+});
+
+// Staff: mark an invoiced (non-Stripe) order as paid so the same emails, task and due date follow
+app.post('/api/talent-suite-orders/:id/mark-paid', async (req, res) => {
+  try {
+    const done = await tsMarkPaid(req.params.id, '');
+    res.json({ ok: true, changed: done });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+async function tsOrdersDigest() {
+  const all = await tsOrdersTable.list();
+  const today = todayISO();
+  const open = all.filter(o => ['paid', 'in progress'].includes(o.status));
+  const late = open.filter(o => o.due_by && o.due_by < today);
+  const month = today.slice(0, 7);
+  const rev = all.filter(o => o.paid_at && o.paid_at.slice(0, 7) === month).reduce((a, o) => a + (Number(o.amount) || 0), 0);
+  return `- Paid expert services this month: ${tsGbp(rev)}\n- Orders in progress: ${open.length}${late.length ? ` (${late.length} past due)` : ''}${open.length ? '\n' + open.slice(0, 8).map(o => `  ${o.name}: ${o.service_name}, due ${o.due_by}`).join('\n') : ''}`;
+}
 
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
