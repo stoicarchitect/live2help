@@ -2713,7 +2713,8 @@ function invoicePayUrl(inv) {
 }
 function invoicePayByBankEligible(inv) {
   const a = Number(inv && inv.amount) || 0;
-  return !!process.env.STRIPE_SECRET_KEY && a >= 0.5 && a <= PAY_BY_BANK_MAX_GBP;
+  // PAY_BY_BANK_ENABLED=true on Render switches the pay links on (left off until Pay by Bank is active in Stripe)
+  return /^(1|true|yes|on)$/i.test(String(process.env.PAY_BY_BANK_ENABLED || '')) && !!process.env.STRIPE_SECRET_KEY && a >= 0.5 && a <= PAY_BY_BANK_MAX_GBP;
 }
 async function findInvoice(number) {
   const rows = await readInvoiceRows();
