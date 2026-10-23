@@ -8,6 +8,7 @@ import path from 'path';
 import fs from 'fs';
 import { Readable } from 'stream';
 import crypto from 'crypto';
+import https from 'https';
 import zlib from 'zlib';
 import dns from 'dns';
 import { fileURLToPath } from 'url';
@@ -13794,13 +13795,139 @@ function tsCvKind(file) {
   return null;
 }
 
-/* ---------- Section 5: POST /api/talent-suite/orders ---------- */
+/* ---------- Section 5 (spec v1.2): one request from "Continue to secure payment" to Stripe ----------
+   POST /api/talent-suite/orders takes the intake form and CV, creates the Stripe Checkout Session straight
+   away and returns { order_id, url }. The CV upload to Drive and the order row in Sheets happen in the
+   background after the reply, so the customer never waits on Google. Every step is timed and logged
+   as "[talent-suite] ..." lines in the Render logs, and returned in a Server-Timing header.
+   Safety nets: the webhook waits for a background save that is still running, rebuilds the order from the
+   Stripe session if the save failed, and a failed Drive upload emails the CV to Dan so nothing is lost. */
+
+const tsStripeAgent = new https.Agent({ keepAlive: true, maxSockets: 20 }); // reuse the TLS connection to Stripe
+const tsPendingSaves = new Map(); // order_id -> promise that settles once the order row and CV are saved
+const tsSavedCvLinks = new Map(); // order_id -> Drive link, kept so a rebuilt order still points at the CV
+function tsNow() { return process.hrtime.bigint(); }
+function tsMs(t0) { return Math.round(Number(process.hrtime.bigint() - t0) / 1e6); }
+async function tsWaitForSave(orderId) {
+  const p = orderId && tsPendingSaves.get(orderId);
+  if (p) { try { await p; } catch (e) { /* handled inside the save */ } }
+}
+async function tsRetry(fn, tries = 3) {
+  let last;
+  for (let i = 0; i < tries; i++) {
+    try { return await fn(); } catch (e) { last = e; if (i < tries - 1) await new Promise(r => setTimeout(r, 800 * (i + 1) * (i + 1))); }
+  }
+  throw last;
+}
+
+// Creates the Checkout Session for an order. Returns { url, id } or { error, status }.
+async function tsCreateOrderSession(order) {
+  if (!process.env.STRIPE_SECRET_KEY) return { status: 503, error: 'Online payment is not switched on yet. Please email office@live2helprecruitment.co.uk.' };
+  const tier = TS_TIERS[order.tier];
+  const price = tier && process.env[tier.priceEnv];
+  if (!price) return { status: 503, error: 'This service is not available to buy online yet.' };
+  const base = tsBaseUrl();
+  const meta = { order_id: order.order_id, tier: order.tier,
+    // enough to rebuild the order from Stripe alone if the background save ever fails
+    candidate_name: String(order.candidate_name || '').slice(0, 80), target_role: String(order.target_role || '').slice(0, 120),
+    candidate_phone: String(order.candidate_phone || '').slice(0, 30), coaching_availability: String(order.coaching_availability || '').slice(0, 300) };
+  const p = new URLSearchParams({
+    mode: 'payment',
+    'line_items[0][price]': price,
+    'line_items[0][quantity]': '1',
+    customer_email: order.candidate_email,
+    client_reference_id: order.order_id,
+    success_url: `${base}/talent-suite/thank-you?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${base}/talent-suite/pricing?cancelled=1`,
+    'consent_collection[terms_of_service]': 'required',
+    'invoice_creation[enabled]': 'true',
+    expires_at: String(Math.floor(Date.now() / 1000) + 60 * 60),
+  });
+  for (const [k, v] of Object.entries(meta)) {
+    if (!v) continue;
+    p.append(`metadata[${k}]`, v);
+    if (k === 'order_id' || k === 'tier') p.append(`payment_intent_data[metadata][${k}]`, v);
+  }
+  const r = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+    method: 'POST', agent: tsStripeAgent,
+    headers: { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`, 'Stripe-Version': STRIPE_API_VERSION, 'Content-Type': 'application/x-www-form-urlencoded', 'Idempotency-Key': `${order.order_id}-${Date.now()}` },
+    body: p.toString(),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.url) {
+    const why = (j.error && j.error.message) || `status ${r.status}`;
+    console.error('Stripe checkout session failed:', why);
+    if (/terms of service/i.test(why)) alertDan('stripe-terms', 'Stripe: terms URL missing', `Checkout could not open because Stripe needs a Terms of Service URL (Dashboard > Settings > Public details).\n\n${why}`).catch(() => {});
+    return { status: 502, error: 'The payment page could not be opened. Please try again in a minute.' };
+  }
+  return { url: j.url, id: j.id };
+}
+
+// Saves the order row and the CV after the customer has already been sent to Stripe.
+function tsSaveOrderInBackground(order, file, kind) {
+  const job = (async () => {
+    const t0 = tsNow(); const t = {};
+    const sheet = (async () => { const s = tsNow(); await tsRetry(() => tsOrders.save(order)); t.sheet = tsMs(s); })();
+    const drive = (async () => {
+      const s = tsNow();
+      const link = await tsRetry(async () => {
+        const folderId = await getOrCreateCandidateFolder(SUBMISSIONS_FOLDER_ID, 'Talent Suite Orders');
+        if (!folderId) throw new Error('Drive folder could not be opened');
+        const created = await getUploadDriveClient().files.create({
+          resource: { name: `${order.order_id} - ${cleanCandidateName(order.candidate_name)} - CV.${kind}`, parents: [folderId] },
+          media: { mimeType: kind === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', body: Readable.from([file.buffer]) },
+          fields: 'id, webViewLink',
+        });
+        return created.data.webViewLink || `https://drive.google.com/file/d/${created.data.id}/view`;
+      });
+      t.drive = tsMs(s);
+      tsSavedCvLinks.set(order.order_id, link);
+      return link;
+    })();
+    const [sheetR, driveR] = await Promise.allSettled([sheet, drive]);
+    if (sheetR.status === 'rejected') {
+      console.error(`[talent-suite] order ${order.order_id} could not be saved to Sheets:`, sheetR.reason && sheetR.reason.message);
+      alertDan('ts-save-' + order.order_id, `Talent Suite: order ${order.order_id} not saved to the sheet`,
+        `The customer was sent to Stripe, but the order row could not be written. If they pay, the webhook rebuilds it from Stripe.\n\nCV: ${driveR.status === 'fulfilled' ? driveR.value : 'upload also failed, CV emailed separately'}\n\n${JSON.stringify(order, null, 2)}`).catch(() => {});
+    }
+    let link = driveR.status === 'fulfilled' ? driveR.value : '';
+    if (driveR.status === 'rejected') {
+      console.error(`[talent-suite] order ${order.order_id} CV upload failed:`, driveR.reason && driveR.reason.message);
+      link = 'Drive upload failed: CV emailed to office';
+      emailTransporter.sendMail({ from: process.env.BREVO_SENDER_EMAIL, to: dansInbox(),
+        subject: `Talent Suite: CV for order ${order.order_id} (Drive upload failed)`,
+        text: `The CV for ${order.candidate_name} (${order.candidate_email}) could not be uploaded to Drive, so it is attached here.\nOrder ${order.order_id}, ${TS_TIERS[order.tier].name}.`,
+        attachments: [{ filename: `${order.order_id} - CV.${kind}`, content: file.buffer }] }).catch(e => console.error('CV fallback email failed:', e.message));
+    }
+    if (sheetR.status === 'fulfilled' && link) {
+      const s = tsNow();
+      await tsRetry(() => tsOrders.update(order.order_id, o => { o.cv_file_link = link; return o; })).catch(e => console.error('CV link update failed:', e.message));
+      t.link = tsMs(s);
+    }
+    console.log(`[talent-suite] background save ${order.order_id}: sheet=${t.sheet ?? 'FAILED'}ms drive=${t.drive ?? 'FAILED'}ms link=${t.link ?? '-'}ms total=${tsMs(t0)}ms`);
+    if (sheetR.status === 'rejected') throw sheetR.reason;
+  })();
+  tsPendingSaves.set(order.order_id, job);
+  job.catch(() => {}).finally(() => setTimeout(() => { tsPendingSaves.delete(order.order_id); tsSavedCvLinks.delete(order.order_id); }, 2 * 3600000));
+  return job;
+}
+
+function tsSetTimingHeaders(res, t) {
+  res.set('Server-Timing', Object.entries(t).map(([k, v]) => `${k};dur=${v}`).join(', '));
+  res.set('Timing-Allow-Origin', '*');
+}
+
 app.post('/api/talent-suite/orders', async (req, res) => {
+  const t0 = tsNow(); const t = {};
+  let orderId = '';
   try {
     const ip = tpClientIp(req);
     if (!tpAllow('tso:ip:' + ip, 10, 3600000)) return res.status(429).json({ error: 'Too many orders from this connection. Please try again later.' });
     if (!String(req.get('content-type') || '').startsWith('multipart/form-data')) return res.status(400).json({ error: 'Please send the form with your CV attached.' });
+    let s = tsNow();
     const { fields: f, file, tooBig } = await tsParseMultipart(req);
+    t.upload = tsMs(s); // includes the time to receive the CV from the customer's connection
+    s = tsNow();
     if (tpClean(f.website, 200)) return res.json({ order_id: 'TS-000000-0000' }); // hidden field filled in: a bot
     const tier = String(f.tier || '');
     if (!TS_TIERS[tier]) return res.status(400).json({ error: 'Please choose a service.' });
@@ -13815,88 +13942,77 @@ app.post('/api/talent-suite/orders', async (req, res) => {
     if (!kind) return res.status(400).json({ error: 'Please upload your CV as a PDF or Word (.docx) file.' });
     if (!tpAllow('tso:em:' + email, 5, 24 * 3600000)) return res.status(429).json({ error: 'We already have orders from this email today. Email office@live2helprecruitment.co.uk if you need help.' });
     if (!(await tpVerifyTurnstile(f.turnstileToken, ip))) return res.status(400).json({ error: 'We could not confirm you are human. Please refresh and try again.' });
+    t.checks = tsMs(s);
 
-    const orderId = tsOrderId();
-    let cvLink = '';
-    try {
-      const folderId = await getOrCreateCandidateFolder(SUBMISSIONS_FOLDER_ID, 'Talent Suite Orders');
-      if (!folderId) throw new Error('folder');
-      const created = await getUploadDriveClient().files.create({
-        resource: { name: `${orderId} - ${cleanCandidateName(name)} - CV.${kind}`, parents: [folderId] },
-        media: { mimeType: kind === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', body: Readable.from([file.buffer]) },
-        fields: 'id, webViewLink',
-      });
-      cvLink = created.data.webViewLink || `https://drive.google.com/file/d/${created.data.id}/view`;
-    } catch (e) {
-      console.error('Talent Suite CV upload failed:', e.message);
-      return res.status(502).json({ error: 'We could not save your CV just now. Please try again in a minute.' });
-    }
-
-    await tsOrders.save({
+    orderId = tsOrderId();
+    const order = {
       order_id: orderId, created_at: new Date().toISOString(), tier, amount_gbp: '',
       candidate_name: name, candidate_email: email, candidate_phone: tpClean(f.candidate_phone, 30),
-      target_role: targetRole, cv_file_link: cvLink, candidate_notes: tpClean(f.candidate_notes, 1000),
+      target_role: targetRole, cv_file_link: '', candidate_notes: tpClean(f.candidate_notes, 1000),
       coaching_availability: tier === 'cv_review_coaching' ? tpClean(f.coaching_availability, 300) : '',
       status: 'pending_payment', stripe_session_id: '', stripe_payment_intent: '', paid_at: '', due_date: '', assigned_to: '', delivered_at: '',
-    });
+    };
+
+    s = tsNow();
+    const session = await tsCreateOrderSession(order);
+    t.stripe = tsMs(s);
+    if (session.url) order.stripe_session_id = session.id;
+    t.total = tsMs(t0);
+    tsSetTimingHeaders(res, t);
+
+    // reply first, then save; a failed Stripe call still keeps the order so Dan can follow up
+    if (session.url) res.json({ order_id: orderId, url: session.url, timings: t });
+    else res.status(session.status || 502).json({ order_id: orderId, error: session.error, timings: t });
+    console.log(`[talent-suite] checkout ${orderId}: upload=${t.upload}ms checks=${t.checks}ms stripe=${t.stripe}ms total=${t.total}ms cv=${Math.round(file.buffer.length / 1024)}KB${session.url ? '' : ' (STRIPE FAILED)'}`);
+    tsSaveOrderInBackground(order, file, kind).catch(() => {});
     auditLog('website', 'talent_suite_order', 'talent_suite', `${name} (${email})`, `${TS_TIERS[tier].name} ${orderId}`);
-    res.json({ order_id: orderId });
   } catch (e) {
-    console.error('POST /api/talent-suite/orders error:', e.message);
-    res.status(e.status || 500).json({ error: e.status ? e.message : 'Something went wrong. Please try again.' });
+    console.error(`POST /api/talent-suite/orders error${orderId ? ' (' + orderId + ')' : ''}:`, e.message);
+    if (!res.headersSent) res.status(e.status || 500).json({ error: e.status ? e.message : 'Something went wrong. Please try again.' });
   }
 });
 
-/* ---------- Section 5: POST /api/talent-suite/checkout ---------- */
+/* ---------- Section 5: POST /api/talent-suite/checkout (retry an existing order, e.g. after a failed or cancelled payment) ---------- */
 app.post('/api/talent-suite/checkout', async (req, res) => {
+  const t0 = tsNow();
   try {
-    if (!process.env.STRIPE_SECRET_KEY) return res.status(503).json({ error: 'Online payment is not switched on yet. Please email office@live2helprecruitment.co.uk.' });
     const ip = tpClientIp(req);
     if (!tpAllow('tsc:ip:' + ip, 20, 3600000)) return res.status(429).json({ error: 'Please try again shortly.' });
     const orderId = tpClean((req.body || {}).order_id, 40);
+    await tsWaitForSave(orderId);
     const order = orderId ? await tsOrders.get(orderId) : null;
     if (!order) return res.status(404).json({ error: 'We could not find that order. Please start again.' });
     if (TS_PAID_OR_LATER.includes(order.status)) return res.status(409).json({ error: 'This order has already been paid.' });
-    const tier = TS_TIERS[order.tier];
-    const price = tier && process.env[tier.priceEnv];
-    if (!price) return res.status(503).json({ error: 'This service is not available to buy online yet.' });
-
-    const base = tsBaseUrl();
-    const p = new URLSearchParams({
-      mode: 'payment',
-      'line_items[0][price]': price,
-      'line_items[0][quantity]': '1',
-      customer_email: order.candidate_email,
-      client_reference_id: order.order_id,
-      'metadata[order_id]': order.order_id,
-      'metadata[tier]': order.tier,
-      'payment_intent_data[metadata][order_id]': order.order_id,
-      'payment_intent_data[metadata][tier]': order.tier,
-      success_url: `${base}/talent-suite/thank-you?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${base}/talent-suite/pricing?cancelled=1`,
-      'consent_collection[terms_of_service]': 'required',
-      'invoice_creation[enabled]': 'true',
-      expires_at: String(Math.floor(Date.now() / 1000) + 60 * 60),
-    });
-    const r = await fetch('https://api.stripe.com/v1/checkout/sessions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`, 'Stripe-Version': STRIPE_API_VERSION, 'Content-Type': 'application/x-www-form-urlencoded', 'Idempotency-Key': `${order.order_id}-${Date.now()}` },
-      body: p.toString(),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || !j.url) {
-      const why = (j.error && j.error.message) || `status ${r.status}`;
-      console.error('Stripe checkout session failed:', why);
-      if (/terms of service/i.test(why)) alertDan('stripe-terms', 'Stripe: terms URL missing', `Checkout could not open because Stripe needs a Terms of Service URL (Dashboard > Settings > Public details).\n\n${why}`).catch(() => {});
-      return res.status(502).json({ error: 'The payment page could not be opened. Please try again in a minute.' });
-    }
-    await tsOrders.update(order.order_id, o => { o.stripe_session_id = j.id; if (o.status === 'abandoned') o.status = 'pending_payment'; return o; });
-    res.json({ url: j.url });
+    const session = await tsCreateOrderSession(order);
+    if (!session.url) return res.status(session.status || 502).json({ error: session.error });
+    res.json({ url: session.url });
+    console.log(`[talent-suite] checkout retry ${orderId}: total=${tsMs(t0)}ms`);
+    tsOrders.update(order.order_id, o => { o.stripe_session_id = session.id; if (o.status === 'abandoned') o.status = 'pending_payment'; return o; })
+      .catch(e => console.error('Saving the retry session id failed:', e.message));
   } catch (e) {
     console.error('POST /api/talent-suite/checkout error:', e.message);
-    res.status(500).json({ error: 'Something went wrong. Please try again.' });
+    if (!res.headersSent) res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 });
+
+// Webhook helper: the order row, or one rebuilt from the Stripe session if the background save never landed
+async function tsOrderForSession(orderId, s) {
+  await tsWaitForSave(orderId);
+  const found = await tsOrders.get(orderId);
+  if (found) return found;
+  const m = s.metadata || {};
+  if (!TS_TIERS[m.tier]) return null;
+  const rebuilt = {
+    order_id: orderId, created_at: new Date((Number(s.created) || Date.now() / 1000) * 1000).toISOString(), tier: m.tier, amount_gbp: '',
+    candidate_name: m.candidate_name || '', candidate_email: String((s.customer_details && s.customer_details.email) || s.customer_email || '').toLowerCase(),
+    candidate_phone: m.candidate_phone || '', target_role: m.target_role || '', cv_file_link: tsSavedCvLinks.get(orderId) || 'Not saved: check your inbox for the CV, or ask the customer to resend it',
+    candidate_notes: 'Order rebuilt from Stripe because the original save failed', coaching_availability: m.coaching_availability || '',
+    status: 'pending_payment', stripe_session_id: s.id || '', stripe_payment_intent: '', paid_at: '', due_date: '', assigned_to: '', delivered_at: '',
+  };
+  await tsRetry(() => tsOrders.save(rebuilt));
+  mailDan(`Talent Suite: order ${orderId} rebuilt from Stripe`, `The order row was missing when payment arrived, so it was rebuilt from the Stripe session. Check whether the CV reached Drive or your inbox; if not, ask ${rebuilt.candidate_email} to resend it.`);
+  return tsOrders.get(orderId);
+}
 
 /* ---------- Section 6a: credit top-up (10 credits, STRIPE_PRICE_CREDITS_10) ---------- */
 const TS_TOPUP_CREDITS = 10;
@@ -13935,7 +14051,7 @@ app.post('/api/talent-suite/credits/checkout', async (req, res) => {
       cancel_url: `${base}/talent-suite/career/?topup=cancelled`,
     });
     const r = await fetch('https://api.stripe.com/v1/checkout/sessions', {
-      method: 'POST',
+      method: 'POST', agent: tsStripeAgent,
       headers: { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`, 'Stripe-Version': STRIPE_API_VERSION, 'Content-Type': 'application/x-www-form-urlencoded' },
       body: p.toString(),
     });
@@ -14062,7 +14178,7 @@ app.post('/api/stripe/webhook', async (req, res) => {
       if (!orderId || tsWebhookBusy.has(orderId)) return res.json({ received: true });
       tsWebhookBusy.add(orderId);
       try {
-        const order = await tsOrders.get(orderId);
+        const order = await tsOrderForSession(orderId, obj);
         if (!order || TS_PAID_OR_LATER.includes(order.status)) return res.json({ received: true }); // idempotent
         const paidIso = new Date().toISOString();
         const due = await tsDueDate(paidIso, TS_TURNAROUND_DAYS);
@@ -14081,6 +14197,7 @@ app.post('/api/stripe/webhook', async (req, res) => {
     }
     if (ev.type === 'checkout.session.expired') {
       const orderId = (obj.metadata && obj.metadata.order_id) || obj.client_reference_id;
+      await tsWaitForSave(orderId);
       if (orderId) await tsOrders.update(orderId, o => { if (o.status === 'pending_payment' && (!o.stripe_session_id || o.stripe_session_id === obj.id)) o.status = 'abandoned'; return o; });
       return res.json({ received: true });
     }

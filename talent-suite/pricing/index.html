@@ -11,6 +11,9 @@
 <meta property="og:description" content="A working UK recruiter reviews your CV by hand. From £25, delivered within 3 working days.">
 <meta property="og:image" content="https://careers.live2helprecruitment.co.uk/assets/og-image.png">
 <link rel="icon" href="../../assets/logo.png" type="image/png">
+<link rel="preconnect" href="https://l2h-api.onrender.com" crossorigin>
+<link rel="preconnect" href="https://checkout.stripe.com">
+<link rel="dns-prefetch" href="https://checkout.stripe.com">
 <style>
   :root { --gold: #C9A84C; --gold-l: #E8C96A; --gold-bg: #FBF6E8; --navy: #0B0B18; --navy-2: #151528; --dark: #1A1A1A; --grey: #444444; --muted: #6B6F7B; --lightbg: #F7F6F3; --border: #DDDDDD; --ok: #2E7D4F; --bad: #B23B3B; }
   * { box-sizing: border-box; }
@@ -65,7 +68,9 @@
   .summary { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; border-top: 1px solid #EEE; padding-top: 18px; margin-top: 6px; }
   .summary .what { font-size: 15px; color: var(--grey); } .summary .what b { color: var(--navy); font-size: 18px; }
   .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 8px; padding: 14px 24px; font-size: 15.5px; font-weight: bold; font-family: inherit; cursor: pointer; background: var(--gold); color: var(--navy); }
-  .btn:hover { background: var(--gold-l); } .btn[disabled] { opacity: .6; cursor: not-allowed; }
+  .btn:hover { background: var(--gold-l); } .btn[disabled] { opacity: .75; cursor: wait; }
+  .btn .spin { width: 16px; height: 16px; border: 2px solid rgba(11,11,24,.25); border-top-color: var(--navy); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .secure { font-size: 12.5px; color: var(--muted); margin-top: 10px; }
   .msg { font-size: 14px; margin-top: 14px; padding: 10px 12px; border-radius: 8px; }
   .msg.err { background: #FBEDED; color: var(--bad); }
@@ -161,7 +166,11 @@
   function $(id) { return document.getElementById(id); }
   function err(t) { $('err').textContent = t || ''; $('err').classList.toggle('hidden', !t); if (t) $('err').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
 
-  try { fetch(API + '/api/health', { cache: 'no-store' }).catch(function () {}); } catch (e) {}
+  // wake the server as soon as the page opens, and again when they start filling in the form if the page has been open a while
+  var lastPing = 0;
+  function ping() { if (Date.now() - lastPing < 60000) return; lastPing = Date.now(); try { fetch(API + '/api/health', { cache: 'no-store', mode: 'cors' }).catch(function () {}); } catch (e) {} }
+  ping();
+  document.addEventListener('focusin', ping);
   if (TURNSTILE_SITE_KEY) {
     var s = document.createElement('script'); s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'; s.async = true;
     s.onload = function () { try { tw = window.turnstile.render('#turnstileBox', { sitekey: TURNSTILE_SITE_KEY }); } catch (e) {} };
@@ -210,19 +219,45 @@
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { j._status = r.status; return j; }); })
       .catch(function () { return { error: 'We could not connect. Please check your connection and try again.' }; });
   }
-  function reset() { busy = false; $('payBtn').disabled = false; $('payBtn').textContent = 'Continue to secure payment'; }
+  var LABEL = 'Continue to secure payment';
+  function setBusy(text) { busy = true; var b = $('payBtn'); b.disabled = true; b.setAttribute('aria-busy', 'true'); b.innerHTML = '<span class="spin" aria-hidden="true"></span>' + text; }
+  function reset() { busy = false; var b = $('payBtn'); b.disabled = false; b.removeAttribute('aria-busy'); b.textContent = LABEL; }
+  // coming back from Stripe with the browser's back button restores the page as it was: re-enable the button
+  window.addEventListener('pageshow', function (e) { if (e.persisted) reset(); });
+
+  // if an order was saved but its payment page did not open, retry that order instead of uploading again
+  var pending = null; // { id, sig }
+  function formSig(v) { return [tier, v('candidate_name'), v('candidate_email'), v('candidate_phone'), v('target_role'), v('candidate_notes'), v('coaching_availability'), file ? file.name + file.size : ''].join('|'); }
+  function go(url, t0, server) {
+    var ms = Math.round(performance.now() - t0);
+    try { console.info('[talent-suite] click to Stripe URL: ' + ms + 'ms', server || ''); } catch (e) {}
+    window.location.assign(url); // button stays disabled while the browser leaves the page
+  }
 
   $('intake').addEventListener('submit', function (e) {
     e.preventDefault(); if (busy) return;
+    var t0 = performance.now();
+    setBusy('Preparing your secure payment...'); // instant feedback, before any checks or network
     var v = function (id) { return $(id).value.trim(); };
-    if (!tier) return err('Please choose a service above.');
-    if (v('candidate_name').length < 2) return err('Please add your full name.');
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(v('candidate_email'))) return err('Please check your email address.');
-    if (v('target_role').length < 2) return err('Please tell us the role or sector you are applying for.');
-    if (!file) return err('Please upload your CV.');
-    if (!$('start_now').checked) return err('Please tick the box asking us to start within the cancellation period.');
-    err(''); busy = true; $('payBtn').disabled = true; $('payBtn').textContent = 'Saving your details...';
+    var fail = function (m) { reset(); err(m); };
+    if (!tier) return fail('Please choose a service above.');
+    if (v('candidate_name').length < 2) return fail('Please add your full name.');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(v('candidate_email'))) return fail('Please check your email address.');
+    if (v('target_role').length < 2) return fail('Please tell us the role or sector you are applying for.');
+    if (!file) return fail('Please upload your CV.');
+    if (!$('start_now').checked) return fail('Please tick the box asking us to start within the cancellation period.');
+    err('');
     try { sessionStorage.setItem('l2h_ts_prefill', JSON.stringify({ tier: tier, name: v('candidate_name'), email: v('candidate_email'), role: v('target_role'), candidate_phone: v('candidate_phone'), candidate_notes: v('candidate_notes'), coaching_availability: v('coaching_availability') })); } catch (e2) {}
+    var sig = formSig(v);
+
+    if (pending && pending.sig === sig) {
+      post('/api/talent-suite/checkout', { order_id: pending.id }).then(function (c) {
+        if (c.url) return go(c.url, t0, 'retry ' + pending.id);
+        reset(); err((c.error || 'The payment page could not be opened. Please try again.') + ' Your order reference is ' + pending.id + '.');
+      });
+      return;
+    }
+
     var fd = new FormData();
     fd.append('tier', tier);
     ['candidate_name', 'candidate_email', 'candidate_phone', 'target_role', 'candidate_notes'].forEach(function (k) { fd.append(k, v(k)); });
@@ -232,12 +267,10 @@
     fd.append('turnstileToken', (window.turnstile && tw !== null) ? window.turnstile.getResponse(tw) : '');
     fd.append('cv', file, file.name);
     post('/api/talent-suite/orders', fd).then(function (j) {
-      if (!j.order_id) { reset(); if (window.turnstile && tw !== null) try { window.turnstile.reset(tw); } catch (e3) {} return err(j.error || 'Something went wrong. Please try again.'); }
-      $('payBtn').textContent = 'Opening secure payment...';
-      return post('/api/talent-suite/checkout', { order_id: j.order_id }).then(function (c) {
-        if (c.url) { window.location.href = c.url; return; }
-        reset(); err((c.error || 'The payment page could not be opened. Please try again.') + ' Your order reference is ' + j.order_id + '.');
-      });
+      if (j.url) return go(j.url, t0, j.timings);
+      if (j.order_id && j.order_id !== 'TS-000000-0000') pending = { id: j.order_id, sig: sig };
+      reset(); if (window.turnstile && tw !== null) try { window.turnstile.reset(tw); } catch (e3) {}
+      err((j.error || 'Something went wrong. Please try again.') + (pending ? ' Your order reference is ' + pending.id + '.' : ''));
     });
   });
 })();
