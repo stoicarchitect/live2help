@@ -1975,7 +1975,7 @@ async function removeLeadRowsForCompany(company) {
   return idx.length;
 }
 const INVOICES_TAB = 'Invoices';
-const INVOICES_RANGE = `${INVOICES_TAB}!A2:O`;
+const INVOICES_RANGE = `${INVOICES_TAB}!A2:Q`; // P payment_method, Q stripe_payment_intent (build 45)
 const KPI_TARGETS_TAB = 'KPI Targets';
 const KPI_TARGETS_RANGE = `${KPI_TARGETS_TAB}!A2:E`;
 
@@ -2322,6 +2322,8 @@ function rowToInvoice(row) {
     commissionPct: row[12] || '',
     commissionAmount: parseFloat(row[13]) || 0,
     commissionPaidDate: row[14] || '',
+    paymentMethod: row[15] || '',
+    stripePaymentIntent: row[16] || '',
   };
 }
 
@@ -2331,6 +2333,7 @@ function invoiceToRow(inv) {
     inv.role || '', inv.candidateName || '', inv.salary || '', inv.feePercentage || '',
     inv.amount || 0, inv.status || 'pending', inv.paymentDate || '', inv.consultant || '',
     inv.commissionPct === undefined ? '' : inv.commissionPct, inv.commissionAmount || '', inv.commissionPaidDate || '',
+    inv.paymentMethod || '', inv.stripePaymentIntent || '',
   ];
 }
 
@@ -2392,6 +2395,13 @@ async function ensureInvoiceHeaders() {
         requestBody: { values: [['Consultant', 'Commission %', 'Commission amount', 'Commission paid date']] },
       });
     }
+    const r2 = await sheets.spreadsheets.values.get({ spreadsheetId: CLIENT_SHEET_ID, range: `${INVOICES_TAB}!P1:Q1` });
+    if (!((r2.data.values && r2.data.values[0]) || []).some(Boolean)) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: CLIENT_SHEET_ID, range: `${INVOICES_TAB}!P1:Q1`, valueInputOption: 'RAW',
+        requestBody: { values: [['Payment method', 'Stripe payment ID']] },
+      });
+    }
   } catch (e) { invoiceHeadersChecked = false; console.warn('Could not check invoice headers:', e.message); }
 }
 
@@ -2399,7 +2409,13 @@ async function ensureInvoiceHeaders() {
 app.get('/api/invoices', async (req, res) => {
   try {
     const rows = await readInvoiceRows();
-    const invoices = rows.filter(r => r[0]).map(r => rowToInvoice(r));
+    const admin = isAdmin(req);
+    const invoices = rows.filter(r => r[0]).map(r => {
+      const inv = rowToInvoice(r);
+      // the client's Pay by Bank page, only shown to Dan so he can copy it into an email
+      if (admin) { inv.payUrl = invoicePayUrl(inv); inv.payByBankEligible = invoicePayByBankEligible(inv); }
+      return inv;
+    });
     res.json({ data: invoices });
   } catch (e) {
     console.error('GET /api/invoices error:', e.message);
@@ -2489,7 +2505,7 @@ app.put('/api/invoices/:number', requireDan, async (req, res) => {
   auditOnFinish(req, res, () => ({ action: 'invoice_updated', type: 'invoice', entity: req.params.number, detail: JSON.stringify(req.body || {}).slice(0, 200) }));
   try {
     const { number } = req.params;
-    const { status, paymentDate, consultant, commissionPaid } = req.body;
+    const { status, paymentDate, consultant, commissionPaid, paymentMethod } = req.body;
 
     const sheets = getSheetsClient();
     const rows = await readInvoiceRows();
@@ -2500,19 +2516,23 @@ app.put('/api/invoices/:number', requireDan, async (req, res) => {
     }
 
     const updatedRow = [...rows[rowIndex]];
-    while (updatedRow.length < 15) updatedRow.push('');
+    while (updatedRow.length < 17) updatedRow.push('');
     if (status !== undefined) {
       updatedRow[9] = status;
+      // marked paid by hand means the client paid by direct transfer (Pay by Bank sets its own method from the webhook)
+      if (status === 'paid' && !updatedRow[15]) updatedRow[15] = 'bank_transfer';
+      if (status !== 'paid' && status !== 'refunded' && updatedRow[15] === 'bank_transfer') updatedRow[15] = '';
       // Record the date the client paid, so commission timing and payroll cut-offs work
       if (status === 'paid' && !updatedRow[10] && paymentDate === undefined) updatedRow[10] = toISODate(new Date());
     }
     if (paymentDate !== undefined) updatedRow[10] = paymentDate;
+    if (paymentMethod !== undefined && ['bank_transfer', 'pay_by_bank', ''].includes(paymentMethod)) updatedRow[15] = paymentMethod;
     if (consultant !== undefined) updatedRow[11] = String(consultant || '').trim().slice(0, 60);
     if (commissionPaid !== undefined) updatedRow[14] = commissionPaid ? (typeof commissionPaid === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(commissionPaid) ? commissionPaid : toISODate(new Date())) : '';
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: CLIENT_SHEET_ID,
-      range: `${INVOICES_TAB}!A${rowIndex + 2}:O${rowIndex + 2}`,
+      range: `${INVOICES_TAB}!A${rowIndex + 2}:Q${rowIndex + 2}`,
       valueInputOption: 'RAW',
       requestBody: { values: [updatedRow] },
     });
@@ -2537,7 +2557,7 @@ app.delete('/api/invoices/:number', requireDan, async (req, res) => {
     }
     await sheets.spreadsheets.values.clear({
       spreadsheetId: CLIENT_SHEET_ID,
-      range: `${INVOICES_TAB}!A${rowIndex + 2}:O${rowIndex + 2}`,
+      range: `${INVOICES_TAB}!A${rowIndex + 2}:Q${rowIndex + 2}`,
     });
     res.json({ ok: true, deleted: number });
   } catch (e) {
@@ -2634,6 +2654,19 @@ app.get('/api/invoices/:number/pdf', async (req, res) => {
       detailY += 16;
     });
 
+    // Pay by Bank: a link to the client's secure payment page (only for unpaid invoices Stripe can take)
+    const payUrl = invoicePayUrl(inv);
+    if (payUrl && invoicePayByBankEligible(inv) && lc(inv.status) !== 'paid') {
+      const payY = detailY + 18;
+      doc.font('Helvetica-Bold').fontSize(9).fillColor(GOLD).text('OR PAY ONLINE BY BANK', 50, payY);
+      doc.font('Helvetica').fontSize(9).fillColor(GREY)
+        .text('Approve the payment in your banking app in a few taps. Secure, instant, no card needed.', 50, payY + 16, { width: 300 });
+      doc.roundedRect(370, payY + 4, 175, 30, 4).fill(DARK);
+      doc.font('Helvetica-Bold').fontSize(10).fillColor(GOLD).text('Pay by Bank', 370, payY + 14, { width: 175, align: 'center' });
+      doc.link(370, payY + 4, 175, 30, payUrl);
+      doc.font('Helvetica').fontSize(7).fillColor(LIGHT_GREY).text(payUrl, 50, payY + 44, { width: 495, link: payUrl });
+    }
+
     doc.moveTo(50, 760).lineTo(545, 760).strokeColor(BORDER).lineWidth(1).stroke();
     doc.font('Helvetica-Oblique').fontSize(8).fillColor(LIGHT_GREY)
       .text('Live 2 Help Recruitment Ltd  •  Anyone · Anywhere · Anytime', 50, 772, { align: 'center', width: 495 });
@@ -2644,6 +2677,272 @@ app.get('/api/invoices/:number/pdf', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
+
+/* ======================================================================
+   Client invoice payments: Pay by Bank through Stripe (build 45)
+
+   Every unpaid invoice gets a private payment page:
+     GET  /pay/invoice/:number?t=TOKEN        branded page: amount, due date, Pay by Bank button, bank details
+     GET  /pay/invoice/:number/go?t=TOKEN     opens a Stripe Checkout Session (Pay by Bank only) and redirects
+   The webhook (checkout.session.completed / async_payment_succeeded, metadata.type = client_invoice)
+   marks the invoice paid, records the date, method and Stripe payment ID, and emails Dan.
+
+   - The token is an HMAC of the invoice number, so links cannot be guessed (INVOICE_LINK_SECRET on Render,
+     falling back to CRON_SECRET). Changing the secret breaks links already sent.
+   - The amount always comes from the Invoices sheet, never the browser.
+   - Pay by Bank only (no cards): Stripe fee 0.5% + 20p, capped at £5. Stripe takes Pay by Bank between
+     £0.50 and £10,000 by default; above that the page shows bank transfer details only.
+   - Direct bank transfer stays free and is always shown as the alternative.
+====================================================================== */
+const PAY_BY_BANK_MAX_GBP = Number(process.env.PAY_BY_BANK_MAX_GBP || 10000);
+function invoiceLinkSecret() { return process.env.INVOICE_LINK_SECRET || process.env.CRON_SECRET || ''; }
+function invoicePayToken(number) {
+  const secret = invoiceLinkSecret();
+  if (!secret || !number) return '';
+  return crypto.createHmac('sha256', secret).update(`invoice-pay:${number}`).digest('hex').slice(0, 20);
+}
+function invoicePayTokenOk(number, t) {
+  const want = invoicePayToken(number);
+  const got = String(t || '');
+  return !!want && got.length === want.length && crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want));
+}
+function invoicePayUrl(inv) {
+  const t = invoicePayToken(inv && inv.number);
+  return t ? `${tpPublicBase()}/pay/invoice/${encodeURIComponent(inv.number)}?t=${t}` : '';
+}
+function invoicePayByBankEligible(inv) {
+  const a = Number(inv && inv.amount) || 0;
+  // PAY_BY_BANK_ENABLED=true on Render switches the pay links on (left off until Pay by Bank is active in Stripe)
+  return /^(1|true|yes|on)$/i.test(String(process.env.PAY_BY_BANK_ENABLED || '')) && !!process.env.STRIPE_SECRET_KEY && a >= 0.5 && a <= PAY_BY_BANK_MAX_GBP;
+}
+async function findInvoice(number) {
+  const rows = await readInvoiceRows();
+  const i = rows.findIndex(r => r && r[0] === number);
+  return i === -1 ? null : { rowIndex: i, row: rows[i], inv: rowToInvoice(rows[i]) };
+}
+
+const invOpenSessions = new Map(); // invoice number -> { id, url, expires } so a double click reuses one payment page
+
+function invPayPage(inv, opts = {}) {
+  const amount = formatCurrency(inv.amount);
+  const paid = lc(inv.status) === 'paid';
+  const eligible = invoicePayByBankEligible(inv) && !opts.forceBank;
+  const t = invoicePayToken(inv.number);
+  const goUrl = `/pay/invoice/${encodeURIComponent(inv.number)}/go?t=${t}`;
+  const note = opts.note ? `<div class="note ${opts.noteKind || ''}">${opts.note}</div>` : '';
+  const bank = `<div class="bank">
+      <div class="lbl">${eligible && !paid ? 'Prefer a bank transfer?' : 'Pay by bank transfer'}</div>
+      <table>
+        <tr><td>Account name</td><td>Live 2 Help Recruitment Ltd</td></tr>
+        <tr><td>Account number</td><td>12847344</td></tr>
+        <tr><td>Sort code</td><td>60-83-71</td></tr>
+        <tr><td>Reference</td><td>${flEsc(inv.number)}</td></tr>
+      </table></div>`;
+  let action;
+  if (paid) {
+    action = `<div class="paid">Paid${inv.paymentDate ? ' on ' + flEsc(formatDateUK(inv.paymentDate)) : ''}. Thank you.</div>`;
+  } else if (opts.processing) {
+    action = `<div class="paid pending">Your payment is being confirmed by your bank. This page will update shortly, and we will email a confirmation once it lands.</div>
+      <script>setTimeout(function(){ location.reload(); }, 8000);</script>`;
+  } else if (eligible) {
+    action = `<a class="btn" href="${goUrl}" onclick="this.classList.add('busy');this.textContent='Opening your secure payment...';">Pay ${amount} by bank</a>
+      <p class="small">You choose your bank and approve the payment in your banking app. Secure, instant and no card needed. Payments are processed by Stripe.</p>
+      ${bank}`;
+  } else {
+    action = bank;
+  }
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>Invoice ${flEsc(inv.number)} | Live 2 Help Recruitment</title>
+<style>
+  :root{--navy:#0B0B18;--card:#14142A;--line:#2C2C4C;--gold:#C9A84C;--text:#FFFFFF;--muted:#C9CCD6;}
+  *{box-sizing:border-box} body{margin:0;background:var(--navy);color:var(--text);font-family:'Gill Sans MT','Gill Sans',Calibri,'Segoe UI',sans-serif;}
+  .wrap{max-width:520px;margin:0 auto;padding:32px 16px 48px;}
+  .logo{display:block;width:150px;margin:0 0 24px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:24px;}
+  .eyebrow{color:var(--gold);letter-spacing:2px;font-size:12px;margin:0 0 6px;}
+  h1{font-size:22px;margin:0 0 4px;} .sub{color:var(--muted);margin:0 0 18px;font-size:14px;}
+  .amount{font-size:34px;font-weight:700;color:var(--gold);margin:4px 0 16px;}
+  table{width:100%;border-collapse:collapse;font-size:14px;color:var(--muted);}
+  td{padding:7px 0;border-top:1px solid var(--line);} td+td{text-align:right;color:var(--text);}
+  .btn{display:block;text-align:center;background:var(--gold);color:var(--navy);font-weight:700;font-size:17px;text-decoration:none;padding:15px;border-radius:10px;margin:22px 0 10px;}
+  .btn.busy{opacity:.7;pointer-events:none;}
+  .small{color:var(--muted);font-size:12px;margin:0 0 6px;line-height:1.5;}
+  .bank{margin-top:22px;} .lbl{color:var(--gold);font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 6px;}
+  .paid{margin-top:22px;padding:14px;border-radius:10px;background:rgba(201,168,76,.12);border:1px solid var(--gold);color:var(--text);text-align:center;font-weight:600;}
+  .paid.pending{font-weight:400;}
+  .note{margin:0 0 16px;padding:10px 12px;border-radius:8px;background:rgba(255,255,255,.06);color:var(--muted);font-size:13px;}
+  .note.warn{border:1px solid #8a6d2b;}
+  .foot{color:#8A8FA3;font-size:12px;text-align:center;margin-top:22px;line-height:1.6;}
+  .foot a{color:var(--gold);}
+</style></head><body><div class="wrap">
+  <img class="logo" src="https://careers.live2helprecruitment.co.uk/Logo_3.png" alt="Live 2 Help Recruitment">
+  <div class="card">
+    ${note}
+    <p class="eyebrow">INVOICE ${flEsc(inv.number)}</p>
+    <h1>${flEsc(inv.company)}</h1>
+    <p class="sub">Permanent placement fee${inv.candidateName ? ' - ' + flEsc(inv.candidateName) : ''}${inv.role ? ', ' + flEsc(inv.role) : ''}</p>
+    <div class="amount">${amount}</div>
+    <table>
+      <tr><td>Invoice date</td><td>${flEsc(formatDateUK(inv.date))}</td></tr>
+      <tr><td>Due date</td><td>${flEsc(formatDateUK(inv.dueDate))}</td></tr>
+    </table>
+    ${action}
+  </div>
+  <div class="foot">Live 2 Help Recruitment Ltd, Company No. 11731080<br>Questions about this invoice? <a href="mailto:office@live2helprecruitment.co.uk">office@live2helprecruitment.co.uk</a></div>
+</div></body></html>`;
+}
+
+function invPaySimplePage(title, text) {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${flEsc(title)}</title></head>
+<body style="margin:0;background:#0B0B18;color:#fff;font-family:'Gill Sans MT','Gill Sans',Calibri,sans-serif;"><div style="max-width:520px;margin:0 auto;padding:48px 16px;">
+<h1 style="font-size:22px;">${flEsc(title)}</h1><p style="color:#C9CCD6;">${flEsc(text)}</p>
+<p style="color:#C9CCD6;">Please contact <a style="color:#C9A84C;" href="mailto:office@live2helprecruitment.co.uk">office@live2helprecruitment.co.uk</a>.</p></div></body></html>`;
+}
+
+async function invPayLookup(req, res) {
+  const number = String(req.params.number || '');
+  res.set('Cache-Control', 'no-store');
+  res.set('X-Robots-Tag', 'noindex, nofollow');
+  if (!invoicePayTokenOk(number, req.query.t)) {
+    res.status(404).send(invPaySimplePage('Payment link not recognised', 'This payment link is not valid. It may have been copied incompletely.'));
+    return null;
+  }
+  const found = await findInvoice(number);
+  if (!found) {
+    res.status(404).send(invPaySimplePage('Invoice not found', 'We could not find this invoice.'));
+    return null;
+  }
+  return found;
+}
+
+app.get('/pay/invoice/:number', async (req, res) => {
+  try {
+    const found = await invPayLookup(req, res);
+    if (!found) return;
+    const { inv } = found;
+    const opts = {};
+    if (req.query.cancelled) opts.note = 'Payment was not completed. You can try again below or pay by bank transfer.';
+    if (req.query.done && lc(inv.status) !== 'paid') opts.processing = true;
+    if (req.query.unavailable) { opts.note = 'Online payment is not available for this invoice right now. Please pay by bank transfer using the details below.'; opts.noteKind = 'warn'; opts.forceBank = true; }
+    res.send(invPayPage(inv, opts));
+  } catch (e) {
+    console.error('GET /pay/invoice error:', e.message);
+    res.status(500).send(invPaySimplePage('Something went wrong', 'The payment page could not be loaded. Please try again in a minute.'));
+  }
+});
+
+app.get('/pay/invoice/:number/go', async (req, res) => {
+  try {
+    const found = await invPayLookup(req, res);
+    if (!found) return;
+    const { inv } = found;
+    const t = invoicePayToken(inv.number);
+    const back = `/pay/invoice/${encodeURIComponent(inv.number)}?t=${t}`;
+    if (lc(inv.status) === 'paid' || !invoicePayByBankEligible(inv)) return res.redirect(303, back);
+
+    const open = invOpenSessions.get(inv.number);
+    if (open && open.amount === inv.amount && open.expires > Date.now() + 60000) return res.redirect(303, open.url);
+
+    const base = tpPublicBase();
+    const p = new URLSearchParams({
+      mode: 'payment',
+      'payment_method_types[0]': 'pay_by_bank',
+      'line_items[0][quantity]': '1',
+      'line_items[0][price_data][currency]': 'gbp',
+      'line_items[0][price_data][unit_amount]': String(Math.round(Number(inv.amount) * 100)),
+      'line_items[0][price_data][product_data][name]': `Invoice ${inv.number} - permanent placement fee`,
+      'line_items[0][price_data][product_data][description]': `${inv.company}${inv.candidateName ? ': ' + inv.candidateName : ''}${inv.role ? ', ' + inv.role : ''}`.slice(0, 300),
+      client_reference_id: inv.number,
+      'metadata[type]': 'client_invoice',
+      'metadata[invoice_number]': inv.number,
+      'metadata[company]': String(inv.company || '').slice(0, 100),
+      'payment_intent_data[metadata][type]': 'client_invoice',
+      'payment_intent_data[metadata][invoice_number]': inv.number,
+      'payment_intent_data[description]': `Invoice ${inv.number} - ${inv.company}`.slice(0, 200),
+      success_url: `${base}${back}&done=1`,
+      cancel_url: `${base}${back}&cancelled=1`,
+      expires_at: String(Math.floor(Date.now() / 1000) + 60 * 60),
+    });
+    const r = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+      method: 'POST', agent: tsStripeAgent,
+      headers: { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`, 'Stripe-Version': STRIPE_API_VERSION, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: p.toString(),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.url) {
+      const why = (j.error && j.error.message) || `status ${r.status}`;
+      console.error(`[invoice-pay] Stripe session failed for ${inv.number}:`, why);
+      alertDan('invoice-pay', 'Pay by Bank could not open for an invoice',
+        `A client tried to pay invoice ${inv.number} (${inv.company}, ${formatCurrency(inv.amount)}) by Pay by Bank, but Stripe refused:\n\n${why}\n\nIf it mentions pay_by_bank, switch Pay by Bank on in Stripe Dashboard > Settings > Payment methods. The client was shown your bank transfer details instead.`).catch(() => {});
+      return res.redirect(303, `${back}&unavailable=1`);
+    }
+    invOpenSessions.set(inv.number, { id: j.id, url: j.url, amount: inv.amount, expires: (Number(j.expires_at) || 0) * 1000 });
+    auditLog('client', 'invoice_pay_opened', 'invoice', inv.number, `${inv.company} ${formatCurrency(inv.amount)}`);
+    res.redirect(303, j.url);
+  } catch (e) {
+    console.error('GET /pay/invoice/go error:', e.message);
+    res.status(500).send(invPaySimplePage('Something went wrong', 'The payment page could not be opened. Please try again in a minute, or pay by bank transfer.'));
+  }
+});
+
+// Webhook: a client paid an invoice by Pay by Bank. Idempotent: an invoice already paid is left alone
+// (a second payment for the same invoice is flagged to Dan so one can be refunded).
+const invWebhookBusy = new Set();
+async function invMarkPaidFromStripe(session) {
+  const number = (session.metadata && session.metadata.invoice_number) || session.client_reference_id;
+  if (!number || invWebhookBusy.has(number)) return;
+  invWebhookBusy.add(number);
+  try {
+    const pi = typeof session.payment_intent === 'string' ? session.payment_intent : ((session.payment_intent || {}).id || '');
+    const paidGbp = (Number(session.amount_total) || 0) / 100;
+    const found = await findInvoice(number);
+    if (!found) {
+      await mailDan(`Pay by Bank: payment for unknown invoice ${number}`, `Stripe received ${formatCurrency(paidGbp)} for invoice ${number}, but it is not in the Invoices sheet (it may have been deleted). Check Stripe payment ${pi}.`);
+      return;
+    }
+    const { rowIndex, row, inv } = found;
+    invOpenSessions.delete(number);
+    if (lc(inv.status) === 'paid') {
+      if (pi && inv.stripePaymentIntent !== pi) {
+        await mailDan(`Check invoice ${number}: paid twice?`, `Invoice ${number} (${inv.company}) was already marked paid${inv.paymentMethod ? ' by ' + inv.paymentMethod.replace(/_/g, ' ') : ''}, and Stripe has just received a further ${formatCurrency(paidGbp)} by Pay by Bank (payment ${pi}). If both are real, refund one in Stripe.`);
+      }
+      return;
+    }
+    await ensureInvoiceHeaders();
+    const updated = [...row];
+    while (updated.length < 17) updated.push('');
+    updated[9] = 'paid';
+    updated[10] = toISODate(new Date());
+    updated[15] = 'pay_by_bank';
+    updated[16] = pi;
+    await getSheetsClient().spreadsheets.values.update({
+      spreadsheetId: CLIENT_SHEET_ID, range: `${INVOICES_TAB}!A${rowIndex + 2}:Q${rowIndex + 2}`,
+      valueInputOption: 'RAW', requestBody: { values: [updated] },
+    });
+    const short = Math.abs(paidGbp - inv.amount) > 0.01 ? `\n\nNote: Stripe received ${formatCurrency(paidGbp)} but the invoice is for ${formatCurrency(inv.amount)}.` : '';
+    const fee = Math.min(5, Math.round((paidGbp * 0.005 + 0.2) * 100) / 100);
+    mailDan(`Invoice ${number} paid: ${formatCurrency(paidGbp)} from ${inv.company}`,
+      `${inv.company} paid invoice ${number} (${inv.candidateName}${inv.role ? ', ' + inv.role : ''}) by Pay by Bank.\n\nAmount: ${formatCurrency(paidGbp)}\nStripe fee: about ${formatCurrency(fee)}\nStripe payment: ${pi}\n\nThe invoice is now marked Paid on the dashboard and no further chase tasks will be created for it. Stripe pays the money out to your bank on its normal payout schedule.${short}\n\nLive 2 Help dashboard`).catch(() => {});
+    auditLog('stripe', 'invoice_paid_pay_by_bank', 'invoice', number, `${inv.company} ${formatCurrency(paidGbp)} ${pi}`);
+  } finally { invWebhookBusy.delete(number); }
+}
+async function invRefundFromStripe(pi) {
+  if (!pi) return false;
+  const rows = await readInvoiceRows();
+  const i = rows.findIndex(r => r && r[0] && r[16] === pi);
+  if (i === -1) return false;
+  const updated = [...rows[i]];
+  while (updated.length < 17) updated.push('');
+  updated[9] = 'refunded';
+  await getSheetsClient().spreadsheets.values.update({
+    spreadsheetId: CLIENT_SHEET_ID, range: `${INVOICES_TAB}!A${i + 2}:Q${i + 2}`,
+    valueInputOption: 'RAW', requestBody: { values: [updated] },
+  });
+  mailDan(`Invoice ${updated[0]} refunded`, `The Pay by Bank payment for invoice ${updated[0]} (${updated[3]}) was refunded in Stripe, so the invoice is now marked Refunded. Change its status on the dashboard if the client is still due to pay.`).catch(() => {});
+  auditLog('stripe', 'invoice_refunded', 'invoice', updated[0], pi);
+  return true;
+}
 
 // GET daily check - candidates starting tomorrow with no invoice generated yet.
 // Called once a day by an external scheduler (EasyCron).
@@ -8406,13 +8705,16 @@ function invoiceTermsDays(inv) {
 }
 function chaseDraft(inv, level) {
   const fee = `£${Number(inv.amount).toLocaleString('en-GB')}`;
-  if (level === 1) return `Hi,\n\nA quick reminder that invoice ${inv.number} for ${fee} (${inv.candidateName}, ${inv.role}) was due on ${formatDateUK(inv.dueDate)} and we have not yet seen payment. If it has already gone out, please ignore this and let me know the date. If anything is holding it up, tell me and I will sort it.\n\nKind regards,\nDan`;
-  if (level === 2) return `Hi,\n\nInvoice ${inv.number} for ${fee} is now a week overdue. Our terms are payment within ${invoiceTermsDays(inv)} days, so I need a payment date from you today please. Could you confirm when this will be cleared?\n\nKind regards,\nDan`;
-  return `Hi,\n\nInvoice ${inv.number} for ${fee} remains unpaid more than two weeks after the due date. Please arrange payment immediately. Unless we receive payment or a firm payment date within 3 working days we will have to apply the late payment provisions in our terms and in the Late Payment of Commercial Debts legislation.\n\nKind regards,\nDan`;
+  const url = invoicePayByBankEligible(inv) ? invoicePayUrl(inv) : '';
+  const pay = url ? `\n\nYou can pay it in a few taps from your banking app here: ${url}` : '';
+  const sign = `${pay}\n\nKind regards,\nDan`;
+  if (level === 1) return `Hi,\n\nA quick reminder that invoice ${inv.number} for ${fee} (${inv.candidateName}, ${inv.role}) was due on ${formatDateUK(inv.dueDate)} and we have not yet seen payment. If it has already gone out, please ignore this and let me know the date. If anything is holding it up, tell me and I will sort it.${sign}`;
+  if (level === 2) return `Hi,\n\nInvoice ${inv.number} for ${fee} is now a week overdue. Our terms are payment within ${invoiceTermsDays(inv)} days, so I need a payment date from you today please. Could you confirm when this will be cleared?${sign}`;
+  return `Hi,\n\nInvoice ${inv.number} for ${fee} remains unpaid more than two weeks after the due date. Please arrange payment immediately. Unless we receive payment or a firm payment date within 3 working days we will have to apply the late payment provisions in our terms and in the Late Payment of Commercial Debts legislation.${sign}`;
 }
 
 async function checkOverdueInvoices() {
-  const invs = (await readInvoiceRows()).filter(r => r && r[0]).map(rowToInvoice).filter(i => lc(i.status) !== 'paid');
+  const invs = (await readInvoiceRows()).filter(r => r && r[0]).map(rowToInvoice).filter(i => !['paid', 'refunded'].includes(lc(i.status)));
   const now = new Date();
   const list = [];
   invs.forEach(inv => {
@@ -12496,7 +12798,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '23 Oct 2026 - build 44 (Talent Suite: Stripe payments, credit top-ups, one-request checkout, bulk actions)';
+const SERVER_BUILD = '23 Oct 2026 - build 45 (client invoices: Pay by Bank through Stripe)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -14166,6 +14468,16 @@ app.post('/api/stripe/webhook', async (req, res) => {
   const ev = req.body || {};
   const obj = (ev.data && ev.data.object) || {};
   try {
+    // Client invoices paid by Pay by Bank (build 45)
+    if (obj.metadata && obj.metadata.type === 'client_invoice' && String(ev.type || '').startsWith('checkout.session.')) {
+      if ((ev.type === 'checkout.session.completed' || ev.type === 'checkout.session.async_payment_succeeded') && obj.payment_status === 'paid') {
+        await invMarkPaidFromStripe(obj);
+      } else if (ev.type === 'checkout.session.async_payment_failed') {
+        const n = obj.metadata.invoice_number || obj.client_reference_id;
+        mailDan(`Pay by Bank failed for invoice ${n}`, `A Pay by Bank payment for invoice ${n} (${obj.metadata.company || ''}) did not complete at the bank. The invoice is still unpaid; the client can try again from the same link or pay by transfer.`).catch(() => {});
+      }
+      return res.json({ received: true });
+    }
     if (ev.type === 'checkout.session.completed') {
       if (obj.payment_status !== 'paid') return res.json({ received: true });
       if (obj.metadata && obj.metadata.type === 'credit_topup') {
@@ -14204,6 +14516,7 @@ app.post('/api/stripe/webhook', async (req, res) => {
     if (ev.type === 'charge.refunded') {
       const pi = typeof obj.payment_intent === 'string' ? obj.payment_intent : ((obj.payment_intent || {}).id || '');
       if (await tsRefundTopup(pi)) return res.json({ received: true });
+      if (await invRefundFromStripe(pi)) return res.json({ received: true });
       const orderId = obj.metadata && obj.metadata.order_id;
       const n = await tsOrders.update(orderId || '__none__', o => { o.status = 'refunded'; return o; })
         || (pi ? await tsOrdersSheet.updateWhere(o => o.stripe_payment_intent === pi, o => { o.status = 'refunded'; return o; }) : 0);

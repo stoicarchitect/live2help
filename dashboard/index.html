@@ -4013,6 +4013,8 @@ async function loadInvoices(){
       grid.innerHTML = '<div class="stage-empty">No invoices generated yet.</div>';
       return;
     }
+    INVOICE_PAY_URLS = {};
+    invoices.forEach(inv => { if(inv.payUrl) INVOICE_PAY_URLS[inv.number] = inv.payUrl; });
     grid.innerHTML = invoices.slice().reverse().map(renderInvoiceCard).join('');
   }catch(e){
     grid.innerHTML = `<div class="stage-empty">Could not load invoices (${e.message}).</div>`;
@@ -4021,6 +4023,11 @@ async function loadInvoices(){
 
 function renderInvoiceCard(inv){
   const statusClass = inv.status === 'paid' ? 'status-paid' : inv.status === 'sent' ? 'status-sent' : '';
+  const methodLabel = inv.status === 'paid' && inv.paymentMethod
+    ? `<div class="invoice-dates" style="color:#C9A84C;">Paid ${inv.paymentMethod === 'pay_by_bank' ? 'by Pay by Bank' : 'by bank transfer'}${inv.paymentDate ? ' on ' + fmtDateShort(inv.paymentDate) : ''}</div>` : '';
+  const canPay = inv.payUrl && inv.payByBankEligible && inv.status !== 'paid' && inv.status !== 'refunded';
+  const payNote = inv.payUrl && !inv.payByBankEligible && inv.status !== 'paid' && Number(inv.amount) > 10000
+    ? `<div class="invoice-dates" title="Stripe takes Pay by Bank up to £10,000 by default">Over £10,000: bank transfer only</div>` : '';
   return `
     <div class="invoice-card ${statusClass}">
       <div class="invoice-card-top">
@@ -4029,14 +4036,17 @@ function renderInvoiceCard(inv){
           <option value="pending" ${inv.status === 'pending' ? 'selected' : ''}>Pending</option>
           <option value="sent" ${inv.status === 'sent' ? 'selected' : ''}>Sent</option>
           <option value="paid" ${inv.status === 'paid' ? 'selected' : ''}>Paid</option>
+          ${inv.status === 'refunded' ? '<option value="refunded" selected>Refunded</option>' : ''}
         </select>
       </div>
       <div class="invoice-company">${inv.company}</div>
       <div class="invoice-candidate">${inv.candidateName}${inv.role ? ' &middot; ' + inv.role : ''}</div>
       <div class="invoice-amount">£${Number(inv.amount).toLocaleString('en-GB', {minimumFractionDigits:2})}</div>
       <div class="invoice-dates">${fmtDateShort(inv.date)} &rarr; ${fmtDateShort(inv.dueDate)}</div>
+      ${methodLabel}${payNote}
       <div class="invoice-card-actions">
         <button onclick="downloadInvoicePDF('${inv.number}')">Download PDF</button>
+        ${canPay ? `<button onclick="copyInvoicePayLink('${inv.number}')" title="Copy the client's Pay by Bank link to paste into your email">Copy pay link</button>` : ''}
         <button class="danger" onclick="deleteInvoiceCard('${inv.number}')">Delete</button>
       </div>
     </div>
@@ -4176,6 +4186,14 @@ async function updateInvoiceStatus(number, status){
   }catch(e){
     showToast('Could not update invoice status');
   }
+}
+
+// Pay by Bank links (build 45): kept from the last load so the copy button needs no extra request
+let INVOICE_PAY_URLS = {};
+async function copyInvoicePayLink(number){
+  const url = INVOICE_PAY_URLS[number];
+  if(!url){ showToast('No pay link for this invoice'); return; }
+  showToast((await copyToClipboard(url)) ? 'Pay by Bank link copied - paste it into your email to the client' : 'Could not copy: ' + url);
 }
 
 function downloadInvoicePDF(number){
@@ -16712,7 +16730,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '23 Oct 2026 - build 44';
+var PAGE_BUILD = '23 Oct 2026 - build 45';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
