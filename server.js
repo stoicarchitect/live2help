@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
-import fetch from 'node-fetch';
+import nodeFetch from 'node-fetch';
+import { AsyncLocalStorage } from 'async_hooks';
 import { google } from 'googleapis';
 import PDFDocument from 'pdfkit';
 import nodemailer from 'nodemailer';
@@ -27,6 +28,10 @@ google.options({
     statusCodesToRetry: [[429, 429], [500, 599]],
   },
 });
+
+// Build 46: every outgoing request goes through here, so AI calls can be costed and capped
+function fetch(url, opts) { return aiTrackedFetch(url, opts); }
+const aiCtx = new AsyncLocalStorage();
 
 const app = express();
 app.use(cors());
@@ -237,6 +242,7 @@ const PUBLIC_API = [
   { method: 'POST', re: /^\/api\/talent-pool$/ },
   { method: 'POST', re: /^\/api\/funnel-lead$/ },
   { method: 'POST', re: /^\/api\/claude$/ },
+  { method: 'POST', re: /^\/api\/brevo\/webhook$/ },
   { method: 'POST', re: /^\/api\/talent-suite\/(start|verify|me|tool|cv-docx|review-request|orders|checkout|credits\/checkout)$/ },
   { method: 'POST', re: /^\/api\/stripe\/webhook$/ },
   { method: 'GET', re: /^\/api\/public\/roles(\/[a-z0-9-]+)?$/ },
@@ -280,6 +286,9 @@ app.use('/api', async (req, res, next) => {
   req.headers['x-user-role'] = payload.key;
   next();
 });
+
+// Build 46: remember which page feature and person each request is for, so AI spend can be split by feature
+app.use((req, res, next) => aiCtx.run({ path: req.path, user: actorOf(req) }, next));
 
 
 app.post('/api/change-password', async (req, res) => {
@@ -9405,14 +9414,16 @@ function publicItem(i) { const { _p, _idx, _hash, ...rest } = i; return rest; }
 
 app.get('/api/pool-matches', async (req, res) => {
   try {
-    const company = String(req.query.company || ''), roleName = String(req.query.role || '');
+    const rfxQ = String(req.query.rfx || '');
+    const ctx = rfxQ ? await loadMatchContextRfx(rfxQ) : null;
+    const company = ctx ? ctx.role.company : String(req.query.company || ''), roleName = ctx ? ctx.role.role : String(req.query.role || '');
     if (!roleName) return res.status(400).json({ error: 'role is required' });
-    const ctx = await loadMatchContext(company, roleName);
-    const v = buildMatchView(company, roleName, ctx);
+    const mctx = ctx || await loadMatchContext(company, roleName);
+    const v = buildMatchView(company, roleName, mctx);
     const shortlist = [...v.within, ...v.unknown, ...v.outside].filter(i => i.shortlisted);
     res.json({
-      role: { company, role: roleName, location: ctx.role.location || '', salary_band: ctx.role.salary_band || '', public_title: ctx.role.public_title || '' },
-      origin: { ok: ctx.origin.ok, label: ctx.origin.label }, radius: MATCH_RADIUS_MILES,
+      role: { company, role: roleName, location: mctx.role.location || '', salary_band: mctx.role.salary_band || '', public_title: mctx.role.public_title || '', rfx: mctx.role.rfx || '' },
+      origin: { ok: mctx.origin.ok, label: mctx.origin.label }, radius: MATCH_RADIUS_MILES,
       shortlist: shortlist.map(publicItem),
       within: v.within.map(publicItem), unknown: v.unknown.map(publicItem), outside: v.outside.map(publicItem),
       pending: { needsIndex: v.needsIndex.length, needsScore: v.scorable.length },
@@ -9428,7 +9439,8 @@ app.get('/api/pool-matches', async (req, res) => {
 app.post('/api/pool-matches/process', async (req, res) => {
   try {
     const b = req.body || {};
-    const company = String(b.company || ''), roleName = String(b.role || '');
+    const rctx = b.rfx ? await loadMatchContextRfx(String(b.rfx)) : null;
+    const company = rctx ? rctx.role.company : String(b.company || ''), roleName = rctx ? rctx.role.role : String(b.role || '');
     if (!roleName) return res.status(400).json({ error: 'role is required' });
     if (!API_KEY) return res.status(500).json({ error: 'The AI key is not set on the server' });
     const key = matchRoleKey(company, roleName);
@@ -9438,7 +9450,7 @@ app.post('/api/pool-matches/process', async (req, res) => {
       // also give any CV that could not be read last time another go
       await poolCvIndexTable.updateWhere(o => o.status && o.status !== 'ok', o => ({ ...o, cv_file_id: '' }));
     }
-    const ctx = await loadMatchContext(company, roleName);
+    const ctx = rctx || await loadMatchContext(company, roleName);
     let v = buildMatchView(company, roleName, ctx);
     const done = { indexed: 0, scored: 0 };
 
@@ -9484,7 +9496,8 @@ app.post('/api/pool-matches/process', async (req, res) => {
 app.post('/api/pool-matches/shortlist', async (req, res) => {
   try {
     const b = req.body || {};
-    const company = String(b.company || ''), roleName = String(b.role || ''), poolId = String(b.poolId || '');
+    const rr = b.rfx ? (await rfxResultsTable.list()).find(x => x.id === String(b.rfx)) : null;
+    const company = rr ? rr.company : String(b.company || ''), roleName = rr ? rr.role : String(b.role || ''), poolId = String(b.poolId || '');
     if (!roleName || !poolId) return res.status(400).json({ error: 'role and poolId are required' });
     const key = matchRoleKey(company, roleName);
     const id = `${key}|${poolId}`;
@@ -12798,7 +12811,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '23 Oct 2026 - build 45 (client invoices: Pay by Bank through Stripe)';
+const SERVER_BUILD = '24 Oct 2026 - build 46 (one-click email, AI spend, spec CV sends)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -14582,5 +14595,690 @@ async function tsOrdersDigest() {
   return `- Paid expert services this month: £${rev.toFixed(2)}\n- Orders open: ${open.length}${late.length ? ` (${late.length} past due)` : ''}${open.length ? '\n' + open.slice(0, 8).map(o => `  ${o.candidate_name}: ${TS_TIERS[o.tier] ? TS_TIERS[o.tier].name : o.tier}, due ${o.due_date}`).join('\n') : ''}`;
 }
 
+
+/* ======================================================================
+   BUILD 46 - One-click email, AI spend control, Role Finder matching,
+   spec CV sends (Candidate A, B, C) and AI outreach drafts.
+
+   Phase 0  AI spend: every Anthropic call is costed and logged to the
+            "AI Usage" tab, split by feature and person. Dan can set a
+            monthly budget in pounds; at the limit AI features pause with
+            a clear message instead of draining the credit.
+   Phase 1  Send engine: emails go through Brevo from whoever is signed
+            in, reply-to their own inbox and a BCC copy to them. Every
+            send is logged to the "Email Log" tab with a daily counter.
+   Phase 2  Talent pool matching works on Role Finder adverts too, only
+            when someone presses the button.
+   Phase 3  Spec sends: anonymised CVs labelled Candidate A, B, C go to
+            companies found in Role Finder. The "Spec Sends" tab records
+            which real person each label was.
+   Phase 4  Outreach: AI drafts a short, company-specific email from the
+            advert and deep dive; Ella reviews and sends. Daily cap.
+   ====================================================================== */
+
+/* ---------------- Phase 0: AI spend ---------------- */
+
+// US dollars per million tokens. Cache writes cost 1.25x input, cache reads 0.1x.
+const AI_PRICES = [
+  { re: /haiku/i, input: 1, output: 5 },
+  { re: /sonnet/i, input: 3, output: 15 },
+  { re: /opus-4-[5-9]|opus-[5-9]/i, input: 5, output: 25 },
+  { re: /opus/i, input: 15, output: 75 },
+];
+const AI_SEARCH_USD = 0.01; // per web search
+
+function aiPriceFor(model) { return AI_PRICES.find(p => p.re.test(String(model || ''))) || AI_PRICES[1]; }
+
+const aiUsageTable = makeSimpleTable({
+  tab: 'AI Usage',
+  header: ['id', 'at', 'month', 'user', 'feature', 'path', 'model', 'input', 'output', 'cache_write', 'cache_read', 'searches', 'usd', 'gbp'],
+  path: null,
+  label: 'AI usage',
+});
+
+const AI_FEATURES = [
+  [/^\/api\/claude/, 'Career Hub (public)'],
+  [/^\/api\/talent-suite/, 'Talent Suite (public)'],
+  [/^\/api\/role-finder\/results\/[^/]+\/deep-dive/, 'Deep dives'],
+  [/^\/api\/(role-finder\/run|cron)/, 'Morning automation'],
+  [/^\/api\/competitors\/adverts\/[^/]+\/find-client/, 'Find the client'],
+  [/^\/api\/submissions/, 'Submissions'],
+  [/^\/api\/interview-packs/, 'Interview packs'],
+  [/^\/api\/pool-matches/, 'Talent pool matching'],
+  [/^\/api\/client-sites/, 'Site info'],
+  [/^\/api\/offer-docs/, 'Offer and rejection emails'],
+  [/^\/api\/careers/, 'Careers page text'],
+  [/^\/api\/spec/, 'Spec CVs and emails'],
+  [/^\/api\/outreach/, 'Outreach drafts'],
+];
+function aiFeatureFor(p) {
+  const path = String(p || '');
+  const hit = AI_FEATURES.find(([re]) => re.test(path));
+  return hit ? hit[1] : (path ? path.replace(/^\/api\//, '') : 'Background job');
+}
+
+const AI_DEFAULTS = { monthlyGbp: 0, fx: 0.79 };
+let aiSettingsCache = null;
+async function aiSettings() {
+  if (aiSettingsCache && Date.now() - aiSettingsCache.at < 60000) return aiSettingsCache.v;
+  let v = { ...AI_DEFAULTS };
+  try { v = { ...AI_DEFAULTS, ...JSON.parse(((await settingsTable.list()).find(o => o.id === 'ai_budget') || {}).value || '{}') }; } catch (e) { /* defaults */ }
+  aiSettingsCache = { at: Date.now(), v };
+  return v;
+}
+
+function aiMonth() { return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' }).slice(0, 7); }
+
+// Month-to-date spend, read from the sheet once a minute and topped up in memory between reads
+let aiSpendCache = null;
+async function aiMonthSpendGbp() {
+  const month = aiMonth();
+  if (aiSpendCache && aiSpendCache.month === month && Date.now() - aiSpendCache.at < 60000) return aiSpendCache.gbp + aiSpendCache.extra;
+  let gbp = 0;
+  try { gbp = (await aiUsageTable.list()).filter(o => o.month === month).reduce((t, o) => t + (parseFloat(o.gbp) || 0), 0); } catch (e) { gbp = aiSpendCache && aiSpendCache.month === month ? aiSpendCache.gbp + aiSpendCache.extra : 0; }
+  aiSpendCache = { month, at: Date.now(), gbp, extra: 0 };
+  return gbp;
+}
+
+async function aiBudgetCheck() {
+  const st = await aiSettings();
+  const cap = parseFloat(st.monthlyGbp) || 0;
+  if (cap <= 0) return;
+  const spent = await aiMonthSpendGbp();
+  if (spent >= cap) {
+    const e = new Error(`This month's AI budget of £${cap.toFixed(2)} has been reached, so AI features are paused until the 1st. Dan can raise the budget under AI Spend.`);
+    e.aiBudget = true;
+    throw e;
+  }
+}
+
+async function aiRecord(model, usage, ctx) {
+  try {
+    const u = usage || {};
+    const pr = aiPriceFor(model);
+    const input = Number(u.input_tokens) || 0, output = Number(u.output_tokens) || 0;
+    const cw = Number(u.cache_creation_input_tokens) || 0, cr = Number(u.cache_read_input_tokens) || 0;
+    const searches = Number(u.server_tool_use && u.server_tool_use.web_search_requests) || 0;
+    const usd = (input * pr.input + cw * pr.input * 1.25 + cr * pr.input * 0.1 + output * pr.output) / 1e6 + searches * AI_SEARCH_USD;
+    const st = await aiSettings();
+    const gbp = usd * (parseFloat(st.fx) || AI_DEFAULTS.fx);
+    if (aiSpendCache && aiSpendCache.month === aiMonth()) aiSpendCache.extra += gbp;
+    const c = ctx || {};
+    await aiUsageTable.append({
+      id: 'ai-' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'),
+      at: new Date().toISOString(), month: aiMonth(),
+      user: c.user && c.user !== 'unknown' ? c.user : (/^\/api\/(claude|talent-suite)/.test(c.path || '') ? 'public' : 'system'),
+      feature: aiFeatureFor(c.path), path: String(c.path || '').slice(0, 120), model: String(model || ''),
+      input: String(input), output: String(output), cache_write: String(cw), cache_read: String(cr), searches: String(searches),
+      usd: usd.toFixed(5), gbp: gbp.toFixed(5),
+    });
+  } catch (e) { console.error('AI usage log failed:', e.message); }
+}
+
+async function aiTrackedFetch(url, opts) {
+  const isAi = typeof url === 'string' && url.startsWith('https://api.anthropic.com/v1/messages');
+  if (!isAi) return nodeFetch(url, opts);
+  await aiBudgetCheck();
+  const ctx = aiCtx.getStore() || {};
+  // a large buffer so the copy read for costing can never hold up the caller's own read
+  const resp = await nodeFetch(url, { ...(opts || {}), highWaterMark: 16 * 1024 * 1024 });
+  if (resp.ok) {
+    resp.clone().json().then(d => aiRecord(d && d.model, d && d.usage, ctx)).catch(() => {});
+  }
+  return resp;
+}
+
+app.get('/api/ai-spend', requireAdmin, async (req, res) => {
+  try {
+    const st = await aiSettings();
+    const rows = await aiUsageTable.list().catch(() => []);
+    const month = String(req.query.month || aiMonth());
+    const today = rfxToday();
+    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+    const inMonth = rows.filter(o => o.month === month);
+    const sum = list => list.reduce((t, o) => t + (parseFloat(o.gbp) || 0), 0);
+    const group = (list, key) => {
+      const m = new Map();
+      list.forEach(o => {
+        const k = o[key] || 'other';
+        const g = m.get(k) || { name: k, gbp: 0, calls: 0, searches: 0 };
+        g.gbp += parseFloat(o.gbp) || 0; g.calls++; g.searches += parseInt(o.searches, 10) || 0;
+        m.set(k, g);
+      });
+      return [...m.values()].sort((a, b) => b.gbp - a.gbp).map(g => ({ ...g, gbp: Math.round(g.gbp * 100) / 100 }));
+    };
+    const days = new Map();
+    inMonth.forEach(o => { const d = String(o.at).slice(0, 10); days.set(d, (days.get(d) || 0) + (parseFloat(o.gbp) || 0)); });
+    res.json({
+      month, settings: st,
+      today: Math.round(sum(rows.filter(o => new Date(o.at).toLocaleDateString('en-CA', { timeZone: 'Europe/London' }) === today)) * 100) / 100,
+      week: Math.round(sum(rows.filter(o => o.at >= weekAgo)) * 100) / 100,
+      monthTotal: Math.round(sum(inMonth) * 100) / 100,
+      byFeature: group(inMonth, 'feature'), byUser: group(inMonth, 'user'),
+      byDay: [...days.entries()].sort().map(([d, g]) => ({ day: d, gbp: Math.round(g * 100) / 100 })),
+      recent: inMonth.slice(-40).reverse().map(o => ({ at: o.at, user: o.user, feature: o.feature, model: o.model, searches: o.searches, gbp: o.gbp })),
+      months: [...new Set(rows.map(o => o.month))].sort().reverse(),
+    });
+  } catch (e) { console.error('GET /api/ai-spend:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/ai-spend/settings', requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const next = { ...(await aiSettings()) };
+    if (b.monthlyGbp !== undefined) next.monthlyGbp = Math.max(0, Math.min(5000, parseFloat(b.monthlyGbp) || 0));
+    if (b.fx !== undefined) next.fx = Math.max(0.3, Math.min(2, parseFloat(b.fx) || AI_DEFAULTS.fx));
+    await settingsTable.upsert({ id: 'ai_budget', value: JSON.stringify(next), updated_by: actorOf(req) });
+    aiSettingsCache = null;
+    auditLog(auditActorOf(req), 'updated', 'ai_budget', 'AI budget', JSON.stringify(next));
+    res.json({ ok: true, data: next });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ---------------- Phase 1: send engine ---------------- */
+
+const MAIL_DAILY_LIMIT = parseInt(process.env.MAIL_DAILY_LIMIT || '300', 10);
+const MAIL_DEFAULTS = { outreachCap: 20 };
+const COLD_KINDS = ['outreach', 'spec'];
+
+const mailLogTable = makeSimpleTable({
+  tab: 'Email Log',
+  header: ['id', 'at', 'day', 'user', 'from', 'to', 'cc', 'subject', 'kind', 'company', 'role', 'entity', 'attachments', 'message_id', 'status', 'event_at', 'ref'],
+  path: null,
+  label: 'Email',
+});
+
+async function mailSettings() {
+  try { return { ...MAIL_DEFAULTS, ...JSON.parse(((await settingsTable.list()).find(o => o.id === 'mail_settings') || {}).value || '{}') }; }
+  catch (e) { return { ...MAIL_DEFAULTS }; }
+}
+
+function mailAddrs(v) {
+  return String(Array.isArray(v) ? v.join(',') : (v || '')).split(/[,;\s]+/).map(x => x.trim()).filter(x => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x));
+}
+
+function unsubToken(email) { return crypto.createHmac('sha256', AUTH_SECRET).update('unsub|' + lc(email)).digest('base64url').slice(0, 22); }
+function unsubUrl(email) { return `${tpPublicBase()}/u/${encodeURIComponent(Buffer.from(lc(email)).toString('base64url'))}.${unsubToken(email)}`; }
+
+const TALENT_SUITE_URL = 'https://careers.live2helprecruitment.co.uk/talent-suite/';
+const L2H_SITE_URL = 'https://www.live2helprecruitment.co.uk';
+
+// The branded footer on first-contact emails: one Talent Suite link, the website, terms and an opt-out
+function coldFooter(email) {
+  const u = unsubUrl(email);
+  const html = `<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:22px;border-collapse:collapse;max-width:560px;width:100%;">
+<tr><td style="background:#0B1F3A;padding:14px 18px;border-top:3px solid #C9A84C;font-family:Calibri,'Segoe UI',Arial,sans-serif;">
+<div style="color:#C9A84C;font-size:10.5pt;font-weight:bold;letter-spacing:.4px;">THE LIVE 2 HELP TALENT SUITE</div>
+<div style="color:#ffffff;font-size:10pt;line-height:1.45;margin-top:4px;">Free recruiter-built tools for both sides of the hire: role and advert builders, interview kits and candidate tools. <a href="${TALENT_SUITE_URL}" style="color:#C9A84C;font-weight:bold;text-decoration:none;">Explore the Talent Suite</a></div>
+</td></tr>
+<tr><td style="padding:8px 2px 0;font-family:Calibri,'Segoe UI',Arial,sans-serif;font-size:8.5pt;color:#888888;line-height:1.4;">
+Candidates introduced by Live 2 Help Recruitment are covered by our terms of business, available on request or at <a href="${L2H_SITE_URL}" style="color:#888888;">live2helprecruitment.co.uk</a>. If you would rather not hear from us, <a href="${u}" style="color:#888888;">opt out here</a> and we will not contact you again.
+</td></tr></table>`;
+  const text = `\n\n--\nThe Live 2 Help Talent Suite: free recruiter-built tools for both sides of the hire. ${TALENT_SUITE_URL}\nCandidates introduced by Live 2 Help Recruitment are covered by our terms of business, available on request or at live2helprecruitment.co.uk. To opt out of further emails: ${u}`;
+  return { html, text, unsub: u };
+}
+
+async function isSuppressed(emails, company) {
+  const list = await suppressionTable.list().catch(() => []);
+  const set = new Set(list.map(s => lc(s.email)).filter(Boolean));
+  const comps = new Set(list.map(s => rfxNormCompany(s.company)).filter(Boolean));
+  const hitEmail = emails.find(e => set.has(lc(e)));
+  if (hitEmail) return hitEmail;
+  if (company && comps.has(rfxNormCompany(company))) return company;
+  return '';
+}
+
+async function mailCounts(user) {
+  const day = rfxToday();
+  const rows = (await mailLogTable.list().catch(() => [])).filter(o => o.day === day);
+  return {
+    today: rows.length,
+    mineCold: rows.filter(o => o.user === user && COLD_KINDS.includes(o.kind)).length,
+    teamCold: rows.filter(o => COLD_KINDS.includes(o.kind)).length,
+  };
+}
+
+app.get('/api/mail/stats', async (req, res) => {
+  try {
+    const me = actorOf(req);
+    const st = await mailSettings();
+    const rows = await mailLogTable.list().catch(() => []);
+    const day = rfxToday(), month = day.slice(0, 7);
+    const mine = rows.filter(o => o.user === me);
+    res.json({
+      today: rows.filter(o => o.day === day).length, dailyLimit: MAIL_DAILY_LIMIT,
+      month: rows.filter(o => String(o.day).startsWith(month)).length,
+      myColdToday: mine.filter(o => o.day === day && COLD_KINDS.includes(o.kind)).length, outreachCap: st.outreachCap,
+      recent: (isAdmin(req) ? rows : mine).slice(-50).reverse().map(o => ({ at: o.at, user: o.user, to: o.to, subject: o.subject, kind: o.kind, company: o.company, status: o.status })),
+      sender: profileOf(me),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/mail/settings', requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const next = await mailSettings();
+    if (b.outreachCap !== undefined) next.outreachCap = Math.max(0, Math.min(200, parseInt(b.outreachCap, 10) || 0));
+    await settingsTable.upsert({ id: 'mail_settings', value: JSON.stringify(next), updated_by: actorOf(req) });
+    auditLog(auditActorOf(req), 'updated', 'mail_settings', 'Email settings', JSON.stringify(next));
+    res.json({ ok: true, data: next });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+const MAIL_KINDS = ['email', 'submission', 'interview_pack', 'offer_docs', 'invite', 'rejection', 'invoice', 'checkin', 'outreach', 'spec', 'candidate'];
+
+app.post('/api/mail/send', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const me = actorOf(req);
+    if (!me || me === 'unknown') return res.status(401).json({ error: 'Please sign in again' });
+    if (!process.env.BREVO_SMTP_USER || !process.env.BREVO_SMTP_PASS) return res.status(500).json({ error: 'Brevo email settings are missing on the server. Use the .eml backup for now.' });
+    const to = mailAddrs(b.to), cc = mailAddrs(b.cc);
+    if (!to.length) return res.status(400).json({ error: 'Add a valid email address to send to' });
+    if (to.length + cc.length > 10) return res.status(400).json({ error: 'Too many recipients for one email (10 at most)' });
+    const subject = String(b.subject || '').trim().slice(0, 250);
+    if (!subject) return res.status(400).json({ error: 'Add a subject' });
+    const kind = MAIL_KINDS.includes(b.kind) ? b.kind : 'email';
+    const meta = b.meta || {};
+    const cold = COLD_KINDS.includes(kind);
+
+    const counts = await mailCounts(me);
+    if (counts.today >= MAIL_DAILY_LIMIT) return res.status(429).json({ error: `Today's limit of ${MAIL_DAILY_LIMIT} emails through Brevo has been reached. Use the .eml backup for anything else today.` });
+    if (cold) {
+      const st = await mailSettings();
+      if (counts.mineCold >= st.outreachCap) return res.status(429).json({ error: `You have reached today's limit of ${st.outreachCap} first-contact emails. It resets at midnight, and Dan can change it under Email settings.` });
+      const sup = await isSuppressed([...to, ...cc], meta.company);
+      if (sup) return res.status(409).json({ error: `${sup} has opted out of emails from us, so this cannot be sent.` });
+    }
+
+    const prof = profileOf(me);
+    const fromName = String(prof.fullName || 'Live 2 Help Recruitment').replace(/["<>]/g, '');
+    let html = String(b.html || '');
+    let text = String(b.text || '');
+    if (!html && !text) return res.status(400).json({ error: 'The email is empty' });
+    if (!html) html = '<html><body>' + text.split(/\n{2,}/).map(p => `<p style="margin:0 0 12px 0;font-family:Calibri,'Segoe UI',Arial,sans-serif;font-size:11pt;color:#222;">${p.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>')}</p>`).join('') + '</body></html>';
+    const headers = { 'X-L2H-Kind': kind };
+    if (cold) {
+      const f = coldFooter(to[0]);
+      html = /<\/body>/i.test(html) ? html.replace(/<\/body>/i, f.html + '</body>') : html + f.html;
+      text = text + f.text;
+      headers['List-Unsubscribe'] = `<${f.unsub}>`;
+    }
+
+    const attachments = [];
+    let bytes = 0;
+    (Array.isArray(b.inline) ? b.inline : []).forEach((im, i) => {
+      if (!im || !im.base64 || !im.cid) return;
+      bytes += im.base64.length * 0.75;
+      attachments.push({ filename: `logo${i + 1}.${/png/.test(im.mime) ? 'png' : /gif/.test(im.mime) ? 'gif' : 'jpg'}`, content: im.base64, encoding: 'base64', contentType: im.mime || 'image/png', cid: im.cid });
+    });
+    (Array.isArray(b.attachments) ? b.attachments : []).forEach(a => {
+      if (!a || !a.base64) return;
+      bytes += a.base64.length * 0.75;
+      attachments.push({ filename: String(a.fileName || 'attachment').replace(/[\r\n"]/g, ''), content: a.base64, encoding: 'base64', contentType: a.mime || 'application/octet-stream' });
+    });
+    if (bytes > 10 * 1024 * 1024) return res.status(413).json({ error: 'The attachments are too large to send (10MB at most). Use the .eml backup.' });
+
+    const info = await emailTransporter.sendMail({
+      from: `"${fromName}" <${prof.email}>`, replyTo: prof.email, sender: prof.email,
+      to, cc: cc.length ? cc : undefined, bcc: b.bccMe === false ? undefined : prof.email,
+      subject, text: text || undefined, html, attachments, headers,
+    });
+    const messageId = String(info && info.messageId || '').replace(/[<>]/g, '');
+    const now = new Date().toISOString();
+    const row = {
+      id: 'em-' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), at: now, day: rfxToday(), user: me, from: prof.email,
+      to: to.join(', '), cc: cc.join(', '), subject, kind, company: String(meta.company || '').slice(0, 120), role: String(meta.role || '').slice(0, 120),
+      entity: String(meta.entity || '').slice(0, 120), attachments: (Array.isArray(b.attachments) ? b.attachments : []).map(a => a.fileName).join(', ').slice(0, 400),
+      message_id: messageId, status: 'sent', event_at: now, ref: String(meta.ref || '').slice(0, 120),
+    };
+    await mailLogTable.append(row).catch(e => console.error('Email log failed:', e.message));
+    if (b.log !== false) {
+      commsTable.append({
+        id: 'cm-' + Date.now().toString(36), timestamp: now, user: me,
+        entity_type: meta.entityType || (meta.entity ? 'candidate' : 'client'), entity_name: meta.entity || meta.contactName || to[0],
+        company: meta.company || '', role: meta.role || '', channel: 'Email', direction: 'Out',
+        summary: `${subject}${row.attachments ? ' (attached: ' + row.attachments + ')' : ''}`.slice(0, 480), follow_up_date: '', follow_up_done: '',
+      }).catch(() => {});
+    }
+    auditLog(auditActorOf(req), 'email_sent', kind, to.join(', '), subject);
+    res.json({ ok: true, id: row.id, messageId, counts: { today: counts.today + 1, dailyLimit: MAIL_DAILY_LIMIT } });
+  } catch (e) {
+    console.error('POST /api/mail/send error:', e.message);
+    res.status(e.aiBudget ? 429 : 502).json({ error: 'The email could not be sent: ' + e.message + '. Nothing went out, so you can try again or use the .eml backup.' });
+  }
+});
+
+// Brevo calls this when an email is delivered, opened, bounced and so on.
+// Set it up in Brevo > Transactional > Settings > Webhook with the URL shown on the Email settings panel.
+app.post('/api/brevo/webhook', async (req, res) => {
+  try {
+    const key = String(req.query.key || '');
+    const want = crypto.createHmac('sha256', AUTH_SECRET).update('brevo-hook').digest('hex').slice(0, 24);
+    if (!key || key !== want) return res.status(403).json({ error: 'Not allowed' });
+    const events = Array.isArray(req.body) ? req.body : [req.body || {}];
+    for (const ev of events) {
+      const mid = String(ev['message-id'] || ev.messageId || '').replace(/[<>]/g, '');
+      const event = String(ev.event || '').toLowerCase();
+      if (!mid || !event) continue;
+      const rank = { sent: 0, request: 0, delivered: 1, opened: 2, unique_opened: 2, click: 3, clicked: 3, soft_bounce: 4, hard_bounce: 5, blocked: 5, invalid_email: 5, spam: 5, unsubscribed: 5 };
+      await mailLogTable.updateWhere(o => o.message_id === mid && (rank[event] || 0) >= (rank[o.status] || 0), o => ({ ...o, status: event, event_at: new Date().toISOString() }));
+      if (event === 'hard_bounce' || event === 'spam' || event === 'unsubscribed') {
+        const email = lc(ev.email);
+        if (email && !(await suppressionTable.list()).some(s => lc(s.email) === email)) {
+          await suppressionTable.upsert({ id: rfxId('sp'), email, company: '', reason: `Brevo: ${event.replace('_', ' ')}`, added_by: 'system', added_at: rfxNow() });
+        }
+      }
+    }
+    res.json({ ok: true });
+  } catch (e) { console.error('Brevo webhook:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/mail/webhook-url', requireAdmin, (req, res) => {
+  const key = crypto.createHmac('sha256', AUTH_SECRET).update('brevo-hook').digest('hex').slice(0, 24);
+  res.json({ url: `${tpPublicBase()}/api/brevo/webhook?key=${key}` });
+});
+
+// One-click opt out from first-contact emails
+app.get('/u/:token', async (req, res) => {
+  const page = (title, msg) => `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${title}</title></head>
+<body style="margin:0;background:#0B1F3A;font-family:Calibri,'Segoe UI',Arial,sans-serif;color:#fff;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px;">
+<div style="max-width:460px;border-top:3px solid #C9A84C;background:#13294B;padding:28px 26px;"><div style="color:#C9A84C;font-size:12px;letter-spacing:1px;font-weight:bold;">LIVE 2 HELP RECRUITMENT</div><h1 style="font-size:21px;margin:8px 0 10px;">${title}</h1><p style="line-height:1.5;margin:0;color:#e6e6ea;">${msg}</p></div></body></html>`;
+  try {
+    const [enc, tok] = String(req.params.token || '').split('.');
+    const email = lc(Buffer.from(String(enc || ''), 'base64url').toString());
+    if (!email || !tok || tok !== unsubToken(email)) return res.status(400).send(page('Link not recognised', 'This opt-out link is not valid. Reply to the email and ask us to stop, and we will.'));
+    if (!(await suppressionTable.list()).some(s => lc(s.email) === email)) {
+      await suppressionTable.upsert({ id: rfxId('sp'), email, company: '', reason: 'Opted out from email link', added_by: 'system', added_at: rfxNow() });
+      auditLog('system', 'created', 'suppression', email, 'Opted out from email link');
+    }
+    res.send(page('You have been opted out', `We will not send further emails to ${email.replace(/</g, '&lt;')}. Sorry for any bother.`));
+  } catch (e) { res.status(500).send(page('Something went wrong', 'Please reply to the email and ask us to stop, and we will.')); }
+});
+
+/* ---------------- Phase 2: talent pool matching for Role Finder adverts ---------------- */
+
+async function loadMatchContextRfx(resultId) {
+  const r = (await rfxResultsTable.list()).find(x => x.id === resultId);
+  if (!r) throw new Error('That Role Finder advert could not be found');
+  let dive = null;
+  try { dive = r.dive_json ? JSON.parse(r.dive_json) : null; } catch (e) { dive = null; }
+  const about = dive && dive.company ? [dive.company.summary, dive.company.industry].filter(Boolean).join('. ') : '';
+  const roleCtx = {
+    title: r.role, location: r.location || '',
+    requirements: '',
+    jobDescription: [String(r.description || ''), r.salary ? `Salary: ${r.salary}` : '', about ? `About the company: ${about}` : ''].filter(Boolean).join('\n\n').slice(0, 6000),
+  };
+  const roleHash = sha1(JSON.stringify([roleCtx.title, roleCtx.location, roleCtx.jobDescription]));
+  let origin = { ok: false, label: r.location || '' };
+  const g = await geocodeUK('', r.location || '');
+  if (g) origin = { ok: true, lat: g.lat, lng: g.lng, label: r.location };
+  const [poolRaw, idxRows, scoreRows] = await Promise.all([
+    readPoolRows(), poolCvIndexTable.list().catch(() => []), poolMatchTable.list().catch(() => []),
+  ]);
+  const role = { company: r.company, role: r.role, location: r.location || '', salary_band: r.salary || '', public_title: r.role, rfx: r.id };
+  return { role, roleCtx, roleHash, origin, poolRaw, idxMap: new Map(idxRows.map(o => [o.id, o])), scoreRows, rfx: r };
+}
+
+/* ---------------- Phase 3: spec CV sends ---------------- */
+
+const specCvTable = makeSimpleTable({
+  tab: 'Spec CVs',
+  header: ['id', 'cv_file_id', 'sections', 'removed', 'made_at', 'made_by'],
+  path: null,
+  label: 'Anonymised CV',
+});
+
+const specSendsTable = makeSimpleTable({
+  tab: 'Spec Sends',
+  header: ['id', 'at', 'user', 'batch', 'company', 'contact_name', 'contact_email', 'rfx_id', 'role', 'alias', 'pool_id', 'candidate_name', 'status', 'outcome', 'notes', 'updated_at'],
+  path: null,
+  label: 'Spec send',
+});
+
+const specCheckinsTable = makeSimpleTable({
+  tab: 'Spec Checkins',
+  header: ['id', 'pool_id', 'rfx_id', 'company', 'role', 'candidate_name', 'status', 'asked_at', 'answered_at', 'by'],
+  path: null,
+  label: 'Candidate check-in',
+});
+
+function specAlias(i) { return 'Candidate ' + String.fromCharCode(65 + (i % 26)) + (i >= 26 ? Math.floor(i / 26) + 1 : ''); }
+
+async function poolEntryById(poolId) {
+  const rows = await readPoolRows();
+  const row = rows.find(r => r && r[0] === poolId);
+  if (!row) return null;
+  const p = rowToPoolEntry(row);
+  p.cvFileId = row[11] || '';
+  return p;
+}
+
+function poolConsentOk(p) {
+  const basis = lc(p.consentBasis);
+  return (basis.includes('talent pool') || basis.includes('legitimate') || basis.includes('consent')) && !basis.includes('this role only') && lc(p.erased) !== 'yes';
+}
+
+async function specAnonymisedCv(p, actor) {
+  if (!p.cvFileId) throw new Error(`${p.name} has no CV on file`);
+  const cached = (await specCvTable.list()).find(o => o.id === p.id && o.cv_file_id === p.cvFileId && o.sections);
+  if (cached) { try { return { sections: JSON.parse(cached.sections), removed: JSON.parse(cached.removed || '[]'), cached: true }; } catch (e) { /* rebuild */ } }
+  const drive = getDriveClient();
+  const meta = await drive.files.get({ fileId: p.cvFileId, fields: 'name, mimeType, size' });
+  const kind = cvKind(meta.data.name || p.cvFileName || 'CV', meta.data.mimeType || '');
+  if (!['pdf', 'docx', 'gdoc'].includes(kind)) throw new Error(`${p.name}'s CV is not a PDF or Word file, so it cannot be anonymised`);
+  const dl = await downloadCv({ fileId: p.cvFileId, kind });
+  const cvDoc = { kind: dl.kind, buffer: dl.buffer, text: dl.kind === 'docx' ? docxToText(dl.buffer) : '' };
+  const out = await callClaudeTool({ system: CV_SYSTEM, content: [{ type: 'text', text: `Anonymise this CV. The candidate's name is ${p.name}.` }, ...cvBlocks(cvDoc)], tool: CV_TOOL, maxTokens: 6000 });
+  const cleaned = scrubIdentifiers(cleanDeep(out), { fullName: p.name, emails: [p.email], phones: [p.phone], keepFirstName: false });
+  const sections = cleaned.value.sections || [];
+  const removed = cleaned.value.removed || [];
+  await specCvTable.upsert({ id: p.id, cv_file_id: p.cvFileId, sections: JSON.stringify(sections).slice(0, 48000), removed: JSON.stringify(removed).slice(0, 2000), made_at: new Date().toISOString(), made_by: actor || '' });
+  return { sections, removed, warnings: cleaned.check, cached: false };
+}
+
+// Candidates in the shortlist for a Role Finder advert, with consent and check-in state
+app.get('/api/spec/candidates', async (req, res) => {
+  try {
+    const rfxIdQ = String(req.query.rfx || '');
+    const r = (await rfxResultsTable.list()).find(x => x.id === rfxIdQ);
+    if (!r) return res.status(404).json({ error: 'Advert not found' });
+    const key = matchRoleKey(r.company, r.role);
+    const [scores, rows, checks, sends] = await Promise.all([poolMatchTable.list(), readPoolRows(), specCheckinsTable.list().catch(() => []), specSendsTable.list().catch(() => [])]);
+    const short = scores.filter(o => o.role_key === key && String(o.shortlisted).toUpperCase() === 'TRUE');
+    const byId = new Map(rows.filter(x => x && x[0]).map(x => [x[0], x]));
+    const out = short.map(s => {
+      const row = byId.get(s.pool_id);
+      if (!row) return null;
+      const p = rowToPoolEntry(row);
+      const ck = checks.find(c => c.id === `${s.pool_id}|${r.id}`) || null;
+      const sentHere = sends.filter(x => x.pool_id === s.pool_id && rfxNormCompany(x.company) === rfxNormCompany(r.company));
+      return {
+        poolId: s.pool_id, name: p.name, email: p.email, phone: p.phone, score: s.score, reason: s.reason, strengths: String(s.strengths || '').split('; ').filter(Boolean),
+        hasCv: !!row[11], consentOk: poolConsentOk(p), consentBasis: p.consentBasis, checkin: ck ? ck.status : '', checkinAt: ck ? (ck.answered_at || ck.asked_at) : '',
+        alreadySent: sentHere.map(x => ({ at: x.at, alias: x.alias, by: x.user })),
+      };
+    }).filter(Boolean);
+    res.json({ advert: { id: r.id, company: r.company, role: r.role, location: r.location, salary: r.salary, url: r.url }, candidates: out });
+  } catch (e) { console.error('GET /api/spec/candidates:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Record a candidate's answer to "OK to put you forward?" (asked by phone, text or email)
+app.post('/api/spec/checkin', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const poolId = String(b.poolId || ''), rid = String(b.rfx || '');
+    if (!poolId || !rid) return res.status(400).json({ error: 'poolId and rfx are required' });
+    const status = ['asked', 'yes', 'no'].includes(b.status) ? b.status : 'asked';
+    const r = (await rfxResultsTable.list()).find(x => x.id === rid) || {};
+    const p = await poolEntryById(poolId);
+    const id = `${poolId}|${rid}`;
+    const prev = (await specCheckinsTable.list()).find(o => o.id === id) || {};
+    const now = new Date().toISOString();
+    const saved = await specCheckinsTable.upsert({
+      id, pool_id: poolId, rfx_id: rid, company: r.company || '', role: r.role || '', candidate_name: p ? p.name : (prev.candidate_name || ''),
+      status, asked_at: prev.asked_at || now, answered_at: status === 'asked' ? '' : now, by: actorOf(req),
+    });
+    auditLog(auditActorOf(req), 'spec_checkin', 'pool', `${saved.candidate_name} - ${r.company || ''}`, status);
+    res.json({ ok: true, data: saved });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Anonymised CV as a Word file, labelled with the alias (made once per CV, then reused)
+app.post('/api/spec/cv', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const p = await poolEntryById(String(b.poolId || ''));
+    if (!p) return res.status(404).json({ error: 'Candidate not found in the pool' });
+    if (!poolConsentOk(p)) return res.status(403).json({ error: `${p.name} only agreed to be considered for their original role, so their CV cannot be sent out` });
+    const alias = String(b.alias || 'Candidate A').replace(/[^A-Za-z0-9 ]/g, '').slice(0, 20) || 'Candidate A';
+    const role = String(b.role || '').slice(0, 120);
+    const cv = await specAnonymisedCv(p, actorOf(req));
+    const buf = await buildDocx('cv', { role_title: role ? `${alias} - ${role}` : alias, sections: cv.sections }, { role, contactLine: contactLineFor(actorOf(req)) });
+    res.json({ fileName: `${alias} Anonymised CV${role ? ' ' + role.replace(/[^A-Za-z0-9 \-]+/g, ' ').trim() : ''}.docx`, base64: buf.toString('base64'), cached: cv.cached, warnings: cv.warnings || [], removed: cv.removed || [] });
+  } catch (e) { console.error('POST /api/spec/cv:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+const SPEC_EMAIL_SYSTEM = `You write short, persuasive speculative emails for Live 2 Help Recruitment, a UK recruitment agency, to a company that is advertising a vacancy itself. The agency has anonymised candidates who fit the role.
+
+RULES
+- British English, plain and confident, never salesy or gushing. No em dashes or en dashes; use a plain hyphen.
+- Short enough to read on a phone: a greeting, 2 short paragraphs, then one bullet per candidate, then one clear ask.
+- Open by referencing their advert specifically (role, and how long it has been live if given) and one specific fact about the company if supplied.
+- Each candidate bullet names the alias (Candidate A etc.) and 1-2 specific strengths matched directly to the role. Use ONLY the facts supplied. Never invent employers, years or achievements. Never include candidate names, current employer names or anything that could identify them.
+- Say the anonymised CVs are attached.
+- The ask is to reply to this email to arrange an interview or a quick call. Do not mention links, buttons or fees.
+- Do not add a signature or sign-off name; the system adds the signature. End with "Kind regards," only.
+- Subject line under 60 characters, specific to the role, no clickbait, no exclamation marks.`;
+const SPEC_EMAIL_TOOL = {
+  name: 'write_email',
+  description: 'Return the email subject and body.',
+  input_schema: { type: 'object', properties: { subject: { type: 'string' }, body: { type: 'string' } }, required: ['subject', 'body'] },
+};
+
+const OUTREACH_SYSTEM = `You write first-contact business development emails for Live 2 Help Recruitment, a UK recruitment agency, to a company advertising a vacancy itself.
+
+RULES
+- British English, warm, specific and confident, never salesy. No em dashes or en dashes; use a plain hyphen.
+- Under 130 words. Short enough to read on a phone.
+- Open by referencing their advert specifically (role, location, and how long it has been advertised if given). Use one specific fact about the company if supplied, so it is clearly not a mass email.
+- In one or two sentences, say how the agency can help with this exact hire (for example a shortlist of screened, interview-ready candidates within days, local market knowledge). Only claim what is supplied as agency facts.
+- One clear ask: a 10 minute call this week, or a reply. Do not mention links, attachments or fees.
+- Do not add a signature or sign-off name; end with "Kind regards," only.
+- Subject line under 60 characters, specific to the role, no clickbait, no exclamation marks.`;
+
+const AGENCY_FACTS = 'Live 2 Help Recruitment is a UK recruitment agency covering the West Midlands, Shropshire and Staffordshire and roles UK-wide, specialising in engineering, technical, commercial, operations and office roles. Every candidate is screened by phone before submission and arrives with a structured submission summary matched to the client\'s requirements. Clients typically see a first shortlist within days. Fees are only payable on a successful placement, with a replacement guarantee.';
+
+function rfxDiveOf(r) { try { return r.dive_json ? JSON.parse(r.dive_json) : null; } catch (e) { return null; } }
+
+function companyFacts(r) {
+  const d = rfxDiveOf(r);
+  const c = (d && d.company) || {};
+  return [c.summary && `About: ${c.summary}`, c.industry && `Industry: ${c.industry}`, c.size && `Size: ${c.size}`,
+    c.hiring_signals && c.hiring_signals.length && `Hiring signals: ${c.hiring_signals.slice(0, 3).join('; ')}`].filter(Boolean).join('\n') || 'None found.';
+}
+
+app.post('/api/spec/draft', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const r = (await rfxResultsTable.list()).find(x => x.id === String(b.rfx || ''));
+    if (!r) return res.status(404).json({ error: 'Advert not found' });
+    const items = Array.isArray(b.candidates) ? b.candidates.slice(0, 6) : [];
+    if (!items.length) return res.status(400).json({ error: 'Choose at least one candidate' });
+    const key = matchRoleKey(r.company, r.role);
+    const scores = await poolMatchTable.list();
+    const idx = new Map((await poolCvIndexTable.list().catch(() => [])).map(o => [o.id, o]));
+    const lines = items.map(it => {
+      const s = scores.find(o => o.id === `${key}|${it.poolId}`) || {};
+      const ix = idx.get(it.poolId) || {};
+      return `${it.alias}: strengths ${s.strengths || 'not recorded'}; match note: ${s.reason || 'none'}; recent job titles: ${ix.titles || 'not recorded'}; key skills: ${String(ix.skills || '').slice(0, 300) || 'not recorded'}`;
+    }).join('\n');
+    const days = rfxDaysBetween(r.posted_date, rfxToday());
+    const content = `COMPANY: ${r.company}\nCONTACT NAME: ${b.contactName || 'not known (use "Hello")'}\nADVERT: ${r.role}, ${r.location || ''}${r.salary ? ', ' + r.salary : ''}${days != null ? `, advertised ${days} days` : ''}\nADVERT EXTRACT: ${String(r.description || '').slice(0, 1200)}\n\nCOMPANY FACTS:\n${companyFacts(r)}\n\nANONYMISED CANDIDATES (facts you may use):\n${lines}`;
+    const out = await callClaudeTool({ system: SPEC_EMAIL_SYSTEM, content: [{ type: 'text', text: content }], tool: SPEC_EMAIL_TOOL, maxTokens: 900 });
+    res.json({ subject: String(out.subject || '').replace(/[–—]/g, '-'), body: String(out.body || '').replace(/[–—]/g, '-') });
+  } catch (e) { console.error('POST /api/spec/draft:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Called once the spec email has gone: records which real person each alias was
+app.post('/api/spec/sent', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const r = (await rfxResultsTable.list()).find(x => x.id === String(b.rfx || '')) || {};
+    const items = Array.isArray(b.candidates) ? b.candidates : [];
+    const batch = 'sp-' + Date.now().toString(36);
+    const now = new Date().toISOString();
+    const saved = [];
+    for (const it of items) {
+      const p = await poolEntryById(String(it.poolId || ''));
+      saved.push(await specSendsTable.append({
+        id: `${batch}-${saved.length + 1}`, at: now, user: actorOf(req), batch, company: r.company || b.company || '', contact_name: b.contactName || '', contact_email: b.contactEmail || '',
+        rfx_id: r.id || '', role: r.role || b.role || '', alias: it.alias || '', pool_id: it.poolId || '', candidate_name: p ? p.name : '', status: 'sent', outcome: '', notes: '', updated_at: now,
+      }));
+    }
+    if (r.id && r.status === 'new') await rfxResultsTable.upsert({ ...r, status: 'shortlisted', handled_by: actorOf(req) }).catch(() => {});
+    auditLog(auditActorOf(req), 'spec_sent', 'spec', r.company || '', items.map(i => i.alias).join(', '));
+    res.json({ ok: true, batch, data: saved });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/spec/sends', async (req, res) => {
+  try { res.json({ data: (await specSendsTable.list()).slice().reverse() }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/spec/sends/:id', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const all = await specSendsTable.list();
+    const row = all.find(o => o.id === req.params.id);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    const next = { ...row, updated_at: new Date().toISOString() };
+    if (b.outcome !== undefined) next.outcome = String(b.outcome).slice(0, 60);
+    if (b.notes !== undefined) next.notes = String(b.notes).slice(0, 500);
+    if (b.status !== undefined) next.status = String(b.status).slice(0, 30);
+    res.json({ ok: true, data: await specSendsTable.upsert(next) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ---------------- Phase 4: AI outreach drafts ---------------- */
+
+app.post('/api/outreach/draft', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const r = (await rfxResultsTable.list()).find(x => x.id === String(b.rfx || ''));
+    if (!r) return res.status(404).json({ error: 'Advert not found' });
+    const all = await rfxResultsTable.list();
+    const others = all.filter(x => x.id !== r.id && rfxNormCompany(x.company) === rfxNormCompany(r.company) && x.status !== 'dismissed').slice(0, 4).map(x => x.role);
+    const days = rfxDaysBetween(r.posted_date, rfxToday());
+    const content = `COMPANY: ${r.company}\nCONTACT: ${b.contactName || 'not known (use "Hello")'}${b.contactTitle ? ', ' + b.contactTitle : ''}\nADVERT: ${r.role}, ${r.location || ''}${r.salary ? ', ' + r.salary : ''}${days != null ? `, advertised ${days} days` : ''}\nOTHER LIVE ROLES AT THIS COMPANY: ${others.join('; ') || 'none known'}\nADVERT EXTRACT: ${String(r.description || '').slice(0, 1200)}\n\nCOMPANY FACTS:\n${companyFacts(r)}\n\nAGENCY FACTS:\n${AGENCY_FACTS}\n\nSENDER: ${profileOf(actorOf(req)).fullName}, ${profileOf(actorOf(req)).title}`;
+    const out = await callClaudeTool({ system: OUTREACH_SYSTEM, content: [{ type: 'text', text: content }], tool: SPEC_EMAIL_TOOL, maxTokens: 700 });
+    res.json({ subject: String(out.subject || '').replace(/[–—]/g, '-'), body: String(out.body || '').replace(/[–—]/g, '-') });
+  } catch (e) { console.error('POST /api/outreach/draft:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// After a first-contact email, move the advert on and log the touch in the Cold Call Tracker with a follow-up
+app.post('/api/outreach/sent', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const r = (await rfxResultsTable.list()).find(x => x.id === String(b.rfx || ''));
+    if (r && r.status === 'new') await rfxResultsTable.upsert({ ...r, status: 'shortlisted', handled_by: actorOf(req) }).catch(() => {});
+    const days = Math.max(1, Math.min(30, parseInt(b.followUpDays, 10) || 4));
+    const due = new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
+    let logged = false;
+    try {
+      const sheets = getSheetsClient();
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: CLIENT_SHEET_ID, range: COLD_CALLS_RANGE, valueInputOption: 'USER_ENTERED',
+        requestBody: { values: [[(r && r.company) || b.company || '', b.contactName || 'Hiring contact', 'email', rfxToday(),
+          `${b.kind === 'spec' ? 'Spec CVs sent' : 'Outreach email sent'} by ${titleCase(actorOf(req))}: ${b.subject || ''}`.slice(0, 400), due, 'active', 'attempt', new Date().toISOString()]] },
+      });
+      scheduleTaskTidy();
+      logged = true;
+    } catch (e) { console.error('Cold call log from outreach failed:', e.message); }
+    res.json({ ok: true, followUp: due, logged });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
