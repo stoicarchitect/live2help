@@ -15762,6 +15762,17 @@ async function lpxSaveNew(){
 #talentSuiteView{display:none;flex:1;flex-direction:column;min-height:0;}
 #talentSuiteView .row-actions{flex-wrap:wrap;justify-content:flex-end;max-width:170px;margin-left:auto;white-space:normal;}
 #talentSuiteView .row-actions button{white-space:nowrap;}
+#talentSuiteView .ts-chk{width:34px;text-align:center;}
+#talentSuiteView .ts-chk input{width:16px;height:16px;accent-color:var(--gold);cursor:pointer;}
+#talentSuiteView tr.ts-sel td{background:#FBF6E8 !important;}
+.ts-bulk{display:none;align-items:center;gap:8px;flex-wrap:wrap;background:var(--navy,#0B0B18);color:#fff;border-radius:4px;padding:8px 12px;margin:0 0 8px;font-size:13px;}
+.ts-bulk.on{display:flex;}
+.ts-bulk b{color:var(--gold);margin-right:6px;}
+.ts-bulk button,.ts-bulk select{padding:6px 10px;border:1px solid rgba(255,255,255,.25);background:transparent;color:#fff;border-radius:2px;font-family:inherit;font-size:12px;cursor:pointer;}
+.ts-bulk select option{color:#1A1A1A;}
+.ts-bulk button:hover{border-color:var(--gold);color:var(--gold);}
+.ts-bulk button.danger:hover{border-color:#E57373;color:#E57373;}
+.ts-bulk .sp{flex:1;}
 #talentSuiteView.visible{display:flex;}
 .l2h-pager{display:flex;gap:18px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:10px 4px;font-size:12.5px;color:var(--grey);}
 .l2h-pager select{padding:4px 6px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12px;margin-left:6px;}
@@ -15880,7 +15891,7 @@ function l2hPager(total, page, per, fnPage, fnPer){
 })();
 
 /* ---------- Talent Suite (Career Toolkit users) ---------- */
-const TSU = {list: [], orders: [], loaded: false};
+const TSU = {list: [], orders: [], loaded: false, selO: new Set(), selU: new Set(), shownO: [], shownU: []};
 const TSO_STATUS = {pending_payment:'Awaiting payment', paid:'Paid, not started', in_review:'In review', delivered:'Delivered', abandoned:'Abandoned checkout', refunded:'Refunded'};
 const TSO_TIER = {cv_review:'Expert CV Review', cv_review_coaching:'CV Review + Interview Coaching'};
 const TSO_NEXT = {paid:['in_review'], in_review:['paid','delivered'], delivered:['in_review']};
@@ -15912,9 +15923,11 @@ const TSU_FREE = 8;
       <div class="view-body">
         <div class="tile-grid" id="tsuTiles"></div>
         <div class="section-title">Expert service orders</div>
-        <div class="ops-table-wrap"><table class="ops-table" style="min-width:1080px;"><thead><tr><th>Ordered</th><th>Customer</th><th>Service</th><th>Amount</th><th>Status</th><th>Due by</th><th>Assigned to</th><th style="text-align:right;">Actions</th></tr></thead><tbody id="tsoBody"></tbody></table></div>
+        <div class="ts-bulk" id="tsoBulk"></div>
+        <div class="ops-table-wrap"><table class="ops-table" style="min-width:1080px;"><thead><tr><th class="ts-chk"><input type="checkbox" id="tsoAll" title="Select all orders" onchange="tsSelectAll('o', this.checked)"></th><th>Ordered</th><th>Customer</th><th>Service</th><th>Amount</th><th>Status</th><th>Due by</th><th>Assigned to</th><th style="text-align:right;">Actions</th></tr></thead><tbody id="tsoBody"></tbody></table></div>
         <div class="section-title">Career Toolkit users</div>
-        <div class="ops-table-wrap"><table class="ops-table" style="min-width:1080px;"><thead><tr><th>Joined</th><th>Person</th><th>Field and target</th><th>Tools used</th><th>Credits this month</th><th>Last seen</th><th>Status</th><th>Notes</th><th style="text-align:right;">Actions</th></tr></thead><tbody id="tsuBody"><tr><td colspan="9" class="empty-row">Loading...</td></tr></tbody></table></div>
+        <div class="ts-bulk" id="tsuBulk"></div>
+        <div class="ops-table-wrap"><table class="ops-table" style="min-width:1080px;"><thead><tr><th class="ts-chk"><input type="checkbox" id="tsuAll" title="Select all users shown" onchange="tsSelectAll('u', this.checked)"></th><th>Joined</th><th>Person</th><th>Field and target</th><th>Tools used</th><th>Credits this month</th><th>Last seen</th><th>Status</th><th>Notes</th><th style="text-align:right;">Actions</th></tr></thead><tbody id="tsuBody"><tr><td colspan="10" class="empty-row">Loading...</td></tr></tbody></table></div>
         <div class="note-line">These people signed up to the Career Toolkit at careers.live2helprecruitment.co.uk/talent-suite/career and confirmed their email. Each gets ${TSU_FREE} free credits a month; talent pool members get extra. "Review requested" means they asked for a paid expert CV review, and a task was created for Ella. Use Give credits to top someone up, or Blocked to stop an email address using the toolkit. Orders are confirmed by Stripe only: once paid, the customer gets their confirmation email and Ella gets a task due in 3 UK working days. Move paid orders to In review and then Delivered here. Past-due orders show in red.</div>
       </div>`;
     host.parentNode.appendChild(v);
@@ -15970,7 +15983,9 @@ function renderTalentSuite(){
     const sel = (opts.length > 1)
       ? `<select onchange="setTalentSuiteOrder('${esc(o.id)}',{status:this.value})" style="padding:6px 8px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12px;background:#fff;">${opts.map(k => `<option value="${k}"${o.status === k ? ' selected' : ''}>${TSO_STATUS[k] || k}</option>`).join('')}</select>`
       : `<span class="status-pill ${o.status === 'refunded' || o.status === 'abandoned' ? 'lost' : 'hold'}">${esc(TSO_STATUS[o.status] || o.status)}</span>`;
-    return `<tr${overdue ? ' style="background:#FBEDED;"' : (o.status === 'paid' ? ' style="background:#FBF6E8;"' : '')}>
+    const on = TSU.selO.has(o.id);
+    return `<tr class="${on ? 'ts-sel' : ''}"${overdue ? ' style="background:#FBEDED;"' : (o.status === 'paid' ? ' style="background:#FBF6E8;"' : '')}>
+    <td class="ts-chk"><input type="checkbox" ${on ? 'checked' : ''} onchange="tsSelectOne('o','${esc(o.id)}',this.checked)"></td>
     <td>${esc(opsFmt(String(o.created_at).slice(0, 10)))}<div class="pool-muted">${esc(o.order_id)}</div></td>
     <td class="strong">${esc(o.candidate_name)}<div class="pool-muted">${esc(o.candidate_email)}${o.candidate_phone ? ' | ' + esc(o.candidate_phone) : ''}</div>${o.target_role ? '<div class="pool-muted">' + esc(o.target_role) + '</div>' : ''}</td>
     <td>${esc(TSO_TIER[o.tier] || o.tier)}${o.cv_file_link ? `<div><a href="${esc(o.cv_file_link)}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;">Open CV</a></div>` : ''}${o.coaching_availability ? '<div class="pool-muted">Free: ' + esc(o.coaching_availability) + '</div>' : ''}${o.candidate_notes ? '<div class="pool-muted">' + esc(o.candidate_notes) + '</div>' : ''}</td>
@@ -15979,11 +15994,13 @@ function renderTalentSuite(){
     <td>${o.due_date ? `<span class="status-pill ${overdue ? 'lost' : 'active'}">${esc(opsFmt(o.due_date))}</span>` : '-'}${o.delivered_at ? '<div class="pool-muted">delivered ' + esc(opsFmt(o.delivered_at.slice(0, 10))) + '</div>' : ''}</td>
     <td><select onchange="setTalentSuiteOrder('${esc(o.id)}',{assigned_to:this.value})" style="padding:6px 8px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12px;background:#fff;">${['','Dan','Ella'].map(k => `<option value="${k}"${(o.assigned_to || '') === k ? ' selected' : ''}>${k || 'Not assigned'}</option>`).join('')}</select></td>
     <td><div class="row-actions"><button onclick="tsoEmail('${esc(o.id)}')">Email</button><button onclick="tsoDelete('${esc(o.id)}')">Delete</button></div></td></tr>`;
-  }).join('') : '<tr><td colspan="8" class="empty-row">No orders yet. Paid expert reviews and coaching appear here.</td></tr>';
+  }).join('') : '<tr><td colspan="9" class="empty-row">No orders yet. Paid expert reviews and coaching appear here.</td></tr>';
   document.getElementById('tsuBody').innerHTML = shown.length ? shown.map(u => {
     const used = tsuUsed(u), allow = tsuAllow(u);
     const hot = u.status === 'review requested';
-    return `<tr${hot ? ' style="background:#FBF6E8;"' : ''}>
+    const on = TSU.selU.has(u.id);
+    return `<tr class="${on ? 'ts-sel' : ''}"${hot ? ' style="background:#FBF6E8;"' : ''}>
+    <td class="ts-chk"><input type="checkbox" ${on ? 'checked' : ''} onchange="tsSelectOne('u','${esc(u.id)}',this.checked)"></td>
     <td>${esc(opsFmt(u.date))}${u.source ? '<div class="pool-muted">' + esc(u.source) + '</div>' : ''}</td>
     <td class="strong">${esc(u.name)}<div class="pool-muted">${esc(u.email)}</div></td>
     <td>${esc(u.sector)}<div class="pool-muted">${esc(u.target_role || '')}</div></td>
@@ -15993,7 +16010,99 @@ function renderTalentSuite(){
     <td><select onchange="setTalentSuiteUser('${esc(u.id)}',{status:this.value})" style="padding:6px 8px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12px;background:#fff;">${Object.keys(TSU_STATUS).map(k => `<option value="${k}"${u.status === k ? ' selected' : ''}>${TSU_STATUS[k]}</option>`).join('')}</select></td>
     <td><input value="${esc(u.notes)}" placeholder="Add a note" onchange="setTalentSuiteUser('${esc(u.id)}',{notes:this.value})" style="padding:6px 8px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12px;width:190px;"></td>
     <td><div class="row-actions"><button onclick="tsuEmail('${esc(u.id)}')">Email</button><button onclick="tsuCredits('${esc(u.id)}')">Give credits</button><button onclick="tsuDelete('${esc(u.id)}')">Delete</button></div></td></tr>`;
-  }).join('') : '<tr><td colspan="9" class="empty-row">' + (list.length ? 'Nothing matches this filter.' : 'No users yet. They appear here as soon as someone confirms their email on the Career Toolkit.') + '</td></tr>';
+  }).join('') : '<tr><td colspan="10" class="empty-row">' + (list.length ? 'Nothing matches this filter.' : 'No users yet. They appear here as soon as someone confirms their email on the Career Toolkit.') + '</td></tr>';
+  TSU.shownO = orders.map(o => o.id); TSU.shownU = shown.map(u => u.id);
+  [...TSU.selO].forEach(id => { if(!TSU.shownO.includes(id)) TSU.selO.delete(id); });
+  [...TSU.selU].forEach(id => { if(!TSU.shownU.includes(id)) TSU.selU.delete(id); });
+  tsBulkBars();
+}
+
+/* ---------- Talent Suite: select, select all and bulk actions ---------- */
+function tsSelectOne(kind, id, on){
+  const set = kind === 'o' ? TSU.selO : TSU.selU;
+  on ? set.add(id) : set.delete(id);
+  const cb = document.querySelector(`#${kind === 'o' ? 'tsoBody' : 'tsuBody'} input[onchange*="'${id}'"]`);
+  if(cb) cb.closest('tr').classList.toggle('ts-sel', on);
+  tsBulkBars();
+}
+function tsSelectAll(kind, on){
+  const set = kind === 'o' ? TSU.selO : TSU.selU, ids = kind === 'o' ? TSU.shownO : TSU.shownU;
+  set.clear(); if(on) ids.forEach(id => set.add(id));
+  renderTalentSuite();
+}
+function tsBulkBars(){
+  const draw = (kind, set, ids, html) => {
+    const bar = document.getElementById(kind === 'o' ? 'tsoBulk' : 'tsuBulk');
+    const all = document.getElementById(kind === 'o' ? 'tsoAll' : 'tsuAll');
+    if(all){ all.checked = ids.length > 0 && set.size === ids.length; all.indeterminate = set.size > 0 && set.size < ids.length; }
+    if(!bar) return;
+    bar.classList.toggle('on', set.size > 0);
+    bar.innerHTML = set.size ? `<b>${set.size} selected</b>${html}<span class="sp"></span><button onclick="tsSelectAll('${kind}', false)">Clear selection</button>` : '';
+  };
+  draw('o', TSU.selO, TSU.shownO, `
+    <select onchange="if(this.value!=='-'){tsBulkOrders('assign', this.value);} this.value='-';"><option value="-">Assign to...</option><option value="Dan">Dan</option><option value="Ella">Ella</option><option value="">Not assigned</option></select>
+    <button onclick="tsBulkOrders('status','in_review')">Move to In review</button>
+    <button onclick="tsBulkOrders('status','delivered')">Mark delivered</button>
+    <button onclick="tsBulkCopyEmails('o')">Copy emails</button>
+    <button class="danger" onclick="tsBulkOrders('delete')">Delete</button>`);
+  draw('u', TSU.selU, TSU.shownU, `
+    <select onchange="if(this.value!=='-'){tsBulkUsers('status', this.value);} this.value='-';"><option value="-">Set status...</option>${Object.keys(TSU_STATUS).map(k => `<option value="${k}">${TSU_STATUS[k]}</option>`).join('')}</select>
+    <button onclick="tsBulkUsers('credits')">Give credits</button>
+    <button onclick="tsBulkCopyEmails('u')">Copy emails</button>
+    <button class="danger" onclick="tsBulkUsers('delete')">Delete</button>`);
+}
+// Copy for pasting into BCC, so job seekers never see each other's email addresses
+async function tsBulkCopyEmails(kind){
+  const rows = kind === 'o' ? (TSU.orders || []).filter(o => TSU.selO.has(o.id)).map(o => o.candidate_email) : (TSU.list || []).filter(u => TSU.selU.has(u.id)).map(u => u.email);
+  const emails = [...new Set(rows.filter(Boolean))].join('; ');
+  try{ await copyToClipboard(emails); showToast(rows.length + ' email' + (rows.length === 1 ? '' : 's') + ' copied. Paste them into BCC.'); }catch(e){ prompt('Copy these emails:', emails); }
+}
+async function tsRunBulk(items, fn, label){
+  let ok = 0, skipped = 0, failed = 0;
+  for(let i = 0; i < items.length; i++){
+    showToast(label + ' ' + (i + 1) + ' of ' + items.length + '...');
+    try{ const r = await fn(items[i]); r === 'skip' ? skipped++ : ok++; }catch(e){ failed++; }
+  }
+  showToast(label + ': ' + ok + ' done' + (skipped ? ', ' + skipped + ' skipped' : '') + (failed ? ', ' + failed + ' failed' : '') + '.');
+  return {ok, skipped, failed};
+}
+async function tsBulkOrders(action, value){
+  const items = (TSU.orders || []).filter(o => TSU.selO.has(o.id));
+  if(!items.length) return;
+  if(action === 'delete'){
+    const paid = items.filter(o => ['paid','in_review','delivered','refunded'].includes(o.status)).length;
+    if(!confirm('Delete ' + items.length + ' order' + (items.length === 1 ? '' : 's') + '?\n\nThey are removed from the Talent Suite and their CVs are moved to the Drive bin.' + (paid ? '\n\n' + paid + ' of them ' + (paid === 1 ? 'has' : 'have') + ' a payment against it. Deleting does not refund anything; payments stay in Stripe.' : ''))) return;
+    await tsRunBulk(items, o => b2Del('/api/talent-suite-orders', o.id), 'Deleting');
+    TSU.selO.clear(); return loadTalentSuite();
+  }
+  if(action === 'assign'){
+    await tsRunBulk(items, o => (o.assigned_to || '') === value ? 'skip' : b2Post('/api/talent-suite-orders', {id: o.id, assigned_to: value}), 'Assigning');
+    return loadTalentSuite();
+  }
+  if(action === 'status'){
+    // only moves the server allows: paid > in review > delivered; anything else is skipped
+    await tsRunBulk(items, o => (o.status === value || !(TSO_NEXT[o.status] || []).includes(value)) ? 'skip' : b2Post('/api/talent-suite-orders', {id: o.id, status: value}), value === 'delivered' ? 'Marking delivered' : 'Moving to In review');
+    return loadTalentSuite();
+  }
+}
+async function tsBulkUsers(action, value){
+  const items = (TSU.list || []).filter(u => TSU.selU.has(u.id));
+  if(!items.length) return;
+  if(action === 'delete'){
+    if(!confirm('Delete ' + items.length + ' Talent Suite user' + (items.length === 1 ? '' : 's') + '? Their details are removed and they would need to sign up again.')) return;
+    await tsRunBulk(items, u => b2Del('/api/talent-suite-users', u.id), 'Deleting');
+    TSU.selU.clear(); return loadTalentSuite();
+  }
+  if(action === 'credits'){
+    const n = parseInt(prompt('How many extra free credits a month should each of the ' + items.length + ' selected user' + (items.length === 1 ? '' : 's') + ' get? This replaces their current bonus.', '4'), 10);
+    if(!isFinite(n) || n < 0) return;
+    await tsRunBulk(items, u => b2Post('/api/talent-suite-users', {id: u.id, bonus_credits: String(Math.min(n, 100))}), 'Giving credits');
+    return loadTalentSuite();
+  }
+  if(action === 'status'){
+    await tsRunBulk(items, u => u.status === value ? 'skip' : b2Post('/api/talent-suite-users', {id: u.id, status: value}), 'Updating');
+    return loadTalentSuite();
+  }
 }
 
 async function setTalentSuiteUser(id, patch, quiet){
@@ -16603,7 +16712,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '22 Oct 2026 - build 43';
+var PAGE_BUILD = '23 Oct 2026 - build 44';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -16834,7 +16943,7 @@ function buildTagApply(){
       html += `<button class="r-item${st41.group === g.key ? ' active' : ''}" data-g41="${g.key}"${st41.group === g.key ? ' aria-current="page"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true">${ICON[g.key]}</svg><span>${g.label}</span>${badge}</button>`;
     });
     html += `<div class="r-foot"><div class="r-user"><div class="r-av">${h((u.name || '?').charAt(0).toUpperCase())}</div><div><b>${h(u.name || '')}</b><small>${isAdmin41() ? 'Admin' : 'Team'}</small></div></div>
-      ${(typeof lgViewAs !== 'undefined' && lgViewAs) ? '<button class="r-out" onclick="lgExitViewAs()">Exit View as</button>' : '<button class="r-out" onclick="signOut()">Log out</button>'}<div class="r-ver">Build 43</div></div>`;
+      ${(typeof lgViewAs !== 'undefined' && lgViewAs) ? '<button class="r-out" onclick="lgExitViewAs()">Exit View as</button>' : '<button class="r-out" onclick="signOut()">Log out</button>'}<div class="r-ver">Build 44</div></div>`;
     rail.innerHTML = html;
   }
   rail.addEventListener('click', e => {

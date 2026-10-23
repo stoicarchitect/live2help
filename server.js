@@ -12496,7 +12496,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '22 Oct 2026 - build 43 (document signing, pay and tax documents)';
+const SERVER_BUILD = '23 Oct 2026 - build 44 (Talent Suite: Stripe payments, credit top-ups, one-request checkout, bulk actions)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
