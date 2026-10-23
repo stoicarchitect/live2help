@@ -8193,7 +8193,8 @@ function renderTplPane(){
       </div>
       <div class="tpl-preview" id="tplPreview"></div>
       <div class="tpl-actions">
-        <button class="gold-btn" onclick="tplOutlook('web')">Open in Outlook</button>
+        <button class="gold-btn" onclick="tplOutlook('send')">Review and send</button>
+        <button class="ghost-btn" onclick="tplOutlook('web')">Open in Outlook</button>
         <button class="ghost-btn" onclick="tplOutlook('desktop')">Outlook desktop app</button>
         <button class="ghost-btn" onclick="tplOutlook('eml')">Outlook draft file (.eml)</button>
         <button class="ghost-btn" onclick="tplCopy('all')">Copy all</button>
@@ -9050,7 +9051,7 @@ function flEmail(id){
   const body = 'Hi ' + first + ',\n\nThanks for working through our Hiring Toolkit' + (l.role ? ' for the ' + l.role + ' role' : '') + '. '
     + (l.net_per_week ? 'Your numbers showed the vacancy costing around ' + opsMoney(parseFloat(l.net_per_week)) + ' a week. ' : '')
     + 'I would be glad to talk through your report and see where we can help you fill it faster.\n\nDo you have 15 minutes this week?\n\nKind regards';
-  openMailInOutlook('web', l.email, 'Your Hiring Report - ' + (l.role || 'your vacancy'), body);
+  openMailInOutlook('send', l.email, 'Your Hiring Report - ' + (l.role || 'your vacancy'), body);
 }
 
 async function flDelete(id){
@@ -9740,7 +9741,8 @@ renderTplPane = function(){
       <div id="tplMissingNote" class="note-line"></div>
       <div id="tplSyncNote" class="note-line" style="display:none;"></div>
       <div class="tpl-actions">
-        <button class="gold-btn" onclick="tplOutlook('web')">Open in Outlook</button>
+        <button class="gold-btn" onclick="tplOutlook('send')">Review and send</button>
+        <button class="ghost-btn" onclick="tplOutlook('web')">Open in Outlook</button>
         <button class="ghost-btn" onclick="tplOutlook('desktop')">Outlook desktop app</button>
         <button class="ghost-btn" onclick="tplOutlook('eml')">Outlook draft file (.eml)</button>
         <button class="ghost-btn" onclick="tplCopy('all')">Copy all</button>
@@ -14047,7 +14049,7 @@ function showPayrollModal(subject, body, invoiceNumbers, to){
     <label style="font-size:11px;color:#999;">Message</label><textarea id="pmBody" style="width:100%;height:320px;padding:10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12.5px;">${esc(body)}</textarea>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
       <button id="pmCopy" style="padding:9px 14px;border:1px solid var(--border);background:#fff;border-radius:2px;cursor:pointer;font-size:12px;">Copy</button>
-      <button id="pmMail" style="padding:9px 14px;background:var(--gold);border:none;border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;">Open in email app</button>
+      <button id="pmMail" style="padding:9px 14px;background:var(--gold);border:none;border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;">Review and send</button>
       ${invoiceNumbers.length ? `<button id="pmPaid" style="padding:9px 14px;border:1px solid var(--border);background:#fff;border-radius:2px;cursor:pointer;font-size:12px;">Mark ${invoiceNumbers.length} commission${invoiceNumbers.length === 1 ? '' : 's'} as paid</button>` : ''}
       <button id="pmClose" style="padding:9px 14px;border:none;background:none;color:#999;cursor:pointer;font-size:12px;">Close</button>
     </div>
@@ -14056,7 +14058,7 @@ function showPayrollModal(subject, body, invoiceNumbers, to){
   const q = id => wrap.querySelector('#' + id);
   q('pmClose').onclick = () => document.body.removeChild(wrap);
   q('pmCopy').onclick = async () => { try{ await navigator.clipboard.writeText(q('pmSubject').value + '\n\n' + q('pmBody').value); showToast('Copied'); }catch(e){ q('pmBody').select(); showToast('Select and copy the message'); } };
-  q('pmMail').onclick = () => { window.location.href = 'mailto:' + encodeURIComponent(q('pmTo').value.trim()) + '?subject=' + encodeURIComponent(q('pmSubject').value) + '&body=' + encodeURIComponent(q('pmBody').value); };
+  q('pmMail').onclick = () => { mailOpen({to: q('pmTo').value.trim(), subject: q('pmSubject').value, body: q('pmBody').value, atts: [], kind: 'email', meta: {entityType: 'client', entity: 'Payroll'}}); };
   if(invoiceNumbers.length) q('pmPaid').onclick = async () => {
     if(!confirm('Mark ' + invoiceNumbers.length + ' commission payment(s) as paid today?')) return;
     try{
@@ -16152,7 +16154,7 @@ function tsuEmail(id){
     ? 'Thanks for requesting an expert CV review through the Live 2 Help Talent Suite. I would be glad to help' + (u.target_role ? ' with your search for ' + u.target_role + ' roles' : '') + '. Could you reply with your latest CV and the roles you are most interested in? I will then come back to you with the next steps.'
     : 'Thanks for using the Live 2 Help Career Toolkit. I hope it has helped' + (u.target_role ? ' with your search for ' + u.target_role + ' roles' : '') + '. If you would like a recruiter to look at your CV or talk through roles we are working on, just reply to this email.')
     + '\n\nKind regards';
-  openMailInOutlook('web', u.email, review ? 'Your expert CV review' : 'Your Live 2 Help Career Toolkit', body);
+  openMailInOutlook('send', u.email, review ? 'Your expert CV review' : 'Your Live 2 Help Career Toolkit', body);
   if(review) setTalentSuiteUser(id, {status: 'contacted'}, true);
 }
 
@@ -16173,7 +16175,7 @@ function tsoEmail(id){
   const body = o.status === 'pending_payment' || o.status === 'abandoned'
     ? 'Hi ' + first + ',\n\nI noticed you started an order for our ' + tier + ' but did not finish paying. If anything went wrong or you have a question, just reply and I will help.\n\nKind regards'
     : 'Hi ' + first + ',\n\nThank you for your order (' + o.order_id + '). [YOUR MESSAGE]\n\nKind regards';
-  openMailInOutlook('web', o.candidate_email, 'Your Live 2 Help ' + tier + ' (' + o.order_id + ')', body);
+  openMailInOutlook('send', o.candidate_email, 'Your Live 2 Help ' + tier + ' (' + o.order_id + ')', body);
 }
 
 async function tsoDelete(id){
@@ -16731,7 +16733,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '24 Oct 2026 - build 46';
+var PAGE_BUILD = '24 Oct 2026 - build 46.1';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -17897,6 +17899,10 @@ function b46Visible(id){ const el = document.getElementById(id); return !!(el &&
 function mailGuessContext(){
   if(MAIL.hint){ const h = MAIL.hint; MAIL.hint = null; return h; }
   try{
+    if(b46Visible('templatesView') || (document.getElementById('tplPreview') && document.getElementById('tplPreview').offsetParent)){
+      const c = (typeof tplSelectedCandidate === 'function') ? tplSelectedCandidate() : null;
+      if(c) return {kind:'email', meta:{entity:c.name, company:c.company, role:c.role, entityType:'candidate'}};
+    }
     if(b46Visible('subOverlay') && typeof SUB !== 'undefined' && SUB.ctx) return {kind:'submission', meta:{company:SUB.ctx.company, role:SUB.ctx.role, contactName:SUB.contactName || '', entityType:'client'}, log:false};
     if(b46Visible('ipModal') && typeof IP !== 'undefined' && IP && IP.pack) return {kind:'interview_pack', meta:{entity:(IP.pack.candidate_name || IP.pack.name || ''), company:IP.pack.company || '', role:IP.pack.role || '', entityType:'candidate'}};
     if(b46Visible('odOverlay') && typeof OD !== 'undefined' && OD && OD.cand) return {kind:'offer_docs', meta:{entity:OD.cand.name, company:OD.cand.company, role:OD.cand.role, entityType:'candidate'}, log:false};
@@ -18472,6 +18478,14 @@ function ivEmailInvite(who){
     meta: {entity: who === 'client' ? (iv.interviewer_name || iv.company) : iv.candidate_name, entityType: who === 'client' ? 'client' : 'candidate', company: iv.company, role: iv.role},
     note: 'The calendar invite is attached. Opening it adds the interview to their calendar.'});
 }
+(function(){
+  // "send" mode: open the Review and Send panel instead of Outlook
+  const _om = openMailInOutlook;
+  openMailInOutlook = function(mode, to, subject, body){
+    if(mode === 'send'){ mailOpen(Object.assign({to: to || '', subject: subject || '', body: body || '', atts: []}, mailGuessContext())); return; }
+    return _om.apply(this, arguments);
+  };
+})();
 (function(){
   if(!/dashboard-next/.test(location.pathname)) return;
   const bar = document.createElement('div');
