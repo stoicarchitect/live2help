@@ -15760,6 +15760,8 @@ async function lpxSaveNew(){
 <style>
 #competitorsView{display:none;flex:1;flex-direction:column;min-height:0;}
 #talentSuiteView{display:none;flex:1;flex-direction:column;min-height:0;}
+#talentSuiteView .row-actions{flex-wrap:wrap;justify-content:flex-end;max-width:170px;margin-left:auto;white-space:normal;}
+#talentSuiteView .row-actions button{white-space:nowrap;}
 #talentSuiteView.visible{display:flex;}
 .l2h-pager{display:flex;gap:18px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:10px 4px;font-size:12.5px;color:var(--grey);}
 .l2h-pager select{padding:4px 6px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12px;margin-left:6px;}
@@ -15976,7 +15978,7 @@ function renderTalentSuite(){
     <td>${sel}</td>
     <td>${o.due_date ? `<span class="status-pill ${overdue ? 'lost' : 'active'}">${esc(opsFmt(o.due_date))}</span>` : '-'}${o.delivered_at ? '<div class="pool-muted">delivered ' + esc(opsFmt(o.delivered_at.slice(0, 10))) + '</div>' : ''}</td>
     <td><select onchange="setTalentSuiteOrder('${esc(o.id)}',{assigned_to:this.value})" style="padding:6px 8px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12px;background:#fff;">${['','Dan','Ella'].map(k => `<option value="${k}"${(o.assigned_to || '') === k ? ' selected' : ''}>${k || 'Not assigned'}</option>`).join('')}</select></td>
-    <td><div class="row-actions"><button onclick="tsoEmail('${esc(o.id)}')">Email</button></div></td></tr>`;
+    <td><div class="row-actions"><button onclick="tsoEmail('${esc(o.id)}')">Email</button><button onclick="tsoDelete('${esc(o.id)}')">Delete</button></div></td></tr>`;
   }).join('') : '<tr><td colspan="8" class="empty-row">No orders yet. Paid expert reviews and coaching appear here.</td></tr>';
   document.getElementById('tsuBody').innerHTML = shown.length ? shown.map(u => {
     const used = tsuUsed(u), allow = tsuAllow(u);
@@ -16044,6 +16046,20 @@ function tsoEmail(id){
     ? 'Hi ' + first + ',\n\nI noticed you started an order for our ' + tier + ' but did not finish paying. If anything went wrong or you have a question, just reply and I will help.\n\nKind regards'
     : 'Hi ' + first + ',\n\nThank you for your order (' + o.order_id + '). [YOUR MESSAGE]\n\nKind regards';
   openMailInOutlook('web', o.candidate_email, 'Your Live 2 Help ' + tier + ' (' + o.order_id + ')', body);
+}
+
+async function tsoDelete(id){
+  const o = (TSU.orders || []).find(x => x.id === id);
+  if(!o) return;
+  const paidWarning = ['paid','in_review','delivered','refunded'].includes(o.status)
+    ? '\n\nThis order has a payment against it. Deleting it here does not refund it; the payment stays in Stripe.' : '';
+  if(!confirm('Delete order ' + o.order_id + ' for ' + o.candidate_name + '?\n\nThe order is removed from the Talent Suite and their CV is moved to the Drive bin.' + paidWarning)) return;
+  try{
+    await b2Del('/api/talent-suite-orders', id);
+    TSU.orders = TSU.orders.filter(x => x.id !== id);
+    showToast('Order deleted');
+    renderTalentSuite();
+  }catch(e){ showToast('Could not delete: ' + e.message); }
 }
 
 async function tsuDelete(id){

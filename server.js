@@ -14243,6 +14243,22 @@ app.post('/api/talent-suite-orders', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Staff: delete an order (test orders, duplicates, or a data removal request). The CV in Drive is moved to the bin too.
+app.delete('/api/talent-suite-orders/:id', async (req, res) => {
+  try {
+    const orderId = String(req.params.id || '');
+    const cur = await tsOrders.get(orderId);
+    if (!cur) return res.status(404).json({ error: 'Order not found' });
+    const removed = await tsOrdersSheet.remove(orderId);
+    if (!removed) return res.status(404).json({ error: 'Order not found' });
+    const m = String(cur.cv_file_link || '').match(/\/d\/([A-Za-z0-9_-]{10,})/);
+    if (m) getUploadDriveClient().files.update({ fileId: m[1], requestBody: { trashed: true } })
+      .catch(e => console.error('Talent Suite order CV could not be binned:', e.message));
+    auditLog(actorOf(req), 'talent_suite_order_delete', 'talent_suite', orderId, `${cur.candidate_name} (${cur.candidate_email}), ${cur.status}`);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 async function tsOrdersDigest() {
   const all = await tsOrders.list();
   const today = todayISO();
