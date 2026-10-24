@@ -7862,6 +7862,7 @@ function openInviteDialog(id, justSaved){
       <input id="inv_${who}_loc" value="${esc(data.location)}">
       <div class="tpl-actions">
         <button class="gold-btn" onclick="ivSendInvite('${who}')">Create invite in Outlook</button>
+        <button class="gold-btn" onclick="ivEmailInvite('${who}')">Email it now</button>
         <button class="ghost-btn" onclick="ivInviteIcs('${who}')">.ics file</button>
       </div>
     </div>`;
@@ -8192,7 +8193,8 @@ function renderTplPane(){
       </div>
       <div class="tpl-preview" id="tplPreview"></div>
       <div class="tpl-actions">
-        <button class="gold-btn" onclick="tplOutlook('web')">Open in Outlook</button>
+        <button class="gold-btn" onclick="tplOutlook('send')">Review and send</button>
+        <button class="ghost-btn" onclick="tplOutlook('web')">Open in Outlook</button>
         <button class="ghost-btn" onclick="tplOutlook('desktop')">Outlook desktop app</button>
         <button class="ghost-btn" onclick="tplOutlook('eml')">Outlook draft file (.eml)</button>
         <button class="ghost-btn" onclick="tplCopy('all')">Copy all</button>
@@ -9049,7 +9051,7 @@ function flEmail(id){
   const body = 'Hi ' + first + ',\n\nThanks for working through our Hiring Toolkit' + (l.role ? ' for the ' + l.role + ' role' : '') + '. '
     + (l.net_per_week ? 'Your numbers showed the vacancy costing around ' + opsMoney(parseFloat(l.net_per_week)) + ' a week. ' : '')
     + 'I would be glad to talk through your report and see where we can help you fill it faster.\n\nDo you have 15 minutes this week?\n\nKind regards';
-  openMailInOutlook('web', l.email, 'Your Hiring Report - ' + (l.role || 'your vacancy'), body);
+  openMailInOutlook('send', l.email, 'Your Hiring Report - ' + (l.role || 'your vacancy'), body);
 }
 
 async function flDelete(id){
@@ -9739,7 +9741,8 @@ renderTplPane = function(){
       <div id="tplMissingNote" class="note-line"></div>
       <div id="tplSyncNote" class="note-line" style="display:none;"></div>
       <div class="tpl-actions">
-        <button class="gold-btn" onclick="tplOutlook('web')">Open in Outlook</button>
+        <button class="gold-btn" onclick="tplOutlook('send')">Review and send</button>
+        <button class="ghost-btn" onclick="tplOutlook('web')">Open in Outlook</button>
         <button class="ghost-btn" onclick="tplOutlook('desktop')">Outlook desktop app</button>
         <button class="ghost-btn" onclick="tplOutlook('eml')">Outlook draft file (.eml)</button>
         <button class="ghost-btn" onclick="tplCopy('all')">Copy all</button>
@@ -14046,7 +14049,7 @@ function showPayrollModal(subject, body, invoiceNumbers, to){
     <label style="font-size:11px;color:#999;">Message</label><textarea id="pmBody" style="width:100%;height:320px;padding:10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12.5px;">${esc(body)}</textarea>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
       <button id="pmCopy" style="padding:9px 14px;border:1px solid var(--border);background:#fff;border-radius:2px;cursor:pointer;font-size:12px;">Copy</button>
-      <button id="pmMail" style="padding:9px 14px;background:var(--gold);border:none;border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;">Open in email app</button>
+      <button id="pmMail" style="padding:9px 14px;background:var(--gold);border:none;border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;">Review and send</button>
       ${invoiceNumbers.length ? `<button id="pmPaid" style="padding:9px 14px;border:1px solid var(--border);background:#fff;border-radius:2px;cursor:pointer;font-size:12px;">Mark ${invoiceNumbers.length} commission${invoiceNumbers.length === 1 ? '' : 's'} as paid</button>` : ''}
       <button id="pmClose" style="padding:9px 14px;border:none;background:none;color:#999;cursor:pointer;font-size:12px;">Close</button>
     </div>
@@ -14055,7 +14058,7 @@ function showPayrollModal(subject, body, invoiceNumbers, to){
   const q = id => wrap.querySelector('#' + id);
   q('pmClose').onclick = () => document.body.removeChild(wrap);
   q('pmCopy').onclick = async () => { try{ await navigator.clipboard.writeText(q('pmSubject').value + '\n\n' + q('pmBody').value); showToast('Copied'); }catch(e){ q('pmBody').select(); showToast('Select and copy the message'); } };
-  q('pmMail').onclick = () => { window.location.href = 'mailto:' + encodeURIComponent(q('pmTo').value.trim()) + '?subject=' + encodeURIComponent(q('pmSubject').value) + '&body=' + encodeURIComponent(q('pmBody').value); };
+  q('pmMail').onclick = () => { mailOpen({to: q('pmTo').value.trim(), subject: q('pmSubject').value, body: q('pmBody').value, atts: [], kind: 'email', meta: {entityType: 'client', entity: 'Payroll'}}); };
   if(invoiceNumbers.length) q('pmPaid').onclick = async () => {
     if(!confirm('Mark ' + invoiceNumbers.length + ' commission payment(s) as paid today?')) return;
     try{
@@ -16151,7 +16154,7 @@ function tsuEmail(id){
     ? 'Thanks for requesting an expert CV review through the Live 2 Help Talent Suite. I would be glad to help' + (u.target_role ? ' with your search for ' + u.target_role + ' roles' : '') + '. Could you reply with your latest CV and the roles you are most interested in? I will then come back to you with the next steps.'
     : 'Thanks for using the Live 2 Help Career Toolkit. I hope it has helped' + (u.target_role ? ' with your search for ' + u.target_role + ' roles' : '') + '. If you would like a recruiter to look at your CV or talk through roles we are working on, just reply to this email.')
     + '\n\nKind regards';
-  openMailInOutlook('web', u.email, review ? 'Your expert CV review' : 'Your Live 2 Help Career Toolkit', body);
+  openMailInOutlook('send', u.email, review ? 'Your expert CV review' : 'Your Live 2 Help Career Toolkit', body);
   if(review) setTalentSuiteUser(id, {status: 'contacted'}, true);
 }
 
@@ -16172,7 +16175,7 @@ function tsoEmail(id){
   const body = o.status === 'pending_payment' || o.status === 'abandoned'
     ? 'Hi ' + first + ',\n\nI noticed you started an order for our ' + tier + ' but did not finish paying. If anything went wrong or you have a question, just reply and I will help.\n\nKind regards'
     : 'Hi ' + first + ',\n\nThank you for your order (' + o.order_id + '). [YOUR MESSAGE]\n\nKind regards';
-  openMailInOutlook('web', o.candidate_email, 'Your Live 2 Help ' + tier + ' (' + o.order_id + ')', body);
+  openMailInOutlook('send', o.candidate_email, 'Your Live 2 Help ' + tier + ' (' + o.order_id + ')', body);
 }
 
 async function tsoDelete(id){
@@ -16730,7 +16733,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '23 Oct 2026 - build 45';
+var PAGE_BUILD = '24 Oct 2026 - build 46.1';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -17791,5 +17794,698 @@ function buildTagApply(){
 })();
 </script>
 
+<script>
+/* ============================================================
+   Page build 46: one-click email, AI spend, Role Finder matching,
+   spec CV sends (Candidate A, B, C) and AI outreach drafts.
+
+   Every email the dashboard builds now opens a Review and Send
+   panel first. Send goes out through Brevo from whoever is signed
+   in. "Download .eml instead" keeps the old Outlook route as a
+   backup. Nothing is ever sent without pressing Send.
+   ============================================================ */
+var MAILQ = new Map();
+// The saved HTML signature is added when sending, so a typed signature is only needed when none is saved
+function b46TextSig(){ return (typeof SIG !== 'undefined' && SIG.html) ? '' : ((typeof lgSignature === 'function') ? lgSignature() : ''); }
+var MAIL = {open:false, d:null, busy:false, bypass:false, hint:null, queue:null, stats:null};
+
+function b46Css(){
+  if(document.getElementById('b46css')) return;
+  const st = document.createElement('style'); st.id = 'b46css';
+  st.textContent = `
+  #mailOv{z-index:9500;}
+  .b46-ov{position:fixed;inset:0;background:rgba(10,15,30,.6);z-index:9000;display:flex;align-items:center;justify-content:center;padding:14px;}
+  .b46-box{background:#fff;border-top:3px solid var(--gold);width:100%;max-width:760px;max-height:94vh;overflow:auto;border-radius:3px;padding:20px 22px;box-shadow:0 18px 50px rgba(0,0,0,.3);}
+  .b46-box h3{margin:2px 0 4px;font-size:17px;color:var(--dark);}
+  .b46-k{font-size:11px;color:var(--gold);letter-spacing:.8px;font-weight:700;}
+  .b46-sub{font-size:12px;color:#777;line-height:1.45;}
+  .b46-box label{display:block;font-size:11.5px;font-weight:600;color:var(--grey);margin:10px 0 3px;letter-spacing:.3px;}
+  .b46-box input[type=text],.b46-box input[type=email],.b46-box input[type=number],.b46-box textarea,.b46-box select{width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:2px;padding:8px 10px;font-size:13.5px;font-family:inherit;}
+  .b46-box textarea{min-height:230px;line-height:1.5;resize:vertical;}
+  .b46-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+  .b46-btn{padding:8px 15px;border-radius:2px;border:1px solid var(--border);background:#fff;color:var(--dark);cursor:pointer;font-size:13px;}
+  .b46-btn.gold{background:var(--gold);border-color:var(--gold);color:var(--dark);font-weight:700;}
+  .b46-btn.navy{background:var(--navy,#0F1F3D);border-color:var(--navy,#0F1F3D);color:#fff;font-weight:600;}
+  .b46-btn:disabled{opacity:.5;cursor:not-allowed;}
+  .b46-att{display:inline-flex;gap:6px;align-items:center;background:#f4f1e8;border-radius:12px;padding:3px 10px;font-size:12px;margin:0 6px 6px 0;}
+  .b46-att a{cursor:pointer;color:#a33;font-weight:700;}
+  .b46-note{padding:9px 12px;background:#faf7f0;border-left:3px solid var(--gold);font-size:12.5px;line-height:1.45;margin:10px 0;}
+  .b46-err{padding:9px 12px;background:#fdf1ef;border-left:3px solid var(--danger);font-size:12.5px;margin:10px 0;}
+  .b46-ok{padding:9px 12px;background:#eef6f0;border-left:3px solid var(--success,#2F7A4F);font-size:12.5px;margin:10px 0;}
+  .b46-tbl{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px;}
+  .b46-tbl th{text-align:left;font-size:11px;color:#888;font-weight:600;border-bottom:1px solid var(--border);padding:5px 6px;}
+  .b46-tbl td{border-bottom:1px solid #f0f0f0;padding:6px;vertical-align:top;}
+  .b46-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:10px 0;}
+  .b46-tile{border:1px solid var(--border);border-left:3px solid var(--gold);padding:9px 11px;}
+  .b46-tile .n{font-size:19px;font-weight:700;color:var(--dark);} .b46-tile .l{font-size:11.5px;color:#777;}
+  .b46-pill{display:inline-block;border-radius:10px;padding:2px 9px;font-size:11px;font-weight:600;background:#eee;}
+  .b46-pill.yes{background:#dff0dd;} .b46-pill.no{background:#f3dcd8;} .b46-pill.asked{background:#f6ecc9;}
+  .b46-cand{border:1px solid var(--border);border-left:3px solid var(--gold);padding:10px 12px;margin-bottom:8px;}
+  .b46-bar{height:8px;background:var(--gold);border-radius:2px;}
+  .b46-tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin:10px 0;}
+  .b46-tabs button{background:none;border:none;padding:8px 12px;cursor:pointer;font-size:13px;color:#777;border-bottom:2px solid transparent;}
+  .b46-tabs button.on{color:var(--dark);font-weight:700;border-bottom-color:var(--gold);}
+  @media (max-width:600px){.b46-box{padding:16px 14px;} .b46-box textarea{min-height:200px;}}
+  `;
+  document.head.appendChild(st);
+}
+
+function b46Shell(id){
+  b46Css();
+  let el = document.getElementById(id);
+  if(!el){
+    el = document.createElement('div'); el.id = id; el.className = 'b46-ov';
+    el.innerHTML = '<div class="b46-box"></div>';
+    document.body.appendChild(el);
+  }
+  el.style.display = 'flex';
+  return el.querySelector('.b46-box');
+}
+function b46Close(id){ const el = document.getElementById(id); if(el) el.style.display = 'none'; }
+
+/* ---------- capture every email the dashboard builds ---------- */
+(function(){
+  if(typeof emlBuildRich !== 'function') return;
+  const _rich = emlBuildRich;
+  emlBuildRich = function(to, subject, body, atts){
+    const eml = _rich.apply(this, arguments);
+    try{
+      MAILQ.set(eml, {to: to || '', subject: subject || '', body: String(body || ''), atts: (atts || []).slice(), rl: (typeof RL_LINKS !== 'undefined' && RL_LINKS.slice) ? RL_LINKS.slice() : []});
+      if(MAILQ.size > 12) MAILQ.delete(MAILQ.keys().next().value);
+    }catch(e){ /* the .eml still works */ }
+    return eml;
+  };
+  emlBuild = function(to, subject, body){ return emlBuildRich(to, subject, body, []); };
+  emlBuildMulti = function(to, subject, body, atts){ return emlBuildRich(to, subject, body, atts); };
+  const _dl = downloadText;
+  downloadText = function(name, text, type){
+    if(type === 'message/rfc822' && !MAIL.bypass && MAILQ.has(text)){
+      const d = MAILQ.get(text);
+      mailOpen(Object.assign({}, d, {emlName: name}, mailGuessContext()));
+      return;
+    }
+    return _dl(name, text, type);
+  };
+  const _toast = showToast;
+  showToast = function(msg){
+    if(MAIL.open && /downloaded|in Outlook|Open it/i.test(String(msg || ''))) return;
+    return _toast(msg);
+  };
+})();
+
+function b46Visible(id){ const el = document.getElementById(id); return !!(el && (el.classList.contains('visible') || el.style.display === 'flex' || el.style.display === 'block')); }
+
+// Works out what kind of email this is from what is open on screen, so it is logged and counted properly
+function mailGuessContext(){
+  if(MAIL.hint){ const h = MAIL.hint; MAIL.hint = null; return h; }
+  try{
+    if(b46Visible('templatesView') || (document.getElementById('tplPreview') && document.getElementById('tplPreview').offsetParent)){
+      const c = (typeof tplSelectedCandidate === 'function') ? tplSelectedCandidate() : null;
+      if(c) return {kind:'email', meta:{entity:c.name, company:c.company, role:c.role, entityType:'candidate'}};
+    }
+    if(b46Visible('subOverlay') && typeof SUB !== 'undefined' && SUB.ctx) return {kind:'submission', meta:{company:SUB.ctx.company, role:SUB.ctx.role, contactName:SUB.contactName || '', entityType:'client'}, log:false};
+    if(b46Visible('ipModal') && typeof IP !== 'undefined' && IP && IP.pack) return {kind:'interview_pack', meta:{entity:(IP.pack.candidate_name || IP.pack.name || ''), company:IP.pack.company || '', role:IP.pack.role || '', entityType:'candidate'}};
+    if(b46Visible('odOverlay') && typeof OD !== 'undefined' && OD && OD.cand) return {kind:'offer_docs', meta:{entity:OD.cand.name, company:OD.cand.company, role:OD.cand.role, entityType:'candidate'}, log:false};
+  }catch(e){ /* fall through */ }
+  return {kind:'email', meta:{}};
+}
+
+function mailParts(body, rl){
+  const keep = (typeof RL_LINKS !== 'undefined') ? RL_LINKS : [];
+  try{ if(typeof RL_LINKS !== 'undefined') RL_LINKS = rl || []; }catch(e){}
+  try{
+    const useSig = !!(typeof SIG !== 'undefined' && SIG.html);
+    const cleanBody = useSig ? emlStripTextSignature(body) : String(body || '');
+    const linked = (RL_LINKS && RL_LINKS.length) ? cleanBody.split(RL_TOKEN).join(replyLinksText()) : cleanBody;
+    const text = linked + (useSig && SIG.text ? '\n\n' + SIG.text : '');
+    const html = '<html><head><meta charset="utf-8"></head><body>' + emlHtmlFromText(cleanBody) + (useSig ? '<div style="margin-top:8px;">' + SIG.html + '</div>' : '') + '</body></html>';
+    return {text, html, inline: useSig ? (SIG.images || []) : []};
+  } finally {
+    try{ if(typeof RL_LINKS !== 'undefined') RL_LINKS = keep; }catch(e){}
+  }
+}
+
+async function mailStats(force){
+  if(MAIL.stats && !force && Date.now() - MAIL.stats._at < 30000) return MAIL.stats;
+  try{ MAIL.stats = await b2Api('/api/mail/stats'); MAIL.stats._at = Date.now(); }catch(e){ /* optional */ }
+  return MAIL.stats;
+}
+
+const MAIL_KIND_LABEL = {email:'Email', submission:'Candidate submission', interview_pack:'Interview pack', offer_docs:'Offer documents', checkin:'Candidate check-in', outreach:'First-contact email', spec:'Spec CVs', candidate:'Candidate email', invite:'Interview invite'};
+
+function mailOpen(d){
+  MAIL.d = Object.assign({to:'', cc:'', subject:'', body:'', atts:[], rl:[], kind:'email', meta:{}}, d);
+  MAIL.open = true; MAIL.busy = false; MAIL.err = ''; MAIL.done = null;
+  mailRender();
+  mailStats(true).then(() => { if(MAIL.open && !MAIL.busy && !MAIL.done) mailRender(true); });
+}
+
+function mailRender(keepFields){
+  if(keepFields) mailCollect();
+  const box = b46Shell('mailOv'), d = MAIL.d, s = MAIL.stats || {}, me = (s.sender || {});
+  const cold = d.kind === 'outreach' || d.kind === 'spec';
+  const prof = me.email ? me : {fullName: (signedInUser && (signedInUser.fullName || signedInUser.name)) || '', email: (signedInUser && signedInUser.email) || ''};
+  if(MAIL.done){
+    box.innerHTML = '<div class="b46-k">EMAIL SENT</div><h3>' + esc(d.subject) + '</h3><div class="b46-ok">Sent to ' + esc(d.to) + ' from ' + esc(prof.email || 'your address') + '. A copy is in your inbox (BCC) and it is logged on the dashboard.' + (MAIL.done.counts ? ' Emails today: ' + MAIL.done.counts.today + ' of ' + MAIL.done.counts.dailyLimit + '.' : '') + '</div>' +
+      '<div class="b46-row" style="justify-content:flex-end;">' + (MAIL.queue ? '<button class="b46-btn gold" onclick="mailQueueNext()">Next email</button>' : '') + '<button class="b46-btn" onclick="mailClose()">Close</button></div>';
+    return;
+  }
+  const atts = (d.atts || []).map((a, i) => '<span class="b46-att">' + esc(a.fileName) + ' <a title="Remove" onclick="mailDropAtt(' + i + ')">&times;</a></span>').join('');
+  box.innerHTML =
+    '<div style="display:flex;justify-content:space-between;gap:10px;"><div><div class="b46-k">REVIEW AND SEND' + (MAIL.queue ? ' - ' + (MAIL.queue.i + 1) + ' OF ' + MAIL.queue.items.length : '') + '</div><h3>' + esc(MAIL_KIND_LABEL[d.kind] || 'Email') + '</h3>' +
+    '<div class="b46-sub">Sending as <strong>' + esc(prof.fullName || '') + '</strong> &lt;' + esc(prof.email || '') + '&gt;. Replies go to your inbox and you get a copy.' +
+    (s.dailyLimit ? ' Emails today: ' + s.today + ' of ' + s.dailyLimit + '.' : '') +
+    (cold && s.outreachCap != null ? ' Your first-contact emails today: ' + s.myColdToday + ' of ' + s.outreachCap + '.' : '') + '</div></div>' +
+    '<button onclick="mailClose()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;align-self:flex-start;">&times;</button></div>' +
+    (d.note ? '<div class="b46-note">' + d.note + '</div>' : '') +
+    '<label>To</label><input type="email" id="mlTo" value="' + esc(d.to) + '" placeholder="name@company.co.uk">' +
+    '<label>Cc (optional)</label><input type="email" id="mlCc" value="' + esc(d.cc || '') + '">' +
+    '<label>Subject</label><input type="text" id="mlSubject" value="' + esc(d.subject) + '">' +
+    '<label>Message</label><textarea id="mlBody">' + esc(d.body) + '</textarea>' +
+    (cold ? '<div class="b46-sub" style="margin-top:6px;">Your signature and the branded Talent Suite footer (with terms of business and an opt-out) are added automatically.</div>' : '<div class="b46-sub" style="margin-top:6px;">Your saved signature is added automatically.</div>') +
+    (atts ? '<label>Attachments</label><div>' + atts + '</div>' : '') +
+    (MAIL.err ? '<div class="b46-err">' + esc(MAIL.err) + '</div>' : '') +
+    '<div class="b46-row" style="justify-content:space-between;margin-top:14px;">' +
+      '<button class="b46-btn" onclick="mailEml()" ' + (MAIL.busy ? 'disabled' : '') + ' title="The old route: a draft file that opens in Outlook">Download .eml instead</button>' +
+      '<div class="b46-row">' + (MAIL.queue ? '<button class="b46-btn" onclick="mailQueueNext(true)" ' + (MAIL.busy ? 'disabled' : '') + '>Skip</button>' : '<button class="b46-btn" onclick="mailClose()" ' + (MAIL.busy ? 'disabled' : '') + '>Cancel</button>') +
+      '<button class="b46-btn gold" onclick="mailSend()" ' + (MAIL.busy ? 'disabled' : '') + '>' + (MAIL.busy ? 'Sending...' : 'Send now') + '</button></div></div>';
+}
+
+function mailCollect(){
+  const g = id => { const el = document.getElementById(id); return el ? el.value : null; };
+  if(g('mlTo') === null) return;
+  MAIL.d.to = g('mlTo').trim(); MAIL.d.cc = g('mlCc').trim(); MAIL.d.subject = g('mlSubject'); MAIL.d.body = g('mlBody');
+}
+function mailDropAtt(i){ mailCollect(); MAIL.d.atts.splice(i, 1); mailRender(); }
+function mailClose(){
+  if(MAIL.busy) return;
+  MAIL.open = false; b46Close('mailOv');
+  const q = MAIL.queue; MAIL.queue = null;
+  if(q && q.onDone) q.onDone();
+}
+
+function mailEml(){
+  mailCollect();
+  const d = MAIL.d;
+  MAIL.bypass = true;
+  try{
+    const eml = emlBuildRich(d.to, d.subject, d.body, d.atts);
+    downloadText(d.emlName || ('Draft ' + String(d.subject || 'email').replace(/[^A-Za-z0-9 \-]+/g, ' ').trim().slice(0, 60) + '.eml'), eml, 'message/rfc822');
+  } finally { MAIL.bypass = false; }
+  MAIL.open = false; b46Close('mailOv');
+  showToast('Draft downloaded. Open it in Outlook, check it, then send.');
+}
+
+async function mailSend(){
+  mailCollect();
+  const d = MAIL.d;
+  if(!d.to || d.to.indexOf('@') < 1){ MAIL.err = 'Add the email address to send to.'; mailRender(); return; }
+  if(!String(d.subject || '').trim()){ MAIL.err = 'Add a subject.'; mailRender(); return; }
+  if(/\[[A-Z][A-Z ]{2,}\]/.test(d.body) && !confirm('The message still has text in [BRACKETS] to fill in. Send anyway?')) return;
+  MAIL.busy = true; MAIL.err = ''; mailRender();
+  try{
+    const parts = mailParts(d.body, d.rl);
+    const j = await b2Post('/api/mail/send', {
+      to: d.to, cc: d.cc, subject: d.subject, text: parts.text, html: parts.html, inline: parts.inline,
+      attachments: (d.atts || []).map(a => ({fileName: a.fileName, mime: a.mime, base64: a.base64})),
+      kind: d.kind, meta: d.meta || {}, log: d.log !== false,
+    });
+    MAIL.busy = false; MAIL.done = j;
+    if(MAIL.stats && j.counts) MAIL.stats.today = j.counts.today;
+    mailRender();
+    try{ if(typeof d.onSent === 'function') await d.onSent(j); }catch(e){ showToast('Sent, but a follow-up step failed: ' + e.message); }
+    mailAfterSent(d);
+  }catch(e){
+    MAIL.busy = false; MAIL.err = e.message; mailRender();
+  }
+}
+
+// Moves the usual "did you send it?" steps on by themselves once Brevo has sent the email
+function mailAfterSent(d){
+  if(d.kind === 'submission'){
+    let tries = 0;
+    const t = setInterval(function(){
+      tries++;
+      try{
+        if(typeof SUB !== 'undefined' && SUB.view === 'confirm' && b46Visible('subOverlay')){ clearInterval(t); subConfirmSent(); return; }
+      }catch(e){ clearInterval(t); }
+      if(tries > 40) clearInterval(t);
+    }, 250);
+  }
+}
+
+/* ---------- queue: several emails one after another ---------- */
+function mailQueueStart(items, onDone){
+  if(!items.length){ showToast('Nothing to send'); return; }
+  MAIL.queue = {items, i:0, onDone};
+  mailQueueShow();
+}
+async function mailQueueShow(){
+  const q = MAIL.queue; if(!q) return;
+  const it = q.items[q.i];
+  const box = b46Shell('mailOv');
+  box.innerHTML = '<div class="b46-k">PREPARING ' + (q.i + 1) + ' OF ' + q.items.length + '</div><h3>' + esc(it.label || '') + '</h3><div style="padding:18px 0;color:#777;font-size:13px;">Writing a tailored draft...</div>';
+  MAIL.open = true;
+  try{
+    const d = await it.build();
+    const keep = MAIL.queue;
+    mailOpen(d);
+    MAIL.queue = keep;
+    mailRender();
+  }catch(e){
+    box.innerHTML = '<div class="b46-k">' + (q.i + 1) + ' OF ' + q.items.length + '</div><h3>' + esc(it.label || '') + '</h3><div class="b46-err">' + esc(e.message) + '</div><div class="b46-row" style="justify-content:flex-end;"><button class="b46-btn" onclick="mailClose()">Stop</button><button class="b46-btn gold" onclick="mailQueueNext(true)">Skip to next</button></div>';
+  }
+}
+function mailQueueNext(){
+  const q = MAIL.queue; if(!q) return mailClose();
+  q.i++;
+  if(q.i >= q.items.length){ mailClose(); showToast('Queue finished'); return; }
+  mailQueueShow();
+}
+
+/* ============================================================
+   Usage panel: AI spend (Dan) and email counts (everyone)
+   ============================================================ */
+var USE = {tab:'email', ai:null, mail:null, hook:''};
+(function(){
+  const _si = signIn;
+  signIn = function(user){
+    _si(user);
+    const chip = document.getElementById('userChip');
+    if(chip && !document.getElementById('useBtn')){
+      const b = document.createElement('button');
+      b.id = 'useBtn'; b.textContent = 'Usage'; b.title = 'Emails sent today and AI spend';
+      b.onclick = () => useOpen();
+      chip.insertBefore(b, chip.querySelector('button'));
+    }
+  };
+})();
+async function useOpen(tab){
+  USE.tab = tab || (signedInUser && signedInUser.admin ? 'ai' : 'email');
+  const box = b46Shell('useOv'); box.style.maxWidth = '860px';
+  box.innerHTML = '<div style="padding:20px 0;color:#777;">Loading...</div>';
+  const jobs = [b2Api('/api/mail/stats').then(j => USE.mail = j).catch(e => USE.mail = {error:e.message})];
+  if(signedInUser && signedInUser.admin){
+    jobs.push(b2Api('/api/ai-spend').then(j => USE.ai = j).catch(e => USE.ai = {error:e.message}));
+    jobs.push(b2Api('/api/mail/webhook-url').then(j => USE.hook = j.url).catch(() => {}));
+  }
+  jobs.push(b2Api('/api/spec/sends').then(j => USE.spec = j.data || []).catch(() => USE.spec = []));
+  await Promise.all(jobs);
+  useRender();
+}
+function useTab(t){ USE.tab = t; useRender(); }
+function gbp(n){ return '£' + (Number(n) || 0).toFixed(2); }
+function useRender(){
+  const box = b46Shell('useOv'), admin = !!(signedInUser && signedInUser.admin);
+  let h = '<div style="display:flex;justify-content:space-between;"><div><div class="b46-k">USAGE</div><h3>Emails, spec sends' + (admin ? ' and AI spend' : '') + '</h3></div><button onclick="b46Close(\'useOv\')" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;">&times;</button></div>';
+  h += '<div class="b46-tabs">' + (admin ? '<button class="' + (USE.tab === 'ai' ? 'on' : '') + '" onclick="useTab(\'ai\')">AI spend</button>' : '') +
+    '<button class="' + (USE.tab === 'email' ? 'on' : '') + '" onclick="useTab(\'email\')">Emails</button>' +
+    '<button class="' + (USE.tab === 'spec' ? 'on' : '') + '" onclick="useTab(\'spec\')">Spec sends</button></div>';
+  if(USE.tab === 'ai' && admin) h += useAiHtml();
+  else if(USE.tab === 'spec') h += useSpecHtml();
+  else h += useMailHtml(admin);
+  box.innerHTML = h;
+}
+function useAiHtml(){
+  const a = USE.ai || {};
+  if(a.error) return '<div class="b46-err">' + esc(a.error) + '</div>';
+  const st = a.settings || {};
+  const cap = Number(st.monthlyGbp) || 0;
+  const pct = cap ? Math.min(100, Math.round(a.monthTotal / cap * 100)) : 0;
+  const max = Math.max(0.01, ...(a.byDay || []).map(x => x.gbp));
+  let h = '<div class="b46-tiles">' +
+    '<div class="b46-tile"><div class="n">' + gbp(a.today) + '</div><div class="l">Today</div></div>' +
+    '<div class="b46-tile"><div class="n">' + gbp(a.week) + '</div><div class="l">Last 7 days</div></div>' +
+    '<div class="b46-tile"><div class="n">' + gbp(a.monthTotal) + '</div><div class="l">This month' + (cap ? ' (' + pct + '% of budget)' : '') + '</div></div>' +
+    '<div class="b46-tile"><div class="n">' + (cap ? gbp(cap) : 'Off') + '</div><div class="l">Monthly budget</div></div></div>';
+  h += '<div class="b46-note">Costs are estimates from Anthropic list prices, converted at ' + esc(st.fx || 0.79) + ' pounds per dollar. Logging started with build 46, so earlier spend is not included. At the budget, AI features pause with a message until the 1st of the month. Set the budget to 0 to turn the stop off.</div>';
+  h += '<div class="b46-row"><div style="flex:1;min-width:140px;"><label>Monthly AI budget (£)</label><input type="number" id="aiCap" min="0" step="1" value="' + esc(cap || '') + '" placeholder="e.g. 25"></div>' +
+    '<div style="flex:1;min-width:140px;"><label>Pounds per dollar</label><input type="number" id="aiFx" min="0.3" max="2" step="0.01" value="' + esc(st.fx || 0.79) + '"></div>' +
+    '<div style="align-self:flex-end;"><button class="b46-btn gold" onclick="useSaveAi()">Save</button></div></div>';
+  h += '<label style="margin-top:16px;">By feature this month</label><table class="b46-tbl"><tr><th>Feature</th><th>Calls</th><th>Web searches</th><th style="text-align:right;">Cost</th></tr>' +
+    ((a.byFeature || []).map(f => '<tr><td>' + esc(f.name) + '</td><td>' + f.calls + '</td><td>' + (f.searches || 0) + '</td><td style="text-align:right;">' + gbp(f.gbp) + '</td></tr>').join('') || '<tr><td colspan="4" class="b46-sub">Nothing logged yet this month.</td></tr>') + '</table>';
+  h += '<label style="margin-top:16px;">By person this month</label><table class="b46-tbl"><tr><th>Who</th><th>Calls</th><th style="text-align:right;">Cost</th></tr>' +
+    ((a.byUser || []).map(f => '<tr><td>' + esc(f.name === 'public' ? 'Public visitors (Career Hub, Talent Suite)' : f.name === 'system' ? 'Automatic jobs' : userLabel(f.name)) + '</td><td>' + f.calls + '</td><td style="text-align:right;">' + gbp(f.gbp) + '</td></tr>').join('') || '<tr><td colspan="3" class="b46-sub">Nothing yet.</td></tr>') + '</table>';
+  if((a.byDay || []).length){
+    h += '<label style="margin-top:16px;">By day</label>' + a.byDay.map(x => '<div style="display:flex;gap:8px;align-items:center;font-size:12px;margin:3px 0;"><span style="width:80px;color:#777;">' + esc(x.day.slice(5)) + '</span><div style="flex:1;"><div class="b46-bar" style="width:' + Math.max(2, Math.round(x.gbp / max * 100)) + '%;"></div></div><span style="width:60px;text-align:right;">' + gbp(x.gbp) + '</span></div>').join('');
+  }
+  if((a.recent || []).length){
+    h += '<label style="margin-top:16px;">Latest AI calls</label><table class="b46-tbl"><tr><th>When</th><th>Who</th><th>Feature</th><th>Model</th><th style="text-align:right;">Cost</th></tr>' +
+      a.recent.slice(0, 20).map(r => '<tr><td>' + esc(new Date(r.at).toLocaleString('en-GB', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})) + '</td><td>' + esc(r.user === 'public' ? 'Public' : r.user === 'system' ? 'Automatic' : userLabel(r.user)) + '</td><td>' + esc(r.feature) + '</td><td>' + esc(String(r.model).replace('claude-', '').replace(/-\d{8}$/, '')) + '</td><td style="text-align:right;">' + gbp(r.gbp) + '</td></tr>').join('') + '</table>';
+  }
+  return h;
+}
+async function useSaveAi(){
+  try{
+    const j = await b2Post('/api/ai-spend/settings', {monthlyGbp: document.getElementById('aiCap').value || 0, fx: document.getElementById('aiFx').value});
+    USE.ai.settings = j.data; showToast('AI budget saved'); useRender();
+  }catch(e){ showToast(e.message); }
+}
+function useMailHtml(admin){
+  const m = USE.mail || {};
+  if(m.error) return '<div class="b46-err">' + esc(m.error) + '</div>';
+  let h = '<div class="b46-tiles">' +
+    '<div class="b46-tile"><div class="n">' + (m.today || 0) + ' / ' + (m.dailyLimit || 300) + '</div><div class="l">Emails sent today (team, Brevo limit)</div></div>' +
+    '<div class="b46-tile"><div class="n">' + (m.month || 0) + '</div><div class="l">Emails this month</div></div>' +
+    '<div class="b46-tile"><div class="n">' + (m.myColdToday || 0) + ' / ' + (m.outreachCap != null ? m.outreachCap : 20) + '</div><div class="l">Your first-contact emails today</div></div></div>';
+  if(admin){
+    h += '<div class="b46-row"><div style="flex:1;min-width:160px;"><label>Daily first-contact limit per person</label><input type="number" id="mlCap" min="0" max="200" value="' + esc(m.outreachCap != null ? m.outreachCap : 20) + '"></div><div style="align-self:flex-end;"><button class="b46-btn gold" onclick="useSaveMail()">Save</button></div></div>';
+    if(USE.hook) h += '<div class="b46-note"><strong>Delivery tracking (optional):</strong> in Brevo go to Transactional, Settings, Webhook, add a new webhook with this URL and tick Delivered, Opened, Clicked, Soft bounce, Hard bounce, Spam and Unsubscribed. Statuses below then update by themselves, and hard bounces and spam reports go on the suppression list.<div style="margin-top:6px;word-break:break-all;font-family:monospace;font-size:11.5px;background:#fff;padding:6px;border:1px solid var(--border);">' + esc(USE.hook) + '</div><button class="b46-btn" style="margin-top:6px;" onclick="copyToClipboard(USE.hook).then(() => showToast(\'Copied\'))">Copy URL</button></div>';
+  }
+  h += '<label style="margin-top:14px;">' + (admin ? 'Latest emails (everyone)' : 'Your latest emails') + '</label><table class="b46-tbl"><tr><th>When</th>' + (admin ? '<th>Who</th>' : '') + '<th>To</th><th>Subject</th><th>Type</th><th>Status</th></tr>' +
+    ((m.recent || []).map(r => '<tr><td>' + esc(new Date(r.at).toLocaleString('en-GB', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})) + '</td>' + (admin ? '<td>' + esc(userLabel(r.user)) + '</td>' : '') + '<td>' + esc(r.to) + '</td><td>' + esc(r.subject) + '</td><td>' + esc(MAIL_KIND_LABEL[r.kind] || r.kind) + '</td><td>' + esc(String(r.status || '').replace(/_/g, ' ')) + '</td></tr>').join('') || '<tr><td colspan="6" class="b46-sub">No emails sent through the dashboard yet.</td></tr>') + '</table>';
+  return h;
+}
+async function useSaveMail(){
+  try{ await b2Post('/api/mail/settings', {outreachCap: document.getElementById('mlCap').value}); showToast('Saved'); USE.mail = await b2Api('/api/mail/stats'); useRender(); }
+  catch(e){ showToast(e.message); }
+}
+function useSpecHtml(){
+  const rows = USE.spec || [];
+  let h = '<div class="b46-sub" style="margin-bottom:6px;">Every anonymised CV sent to a company, and which real person each label was. Only visible on the dashboard.</div>';
+  h += '<table class="b46-tbl"><tr><th>Sent</th><th>Company</th><th>Contact</th><th>Label</th><th>Candidate</th><th>By</th><th>Outcome</th></tr>' +
+    (rows.map(r => '<tr><td>' + esc(String(r.at).slice(0, 10)) + '</td><td>' + esc(r.company) + '<div class="b46-sub">' + esc(r.role) + '</div></td><td>' + esc(r.contact_name || '') + '<div class="b46-sub">' + esc(r.contact_email || '') + '</div></td><td><strong>' + esc(r.alias) + '</strong></td><td>' + esc(r.candidate_name) + '</td><td>' + esc(userLabel(r.user)) + '</td>' +
+      '<td><select onchange="specOutcome(\'' + esc(r.id) + '\', this.value)" style="font-size:12px;padding:4px;">' + ['', 'No reply', 'Asked for details', 'Interview requested', 'Not interested', 'Became a client'].map(o => '<option ' + (o === (r.outcome || '') ? 'selected' : '') + ' value="' + esc(o) + '">' + (o || 'Waiting') + '</option>').join('') + '</select></td></tr>').join('') ||
+      '<tr><td colspan="7" class="b46-sub">No spec CVs sent yet.</td></tr>') + '</table>';
+  return h;
+}
+async function specOutcome(id, v){
+  try{ await b2Post('/api/spec/sends/' + encodeURIComponent(id), {outcome: v}); showToast('Saved'); }
+  catch(e){ showToast(e.message); }
+}
+
+/* ============================================================
+   Role Finder: talent pool matches, spec sends and AI outreach
+   ============================================================ */
+async function rfxPoolOpen(resultId){
+  let r = (RFX.results || []).find(x => x.id === resultId) || (RFX.current && RFX.current.id === resultId ? RFX.current : null);
+  if(!r){ try{ r = (await b2Api('/api/role-finder/results/' + encodeURIComponent(resultId))).data; }catch(e){ r = null; } }
+  if(!r || !r.id){ showToast('Could not open that advert'); return; }
+  PM = {role:{id:'rfx-' + r.id, company:r.company, role:r.role, location:r.location, rfx:r.id}, data:null, busy:true, working:null, showOutside:false, error:''};
+  pmRender();
+  pmLoad();
+}
+pmLoad = async function(){
+  const r = PM.role;
+  try{
+    PM.data = await b2Api('/api/pool-matches?' + (r.rfx ? 'rfx=' + encodeURIComponent(r.rfx) : 'company=' + encodeURIComponent(r.company) + '&role=' + encodeURIComponent(r.role)));
+    PM.error = '';
+  }catch(e){ PM.error = e.message; }
+  PM.busy = false;
+  pmRender();
+};
+pmRun = async function(force){
+  if(PM.working) return;
+  const r = PM.role;
+  PM.working = {text:'Starting...'}; PM.error = ''; pmRender();
+  let first = true, loops = 0;
+  try{
+    while(loops++ < 80){
+      const j = await b2Post('/api/pool-matches/process', r.rfx ? {rfx: r.rfx, force: !!force, first: first} : {company: r.company, role: r.role, force: !!force, first: first});
+      first = false;
+      const rem = j.remaining || {};
+      const left = (rem.needsIndex || 0) + (rem.needsScore || 0);
+      PM.working = {text: rem.needsIndex ? ('Reading CVs: ' + rem.needsIndex + ' left') : ('Ranking with AI: ' + (rem.needsScore || 0) + ' left')};
+      pmRender();
+      if(!left) break;
+      if(!(j.done && (j.done.indexed || j.done.scored))){ PM.error = 'Some people could not be processed this time. Press the button again to retry.'; break; }
+    }
+  }catch(e){ PM.error = e.message; }
+  PM.working = null;
+  await pmLoad();
+};
+pmStar = async function(id){
+  const p = pmAllItems().find(function(x){ return x.id === id; });
+  if(!p) return;
+  const want = !p.shortlisted;
+  p.shortlisted = want; pmRender();
+  try{ await b2Post('/api/pool-matches/shortlist', PM.role.rfx ? {rfx: PM.role.rfx, poolId: id, shortlisted: want} : {company: PM.role.company, role: PM.role.role, poolId: id, shortlisted: want}); }
+  catch(e){ p.shortlisted = !want; pmRender(); showToast('Could not save the shortlist: ' + e.message); }
+};
+(function(){
+  const _pmr = pmRender;
+  pmRender = function(){
+    _pmr();
+    if(!PM.role || !PM.role.rfx || !PM.data) return;
+    const box = document.getElementById('pmBox'); if(!box) return;
+    const n = pmAllItems().filter(x => x.shortlisted).length;
+    const bar = document.createElement('div');
+    bar.className = 'b46-note';
+    bar.innerHTML = '<strong>Role Finder advert.</strong> This company is not a client yet. Star the people who fit, check each one is happy to be put forward (the button on each card sends them a quick check-in), then send them as anonymised Candidate A, B, C. ' +
+      '<div class="b46-row" style="margin-top:8px;"><button class="b46-btn gold" onclick="specOpen(\'' + esc(PM.role.rfx) + '\')" ' + (n ? '' : 'disabled') + '>Send shortlisted to this company (' + n + ')</button></div>';
+    const head = box.firstElementChild;
+    if(head && head.nextSibling) box.insertBefore(bar, head.nextSibling); else box.appendChild(bar);
+    box.querySelectorAll('button').forEach(b => { if(/Draft outreach in Outlook/.test(b.textContent)) b.textContent = 'Check they are happy to be put forward'; });
+  };
+  const _pme = pmEmail;
+  pmEmail = function(id){
+    if(PM.role && PM.role.rfx) return specCheckinEmail(id, PM.role.rfx);
+    return _pme(id);
+  };
+})();
+
+function specCheckinEmail(poolId, rfxIdV, fromSpec){
+  const p = (typeof pmAllItems === 'function' && PM.data ? pmAllItems() : []).find(x => x.id === poolId) || (SPEC.data && SPEC.data.candidates.find(c => c.poolId === poolId) && (function(c){ return {id:c.poolId, name:c.name, email:c.email}; })(SPEC.data.candidates.find(c => c.poolId === poolId)));
+  const r = (RFX.results || []).find(x => x.id === rfxIdV) || (SPEC.data && SPEC.data.advert) || {};
+  if(!p || !p.email){ showToast('No email address for this person'); return; }
+  const first = String(p.name || '').split(/\s+/)[0] || 'there';
+  const town = String(r.location || '').split(',')[0].trim();
+  const prof = (typeof senderProfile === 'function') ? senderProfile() : {};
+  const body = 'Hi ' + first + ',\n\nI hope you are well. I have come across a ' + r.role + ' role' + (town ? ' in ' + town : '') + (r.salary ? ' (' + r.salary + ')' : '') + ' that looks a good fit for your background.\n\n' +
+    'Are you still looking, and are you happy for me to put you forward for it? I would send your CV anonymously first, with no name or contact details, and nothing further is shared without speaking to you.\n\n' +
+    'A quick reply with yes or no is perfect' + (prof.phone ? ', or call me on ' + prof.phone : '') + '.\n\nKind regards,' + (b46TextSig() ? '\n\n' + b46TextSig() : '');
+  MAIL.hint = null;
+  mailOpen({to: p.email, subject: 'A ' + r.role + ' role' + (town ? ' in ' + town : '') + ' - are you interested?', body, kind:'checkin',
+    meta:{entity: p.name, entityType:'candidate', company: '', role: r.role},
+    onSent: async function(){
+      await b2Post('/api/spec/checkin', {poolId: poolId, rfx: rfxIdV, status: 'asked'});
+      if(fromSpec) specLoad();
+    }});
+}
+
+var SPEC = {rfx:'', data:null, sel:new Set(), contactName:'', contactEmail:'', busy:'', err:''};
+async function specOpen(rfxIdV){
+  SPEC = {rfx: rfxIdV, data:null, sel:new Set(), contactName:'', contactEmail:'', busy:'Loading the shortlist...', err:'', people:[]};
+  specRender();
+  try{
+    const j = await b2Api('/api/role-finder/results/' + encodeURIComponent(rfxIdV));
+    SPEC.people = ((j.dive && j.dive.people) || []).filter(p => p.email);
+    if(SPEC.people[0]){ SPEC.contactName = SPEC.people[0].name || ''; SPEC.contactEmail = SPEC.people[0].email || ''; }
+  }catch(e){ /* contact can be typed */ }
+  await specLoad();
+}
+async function specLoad(){
+  try{ SPEC.data = await b2Api('/api/spec/candidates?rfx=' + encodeURIComponent(SPEC.rfx)); SPEC.busy = ''; }
+  catch(e){ SPEC.busy = ''; SPEC.err = e.message; }
+  specRender();
+}
+function specCollect(){
+  const n = document.getElementById('spName'), e = document.getElementById('spEmail');
+  if(n) SPEC.contactName = n.value.trim();
+  if(e) SPEC.contactEmail = e.value.trim();
+}
+function specPickPerson(i){ const p = SPEC.people[i]; if(!p) return; SPEC.contactName = p.name || ''; SPEC.contactEmail = p.email || ''; specRender(); }
+function specToggle(id, on){ specCollect(); if(on) SPEC.sel.add(id); else SPEC.sel.delete(id); specRender(); }
+async function specMark(id, status){
+  specCollect();
+  try{ await b2Post('/api/spec/checkin', {poolId: id, rfx: SPEC.rfx, status}); await specLoad(); }
+  catch(e){ showToast(e.message); }
+}
+function specRender(){
+  const box = b46Shell('specOv'); box.style.maxWidth = '820px';
+  const d = SPEC.data, a = (d && d.advert) || {};
+  let h = '<div style="display:flex;justify-content:space-between;"><div><div class="b46-k">SEND ANONYMISED CANDIDATES</div><h3>' + esc(a.company || '') + '</h3><div class="b46-sub">' + esc(a.role || '') + (a.location ? ' - ' + esc(a.location) : '') + (a.salary ? ' - ' + esc(a.salary) : '') + '</div></div><button onclick="b46Close(\'specOv\')" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;">&times;</button></div>';
+  if(SPEC.busy){ box.innerHTML = h + '<div style="padding:18px 0;color:#777;font-size:13px;">' + esc(SPEC.busy) + '</div>'; return; }
+  if(SPEC.err) h += '<div class="b46-err">' + esc(SPEC.err) + '</div>';
+  if(!d){ box.innerHTML = h; return; }
+  h += '<div class="b46-note">Only starred people who agreed to be kept for future roles can be sent, and only once they have said yes to being put forward. Each CV is anonymised (no name, contact details or address) and labelled Candidate A, B, C in the order shown. The dashboard keeps the link to the real person.</div>';
+  h += '<label>Send to</label>' + (SPEC.people.length ? '<div class="b46-row" style="margin-bottom:6px;">' + SPEC.people.map((p, i) => '<button class="b46-btn" style="font-size:12px;padding:5px 10px;" onclick="specCollect();specPickPerson(' + i + ')">' + esc(p.name) + (p.title ? ' - ' + esc(p.title) : '') + '</button>').join('') + '</div>' : '') +
+    '<div class="b46-row"><input type="text" id="spName" placeholder="Contact name" value="' + esc(SPEC.contactName) + '" style="flex:1;min-width:160px;"><input type="email" id="spEmail" placeholder="name@company.co.uk" value="' + esc(SPEC.contactEmail) + '" style="flex:1;min-width:200px;"></div>';
+  h += '<label style="margin-top:14px;">Shortlisted people (' + d.candidates.length + ')</label>';
+  if(!d.candidates.length) h += '<div class="b46-sub">Nobody is starred yet. Open Pool matches for this advert and star the people who fit.</div>';
+  let alias = 0;
+  d.candidates.forEach(c => {
+    const can = c.consentOk && c.hasCv && c.checkin === 'yes';
+    const on = SPEC.sel.has(c.poolId) && can;
+    const why = !c.consentOk ? 'Only agreed to their original role, so cannot be sent' : !c.hasCv ? 'No CV on file' : c.checkin !== 'yes' ? 'Waiting for them to say yes' : '';
+    h += '<div class="b46-cand"' + (can ? '' : ' style="opacity:.85;"') + '><div class="b46-row" style="justify-content:space-between;">' +
+      '<label style="display:flex;gap:8px;align-items:center;margin:0;font-size:13.5px;color:var(--dark);cursor:' + (can ? 'pointer' : 'default') + ';"><input type="checkbox" ' + (on ? 'checked ' : '') + (can ? '' : 'disabled ') + 'onchange="specToggle(\'' + esc(c.poolId) + '\', this.checked)" style="width:auto;margin:0;"> <strong>' + esc(c.name) + '</strong>' + (on ? ' <span class="b46-pill yes">' + esc('Candidate ' + String.fromCharCode(65 + alias++)) + '</span>' : '') + '</label>' +
+      '<span>' + (c.score ? '<span class="b46-pill">' + esc(c.score) + '</span> ' : '') + '<span class="b46-pill ' + esc(c.checkin) + '">' + esc(c.checkin === 'yes' ? 'Happy to be put forward' : c.checkin === 'no' ? 'Said no' : c.checkin === 'asked' ? 'Asked, waiting' : 'Not asked yet') + '</span></span></div>' +
+      (c.reason ? '<div class="b46-sub" style="margin:4px 0 0 24px;">' + esc(c.reason) + '</div>' : '') +
+      (why ? '<div class="b46-sub" style="margin:4px 0 0 24px;color:#a06a12;">' + esc(why) + '</div>' : '') +
+      (c.alreadySent && c.alreadySent.length ? '<div class="b46-sub" style="margin:4px 0 0 24px;color:var(--danger);">Already sent to this company on ' + esc(String(c.alreadySent[0].at).slice(0, 10)) + ' as ' + esc(c.alreadySent[0].alias) + '</div>' : '') +
+      (c.consentOk ? '<div class="b46-row" style="margin:6px 0 0 24px;">' +
+        (c.email ? '<button class="b46-btn" style="font-size:12px;padding:5px 10px;" onclick="specCheckinEmail(\'' + esc(c.poolId) + '\', SPEC.rfx, true)">Email check-in</button>' : '') +
+        '<button class="b46-btn" style="font-size:12px;padding:5px 10px;" onclick="specMark(\'' + esc(c.poolId) + '\', \'yes\')">They said yes</button>' +
+        '<button class="b46-btn" style="font-size:12px;padding:5px 10px;" onclick="specMark(\'' + esc(c.poolId) + '\', \'no\')">They said no</button>' +
+        (c.phone ? '<span class="b46-sub">or call ' + esc(c.phone) + '</span>' : '') + '</div>' : '') +
+      '</div>';
+  });
+  const n = d.candidates.filter(c => SPEC.sel.has(c.poolId) && c.consentOk && c.hasCv && c.checkin === 'yes').length;
+  h += '<div class="b46-row" style="justify-content:flex-end;margin-top:12px;"><button class="b46-btn" onclick="b46Close(\'specOv\')">Close</button><button class="b46-btn gold" onclick="specBuild()" ' + (n ? '' : 'disabled') + '>Build the email (' + n + ' CV' + (n === 1 ? '' : 's') + ')</button></div>' +
+    '<div class="b46-sub" style="text-align:right;margin-top:4px;">Each new CV is anonymised once with AI (a few pence) and then reused for any company.</div>';
+  box.innerHTML = h;
+}
+async function specBuild(){
+  specCollect();
+  const d = SPEC.data;
+  const chosen = d.candidates.filter(c => SPEC.sel.has(c.poolId) && c.consentOk && c.hasCv && c.checkin === 'yes');
+  if(!chosen.length) return;
+  if(!SPEC.contactEmail || SPEC.contactEmail.indexOf('@') < 1){ showToast('Add the contact email address first'); return; }
+  const items = chosen.map((c, i) => ({poolId: c.poolId, alias: 'Candidate ' + String.fromCharCode(65 + i), name: c.name}));
+  SPEC.busy = 'Anonymising ' + items.length + ' CV' + (items.length === 1 ? '' : 's') + ' and writing the email...'; specRender();
+  try{
+    const role = d.advert.role;
+    const [draft, ...cvs] = await Promise.all([
+      b2Post('/api/spec/draft', {rfx: SPEC.rfx, contactName: SPEC.contactName, candidates: items}),
+      ...items.map(it => b2Post('/api/spec/cv', {poolId: it.poolId, alias: it.alias, role}))
+    ]);
+    const warn = cvs.flatMap((c, i) => (c.warnings || []).length ? [items[i].alias + ': check for "' + c.warnings.join('", "') + '"'] : []);
+    SPEC.busy = ''; specRender();
+    b46Close('specOv');
+    mailOpen({
+      to: SPEC.contactEmail, subject: draft.subject, body: draft.body, kind: 'spec',
+      atts: cvs.map(c => ({fileName: c.fileName, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', base64: c.base64})),
+      meta: {company: d.advert.company, role: role, contactName: SPEC.contactName, entityType: 'client', ref: SPEC.rfx},
+      note: 'Open each attached CV before sending to check nothing identifies the person.' + (warn.length ? '<br><strong>Check:</strong> ' + esc(warn.join('; ')) : ''),
+      onSent: async function(){
+        await b2Post('/api/spec/sent', {rfx: SPEC.rfx, contactName: SPEC.contactName, contactEmail: SPEC.contactEmail, candidates: items});
+        await b2Post('/api/outreach/sent', {rfx: SPEC.rfx, kind: 'spec', contactName: SPEC.contactName, subject: MAIL.d.subject, followUpDays: 3}).catch(() => {});
+        showToast('Logged in Spec sends, with a follow-up in the Cold Call Tracker');
+        if(typeof rfxLoad === 'function') rfxLoad();
+      }
+    });
+  }catch(e){ SPEC.busy = ''; SPEC.err = e.message; specRender(); }
+}
+
+/* ---------- AI outreach to Role Finder contacts ---------- */
+async function outreachBuild(rfxIdV, person){
+  const r = (RFX.results || []).find(x => x.id === rfxIdV) || {};
+  if(!person || !person.email) throw new Error('No email address for this contact. Run the deep dive or add the contact first.');
+  const j = await b2Post('/api/outreach/draft', {rfx: rfxIdV, contactName: person.name || '', contactTitle: person.title || ''});
+  const sig = b46TextSig();
+  return {
+    to: person.email, subject: j.subject, body: j.body.replace(/\s+$/, '') + (sig ? '\n\n' + sig : ''), kind: 'outreach',
+    meta: {company: r.company, role: r.role, contactName: person.name || '', entityType: 'client', ref: rfxIdV},
+    note: person.email_status && /guess|pattern/i.test(person.email_status) ? 'This email address is a <strong>' + esc(person.email_status) + '</strong>, not one found published. Check it before sending.' : '',
+    onSent: async function(){
+      const k = await b2Post('/api/outreach/sent', {rfx: rfxIdV, kind: 'outreach', contactName: person.name || '', subject: MAIL.d.subject, followUpDays: 4}).catch(() => null);
+      if(k && k.followUp) showToast('Follow-up added to the Cold Call Tracker for ' + k.followUp);
+    }
+  };
+}
+async function outreachOne(rfxIdV, i){
+  const p = RFX.dive && RFX.dive.people && RFX.dive.people[i];
+  MAIL.open = true;
+  const box = b46Shell('mailOv');
+  box.innerHTML = '<div class="b46-k">FIRST-CONTACT EMAIL</div><h3>' + esc((p && p.name) || '') + '</h3><div style="padding:18px 0;color:#777;font-size:13px;">Writing a draft tailored to the company and advert...</div>';
+  try{ mailOpen(await outreachBuild(rfxIdV, p)); }
+  catch(e){ box.innerHTML = '<div class="b46-err">' + esc(e.message) + '</div><div class="b46-row" style="justify-content:flex-end;"><button class="b46-btn" onclick="mailClose()">Close</button></div>'; }
+}
+
+// Several companies in a row: draft, review, send or skip, next
+async function outreachQueue(){
+  const keys = [...(RFX.sel || [])];
+  if(!keys.length){ showToast('Tick the companies to email first'); return; }
+  const items = [];
+  for(const k of keys){
+    const g = RFX.groupMap && RFX.groupMap.get(k);
+    if(!g) continue;
+    const it = g.items.find(r => r.has_dive) || null;
+    items.push({label: g.company, build: async function(){
+      if(!it) throw new Error(g.company + ' has no deep dive yet, so there is no contact to email. Run the deep dive first.');
+      const j = await b2Api('/api/role-finder/results/' + encodeURIComponent(it.id));
+      const person = ((j.dive && j.dive.people) || []).find(p => p.email);
+      if(!person) throw new Error('The deep dive for ' + g.company + ' found no email address. Try the switchboard or LinkedIn.');
+      return outreachBuild(it.id, person);
+    }});
+  }
+  mailQueueStart(items, function(){ if(typeof rfxLoad === 'function') rfxLoad(); });
+}
+
+(function(){
+  if(typeof rfxRender !== 'function') return;
+  const _r = rfxRender;
+  rfxRender = function(){
+    _r.apply(this, arguments);
+    try{
+      document.querySelectorAll('#rfxBody .rfx-actions').forEach(function(el){
+        if(el.querySelector('.b46-pm')) return;
+        const dive = el.querySelector('button[onclick^="rfxOpenDive"]');
+        if(!dive) return;
+        const m = /rfxOpenDive\('([^']+)'\)/.exec(dive.getAttribute('onclick') || '');
+        if(!m) return;
+        const b = document.createElement('button');
+        b.className = 'b46-pm'; b.textContent = 'Pool matches'; b.title = 'Find people in the talent pool who fit this advert (only runs when you press Read CVs and rank)';
+        b.setAttribute('onclick', "rfxPoolOpen('" + m[1] + "')");
+        dive.insertAdjacentElement('afterend', b);
+      });
+      const tiles = document.getElementById('rfxTiles');
+      if(tiles && !document.getElementById('b46RfxBar')){
+        const bar = document.createElement('div');
+        bar.id = 'b46RfxBar'; bar.className = 'b46-row'; bar.style.margin = '0 0 10px';
+        bar.innerHTML = '<button class="b46-btn gold" onclick="outreachQueue()" title="Draft a tailored email to each ticked company, review and send one by one">Email ticked companies</button><button class="b46-btn" onclick="useOpen(\'spec\')">Spec sends log</button><button class="b46-btn" onclick="useOpen(\'email\')">Emails sent</button>';
+        b46Css();
+        tiles.parentNode.insertBefore(bar, tiles);
+      }
+    }catch(e){ /* the list still works */ }
+  };
+})();
+
+(function(){
+  if(typeof rfxRenderDive !== 'function') return;
+  const _d = rfxRenderDive;
+  rfxRenderDive = function(){
+    _d.apply(this, arguments);
+    try{
+      if(!RFX.dive || !RFX.current) return;
+      const id = RFX.current.id;
+      document.querySelectorAll('#rfxDiveBody .rfx-person').forEach(function(card, i){
+        const p = RFX.dive.people && RFX.dive.people[i];
+        const btns = card.querySelector('.btns');
+        if(!p || !btns || btns.querySelector('.b46-out')) return;
+        if(p.email){
+          const b = document.createElement('button');
+          b.className = 'b46-out'; b.textContent = 'Email with AI draft';
+          b.setAttribute('onclick', "outreachOne('" + id + "', " + i + ")");
+          btns.appendChild(b);
+        }
+      });
+      const body = document.getElementById('rfxDiveBody');
+      if(body && !body.querySelector('.b46-divebar')){
+        const bar = document.createElement('div');
+        bar.className = 'b46-note b46-divebar';
+        bar.innerHTML = 'Have people in the talent pool who could fit? <button class="b46-btn" style="margin-left:6px;" onclick="closeModal(\'rfxDiveModal\');rfxPoolOpen(\'' + id + '\')">Pool matches</button> <button class="b46-btn gold" onclick="closeModal(\'rfxDiveModal\');specOpen(\'' + id + '\')">Send anonymised candidates</button>';
+        b46Css();
+        const sec = body.querySelector('.rfx-sec');
+        if(sec) body.insertBefore(bar, sec); else body.appendChild(bar);
+      }
+    }catch(e){ /* the deep dive still shows */ }
+  };
+})();
+</script>
+<script>
+function ivEmailInvite(who){
+  const iv = B2.interviews.find(x => x.id === ivInviteId);
+  if(!iv) return;
+  const f = ivInviteFields(who);
+  if(!f.to){ showToast('Add the email address first'); return; }
+  const w = ivWindow(iv);
+  ivSaveInviteEmails();
+  const ics = icsBuild({uid: iv.id + '-' + who, subject: f.subject, body: f.body, location: f.location, start: w.start, end: w.end});
+  mailOpen({to: f.to, subject: f.subject, body: f.body, kind: 'invite',
+    atts: [{fileName: 'Interview invite.ics', mime: 'text/calendar', base64: b64utf8(ics)}],
+    meta: {entity: who === 'client' ? (iv.interviewer_name || iv.company) : iv.candidate_name, entityType: who === 'client' ? 'client' : 'candidate', company: iv.company, role: iv.role},
+    note: 'The calendar invite is attached. Opening it adds the interview to their calendar.'});
+}
+(function(){
+  // "send" mode: open the Review and Send panel instead of Outlook
+  const _om = openMailInOutlook;
+  openMailInOutlook = function(mode, to, subject, body){
+    if(mode === 'send'){ mailOpen(Object.assign({to: to || '', subject: subject || '', body: body || '', atts: []}, mailGuessContext())); return; }
+    return _om.apply(this, arguments);
+  };
+})();
+</script>
 </body>
 </html>
