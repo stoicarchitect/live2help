@@ -1975,13 +1975,13 @@ h1,h2,.view-head h2,#leadClientsHeader h2,#clientsHeader h2,.modal h2{font-famil
         <div><h2>Funnel Leads</h2><div class="sub" id="flSummary"></div></div>
         <div class="head-actions">
           <select id="flFilter" onchange="renderFunnelLeads()" style="padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13px;background:#fff;">
-            <option value="">All leads</option><option value="hot">Hot</option><option value="new">New</option><option value="contacted">Contacted</option><option value="converted">Converted</option><option value="lost">Lost</option><option value="unfinished">Did not finish</option></select>
+            <option value="">All leads</option><option value="hot">Hot</option><option value="new">New</option><option value="contacted">Contacted</option><option value="converted">Converted</option><option value="lost">Lost</option><option value="unfinished">Did not finish</option><option value="enquiry">Website enquiries</option></select>
         </div>
       </div>
       <div class="view-body">
         <div class="tile-grid" id="flTiles"></div>
         <div class="ops-table-wrap"><table class="ops-table" style="min-width:1020px;"><thead><tr><th>Date</th><th>Lead</th><th>Role</th><th>Net cost a week</th><th>Process</th><th>Offer</th><th>Reached</th><th>Status</th><th>Notes</th><th style="text-align:right;">Actions</th></tr></thead><tbody id="flBody"></tbody></table></div>
-        <div class="note-line">These come from the Hiring Toolkit page at careers.live2helprecruitment.co.uk/hire. A lead is marked Hot when the process score is under 55 or the offer score is under 50. When someone finishes all three steps, their company is added to Lead Clients if it is new, a follow-up task is created for Ella for the next working day, and they are emailed their report. Leads who stop partway are kept here as Did not finish.</div>
+        <div class="note-line">These come from the Hiring Toolkit page at careers.live2helprecruitment.co.uk/hire. A lead is marked Hot when the process score is under 55 or the offer score is under 50. When someone finishes all three steps, their company is added to Lead Clients if it is new, a follow-up task is created for Ella for the next working day, and they are emailed their report. Leads who stop partway are kept here as Did not finish. Employers who use the contact form on live2helprecruitment.co.uk also appear here as Website enquiry, marked Hot, with their message in Notes and a reply task for Ella.</div>
       </div>
     </div>
 
@@ -8997,7 +8997,7 @@ async function saveReferral(){
 /* ---------- Funnel leads (Hiring Toolkit page) ---------- */
 
 const FL_STATUS = {new:'New', hot:'Hot', contacted:'Contacted', converted:'Converted', lost:'Lost'};
-const FL_STAGE = {cost:'Step 1', process:'Step 2', complete:'Finished'};
+const FL_STAGE = {cost:'Step 1', process:'Step 2', complete:'Finished', enquiry:'Website enquiry'};
 
 async function loadFunnelLeads(){
   try{ B3.funnelLeads = b2List(await b2Api('/api/funnel-leads')); }catch(e){ showToast('Could not load funnel leads'); }
@@ -9010,13 +9010,13 @@ function flScore(v, good){ const n = parseFloat(v); if(!isFinite(n)) return '<sp
 function renderFunnelLeads(){
   const list = (B3.funnelLeads || []).slice().sort((a, b) => String(b.created_at || b.date).localeCompare(String(a.created_at || a.date)));
   const f = b2Val('flFilter');
-  const shown = list.filter(l => !f || (f === 'unfinished' ? l.stage !== 'complete' : l.status === f));
+  const shown = list.filter(l => !f || (f === 'unfinished' ? (l.stage === 'cost' || l.stage === 'process') : (f === 'enquiry' ? l.stage === 'enquiry' : l.status === f)));
   const done = list.filter(l => l.stage === 'complete');
   const hot = list.filter(l => l.status === 'hot').length;
   const conv = list.filter(l => l.status === 'converted').length;
-  document.getElementById('flSummary').textContent = list.length + ' lead' + (list.length === 1 ? '' : 's') + ' from the Hiring Toolkit';
+  document.getElementById('flSummary').textContent = list.length + ' lead' + (list.length === 1 ? '' : 's') + ' from the Hiring Toolkit and the website contact form';
   document.getElementById('flTiles').innerHTML = [
-    {n: list.length, l:'Leads captured'}, {n: done.length, l:'Finished all 3 steps'}, {n: hot, l:'Hot leads', warn: hot > 0},
+    {n: list.length, l:'Leads captured'}, {n: done.length, l:'Finished all 3 steps'}, {n: list.filter(l => l.stage === 'enquiry').length, l:'Website enquiries'}, {n: hot, l:'Hot leads', warn: hot > 0},
     {n: list.filter(l => l.status === 'new').length, l:'New, not yet contacted'}, {n: conv, l:'Converted to clients'},
   ].map(t => `<div class="tile static ${t.warn ? 'warn' : ''}"><div class="n">${esc(t.n)}</div><div class="l">${t.l}</div></div>`).join('');
   document.getElementById('flBody').innerHTML = shown.length ? shown.map(l => `<tr>

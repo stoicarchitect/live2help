@@ -241,6 +241,7 @@ const PUBLIC_API = [
   { method: 'POST', re: /^\/api\/applications\/[^/]+$/ },
   { method: 'POST', re: /^\/api\/talent-pool$/ },
   { method: 'POST', re: /^\/api\/funnel-lead$/ },
+  { method: 'POST', re: /^\/api\/website-enquiry$/ },
   { method: 'POST', re: /^\/api\/claude$/ },
   { method: 'POST', re: /^\/api\/brevo\/webhook$/ },
   { method: 'POST', re: /^\/api\/talent-suite\/(start|verify|me|tool|cv-docx|review-request|orders|checkout|credits\/checkout)$/ },
@@ -5636,6 +5637,81 @@ app.post('/api/funnel-lead', async (req, res) => {
   } catch (e) {
     console.error('POST /api/funnel-lead error:', e);
     res.status(500).json({ error: 'Something went wrong saving your details. Please try again.' });
+  }
+});
+
+/* ---------- Main website contact form ----------
+   Public form on live2helprecruitment.co.uk/contact. Replaces Formspree.
+   Employer enquiries land in Funnel Leads (stage "enquiry", status Hot), their company is added to
+   Lead Clients if new, and Ella gets a follow-up task for the next working day.
+   Candidate and other enquiries become a task for Ella only, so client leads stay clean.
+   Dan is alerted by email through Brevo either way. */
+app.post('/api/website-enquiry', async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (tpClean(b.website, 200)) return res.json({ ok: true }); // honeypot filled in: a bot
+    const ip = tpClientIp(req);
+    if (!tpAllow('we:ip:' + ip, 10, 60 * 60 * 1000)) return res.status(429).json({ error: 'Too many messages. Please try again later or email office@live2helprecruitment.co.uk.' });
+    const name = tpClean(b.name, 80), email = tpClean(b.email, 120).toLowerCase();
+    const company = tpClean(b.company, 120), phone = tpClean(b.phone, 40);
+    const message = tpClean(b.message, 2000), source = tpClean(b.source, 120) || 'website';
+    const type = ['employer', 'candidate', 'other'].includes(b.type) ? b.type : 'other';
+    if (name.length < 2 || !/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(email) || message.length < 2) {
+      return res.status(400).json({ error: 'Please check your name, email and message.' });
+    }
+    if (type === 'employer' && company.length < 2) return res.status(400).json({ error: 'Please add your company name.' });
+    if (b.consent !== true) return res.status(400).json({ error: 'Please tick the box so we can reply to you.' });
+    if (!tpAllow('we:em:' + email, 5, 24 * 3600 * 1000)) return res.status(429).json({ error: 'We already have your message. We will be in touch soon.' });
+
+    const nowIso = new Date().toISOString();
+    const sheets = getSheetsClient();
+    const label = type === 'employer' ? 'Employer enquiry' : (type === 'candidate' ? 'Candidate enquiry' : 'General enquiry');
+    const short = message.length > 160 ? message.slice(0, 157) + '...' : message;
+
+    if (type === 'employer') {
+      const id = 'we-' + crypto.createHash('sha1').update(email + '|' + nowIso).digest('hex').slice(0, 12);
+      await funnelLeadsTable.upsert({
+        id, date: todayISO(), name, email, company, role: '', salary: '', weeks: '', net_per_week: '', total_cost: '',
+        process_score: '', offer_score: '', offer_risk: '', top_gaps: '', stage: 'enquiry', source, status: 'hot',
+        notes: `Website enquiry${phone ? ' (tel ' + phone + ')' : ''}: ${message}`, consent: 'Yes',
+        created_at: nowIso, report_sent: '', task_created: 'Yes',
+      });
+      try {
+        const [leads, clients] = await Promise.all([readLeadClientRows(), readClientRows()]);
+        const known = new Set([...leads, ...clients].map(r => String((r && r[1]) || '').trim().toLowerCase()).filter(Boolean));
+        if (!known.has(company.toLowerCase())) {
+          await sheets.spreadsheets.values.append({
+            spreadsheetId: CLIENT_SHEET_ID, range: LEAD_CLIENT_RANGE, valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS',
+            requestBody: { values: [clientToRow({ timestamp: nowIso, company, address: '', postcode: '', contactName: name, jobTitle: '', email, phone, folderCreated: 'No', notes: 'Added from the website contact form' })] },
+          });
+        }
+      } catch (e) { console.error('Website enquiry: could not add Lead Client:', e.message); }
+    }
+
+    try {
+      const task = {
+        id: `task-we-${Date.now()}`, user: 'ella',
+        title: `Reply to ${label.toLowerCase()}: ${name}${company ? ', ' + company : ''}`,
+        priority: type === 'employer' ? 'High' : 'Medium', dueDate: flNextWorkingDay(),
+        context: `${short} Email ${email}${phone ? ', tel ' + phone : ''}.${type === 'employer' ? ' See the Funnel Leads tab.' : ''}`,
+        status: 'Open', recurring: 'none', archived: false,
+      };
+      await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: TASKS_RANGE, valueInputOption: 'RAW', requestBody: { values: [taskToRow(task)] } });
+    } catch (e) { console.error('Website enquiry: could not create task:', e.message); }
+
+    try {
+      await emailTransporter.sendMail({
+        from: process.env.BREVO_SENDER_EMAIL, to: process.env.LEAD_ALERT_TO || dansInbox(), replyTo: email,
+        subject: `${label} from the website: ${name}${company ? ', ' + company : ''}`,
+        text: `${label} from live2helprecruitment.co.uk\n\nName: ${name}\nEmail: ${email}\nPhone: ${phone || '-'}\nCompany: ${company || '-'}\nSource: ${source}\n\n${message}\n\nA follow-up task has been created for Ella.${type === 'employer' ? ' The lead is on the Funnel Leads tab.' : ''} Reply to this email to answer them directly.`,
+      });
+    } catch (e) { console.error('Website enquiry: alert email failed:', e.message); }
+
+    auditLog('website', 'website_enquiry', type, `${name}${company ? ' - ' + company : ''}`, source);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('POST /api/website-enquiry error:', e);
+    res.status(500).json({ error: 'Something went wrong sending your message. Please email office@live2helprecruitment.co.uk.' });
   }
 });
 
