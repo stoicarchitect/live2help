@@ -513,6 +513,7 @@ function getSheetsClient() {
      a write are always fresh
    - calls are paced to stay under the limit; when the limit is close they wait their turn instead
      of failing, and a quota refusal pauses everything briefly before carrying on */
+let sheetsWriteGen = 0; // bumped on every Sheets write so shared read results are dropped straight away
 function sheetsQuotaGuard(client) {
   const READ_TTL = 8000, PER_MIN = 50;
   const cache = new Map();
@@ -558,9 +559,10 @@ function sheetsQuotaGuard(client) {
   const wrapWrite = (obj, name) => {
     const orig = obj[name].bind(obj);
     obj[name] = async (params = {}, ...rest) => {
+      sheetsWriteGen++;
       clearFor(params.spreadsheetId);
       try { return await run(writes, () => orig(params, ...rest)); }
-      finally { clearFor(params.spreadsheetId); }
+      finally { sheetsWriteGen++; clearFor(params.spreadsheetId); }
     };
   };
   const v = client.spreadsheets.values;
@@ -765,21 +767,22 @@ async function readApplicationsRows(strict = false) {
   const sheets = getSheetsClient();
   const allApplications = [];
   try {
-    const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
+    const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties.title' });
     const tabs = spreadsheet.data.sheets;
     let assigns = new Map();
     try { assigns = new Map((await getApplicantRoles()).map(a => [a.id, a])); } catch (e) { /* no assignments yet */ }
 
-    for (const tab of tabs) {
-      const tabName = tab.properties.title;
-      if (!tabName.startsWith('Applications -')) continue;
+    // Build 47.3: every Applications tab in one read (was one read per tab), so the per-minute Sheets budget lasts
+    const appTabs = tabs.map(t => t.properties.title).filter(n => n.startsWith('Applications -'));
+    const batch = appTabs.length ? await sheets.spreadsheets.values.batchGet({
+      spreadsheetId: SHEET_ID,
+      ranges: appTabs.map(n => `'${n.replace(/'/g, "''")}'!A2:Z`),
+    }) : { data: { valueRanges: [] } };
+    const ranges = (batch.data && batch.data.valueRanges) || [];
 
-      const result = await sheets.spreadsheets.values.get({
-        spreadsheetId: SHEET_ID,
-        range: `'${tabName}'!A2:Z`,
-      });
-
-      const rows = result.data.values || [];
+    for (let ti = 0; ti < appTabs.length; ti++) {
+      const tabName = appTabs[ti];
+      const rows = (ranges[ti] && ranges[ti].values) || [];
       rows.forEach(row => {
         if (!row[2]) return; // Skip if no candidate name (col C)
         allApplications.push({
@@ -814,8 +817,27 @@ async function readApplicationsRows(strict = false) {
 // Includes Dashboard tab rows plus form Applications tab rows. Applications with
 // no company assigned yet are grouped under UNASSIGNED_LABEL so Ella can see and
 // assign them from the board, rather than being silently dropped.
+// Build 47.3: every open dashboard tab refreshes the board each minute, so one result is shared for 20 seconds.
+// Any write to the sheets bumps sheetsWriteGen, which throws the shared result away at once.
+let candidatesCache = null, candidatesInflight = null;
 app.get('/api/candidates', async (req, res) => {
   try {
+    if (candidatesCache && candidatesCache.gen === sheetsWriteGen && Date.now() - candidatesCache.at < 20000) return res.json({ data: candidatesCache.data });
+    if (!candidatesInflight) {
+      const gen = sheetsWriteGen;
+      candidatesInflight = buildCandidatesGrouped()
+        .then(data => { if (gen === sheetsWriteGen) candidatesCache = { at: Date.now(), gen, data }; return data; })
+        .finally(() => { candidatesInflight = null; });
+    }
+    res.json({ data: await candidatesInflight });
+  } catch (e) {
+    console.error('GET /api/candidates error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+async function buildCandidatesGrouped() {
+  {
     const dashboardRows = await readAllRows();
     const applicationRows = await readApplicationsRows();
 
@@ -835,12 +857,9 @@ app.get('/api/candidates', async (req, res) => {
       grouped[companyKey][c.role].push(c);
     });
 
-    res.json({ data: grouped });
-  } catch (e) {
-    console.error('GET /api/candidates error:', e.message);
-    res.status(500).json({ error: e.message });
+    return grouped;
   }
-});
+}
 
 // Create or update a single candidate (upsert by id).
 // Applications-tab candidates (sourceTab === 'application') are written back to
@@ -13034,7 +13053,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '26 Oct 2026 - build 47.2 (email and call, live advert intro, send to other contacts, bounce flags)';
+const SERVER_BUILD = '26 Oct 2026 - build 47.3 (fewer Sheets reads: batched applications, shared board refresh)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

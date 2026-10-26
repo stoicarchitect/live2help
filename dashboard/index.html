@@ -3201,8 +3201,9 @@ function openCandidateModal(id){
       </div>
     </div>
     <div class="contact-row">
-      ${c.email ? `<a href="mailto:${c.email}"><i>&#9993;</i> ${c.email}</a>` : '<span class="none">No email on file</span>'}
-      ${c.phone ? `<a href="tel:${c.phone}"><i>&#9742;</i> ${c.phone}</a>` : '<span class="none">No number on file</span>'}
+      ${c.email ? `<a href="mailto:${esc(c.email)}" data-c47-type="candidate" data-c47-name="${esc(c.name)}" data-c47-company="${esc(currentCompany)}" data-c47-role="${esc(currentRole)}" title="Email from the workspace"><i>&#9993;</i> ${esc(c.email)}</a>` : '<span class="none">No email on file</span>'}
+      ${c.phone ? `<a href="tel:${esc(String(c.phone).replace(/\s+/g, ''))}" data-c47-type="candidate" data-c47-name="${esc(c.name)}" data-c47-company="${esc(currentCompany)}" data-c47-role="${esc(currentRole)}" title="Call with Enconvo"><i>&#9742;</i> ${esc(c.phone)}</a>` : '<span class="none">No number on file</span>'}
+      <a href="#" data-c47tl="1" data-c47-type="candidate" data-c47-name="${esc(c.name)}" data-c47-company="${esc(currentCompany)}" data-c47-role="${esc(currentRole)}" data-c47-email="${esc(c.email || '')}" data-c47-phone="${esc(c.phone || '')}"><i>&#9776;</i> Timeline</a>
     </div>
     <div class="field-row"><label>Current stage</label><div class="val">${stageObj.label}</div></div>
     <div class="field-row"><label>Days in stage</label><div class="val">${daysSince(c.date)}</div></div>
@@ -4339,6 +4340,7 @@ function renderClientCard(company, contacts){
             ${contact.jobTitle ? '<span>' + escapeHtml(contact.jobTitle) + '</span>' : ''}
             ${contact.email ? '<div><a href="mailto:' + escapeHtml(contact.email) + '">' + escapeHtml(contact.email) + '</a></div>' : ''}
             ${contact.phone ? '<div><a href="tel:' + escapeHtml(contact.phone) + '">' + escapeHtml(contact.phone) + '</a></div>' : ''}
+            <div><a href="#" data-c47edit="1" data-kind="client" data-ts="${esc(contact.timestamp || '')}" data-company="${esc(contact.company || company)}" data-name="${esc(contact.contactName || '')}" data-email="${esc(contact.email || '')}">Edit contact</a></div>
           </div>
         `).join('')}
       </div>
@@ -5872,8 +5874,9 @@ function renderPoolDialog(){
       </div>
     </div>
     <div class="contact-row">
-      ${p.email ? `<a href="mailto:${esc(p.email)}"><i>&#9993;</i> ${esc(p.email)}</a>` : '<span class="none">No email on file</span>'}
-      ${p.phone ? `<a href="tel:${esc(p.phone)}"><i>&#9742;</i> ${esc(p.phone)}</a>` : '<span class="none">No number on file</span>'}
+      ${p.email ? `<a href="mailto:${esc(p.email)}" data-c47-type="candidate" data-c47-name="${esc(p.name)}" data-c47-company="${esc(p.company || '')}" data-c47-role="${esc(p.role || '')}" title="Email from the workspace"><i>&#9993;</i> ${esc(p.email)}</a>` : '<span class="none">No email on file</span>'}
+      ${p.phone ? `<a href="tel:${esc(String(p.phone).replace(/\s+/g, ''))}" data-c47-type="candidate" data-c47-name="${esc(p.name)}" data-c47-company="${esc(p.company || '')}" data-c47-role="${esc(p.role || '')}" title="Call with Enconvo"><i>&#9742;</i> ${esc(p.phone)}</a>` : '<span class="none">No number on file</span>'}
+      <a href="#" data-c47tl="1" data-c47-type="candidate" data-c47-name="${esc(p.name)}" data-c47-company="${esc(p.company || '')}" data-c47-role="${esc(p.role || '')}" data-c47-email="${esc(p.email || '')}" data-c47-phone="${esc(p.phone || '')}"><i>&#9776;</i> Timeline</a>
     </div>
     <div class="two-col">
       <div class="field-row"><label>Furthest stage reached</label><div class="val">${esc(poolStageLabel(p.furthestStage))}</div></div>
@@ -8164,7 +8167,7 @@ function renderTplPane(){
     <div class="tpl-editor">
       <div class="two-col">
         <div><label>Template name</label><input id="tplName" value="${esc(t.name)}"></div>
-        <div><label>Category</label><input id="tplCat" value="${esc(t.category)}" list="tplCatList"><datalist id="tplCatList"><option value="Candidate"><option value="Client"><option value="General"></datalist></div>
+        <div><label>Category</label><input id="tplCat" value="${esc(t.category)}" list="tplCatList"><datalist id="tplCatList"><option value="Candidate"><option value="Client"><option value="Lead"><option value="General"></datalist></div>
       </div>
       <label>Subject</label><input id="tplSubject" value="${esc(t.subject)}" oninput="tplPreview()">
       <label>Body</label><textarea id="tplBody" oninput="tplPreview()">${esc(t.body)}</textarea>
@@ -9718,7 +9721,7 @@ renderTplPane = function(){
     <div class="tpl-editor">
       <div class="two-col">
         <div><label>Template name</label><input id="tplName" value="${esc(t.name)}"></div>
-        <div><label>Category</label><input id="tplCat" value="${esc(t.category)}" list="tplCatList"><datalist id="tplCatList"><option value="Candidate"><option value="Client"><option value="General"></datalist></div>
+        <div><label>Category</label><input id="tplCat" value="${esc(t.category)}" list="tplCatList"><datalist id="tplCatList"><option value="Candidate"><option value="Client"><option value="Lead"><option value="General"></datalist></div>
       </div>
       <label>Subject</label><input id="tplSubject" value="${esc(t.subject)}" oninput="tplPreview()">
       <label>Body</label><textarea id="tplBody" oninput="tplPreview()">${esc(t.body)}</textarea>
@@ -13726,7 +13729,7 @@ function ipTuneEmail(subject, body, iv, p){
 
 <script>
 function serverBuildLabel(b){
-  var m = String(b || '').match(/build ([0-9]+)/);
+  var m = String(b || '').match(/build ([0-9]+(?:\.[0-9]+)?)/);
   return (m && parseInt(m[1], 10) >= 6) ? 'build ' + m[1] : 'older';
 }
 </script>
@@ -15669,7 +15672,7 @@ function lpxOpen(id){
   if(!l) return;
   LPX.current = l;
   const hist = String(l.history || '').split('\n').filter(Boolean).reverse().map(h => { const [d, st, who] = h.split('|'); return `${esc(rfxFmt(d))} - ${esc(LPX_STAGE_LABEL[st] || st)}${who ? ' (' + esc(userLabel(who)) + ')' : ''}`; }).join('<br>');
-  const contacts = (l.contacts || []).filter(c => c.name || c.email).map(c => `${esc(c.name || '')}${c.title ? ', ' + esc(c.title) : ''} ${c.email ? '<a href="mailto:' + esc(c.email) + '">' + esc(c.email) + '</a>' : ''} ${c.phone ? '<a href="tel:' + esc(c.phone) + '">' + esc(c.phone) + '</a>' : ''}`).join('<br>');
+  const contacts = (l.contacts || []).filter(c => c.name || c.email).map(c => `${esc(c.name || '')}${c.title ? ', ' + esc(c.title) : ''} ${c.email ? '<a href="mailto:' + esc(c.email) + '" data-c47-type="lead" data-c47-name="' + esc(c.name || '') + '" data-c47-company="' + esc(l.company) + '">' + esc(c.email) + '</a>' : ''} ${c.phone ? '<a href="tel:' + esc(String(c.phone).replace(/\s+/g, '')) + '" data-c47-type="lead" data-c47-name="' + esc(c.name || '') + '" data-c47-company="' + esc(l.company) + '">' + esc(c.phone) + '</a>' : ''}`).join('<br>');
   document.getElementById('lpxModalBody').innerHTML = `
     <h2>${esc(l.company)}</h2>
     <div class="role-sub">${esc(LPX_STAGE_LABEL[l.stage] || l.stage)}${l.source ? ' - from ' + esc(l.source) : ''}${l.role_seen ? ' - saw: ' + esc(l.role_seen) : ''}</div>
@@ -16733,7 +16736,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '24 Oct 2026 - build 46.1';
+var PAGE_BUILD = '26 Oct 2026 - build 47.3';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -17046,7 +17049,7 @@ function buildTagApply(){
     (cl.data || []).forEach(c => { const a = get(c.company, 'client'); if(!a) return; a.name = c.company; if(!a.address) { a.address = c.address; a.postcode = c.postcode; }
       a.contacts.push({name:c.contactName, title:c.jobTitle, email:c.email, phone:c.phone, notes:c.notes, src:'Client contact', raw:c}); if(c.folderCreated) a.folder = c.folderCreated; });
     (lc.data || []).forEach(c => { const a = get(c.company, 'lead'); if(!a) return; if(!a.address) { a.address = c.address; a.postcode = c.postcode; }
-      if(!a.contacts.some(x => x.email && x.email === c.email && x.name === c.contactName)) a.contacts.push({name:c.contactName, title:c.jobTitle, email:c.email, phone:c.phone, notes:c.notes, src:'Lead contact'}); });
+      if(!a.contacts.some(x => x.email && x.email === c.email && x.name === c.contactName)) a.contacts.push({name:c.contactName, title:c.jobTitle, email:c.email, phone:c.phone, notes:c.notes, src:'Lead contact', raw:c}); });
     (lp.data || []).forEach(l => { const a = get(l.company, map.has(norm41(l.company)) ? map.get(norm41(l.company)).type : 'lead'); if(!a) return; a.lead = l; a.stage = l.stage;
       if(l.contact_name && !a.contacts.some(x => x.name === l.contact_name)) a.contacts.push({name:l.contact_name, title:l.job_title, email:l.email, phone:l.phone, notes:'', src:'Lead pipeline'});
       if(!a.address && l.address) a.address = l.address; });
@@ -17069,6 +17072,7 @@ function buildTagApply(){
     crmRender();
     if(CRM.sel) crmOpen(CRM.sel);
   }
+  window.crmReload41 = () => crmLoad(true);
   // Same rules as the Client Health tab
   function health41(a){
     let s = 0; const why = [];
@@ -17142,12 +17146,12 @@ function buildTagApply(){
     $('drawer41Body').innerHTML = `
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${a.type === 'client' ? '<span class="p41-pill ok">Client</span>' : '<span class="p41-pill">Lead</span>'}${a.stage ? `<span class="p41-pill gold">${h(stageLbl(a.stage))}</span>` : ''}${hp41(a.health)}<button class="p41-btn sm" data-x41="close" style="margin-left:auto">Close</button></div>
       <div><h2>${h(a.name)}</h2><div style="color:var(--muted)">${h([a.address, a.postcode].filter(Boolean).join(', ') || 'No address recorded')}</div></div>
-      <div class="p41-bar"><button class="p41-btn pri sm" data-x41="log">Log contact</button>${a.type === 'client' ? '<button class="p41-btn sm" data-x41="edit">Edit client</button>' : ''}<button class="p41-btn sm" data-x41="addc">+ Contact</button>${lead ? '<button class="p41-btn sm" data-x41="lead">Open in pipeline</button>' : ''}<button class="p41-btn sm" data-x41="task">+ Task</button></div>
+      <div class="p41-bar">${(() => { const me = a.contacts.find(x => x.email), mp = a.contacts.find(x => x.phone); const at = x => `data-c47-type="${h(a.type)}" data-c47-name="${h(x.name || '')}" data-c47-company="${h(a.name)}"`; return (me ? `<a class="p41-btn sm" href="mailto:${h(me.email)}" ${at(me)} title="Email ${h(me.name || '')}">Email</a>` : '') + (mp ? `<a class="p41-btn sm" href="tel:${h(String(mp.phone).replace(/\s+/g, ''))}" ${at(mp)} title="Call ${h(mp.name || '')}">Call</a>` : ''); })()}<button class="p41-btn pri sm" data-x41="log">Log contact</button>${a.type === 'client' ? '<button class="p41-btn sm" data-x41="edit" title="Company address and payment terms">Edit company</button>' : ''}<button class="p41-btn sm" data-x41="addc">+ Contact</button>${lead ? '<button class="p41-btn sm" data-x41="lead">Open in pipeline</button>' : ''}<button class="p41-btn sm" data-x41="task">+ Task</button></div>
       ${a.health && a.health.why.length ? `<div class="p41-note"><b>Health:</b> ${h(a.health.why.join(', '))}</div>` : ''}
       <div class="d41-sec"><span class="d41-eyebrow">Contacts (${a.contacts.length})</span>
         ${a.contacts.map((c, i) => { const k = a.key + '|' + i, o = !!CRM.open[k]; return `<div class="d41-contact"><button data-ctc41="${h(k)}" aria-expanded="${o}"><span class="top"><b>${h(c.name || 'Unnamed contact')}</b><small>${o ? 'Hide' : 'Show'} details</small></span><span class="sub">${h(c.title || c.src)}</span></button>
-          ${o ? `<div class="det"><dl class="p41-kv"><dt>Job title</dt><dd>${h(c.title || 'Not recorded')}</dd><dt>Email</dt><dd>${c.email ? `<a href="mailto:${h(c.email)}">${h(c.email)}</a>` : 'Not recorded'}</dd><dt>Phone</dt><dd>${c.phone ? `<a href="tel:${h(c.phone)}">${h(c.phone)}</a>` : 'Not recorded'}</dd><dt>Source</dt><dd>${h(c.src)}</dd><dt>Notes</dt><dd>${h(c.notes || 'None')}</dd></dl>
-            <div class="p41-bar" style="margin-top:8px">${c.email ? `<button class="p41-btn sm" data-copy41="${h(c.email)}">Copy email</button>` : ''}<button class="p41-btn sm" data-x41="logc" data-name="${h(c.name || '')}">Log contact</button>${c.src === 'Lead contact' ? `<button class="p41-btn sm" data-x41="mv" data-name="${h(c.name || '')}">Move to clients</button><button class="p41-btn sm" data-x41="dl" data-name="${h(c.name || '')}">Delete contact</button>` : ''}</div></div>` : ''}</div>`; }).join('') || '<div class="p41-empty">No contacts yet.</div>'}
+          ${o ? `<div class="det"><dl class="p41-kv"><dt>Job title</dt><dd>${h(c.title || 'Not recorded')}</dd><dt>Email</dt><dd>${c.email ? `<a href="mailto:${h(c.email)}" data-c47-type="${h(a.type)}" data-c47-name="${h(c.name || '')}" data-c47-company="${h(a.name)}">${h(c.email)}</a>` : 'Not recorded'}</dd><dt>Phone</dt><dd>${c.phone ? `<a href="tel:${h(String(c.phone).replace(/\s+/g, ''))}" data-c47-type="${h(a.type)}" data-c47-name="${h(c.name || '')}" data-c47-company="${h(a.name)}">${h(c.phone)}</a>` : 'Not recorded'}</dd><dt>Source</dt><dd>${h(c.src)}</dd><dt>Notes</dt><dd>${h(c.notes || 'None')}</dd></dl>
+            <div class="p41-bar" style="margin-top:8px">${typeof c47Actions === 'function' ? c47Actions({type:a.type, name:c.name || '', company:a.name, email:c.email || '', phone:c.phone || ''}) : ''}${c.email ? `<button class="p41-btn sm" data-copy41="${h(c.email)}">Copy email</button>` : ''}${c.raw && (c.src === 'Client contact' || c.src === 'Lead contact') ? `<button class="p41-btn sm" data-c47edit="1" data-kind="${c.src === 'Lead contact' ? 'lead' : 'client'}" data-ts="${h(c.raw.timestamp || '')}" data-company="${h(c.raw.company || a.name)}" data-name="${h(c.raw.contactName || '')}" data-email="${h(c.raw.email || '')}">Edit contact</button>` : ''}<button class="p41-btn sm" data-x41="logc" data-name="${h(c.name || '')}">Log contact</button>${c.src === 'Lead contact' ? `<button class="p41-btn sm" data-x41="mv" data-name="${h(c.name || '')}">Move to clients</button><button class="p41-btn sm" data-x41="dl" data-name="${h(c.name || '')}">Delete contact</button>` : ''}</div></div>` : ''}</div>`; }).join('') || '<div class="p41-empty">No contacts yet.</div>'}
       </div>
       ${a.type === 'client' ? `<div class="d41-sec"><span class="d41-eyebrow">Live roles (${a.roles.length})</span>
         ${a.roles.map(r => `<div class="p41-row"><div class="m"><div><b>${h(r.role)}</b></div><div class="s">${r.cands.length} candidate${r.cands.length === 1 ? '' : 's'} · ${r.cands.filter(c => c.stage === 'submitted').length} awaiting feedback</div></div><button class="p41-btn sm" data-role41="${h(r.company)}|${h(r.role)}">Open pipeline</button></div>`).join('') || '<div class="p41-empty">No roles yet.</div>'}</div>
@@ -17179,7 +17183,7 @@ function buildTagApply(){
     if(x === 'close'){ closeDrawer41(); return; }
     if(!a) return;
     if(x === 'log' || x === 'logc'){ closeDrawer41(); openCommModal({type:'client', company:a.name, name:t.dataset.name || ((a.contacts[0] || {}).name || '')}); return; }
-    if(x === 'edit'){ closeDrawer41(); switchTab('clients'); editClient(a.name); return; }
+    if(x === 'edit'){ editClient(a.name); return; }
     if(x === 'addc'){ closeDrawer41(); if(a.type === 'client'){ switchTab('clients'); openAddClientModal(); setTimeout(() => { const i = $('clientCompanyInput'); if(i) i.value = a.name; const ad = $('clientAddressInput'); if(ad && !ad.value) ad.value = a.address || ''; }, 50); } else { switchTab('leadClients'); openAddLeadClientModal(); setTimeout(() => { const i = document.querySelector('#addLeadClientOverlay input'); if(i && !i.value) i.value = a.name; }, 50); } return; }
     if(x === 'lead'){ closeDrawer41(); switchTab('leadPipeline'); setTimeout(() => { if(typeof lpxOpen === 'function' && a.lead) lpxOpen(a.lead.id); }, 600); return; }
     if(x === 'mv'){ closeDrawer41(); moveLeadToClient(a.name, t.dataset.name); return; }
@@ -18485,6 +18489,1049 @@ function ivEmailInvite(who){
     if(mode === 'send'){ mailOpen(Object.assign({to: to || '', subject: subject || '', body: body || '', atts: []}, mailGuessContext())); return; }
     return _om.apply(this, arguments);
   };
+})();
+</script>
+<script>
+/* ============================================================
+   Build 47: Email and Call from any contact
+   - Every email address in the workspace opens an in-workspace compose: pick what the email is for,
+     the matching template fills itself from the records, then Review and Send (Brevo) logs it.
+   - Every phone number opens Enconvo (or the phone's dialler) and then asks to log the call.
+   - Contact timeline, 30+ day contact nudges on Overview, and a weekly emails and calls report on KPI Reporting.
+   ============================================================ */
+var C47 = {leads:[], pipe:[], calls:[], at:0, loading:null, call:null, mail:null, nudgeAll:false};
+
+(function(){
+  const css = document.createElement('style');
+  css.textContent = `
+  .c47-chip{position:fixed;right:16px;bottom:16px;z-index:8800;background:var(--navy,#0F1F3D);color:#fff;border-top:3px solid var(--gold);border-radius:3px;box-shadow:0 10px 30px rgba(0,0,0,.3);padding:12px 14px;max-width:340px;font-size:13px;line-height:1.4;}
+  .c47-chip .k{font-size:10.5px;color:var(--gold);letter-spacing:.8px;font-weight:700;}
+  .c47-chip .r{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap;}
+  .c47-chip button{padding:6px 11px;border-radius:2px;border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;cursor:pointer;font-size:12px;}
+  .c47-chip button.gold{background:var(--gold);border-color:var(--gold);color:#0F1F3D;font-weight:700;}
+  .c47-who{display:flex;gap:10px;align-items:center;margin:8px 0 2px;flex-wrap:wrap;}
+  .c47-pill{display:inline-block;border-radius:10px;padding:2px 9px;font-size:11px;font-weight:600;background:#eee;color:#333;}
+  .c47-pill.client{background:#dff0dd;} .c47-pill.lead{background:#f6ecc9;} .c47-pill.candidate{background:#e3e9f6;}
+  .c47-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 12px;}
+  @media (max-width:600px){ .c47-grid{grid-template-columns:1fr;} .c47-chip{left:12px;right:12px;max-width:none;} }
+  .c47-tl{margin-top:8px;border-left:2px solid var(--border);padding-left:12px;}
+  .c47-tl .it{position:relative;padding:6px 0 8px;font-size:12.5px;line-height:1.45;border-bottom:1px solid #f2f2f2;}
+  .c47-tl .it:before{content:'';position:absolute;left:-18px;top:11px;width:10px;height:10px;border-radius:50%;background:#fff;border:2px solid var(--gold);}
+  .c47-tl .it b{color:var(--dark);} .c47-tl .it .m{color:#888;font-size:11.5px;}
+  .c47-tl .it.call:before{background:var(--gold);} .c47-tl .it.email:before{background:var(--navy,#0F1F3D);border-color:var(--navy,#0F1F3D);}
+  .c47-acts{display:inline-flex;gap:6px;flex-wrap:wrap;}
+  .c47-acts a,.c47-acts button{display:inline-block;padding:4px 10px;border:1px solid var(--border);border-radius:2px;background:#fff;color:var(--dark);font-size:11.5px;cursor:pointer;text-decoration:none;line-height:1.4;}
+  .c47-acts a:hover,.c47-acts button:hover{border-color:var(--gold);}
+  .c47-nudge-row{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #f0f0f0;flex-wrap:wrap;}
+  .c47-nudge-row .co{font-weight:600;color:var(--dark);font-size:13px;} .c47-nudge-row .s{font-size:11.5px;color:#888;}
+  .c47-days{font-size:11px;font-weight:700;color:#a33;}
+  .c47-rep{width:100%;border-collapse:collapse;font-size:12.5px;background:#fff;border:1px solid var(--border);}
+  .c47-rep th{text-align:left;font-size:11px;color:#777;font-weight:600;background:var(--lightbg,#f7f7f5);border-bottom:1px solid var(--border);padding:9px 12px;}
+  .c47-rep td{padding:9px 12px;border-bottom:1px solid #f0f0f0;}
+  .c47-rep td .up{color:#2F7A4F;font-size:11px;} .c47-rep td .dn{color:#a33;font-size:11px;}
+  `;
+  document.head.appendChild(css);
+})();
+
+function c47n(s){ return String(s == null ? '' : s).trim().toLowerCase(); }
+function c47Phone(p){
+  let d = String(p || '').replace(/[^\d+]/g, '');
+  if(d.indexOf('+44') === 0) d = '0' + d.slice(3);
+  if(d.indexOf('0044') === 0) d = '0' + d.slice(4);
+  return d.replace(/\D/g, '');
+}
+function c47Today(){ return (typeof opsToday === 'function') ? opsToday() : new Date().toISOString().slice(0, 10); }
+function c47Days(iso){ if(!iso) return null; const d = new Date(String(iso).slice(0, 10) + 'T00:00:00Z'); if(isNaN(d)) return null; return Math.round((new Date(c47Today() + 'T00:00:00Z') - d) / 86400000); }
+function c47Fmt(iso){ if(!iso) return ''; const d = new Date(String(iso).length <= 10 ? iso + 'T12:00:00Z' : iso); if(isNaN(d)) return String(iso); return d.toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'}); }
+function c47Attr(s){ return esc(String(s == null ? '' : s)); }
+const C47_TYPE_LABEL = {client:'Client contact', lead:'Lead', candidate:'Candidate'};
+
+/* ---------- who is this? one directory of every contact ---------- */
+async function c47Load(force){
+  if(!force && C47.at && Date.now() - C47.at < 10 * 60 * 1000) return;
+  if(C47.loading) return C47.loading;
+  C47.loading = (async () => {
+    const jobs = [];
+    jobs.push(fetch(API_BASE + '/api/lead-clients').then(r => r.ok ? r.json() : {data:[]}).then(j => { C47.leads = j.data || []; }).catch(() => {}));
+    jobs.push(fetch(API_BASE + '/api/lead-pipeline').then(r => r.ok ? r.json() : {data:[]}).then(j => { C47.pipe = j.data || []; }).catch(() => {}));
+    jobs.push(fetch(API_BASE + '/api/cold-calls').then(r => r.ok ? r.json() : []).then(j => { C47.calls = Array.isArray(j) ? j : (j.data || []); }).catch(() => {}));
+    if(!APPLICANT_CLIENT_LIST || !APPLICANT_CLIENT_LIST.length) jobs.push(loadApplicantClientList());
+    if(!B2.templates || !B2.templates.length) jobs.push(b2Api('/api/templates').then(j => { B2.templates = b2List(j); }).catch(() => {}));
+    if(!B2.comms || !B2.comms.length) jobs.push(loadB2Core().catch(() => {}));
+    await Promise.all(jobs);
+    C47.at = Date.now();
+  })().finally(() => { C47.loading = null; });
+  return C47.loading;
+}
+
+// The Overview panel and KPI report only need the Cold Call Tracker, so they skip the full contact load
+async function c47LoadCalls(){
+  if(C47.callsAt && Date.now() - C47.callsAt < 10 * 60 * 1000) return;
+  if(C47.at && Date.now() - C47.at < 10 * 60 * 1000){ C47.callsAt = C47.at; return; }
+  try{ const r = await fetch(API_BASE + '/api/cold-calls'); const j = r.ok ? await r.json() : []; C47.calls = Array.isArray(j) ? j : (j.data || []); C47.callsAt = Date.now(); }catch(e){}
+}
+
+function c47ClientCompanies(){ return new Set((APPLICANT_CLIENT_LIST || []).map(c => c47n(c.company)).filter(Boolean)); }
+
+function c47Directory(){
+  const out = [];
+  const clients = c47ClientCompanies();
+  (APPLICANT_CLIENT_LIST || []).forEach(c => out.push({type:'client', name:c.contactName || '', company:c.company || '', title:c.jobTitle || '', email:c.email || '', phone:c.phone || ''}));
+  (C47.leads || []).forEach(c => out.push({type: clients.has(c47n(c.company)) ? 'client' : 'lead', name:c.contactName || '', company:c.company || '', title:c.jobTitle || '', email:c.email || '', phone:c.phone || ''}));
+  (C47.pipe || []).forEach(l => {
+    const t = clients.has(c47n(l.company)) ? 'client' : 'lead';
+    if(l.contact_name || l.email || l.phone) out.push({type:t, name:l.contact_name || '', company:l.company || '', title:l.job_title || '', email:l.email || '', phone:l.phone || ''});
+    (Array.isArray(l.contacts) ? l.contacts : []).forEach(c => out.push({type:t, name:c.name || '', company:l.company || '', title:c.title || '', email:c.email || '', phone:c.phone || ''}));
+  });
+  (typeof flatCandidates === 'function' ? flatCandidates() : []).forEach(x => out.push({type:'candidate', name:x.c.name || '', company: x.company === (typeof UNASSIGNED_LABEL !== 'undefined' ? UNASSIGNED_LABEL : '') ? '' : x.company, role:x.role || '', email:x.c.email || '', phone:x.c.phone || '', candId:x.c.id, stage:x.c.stage}));
+  (typeof POOL !== 'undefined' ? POOL : []).forEach(p => { if(p && !p.erased && p.name) out.push({type:'candidate', name:p.name, company:p.company || '', role:p.role || '', email:p.email || '', phone:p.phone || '', poolId:p.id}); });
+  return out;
+}
+
+// Works out who an email address or number belongs to; anything set on the link itself wins
+function c47Resolve(h){
+  h = h || {};
+  const dir = c47Directory();
+  const em = c47n(h.email), ph = c47Phone(h.phone);
+  let hit = null;
+  const want = h.type ? dir.filter(d => d.type === h.type) : dir;
+  const scan = list => list.find(d => (em && c47n(d.email) === em) || (ph && ph.length >= 7 && c47Phone(d.phone) === ph));
+  hit = scan(want.filter(d => !h.company || c47n(d.company) === c47n(h.company))) || scan(want) || scan(dir);
+  if(!hit && h.name) hit = dir.find(d => c47n(d.name) === c47n(h.name) && (!h.company || c47n(d.company) === c47n(h.company)));
+  const r = Object.assign({type:'', name:'', company:'', role:'', title:'', email:'', phone:''}, hit || {});
+  if(h.type) r.type = h.type;
+  if(h.name) r.name = h.name;
+  if(h.company) r.company = h.company;
+  if(h.role) r.role = h.role;
+  if(h.email) r.email = h.email;
+  if(h.phone) r.phone = h.phone;
+  if(r.type === 'lead' && c47ClientCompanies().has(c47n(r.company))) r.type = 'client';
+  r.known = !!(r.type && (r.name || r.company));
+  return r;
+}
+
+/* ---------- history for one contact ---------- */
+function c47History(ctx, limit){
+  const nm = c47n(ctx.name), co = c47n(ctx.company);
+  const items = [];
+  (B2.comms || []).forEach(c => {
+    const sameName = nm && c47n(c.entity_name) === nm;
+    const sameCo = co && c47n(c.company) === co;
+    if(ctx.type === 'candidate'){ if(!(sameName && c.entity_type !== 'client')) return; }
+    else if(!(c.entity_type === 'client' && (sameCo || (sameName && !co)))) return;
+    items.push({d:String(c.timestamp || ''), ch:c47n(c.channel), t:(typeof CM_CHANNELS !== 'undefined' && CM_CHANNELS[c47n(c.channel)]) || c.channel || 'Contact', who:c.user, x:c.summary || '', n:c.entity_name || '', fu:c.follow_up_date && c.follow_up_done !== 'yes' ? c.follow_up_date : ''});
+  });
+  if(ctx.type !== 'candidate' && co){
+    (C47.calls || []).forEach(c => {
+      if(c47n(c.company) !== co) return;
+      // calls logged from build 47 are already in the comms log, so only older tracker rows are added here
+      if(/\(logged from contact\)/.test(String(c.notes || ''))) return;
+      items.push({d:String(c.dateCalled || c.createdAt || ''), ch:'call', t:'Cold call tracker', who:'', x:[c.contactNames, ({attempt:'Attempt / no response', interested:'Interested - pending', successful:'Converted to client'})[c.outcome] || c.outcome, c.notes].filter(Boolean).join(' · '), n:c.contactNames || '', fu:c.followupDate && c.status === 'active' ? c.followupDate : ''});
+    });
+  }
+  items.sort((a, b) => String(b.d).localeCompare(String(a.d)));
+  return limit ? items.slice(0, limit) : items;
+}
+
+function c47HistoryHtml(items, emptyText){
+  if(!items.length) return '<div class="b46-sub" style="padding:6px 0;">' + esc(emptyText || 'Nothing logged with this contact yet.') + '</div>';
+  return '<div class="c47-tl">' + items.map(i => '<div class="it ' + (i.ch === 'call' ? 'call' : i.ch === 'email' ? 'email' : '') + '"><b>' + esc(i.t) + '</b>' + (i.n ? ' · ' + esc(i.n) : '') +
+    '<div class="m">' + esc(c47Fmt(i.d)) + (i.who ? ' · ' + esc(userLabel(i.who)) : '') + (i.fu ? ' · follow-up ' + esc(c47Fmt(i.fu)) : '') + '</div>' +
+    (i.x ? '<div style="white-space:pre-wrap;">' + esc(i.x) + '</div>' : '') + '</div>').join('') + '</div>';
+}
+
+function c47Actions(ctx, opts){
+  opts = opts || {};
+  const a = 'data-c47-type="' + c47Attr(ctx.type) + '" data-c47-name="' + c47Attr(ctx.name) + '" data-c47-company="' + c47Attr(ctx.company) + '" data-c47-role="' + c47Attr(ctx.role || '') + '"';
+  return '<span class="c47-acts">' +
+    (ctx.email ? '<a href="mailto:' + c47Attr(ctx.email) + '" ' + a + '>Email</a>' : '') +
+    (ctx.phone ? '<a href="tel:' + c47Attr(String(ctx.phone).replace(/\s+/g, '')) + '" ' + a + '>Call</a>' : '') +
+    (opts.timeline === false ? '' : '<button type="button" data-c47tl="1" ' + a + ' data-c47-email="' + c47Attr(ctx.email) + '" data-c47-phone="' + c47Attr(ctx.phone) + '">Timeline</button>') +
+    '</span>';
+}
+
+/* ---------- every mailto and tel link in the workspace comes through here ---------- */
+document.addEventListener('click', function(e){
+  if(!signedInUser || e.defaultPrevented) return;
+  const tl = e.target.closest && e.target.closest('[data-c47tl]');
+  if(tl){
+    e.preventDefault();
+    const ds = tl.dataset;
+    c47TimelineOpen({type:ds.c47Type, name:ds.c47Name, company:ds.c47Company, role:ds.c47Role, email:ds.c47Email, phone:ds.c47Phone});
+    return;
+  }
+  const a = e.target.closest && e.target.closest('a[href^="mailto:"],a[href^="tel:"]');
+  if(!a || a.dataset.c47 === 'off') return;
+  if(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; // modifier click keeps the old behaviour
+  const href = a.getAttribute('href') || '';
+  const ds = a.dataset;
+  const hint = {type:ds.c47Type || '', name:ds.c47Name || '', company:ds.c47Company || '', role:ds.c47Role || ''};
+  if(href.indexOf('mailto:') === 0){
+    e.preventDefault();
+    hint.email = decodeURIComponent(href.slice(7).split('?')[0]);
+    c47EmailStart(hint);
+  }else{
+    // the tel: link goes ahead, so the computer or phone asks which app to call with (choose Enconvo)
+    hint.phone = decodeURIComponent(href.slice(4));
+    c47CallStart(hint);
+  }
+}, true);
+
+/* ============================================================
+   Calls
+   ============================================================ */
+const C47_CALL_TYPES = {
+  lead: ['Cold call', 'Follow-up call', 'Discovery call', 'Booking a meeting'],
+  client: ['Client check-in', 'New role brief', 'Submission follow-up', 'Interview feedback', 'Offer and start date', 'Invoice chase'],
+  candidate: ['Screening call', 'Availability', 'Interview prep', 'Interview feedback', 'Offer', 'Reference check', 'Start and aftercare check-in'],
+};
+const C47_OUTCOMES = [['spoke','Spoke to them'], ['noanswer','No answer'], ['voicemail','Left a voicemail'], ['callback','Asked to call back'], ['wrong','Wrong number']];
+const C47_LEAD_OUTCOMES = [['interested','Interested - pending'], ['converted','Converted to client'], ['notnow','Not interested right now']];
+
+function c47CallStart(h){
+  const ctx = c47Resolve(h);
+  C47.call = {ctx, phone:h.phone, at:Date.now(), left:false, shown:false};
+  c47Chip();
+  c47Load().then(() => { if(C47.call && !C47.call.ctx.known){ C47.call.ctx = c47Resolve(h); c47Chip(); } });
+}
+
+function c47Chip(){
+  let el = document.getElementById('c47Chip');
+  const c = C47.call;
+  if(!c){ if(el) el.remove(); return; }
+  if(!el){ el = document.createElement('div'); el.id = 'c47Chip'; el.className = 'c47-chip'; document.body.appendChild(el); }
+  const who = c.ctx.name || c.phone;
+  el.innerHTML = '<div class="k">CALL IN PROGRESS</div><div>Calling <strong>' + esc(who) + '</strong>' + (c.ctx.company ? ' (' + esc(c.ctx.company) + ')' : '') +
+    '. Choose Enconvo if asked, then log the call here when you hang up.</div>' +
+    '<div class="r"><button class="gold" onclick="c47CallOpen()">Log the call</button><button onclick="c47CallSkip()">Did not call</button></div>';
+}
+
+document.addEventListener('visibilitychange', () => {
+  const c = C47.call; if(!c) return;
+  if(document.hidden) c.left = true;
+  else if(c.left && !c.shown && Date.now() - c.at > 4000) c47CallOpen();
+});
+window.addEventListener('blur', () => { if(C47.call) C47.call.left = true; });
+window.addEventListener('focus', () => {
+  const c = C47.call;
+  if(c && c.left && !c.shown && Date.now() - c.at > 4000) setTimeout(() => { if(C47.call === c && !c.shown) c47CallOpen(); }, 400);
+});
+
+// "Did not call" clears the reminder without logging anything
+function c47CallSkip(){ C47.call = null; c47Chip(); b46Close('c47CallOv'); }
+
+async function c47CallOpen(){
+  const c = C47.call; if(!c) return;
+  c.shown = true;
+  await c47Load();
+  if(!c.ctx.known) c.ctx = c47Resolve(Object.assign({}, c.ctx, {phone:c.phone}));
+  c47CallRender();
+}
+
+function c47TypeFields(prefix, ctx){
+  if(ctx.known && ctx.type) return '';
+  return '<div class="b46-note">This number or address is not on a contact record yet, so tell the dashboard who it is.</div>' +
+    '<div class="c47-grid"><div><label>Who is it?</label><select id="' + prefix + 'Type">' +
+      ['lead','client','candidate'].map(t => '<option value="' + t + '"' + (ctx.type === t ? ' selected' : '') + '>' + C47_TYPE_LABEL[t] + '</option>').join('') + '</select></div>' +
+    '<div><label>Name</label><input type="text" id="' + prefix + 'Name" value="' + c47Attr(ctx.name) + '"></div>' +
+    '<div><label>Company</label><input type="text" id="' + prefix + 'Company" value="' + c47Attr(ctx.company) + '"></div>' +
+    '<div><label>Role (optional)</label><input type="text" id="' + prefix + 'Role" value="' + c47Attr(ctx.role) + '"></div></div>';
+}
+function c47ReadType(prefix, ctx){
+  const g = id => { const el = document.getElementById(prefix + id); return el ? el.value.trim() : null; };
+  if(g('Type') !== null){ ctx.type = g('Type') || 'lead'; ctx.name = g('Name') || ''; ctx.company = g('Company') || ''; ctx.role = g('Role') || ''; ctx.known = !!(ctx.name || ctx.company); }
+  return ctx;
+}
+
+function c47WhoHtml(ctx, line){
+  return '<div class="c47-who"><span class="c47-pill ' + c47Attr(ctx.type) + '">' + esc(C47_TYPE_LABEL[ctx.type] || 'Unknown contact') + '</span>' +
+    '<strong>' + esc(ctx.name || 'Unknown') + '</strong>' + (ctx.title ? '<span class="b46-sub">' + esc(ctx.title) + '</span>' : '') +
+    (ctx.company ? '<span class="b46-sub">' + esc(ctx.company) + (ctx.role ? ' · ' + esc(ctx.role) : '') + '</span>' : '') +
+    (line ? '<span class="b46-sub">' + esc(line) + '</span>' : '') + '</div>';
+}
+
+function c47CallRender(err){
+  const c = C47.call; if(!c) return;
+  const ctx = c.ctx, t = ctx.type || 'lead';
+  const box = b46Shell('c47CallOv');
+  const types = C47_CALL_TYPES[t] || C47_CALL_TYPES.lead;
+  const outs = C47_OUTCOMES.concat(t === 'lead' ? C47_LEAD_OUTCOMES : []);
+  box.innerHTML =
+    '<div style="display:flex;justify-content:space-between;gap:10px;"><div><div class="b46-k">LOG THIS CALL</div><h3>Call to ' + esc(ctx.name || c.phone) + '</h3></div>' +
+    '<button onclick="c47CallClose()" title="Close" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;align-self:flex-start;">&times;</button></div>' +
+    c47WhoHtml(ctx, c.phone) +
+    c47TypeFields('c47c', ctx) +
+    '<div class="c47-grid"><div><label>Call type</label><select id="c47cKind">' + types.map(x => '<option>' + esc(x) + '</option>').join('') + '</select></div>' +
+    '<div><label>Outcome</label><select id="c47cOut">' + outs.map(([k, l]) => '<option value="' + k + '">' + esc(l) + '</option>').join('') + '</select></div></div>' +
+    '<label>Notes</label><textarea id="c47cNotes" style="min-height:110px;" placeholder="What was said, what happens next"></textarea>' +
+    '<div class="c47-grid"><div><label>Follow-up date (optional)</label><input type="date" id="c47cFu"></div>' +
+    '<div><label>&nbsp;</label><label style="display:flex;gap:8px;align-items:center;font-weight:400;margin:6px 0 0;"><input type="checkbox" id="c47cTask"> Add a follow-up task</label></div></div>' +
+    (err ? '<div class="b46-err">' + esc(err) + '</div>' : '') +
+    '<div class="b46-row" style="justify-content:space-between;margin-top:14px;">' +
+      '<button class="b46-btn" onclick="c47CallSave(true)" title="Logs it as an attempt so the contact history stays complete">Skip - log as an attempt</button>' +
+      '<button class="b46-btn gold" id="c47cSave" onclick="c47CallSave(false)">Save call log</button></div>' +
+    '<label style="margin-top:16px;">Recent with this contact</label>' + c47HistoryHtml(c47History(ctx, 5));
+}
+
+// Closing the pop-up logs an attempt, so a call is never lost
+function c47CallClose(){ if(C47.call && !C47.call.saving) c47CallSave(true); else b46Close('c47CallOv'); }
+
+async function c47CallSave(attemptOnly){
+  const c = C47.call; if(!c || c.saving) return;
+  const ctx = c47ReadType('c47c', c.ctx);
+  const kind = attemptOnly ? 'Call attempt' : (b2Val('c47cKind') || 'Call');
+  const outKey = attemptOnly ? 'notlogged' : b2Val('c47cOut');
+  const outLabel = attemptOnly ? 'not logged' : ((C47_OUTCOMES.concat(C47_LEAD_OUTCOMES).find(o => o[0] === outKey) || [])[1] || outKey);
+  const notes = attemptOnly ? '' : b2Val('c47cNotes').trim();
+  let fu = attemptOnly ? '' : b2Val('c47cFu').trim();
+  if(fu && !/^\d{4}-\d{2}-\d{2}$/.test(fu)){ c47CallRender('Enter the follow-up date as YYYY-MM-DD, or pick it from the calendar.'); return; }
+  const task = !attemptOnly && document.getElementById('c47cTask') && document.getElementById('c47cTask').checked;
+  if(!ctx.name && !ctx.company){ ctx.name = c.phone; }
+  c.saving = true;
+  const btn = document.getElementById('c47cSave'); if(btn){ btn.disabled = true; btn.textContent = 'Saving...'; }
+  const summary = kind + ' - ' + outLabel + (notes ? ': ' + notes : '');
+  const body = {
+    id: b2Id('cm'), timestamp: new Date().toISOString(), user: signedInUser.key,
+    entity_type: ctx.type === 'candidate' ? 'candidate' : 'client', entity_name: ctx.name || ctx.company,
+    company: ctx.company || '', role: ctx.role || '', channel: 'call', direction: 'outbound',
+    summary, follow_up_date: fu, follow_up_done: '',
+  };
+  try{
+    const j = await b2Post('/api/comms', body);
+    B2.comms.push(j.data || body);
+    if(ctx.type === 'lead' && ctx.company) await c47ColdCall(ctx, 'call', outKey, summary, fu);
+    if(ctx.type === 'candidate' && typeof appendCommToNotes === 'function' && !attemptOnly) appendCommToNotes(body);
+    if(task) await c47Task(ctx, kind, summary, fu);
+    logActivity('contact_logged', {candidate: ctx.type === 'candidate' ? ctx.name : '', role: ctx.role, company: ctx.company, detail: 'call'});
+    C47.call = null; c47Chip(); b46Close('c47CallOv');
+    showToast(attemptOnly ? 'Call logged as an attempt' : 'Call logged' + (task ? ' and follow-up task added' : ''));
+    c47AfterLog();
+  }catch(e){
+    c.saving = false;
+    c47CallRender('Could not save the call: ' + e.message);
+  }
+}
+
+async function c47ColdCall(ctx, channel, outKey, summary, fu){
+  const outcome = outKey === 'converted' ? 'successful' : outKey === 'interested' ? 'interested' : 'attempt';
+  try{
+    const r = await fetch(API_BASE + '/api/cold-calls', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+      company: ctx.company, contactNames: ctx.name || ctx.company, contactType: channel, dateCalled: c47Today(),
+      notes: summary + ' (logged from contact)', followupDate: fu || '', outcome, status: outcome === 'successful' ? 'successful' : 'active',
+    })});
+    if(r.ok) C47.calls.push({company:ctx.company, contactNames:ctx.name, contactType:channel, dateCalled:c47Today(), notes:summary + ' (logged from contact)', followupDate:fu, outcome, status:'active'});
+  }catch(e){ /* the comms log still has it */ }
+}
+
+async function c47Task(ctx, kind, summary, fu){
+  try{
+    await fetch(API_BASE + '/api/tasks', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+      title: 'Follow up: ' + (ctx.name || ctx.company) + (ctx.company && ctx.name ? ' (' + ctx.company + ')' : ''),
+      context: summary, priority: 'medium', dueDate: fu || c47Today(),
+    })});
+  }catch(e){ showToast('Logged, but the task could not be added'); }
+}
+
+function c47AfterLog(){
+  try{ if(typeof renderComms === 'function') renderComms(); }catch(e){}
+  try{ if(typeof recomputeOps === 'function') recomputeOps(); }catch(e){}
+  try{ if(opsIsVisible('coldCallTrackerView') && typeof loadColdCalls === 'function') loadColdCalls(); }catch(e){}
+  try{ if(opsIsVisible('homeView')) c47Nudges(); }catch(e){}
+}
+
+/* ============================================================
+   Email
+   ============================================================ */
+const C47_CAT = {lead:'Lead', client:'Client', candidate:'Candidate'};
+// Which templates show first for each kind of contact
+const C47_ORDER = {
+  lead: ['tpl-lead-live-advert', 'tpl-lead-intro', 'tpl-lead-after-call', 'tpl-lead-chase', 'tpl-lead-spec', 'tpl-lead-talent-suite'],
+  client: ['tpl-client-new-role', 'tpl-client-follow-up', 'tpl-client-feedback-chase', 'tpl-client-placement', 'tpl-client-rejection', 'tpl-client-invoice-chase'],
+  candidate: ['tpl-candidate-availability', 'tpl-interview-confirmation', 'tpl-offer-cover', 'tpl-information-request', 'tpl-references-request', 'tpl-start-reminder', 'tpl-day-one', 'tpl-week-one', 'tpl-month-one', 'tpl-candidate-rejection'],
+};
+// Templates that only make sense when the dashboard builds them with attachments elsewhere
+const C47_SKIP = ['tpl-client-submission'];
+
+function c47Templates(type){
+  const cat = c47n(C47_CAT[type] || 'General');
+  const all = (B2.templates || []).filter(t => t && t.id && t.id.indexOf('__') !== 0 && !C47_SKIP.includes(t.id));
+  const mine = all.filter(t => c47n(t.category) === cat);
+  const general = all.filter(t => c47n(t.category) === 'general' || !t.category);
+  const order = C47_ORDER[type] || [];
+  mine.sort((a, b) => { const ia = order.indexOf(a.id), ib = order.indexOf(b.id); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || String(a.name).localeCompare(String(b.name)); });
+  return {mine, general};
+}
+
+function c47CompanyRoles(company){
+  const co = c47n(company); if(!co) return [];
+  const set = new Set();
+  try{ mergedRoles().filter(r => c47n(r.company) === co && (r.status === 'open' || r.status === 'hold' || !r.status)).forEach(r => set.add(r.role)); }catch(e){}
+  Object.keys(DATA || {}).filter(c => c47n(c) === co).forEach(c => Object.keys(DATA[c]).forEach(r => set.add(r)));
+  return [...set].filter(Boolean).sort();
+}
+function c47CompanyCands(company){
+  const co = c47n(company); if(!co) return [];
+  return flatCandidates().filter(x => c47n(x.company) === co && x.c.stage !== 'rejected' && !(typeof isTestCand === 'function' && isTestCand(x.c)));
+}
+
+async function c47EmailStart(h){
+  C47.mail = {ctx: c47Resolve(h), loading:true, rfxId:h.rfxId || '', tpl:h.tpl, emailStatus:h.emailStatus || ''};
+  const box = b46Shell('c47MailOv');
+  box.innerHTML = '<div class="b46-k">EMAIL</div><div style="padding:18px 0;color:#777;font-size:13px;">Loading the contact and templates...</div>';
+  await Promise.all([c47Load(), c47LoadRfx(), c47LoadBounced()]);
+  if(!C47.mail) return;
+  C47.mail.ctx = c47Resolve(h);
+  if(h.title && !C47.mail.ctx.title) C47.mail.ctx.title = h.title;
+  // leads with a live advert start on the advert introduction
+  const ads47 = C47.mail.ctx.type === 'lead' ? c47AdvertsFor(C47.mail.ctx.company, C47.mail.rfxId) : [];
+  if(C47.mail.tpl === undefined && ads47.length) C47.mail.tpl = 'tpl-lead-live-advert';
+  // a lead found through Role Finder: sending moves its advert on and sets the 4 day follow-up, same as the deep dive
+  if(!C47.mail.rfxId && ads47.length) C47.mail.rfxId = ads47[0].id;
+  C47.mail.loading = false;
+  c47EmailRender();
+}
+
+function c47EmailRender(err){
+  const m = C47.mail; if(!m) return;
+  const ctx = m.ctx, t = ctx.type || 'lead';
+  const box = b46Shell('c47MailOv');
+  const tp = c47Templates(t);
+  const opt = x => '<option value="' + c47Attr(x.id) + '"' + (m.tpl === x.id ? ' selected' : '') + '>' + esc(x.name) + '</option>';
+  let extra = '';
+  if(t === 'client' || t === 'lead'){
+    const roles = c47CompanyRoles(ctx.company), cands = c47CompanyCands(ctx.company);
+    if(roles.length || cands.length){
+      extra = '<div class="c47-grid">' +
+        '<div><label>Role (optional)</label><select id="c47mRole"><option value="">Not about a specific role</option>' + roles.map(r => '<option' + (m.role === r ? ' selected' : '') + '>' + esc(r) + '</option>').join('') + '</select></div>' +
+        '<div><label>About a candidate (optional)</label><select id="c47mCand"><option value="">No candidate</option>' + cands.map(x => '<option value="' + c47Attr(x.c.id) + '"' + (m.candId === x.c.id ? ' selected' : '') + '>' + esc(x.c.name) + ' · ' + esc(x.role) + '</option>').join('') + '</select></div></div>';
+    }
+  }else if(t === 'candidate'){
+    const hits = flatCandidates().filter(x => c47n(x.c.name) === c47n(ctx.name) || (ctx.email && c47n(x.c.email) === c47n(ctx.email)));
+    if(hits.length > 1){
+      extra = '<label>Which application?</label><select id="c47mCand">' + hits.map(x => '<option value="' + c47Attr(x.c.id) + '"' + ((m.candId || ctx.candId) === x.c.id || (!m.candId && c47n(x.role) === c47n(ctx.role)) ? ' selected' : '') + '>' + esc(x.role) + ' · ' + esc(x.company) + '</option>').join('') + '</select>';
+    }
+  }
+  box.innerHTML =
+    '<div style="display:flex;justify-content:space-between;gap:10px;"><div><div class="b46-k">EMAIL</div><h3>Email ' + esc(ctx.name || ctx.email) + '</h3></div>' +
+    '<button onclick="c47EmailClose()" title="Close" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;align-self:flex-start;">&times;</button></div>' +
+    c47WhoHtml(ctx, ctx.email) +
+    c47WarnHtml(ctx.email, m.emailStatus) +
+    c47TypeFields('c47m', ctx) +
+    '<label>What is this email for?</label><select id="c47mTpl">' +
+      (tp.mine.length ? '<optgroup label="' + c47Attr(C47_CAT[t] || 'Templates') + ' templates">' + tp.mine.map(opt).join('') + '</optgroup>' : '') +
+      (tp.general.length ? '<optgroup label="General">' + tp.general.map(opt).join('') + '</optgroup>' : '') +
+      '<option value=""' + (m.tpl === '' ? ' selected' : '') + '>Blank email</option></select>' +
+    extra +
+    '<div class="c47-grid"><div><label>Follow-up date (optional)</label><input type="date" id="c47mFu" value="' + c47Attr(m.fu || '') + '"></div>' +
+    '<div><label>&nbsp;</label><label style="display:flex;gap:8px;align-items:center;font-weight:400;margin:6px 0 0;"><input type="checkbox" id="c47mTask"' + (m.task ? ' checked' : '') + '> Add a follow-up task</label></div></div>' +
+    (t === 'lead' ? '<div class="b46-sub" style="margin-top:8px;">Emails to leads go out as first-contact emails: the branded Talent Suite footer and opt-out are added, and they count towards your daily first-contact limit.</div>' : '') +
+    '<div class="b46-sub" style="margin-top:6px;">Templates are edited on the Email templates page, by Dan or Ella.</div>' +
+    (err ? '<div class="b46-err">' + esc(err) + '</div>' : '') +
+    '<div class="b46-row" style="justify-content:flex-end;margin-top:14px;"><button class="b46-btn" onclick="c47EmailClose()">Cancel</button><button class="b46-btn gold" onclick="c47EmailNext()">Continue to review</button></div>' +
+    '<label style="margin-top:16px;">Recent with this contact</label>' + c47HistoryHtml(c47History(ctx, 5));
+  const typeSel = document.getElementById('c47mType');
+  if(typeSel) typeSel.onchange = () => { c47EmailCollect(); m.ctx.type = typeSel.value; m.tpl = undefined; c47EmailRender(); };
+}
+
+function c47EmailCollect(){
+  const m = C47.mail; if(!m) return;
+  c47ReadType('c47m', m.ctx);
+  const g = id => { const el = document.getElementById(id); return el ? el.value : undefined; };
+  if(g('c47mTpl') !== undefined) m.tpl = g('c47mTpl');
+  if(g('c47mRole') !== undefined) m.role = g('c47mRole');
+  if(g('c47mCand') !== undefined) m.candId = g('c47mCand');
+  m.fu = (g('c47mFu') || '').trim();
+  const tk = document.getElementById('c47mTask'); m.task = !!(tk && tk.checked);
+}
+function c47EmailClose(){ C47.mail = null; b46Close('c47MailOv'); }
+
+function c47Vars(ctx, m){
+  const v = {};
+  const me = senderProfile();
+  v.sender_name = me.name; v.sender_email = me.email; v.sender_phone = me.phone; v.signature = me.signature; v.my_name = me.name;
+  if(ctx.company) v.company = ctx.company;
+  if(ctx.company && typeof companyAddress === 'function') v.company_address = companyAddress(ctx.company) || '';
+  let cand = null;
+  if(m.candId) cand = flatCandidates().find(x => x.c.id === m.candId) || null;
+  if(ctx.type === 'candidate'){
+    if(!cand) cand = flatCandidates().find(x => (ctx.candId && x.c.id === ctx.candId)) ||
+      flatCandidates().find(x => c47n(x.c.name) === c47n(ctx.name) && (!ctx.role || c47n(x.role) === c47n(ctx.role))) ||
+      flatCandidates().find(x => ctx.email && c47n(x.c.email) === c47n(ctx.email));
+    v.candidate_name = ctx.name; v.first_name = String(ctx.name || '').split(' ')[0];
+    if(ctx.role) v.role = ctx.role;
+  }else{
+    if(ctx.name){ v.contact_name = ctx.name; v.contact_first_name = String(ctx.name).split(' ')[0]; }
+    if(m.role) v.role = m.role;
+  }
+  if(cand){
+    const c = cand.c;
+    v.candidate_name = c.name; v.first_name = String(c.name).split(' ')[0];
+    v.role = v.role || cand.role;
+    if(cand.company && cand.company !== (typeof UNASSIGNED_LABEL !== 'undefined' ? UNASSIGNED_LABEL : '')) v.company = v.company || cand.company;
+    if(typeof parseSalaryNumber === 'function' && parseSalaryNumber(c.salary)) v.salary = opsMoney(parseSalaryNumber(c.salary));
+    if(c.startDate && typeof fmtDateLong === 'function') v.start_date = fmtDateLong(c.startDate);
+    if(ctx.type === 'candidate' && v.company){
+      const cc = (typeof resolveClientContact === 'function') ? resolveClientContact(v.company, cand.role, c) : null;
+      if(cc && cc.name){ v.contact_name = cc.name; v.contact_first_name = String(cc.name).split(' ')[0]; }
+    }
+    const iv = (B2.interviews || []).filter(i => (i.candidate_id && i.candidate_id === c.id) || (c47n(i.candidate_name) === c47n(c.name) && c47n(i.role) === c47n(cand.role)))
+      .filter(i => c47n(i.status) !== 'cancelled').sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+    if(iv){
+      if(iv.date && typeof fmtDateUK === 'function') v.interview_date = fmtDateUK(opsDateOnly(iv.date));
+      if(iv.time && typeof fmtTime12 === 'function') v.interview_time = fmtTime12(iv.time);
+      if(iv.location) v.interview_location = iv.location;
+      if(iv.type) v.interview_format = ({phone:'Phone', video:'Video', site:'Site visit'})[iv.type] || iv.type;
+      if(iv.interviewer) v.interviewer = iv.interviewer;
+    }
+  }
+  // invoice details: the candidate's invoice, or the client's oldest unpaid one
+  const invs = (typeof OPS !== 'undefined' ? OPS.invoices : []) || [];
+  let inv = cand ? invs.find(i => c47n(i.candidateName) === c47n(cand.c.name) && c47n(i.company) === c47n(v.company)) : null;
+  if(!inv && ctx.type !== 'candidate' && ctx.company) inv = invs.filter(i => c47n(i.company) === c47n(ctx.company) && i.status !== 'paid').sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)))[0];
+  if(inv){ v.invoice_ref = inv.number; v.fee_amount = opsMoney(inv.amount); if(!v.role && inv.role) v.role = inv.role; }
+  // live adverts from Role Finder, used by the "Introduction - live advert" template
+  if(ctx.type !== 'candidate' && ctx.company){
+    const ads = c47AdvertsFor(ctx.company, m.rfxId);
+    if(ads.length){
+      const a = ads[0];
+      v.advert_role = a.role || '';
+      v.advert_location = a.location || '';
+      if(a.days != null && a.days !== '') v.days_advertised = String(a.days);
+      if(a.salary) v.advert_salary = a.salary;
+      const others = [...new Set(ads.slice(1).map(x => x.role).filter(r => r && c47n(r) !== c47n(a.role)))].slice(0, 3);
+      if(others.length) v.other_roles_line = '\nI can also help with the ' + (others.length > 1 ? others.slice(0, -1).join(', ') + ' and ' + others[others.length - 1] : others[0]) + ' role' + (others.length > 1 ? 's' : '') + ' you are advertising.\n';
+      if(!v.role) v.role = a.role || '';
+    }
+  }
+  return v;
+}
+
+// Anything a template needs that the records do not have becomes a [BRACKET] to fill in on the review screen
+function c47Fill(text, vars){
+  const r = tplMerge(text, vars);
+  return r.text.replace(/\{\{\s*[a-z_]+_line\s*\}\}/gi, '').replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (x, k) => '[' + k.replace(/_/g, ' ').toUpperCase() + ']');
+}
+
+// Builds the Review and Send data for one contact from a template, with no AI
+function c47Compose(ctx, m){
+  const tpl = (B2.templates || []).find(x => x.id === m.tpl);
+  const vars = c47Vars(ctx, m);
+  const subject = tpl ? c47Fill(tpl.subject, vars) : '';
+  const body = tpl ? c47Fill(tpl.body, vars) : ('Hi ' + (ctx.type === 'candidate' ? (vars.first_name || '') : (vars.contact_first_name || '')) + ',\n\n\n\n' + vars.signature);
+  const purpose = tpl ? tpl.name : 'Email';
+  const kind = ctx.type === 'lead' ? 'outreach' : (ctx.type === 'candidate' ? 'candidate' : 'email');
+  const fu = m.fu || '', task = !!m.task, snapshot = Object.assign({}, ctx), rfxId = m.rfxId || '';
+  const role = vars.role || ctx.role || '';
+  const missing = (subject + body).match(/\[[A-Z][A-Z ]{2,}\]/g) || [];
+  const notes = [];
+  const warn = c47WarnText(ctx.email, m.emailStatus);
+  if(warn) notes.push('<strong>' + esc(warn) + '</strong>');
+  if(missing.length) notes.push('Fill in the highlighted [BRACKETS] before sending: ' + esc([...new Set(missing)].join(', ')));
+  return {
+    to: ctx.email, subject, body, kind,
+    meta: {entityType: ctx.type === 'candidate' ? 'candidate' : 'client', contactName: ctx.name || ctx.company, entity: ctx.type === 'candidate' ? ctx.name : '', company: ctx.company || vars.company || '', role, purpose, followUp: fu, ref: rfxId, c47type: ctx.type},
+    note: notes.join('<br>'),
+    onSent: async (j) => {
+      if(j && j.comm) B2.comms.push(j.comm);
+      await c47AfterEmailHooks(snapshot, rfxId, purpose + ': ' + (MAIL.d && MAIL.d.subject || subject), fu);
+      if(task) await c47Task(snapshot, purpose, purpose + ': ' + subject, fu);
+      logActivity('contact_logged', {candidate: snapshot.type === 'candidate' ? snapshot.name : '', role, company: snapshot.company, detail: 'email'});
+      c47AfterLog();
+    },
+  };
+}
+
+// After an email to a lead: adverts found through Role Finder move on (with a follow-up in the Cold Call Tracker); other leads get a tracker entry
+async function c47AfterEmailHooks(ctx, rfxId, summary, fu){
+  if(rfxId){
+    const k = await b2Post('/api/outreach/sent', {rfx: rfxId, kind: 'outreach', contactName: ctx.name || '', company: ctx.company, subject: summary, followUpDays: 4}).catch(() => null);
+    if(k && k.followUp) showToast('Follow-up added to the Cold Call Tracker for ' + k.followUp);
+    C47.calls.push({company:ctx.company, contactNames:ctx.name, contactType:'email', dateCalled:c47Today(), notes:'Outreach email sent', followupDate:k && k.followUp || '', outcome:'attempt', status:'active'});
+  }else if(ctx.type === 'lead' && ctx.company){
+    await c47ColdCall(ctx, 'email', 'attempt', summary, fu);
+  }
+}
+
+function c47EmailNext(){
+  c47EmailCollect();
+  const m = C47.mail; if(!m) return;
+  const ctx = m.ctx;
+  if(!ctx.type) ctx.type = 'lead';
+  if(m.fu && !/^\d{4}-\d{2}-\d{2}$/.test(m.fu)){ c47EmailRender('Enter the follow-up date as YYYY-MM-DD, or pick it from the calendar.'); return; }
+  const data = c47Compose(ctx, m);
+  C47.mail = null; b46Close('c47MailOv');
+  mailOpen(data);
+}
+
+/* ============================================================
+   Contact timeline
+   ============================================================ */
+async function c47TimelineOpen(h){
+  const box = b46Shell('c47TlOv');
+  box.innerHTML = '<div class="b46-k">TIMELINE</div><div style="padding:18px 0;color:#777;font-size:13px;">Loading...</div>';
+  await c47Load();
+  await loadB2Core().catch(() => {});
+  const ctx = c47Resolve(h);
+  if(!ctx.email || !ctx.phone){
+    const d = c47Directory().find(x => c47n(x.name) === c47n(ctx.name) && c47n(x.company) === c47n(ctx.company));
+    if(d){ ctx.email = ctx.email || d.email; ctx.phone = ctx.phone || d.phone; }
+  }
+  const items = c47History(ctx);
+  const emails = items.filter(i => i.ch === 'email').length, calls = items.filter(i => i.ch === 'call').length;
+  const last = items[0] ? c47Days(items[0].d) : null;
+  box.innerHTML =
+    '<div style="display:flex;justify-content:space-between;gap:10px;"><div><div class="b46-k">TIMELINE</div><h3>' + esc(ctx.name || ctx.company || 'Contact') + '</h3></div>' +
+    '<button onclick="b46Close(\'c47TlOv\')" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;align-self:flex-start;">&times;</button></div>' +
+    c47WhoHtml(ctx) +
+    '<div class="b46-tiles"><div class="b46-tile"><div class="n">' + items.length + '</div><div class="l">Contacts logged</div></div>' +
+    '<div class="b46-tile"><div class="n">' + emails + '</div><div class="l">Emails</div></div>' +
+    '<div class="b46-tile"><div class="n">' + calls + '</div><div class="l">Calls</div></div>' +
+    '<div class="b46-tile"><div class="n">' + (last == null ? 'Never' : last === 0 ? 'Today' : last + 'd') + '</div><div class="l">Since last contact</div></div></div>' +
+    '<div style="margin:6px 0 10px;">' + c47Actions(ctx, {timeline:false}) + '</div>' +
+    (ctx.type !== 'candidate' ? '<div class="b46-sub">Shows everything logged with ' + esc(ctx.company || 'this company') + ', so colleagues of this contact are included.</div>' : '') +
+    c47HistoryHtml(items, 'Nothing logged yet. Emails and calls made from the workspace appear here automatically.');
+}
+
+/* ============================================================
+   Overview: clients not contacted in 30+ days
+   ============================================================ */
+function c47LastContactByCompany(){
+  const map = new Map();
+  const bump = (co, d) => { const k = c47n(co); if(!k || !/^\d{4}-\d{2}-\d{2}/.test(String(d))) return; const v = String(d).slice(0, 10); if(!map.has(k) || map.get(k) < v) map.set(k, v); };
+  (B2.comms || []).forEach(c => { if(c.entity_type === 'client') bump(c.company || c.entity_name, c.timestamp); });
+  (C47.calls || []).forEach(c => bump(c.company, c.dateCalled));
+  return map;
+}
+function c47StaleClients(){
+  const last = c47LastContactByCompany();
+  const byCo = new Map();
+  (APPLICANT_CLIENT_LIST || []).forEach(c => { const k = c47n(c.company); if(!k) return; if(!byCo.has(k)) byCo.set(k, {company:c.company, contacts:[]}); byCo.get(k).contacts.push(c); });
+  const out = [];
+  byCo.forEach((v, k) => {
+    const d = last.get(k) || '';
+    const days = d ? c47Days(d) : null;
+    if(days != null && days < 30) return;
+    const main = v.contacts.find(c => c.email || c.phone) || v.contacts[0] || {};
+    out.push({company:v.company, last:d, days, contact:main});
+  });
+  out.sort((a, b) => (b.days == null ? 9999 : b.days) - (a.days == null ? 9999 : a.days));
+  return out;
+}
+async function c47Nudges(){
+  const home = document.getElementById('homeView'); if(!home) return;
+  const grid = home.querySelector('.panel-grid'); if(!grid) return;
+  let p = document.getElementById('c47NudgePanel');
+  if(!p){ p = document.createElement('div'); p.className = 'panel'; p.id = 'c47NudgePanel'; p.style.gridColumn = '1 / -1'; grid.insertBefore(p, grid.firstChild); }
+  await c47LoadCalls();
+  const list = c47StaleClients();
+  const show = C47.nudgeAll ? list : list.slice(0, 6);
+  p.innerHTML = '<div class="panel-head">Clients not contacted in 30+ days' + (list.length > 6 ? ' <a onclick="C47.nudgeAll=!C47.nudgeAll;c47Nudges()">' + (C47.nudgeAll ? 'Show fewer' : 'Show all ' + list.length) + '</a>' : '') + '</div>' +
+    '<div class="panel-body">' + (show.length ? show.map(x => {
+      const ctx = {type:'client', name:x.contact.contactName || '', company:x.company, email:x.contact.email || '', phone:x.contact.phone || ''};
+      return '<div class="c47-nudge-row"><div><div class="co">' + esc(x.company) + '</div><div class="s">' + esc(ctx.name || 'No contact name') +
+        ' · <span class="c47-days">' + (x.days == null ? 'Never contacted' : x.days + ' days since last contact') + '</span></div></div>' + c47Actions(ctx) + '</div>';
+    }).join('') : '<div class="panel-empty">Every client has been contacted in the last 30 days.</div>') + '</div>';
+}
+(function(){
+  const _rh = renderHome;
+  renderHome = function(){ const r = _rh.apply(this, arguments); try{ if(opsIsVisible('homeView')) c47Nudges(); }catch(e){} return r; };
+})();
+
+/* ============================================================
+   KPI Reporting: emails and calls per person, this week against last week
+   ============================================================ */
+function c47WeekStart(offsetWeeks){
+  const d = new Date(c47Today() + 'T00:00:00Z');
+  const dow = (d.getUTCDay() + 6) % 7; // Monday = 0
+  d.setUTCDate(d.getUTCDate() - dow - 7 * (offsetWeeks || 0));
+  return d.toISOString().slice(0, 10);
+}
+function c47Activity(){
+  const wk = c47WeekStart(0), prev = c47WeekStart(1);
+  const blank = () => ({emails:0, calls:0, spoke:0, fu:0, pemails:0, pcalls:0});
+  const by = {};
+  (B2.comms || []).forEach(c => {
+    const d = String(c.timestamp || '').slice(0, 10); if(d < prev) return;
+    const ch = c47n(c.channel); if(ch !== 'email' && ch !== 'call') return;
+    const u = c47n(c.user) || 'unknown';
+    const r = by[u] = by[u] || blank();
+    if(d >= wk){
+      if(ch === 'email') r.emails++; else r.calls++;
+      if(ch === 'call' && / - spoke to them/i.test(String(c.summary || ''))) r.spoke++;
+      if(c.follow_up_date) r.fu++;
+    }else{ if(ch === 'email') r.pemails++; else r.pcalls++; }
+  });
+  return {wk, by};
+}
+function c47Trend(now, before){
+  if(!before && !now) return '';
+  const d = now - before;
+  return d === 0 ? '<span class="b46-sub"> (same)</span>' : '<span class="' + (d > 0 ? 'up' : 'dn') + '"> (' + (d > 0 ? '+' : '') + d + ' on last week)</span>';
+}
+async function c47ActivityRender(){
+  const view = document.getElementById('kpiReportingView'); if(!view) return;
+  let sec = document.getElementById('c47ActivitySection');
+  if(!sec){
+    sec = document.createElement('div'); sec.id = 'c47ActivitySection'; sec.style.marginTop = '32px';
+    const anchor = document.getElementById('weeklyCallReportSection');
+    if(anchor && anchor.parentNode) anchor.parentNode.insertBefore(sec, anchor); else (view.querySelector('.view-body') || view).appendChild(sec);
+  }
+  await loadB2Core().catch(() => {});
+  await c47LoadCalls();
+  const {wk, by} = c47Activity();
+  const admin = !!(signedInUser && signedInUser.admin);
+  const people = (typeof USERS !== 'undefined' ? USERS : []).map(u => u.key).filter(k => admin || k === signedInUser.key);
+  Object.keys(by).forEach(k => { if(admin && !people.includes(k) && k !== 'unknown' && k !== 'system') people.push(k); });
+  const rows = people.map(k => ({k, r: by[k] || {emails:0, calls:0, spoke:0, fu:0, pemails:0, pcalls:0}}));
+  const tot = rows.reduce((t, x) => { Object.keys(x.r).forEach(f => t[f] = (t[f] || 0) + x.r[f]); return t; }, {});
+  const stale = c47StaleClients().length;
+  const line = (label, r, strong) => '<tr' + (strong ? ' style="font-weight:700;"' : '') + '><td>' + esc(label) + '</td><td>' + r.emails + c47Trend(r.emails, r.pemails) + '</td><td>' + r.calls + c47Trend(r.calls, r.pcalls) + '</td><td>' + r.spoke + (r.calls ? ' <span class="b46-sub">(' + Math.round(r.spoke / r.calls * 100) + '%)</span>' : '') + '</td><td>' + r.fu + '</td></tr>';
+  sec.innerHTML = '<h3 style="font-size:16px;color:var(--dark);margin-bottom:6px;font-weight:500;">Emails and calls - this week</h3>' +
+    '<div style="font-size:12px;color:#999;margin-bottom:12px;">Counted from the communications log since Monday ' + esc(c47Fmt(wk)) + ', against the whole of last week. Emails and calls made from a contact are logged automatically.</div>' +
+    '<div style="overflow-x:auto;"><table class="c47-rep"><thead><tr><th>' + (admin ? 'Person' : 'You') + '</th><th>Emails sent</th><th>Calls logged</th><th>Spoke to</th><th>Follow-ups set</th></tr></thead><tbody>' +
+    rows.map(x => line(userLabel(x.k), x.r)).join('') + (admin && rows.length > 1 ? line('Team total', tot, true) : '') + '</tbody></table></div>' +
+    '<div style="font-size:12.5px;margin-top:10px;color:var(--dark);">' + (stale ? '<strong>' + stale + '</strong> client' + (stale === 1 ? ' has' : 's have') + ' not been contacted in 30+ days. <a style="color:var(--gold);cursor:pointer;" onclick="switchTab(\'home\')">See them on Overview</a>' : 'Every client has been contacted in the last 30 days.') + '</div>';
+}
+(function(){
+  const _lk = loadKPITargets;
+  loadKPITargets = async function(){ const r = await _lk.apply(this, arguments); try{ c47ActivityRender(); }catch(e){} return r; };
+})();
+
+/* ============================================================
+   Edit one contact at a time (clients and lead clients), and company details
+   ============================================================ */
+var C47E = null;
+document.addEventListener('click', function(e){
+  const b = e.target.closest && e.target.closest('[data-c47edit]');
+  if(!b) return;
+  e.preventDefault();
+  c47ContactEdit({kind:b.dataset.kind || 'client', timestamp:b.dataset.ts || '', company:b.dataset.company || '', contactName:b.dataset.name || '', email:b.dataset.email || ''});
+});
+
+function c47FindContact(m){
+  const list = m.kind === 'lead' ? (C47.leads || []) : (APPLICANT_CLIENT_LIST || []);
+  return list.find(c => c47n(c.company) === c47n(m.company) && m.timestamp && c.timestamp === m.timestamp)
+    || list.find(c => c47n(c.company) === c47n(m.company) && c47n(c.contactName) === c47n(m.contactName) && c47n(c.email) === c47n(m.email));
+}
+
+async function c47ContactEdit(m, err){
+  if(!C47E || C47E.m !== m){
+    // open straight away from what is already loaded; only fetch when this contact is not in memory yet
+    let rec = c47FindContact(m);
+    if(!rec){
+      const box0 = b46Shell('c47EditOv');
+      box0.innerHTML = '<div class="b46-k">EDIT CONTACT</div><div style="padding:18px 0;color:#777;font-size:13px;">Opening ' + esc(m.contactName || 'contact') + '...</div>';
+      await (m.kind === 'lead' ? c47Load(true) : loadApplicantClientList());
+      rec = c47FindContact(m);
+    }
+    C47E = {m, rec:Object.assign({}, rec || {company:m.company, contactName:m.contactName, email:m.email, timestamp:m.timestamp})};
+  }
+  const r = C47E.rec, lead = m.kind === 'lead';
+  const others = (lead ? (C47.leads || []) : (APPLICANT_CLIENT_LIST || [])).filter(c => c47n(c.company) === c47n(m.company)).length;
+  const box = b46Shell('c47EditOv');
+  const f = (id, label, val, type) => '<div><label>' + label + '</label><input type="' + (type || 'text') + '" id="' + id + '" value="' + c47Attr(val) + '"></div>';
+  box.innerHTML =
+    '<div style="display:flex;justify-content:space-between;gap:10px;"><div><div class="b46-k">EDIT ' + (lead ? 'LEAD' : 'CLIENT') + ' CONTACT</div><h3>' + esc(r.contactName || 'Contact') + ' · ' + esc(r.company) + '</h3>' +
+    '<div class="b46-sub">Only this person is changed. The other ' + (others - 1) + ' contact' + (others - 1 === 1 ? '' : 's') + ' at ' + esc(r.company) + ' stay as they are.</div></div>' +
+    '<button onclick="c47EditClose()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;align-self:flex-start;">&times;</button></div>' +
+    '<div class="c47-grid">' + f('c47eName', 'Contact name', r.contactName) + f('c47eTitle', 'Job title', r.jobTitle) + f('c47eEmail', 'Email', r.email, 'email') + f('c47ePhone', 'Phone', r.phone, 'tel') +
+      f('c47eAddr', 'Address', r.address) + f('c47ePost', 'Postcode', r.postcode) + '</div>' +
+    (others > 1 ? '<label style="display:flex;gap:8px;align-items:center;font-weight:400;"><input type="checkbox" id="c47eAll"> Use this address for every contact at ' + esc(r.company) + '</label>' : '') +
+    '<label>Notes</label><textarea id="c47eNotes" style="min-height:90px;">' + esc(r.notes || '') + '</textarea>' +
+    (err ? '<div class="b46-err">' + esc(err) + '</div>' : '') +
+    '<div class="b46-row" style="justify-content:space-between;margin-top:14px;">' +
+      '<button class="b46-btn" style="color:var(--danger,#a33);" onclick="c47ContactRemove()">Remove contact</button>' +
+      '<div class="b46-row"><button class="b46-btn" onclick="c47EditClose()">Cancel</button><button class="b46-btn gold" id="c47eSave" onclick="c47ContactSave()">Save contact</button></div></div>';
+}
+function c47EditClose(){ C47E = null; b46Close('c47EditOv'); }
+
+async function c47AfterContactChange(){
+  await loadApplicantClientList();
+  C47.at = 0; c47Load(true).catch(() => {});
+  try{ if(typeof loadClients === 'function' && opsIsVisible('clientsView')) loadClients(); }catch(e){}
+  try{ if(typeof window.crmReload41 === 'function') await window.crmReload41(); }catch(e){}
+}
+
+async function c47ContactSave(){
+  if(!C47E) return;
+  const v = id => b2Val(id).trim();
+  const update = {contactName:v('c47eName'), jobTitle:v('c47eTitle'), email:v('c47eEmail'), phone:v('c47ePhone'), address:v('c47eAddr'), postcode:v('c47ePost'), notes:b2Val('c47eNotes').trim()};
+  if(!update.contactName){ Object.assign(C47E.rec, update); c47ContactEdit(C47E.m, 'Add the contact name.'); return; }
+  const all = document.getElementById('c47eAll');
+  const btn = document.getElementById('c47eSave'); if(btn){ btn.disabled = true; btn.textContent = 'Saving...'; }
+  try{
+    const r = C47E.rec;
+    await b2Api('/api/contacts/update', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+      kind: C47E.m.kind, match:{timestamp:r.timestamp || C47E.m.timestamp, company:r.company || C47E.m.company, contactName:C47E.m.contactName, email:C47E.m.email},
+      update, addressForAll: !!(all && all.checked),
+    })});
+    c47EditClose();
+    showToast('Contact updated');
+    c47AfterContactChange();
+  }catch(e){ Object.assign(C47E.rec, update); c47ContactEdit(C47E.m, 'Could not save: ' + e.message); }
+}
+
+async function c47ContactRemove(){
+  if(!C47E) return;
+  const r = C47E.rec;
+  if(!confirm('Remove ' + (r.contactName || 'this contact') + ' from ' + r.company + '? The rest of the company and its history stay.')) return;
+  try{
+    await b2Post('/api/contacts/remove', {kind: C47E.m.kind, match:{timestamp:r.timestamp || C47E.m.timestamp, company:r.company || C47E.m.company, contactName:C47E.m.contactName, email:C47E.m.email}});
+    c47EditClose();
+    showToast('Contact removed');
+    c47AfterContactChange();
+  }catch(e){ c47ContactEdit(C47E.m, e.message); }
+}
+
+// "Edit company" changes the address on every contact row and the payment terms, never one person's details
+editClient = async function(company){
+  await loadApplicantClientList();
+  const rows = (APPLICANT_CLIENT_LIST || []).filter(c => c47n(c.company) === c47n(company));
+  if(!rows.length){ showToast('No contacts found for ' + company); return; }
+  const first = rows[0];
+  const terms = (typeof clientTermsDays === 'function') ? String(clientTermsDays(company)) : '30';
+  const box = b46Shell('c47EditOv');
+  box.innerHTML =
+    '<div style="display:flex;justify-content:space-between;gap:10px;"><div><div class="b46-k">EDIT COMPANY</div><h3>' + esc(company) + '</h3>' +
+    '<div class="b46-sub">Applies to all ' + rows.length + ' contact' + (rows.length === 1 ? '' : 's') + '. To change a person, use Edit contact next to their name.</div></div>' +
+    '<button onclick="b46Close(\'c47EditOv\')" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;align-self:flex-start;">&times;</button></div>' +
+    '<div class="c47-grid"><div><label>Address</label><input type="text" id="c47cmAddr" value="' + c47Attr(first.address) + '"></div>' +
+    '<div><label>Postcode</label><input type="text" id="c47cmPost" value="' + c47Attr(first.postcode) + '"></div>' +
+    '<div><label>Payment terms</label><select id="c47cmTerms"><option value="14"' + (terms === '14' ? ' selected' : '') + '>14 days</option><option value="30"' + (terms === '30' ? ' selected' : '') + '>30 days</option></select></div></div>' +
+    '<div id="c47cmErr"></div>' +
+    '<div class="b46-row" style="justify-content:flex-end;margin-top:14px;"><button class="b46-btn" onclick="b46Close(\'c47EditOv\')">Cancel</button><button class="b46-btn gold" id="c47cmSave">Save company</button></div>';
+  document.getElementById('c47cmSave').onclick = async function(){
+    this.disabled = true; this.textContent = 'Saving...';
+    try{
+      await b2Api('/api/contacts/update', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+        kind:'client', match:{timestamp:first.timestamp, company:first.company, contactName:first.contactName, email:first.email},
+        update:{address:b2Val('c47cmAddr').trim(), postcode:b2Val('c47cmPost').trim()}, addressForAll:true })});
+      if(typeof saveClientTerms === 'function' && b2Val('c47cmTerms') !== terms) await saveClientTerms(company, b2Val('c47cmTerms'), true);
+      b46Close('c47EditOv'); showToast('Company details updated');
+      c47AfterContactChange();
+    }catch(e){ document.getElementById('c47cmErr').innerHTML = '<div class="b46-err">' + esc(e.message) + '</div>'; this.disabled = false; this.textContent = 'Save company'; }
+  };
+};
+
+/* ============================================================
+   Build 47.2: live advert introductions, send to the other contacts, bounce flags
+   ============================================================ */
+C47.rfx = []; C47.rfxAt = 0; C47.bounced = {}; C47.bouncedAt = 0; C47.last = null;
+
+async function c47LoadRfx(force){
+  if(typeof RFX !== 'undefined' && RFX.results && RFX.results.length && !force) return;
+  if(!force && C47.rfxAt && Date.now() - C47.rfxAt < 5 * 60 * 1000) return;
+  try{ const j = await b2Api('/api/role-finder/results'); C47.rfx = j.data || []; C47.rfxAt = Date.now(); }catch(e){ /* adverts are optional */ }
+}
+function c47AdvertsFor(company, rfxId){
+  const co = c47n(company); if(!co) return [];
+  const norm = x => c47n(x).replace(/\b(ltd|limited|plc|llp|uk|group|the)\b/g, '').replace(/[^a-z0-9]/g, '');
+  const want = norm(company);
+  const all = (typeof RFX !== 'undefined' && RFX.results && RFX.results.length) ? RFX.results : (C47.rfx || []);
+  const ads = all.filter(r => r && norm(r.company) === want && !['dismissed', 'agency'].includes(r.status));
+  ads.sort((a, b) => (rfxId && a.id === rfxId ? -1 : rfxId && b.id === rfxId ? 1 : 0) || ((b.days || 0) - (a.days || 0)));
+  return ads;
+}
+
+async function c47LoadBounced(force){
+  if(!force && C47.bouncedAt && Date.now() - C47.bouncedAt < 10 * 60 * 1000) return;
+  try{ const j = await b2Api('/api/mail/bounced'); C47.bounced = j.data || {}; C47.bouncedAt = Date.now(); }catch(e){ /* optional */ }
+}
+function c47WarnText(email, emailStatus){
+  const b = email && C47.bounced[c47n(email)];
+  if(b) return 'Warning: ' + email + ' - ' + b.reason + (b.at ? ' (' + c47Fmt(b.at) + ')' : '') + '. Check the address before sending.';
+  if(emailStatus && /guess|pattern|unverified/i.test(emailStatus)) return 'This address is a ' + emailStatus + ', not one found published. Check it before sending.';
+  return '';
+}
+function c47WarnHtml(email, emailStatus){ const t = c47WarnText(email, emailStatus); return t ? '<div class="b46-err">' + esc(t) + '</div>' : ''; }
+
+(function(){
+  const _l = c47Load;
+  c47Load = async function(force){ await _l(force); };
+})();
+
+// Swaps the greeting line for the new person, leaving the rest of the email exactly as sent
+function c47Regreet(body, name){
+  const first = String(name || '').trim().split(/\s+/)[0] || '';
+  const greet = first ? 'Hi ' + first + ',' : 'Hello,';
+  const lines = String(body || '').split('\n');
+  const i = lines.findIndex(l => l.trim());
+  if(i >= 0 && /^(hi|hello|dear|good (morning|afternoon)|hey)\b[^\n]{0,60},\s*$/i.test(lines[i].trim())) lines[i] = greet;
+  else lines.unshift(greet, '');
+  return lines.join('\n');
+}
+
+function c47OthersFor(company, exclude){
+  const co = c47n(company); if(!co) return [];
+  const seen = new Set([...exclude].map(c47n));
+  const out = [];
+  const add = (p, src) => {
+    const e = c47n(p.email); if(!e || seen.has(e)) return;
+    seen.add(e);
+    out.push({name:p.name || '', title:p.title || '', email:p.email, emailStatus:p.email_status || p.emailStatus || '', type:p.type || 'lead', src});
+  };
+  c47Directory().filter(d => d.type !== 'candidate' && c47n(d.company) === co).forEach(d => add(d, 'contact'));
+  if(typeof RFX !== 'undefined' && RFX.dive && RFX.current && c47n(RFX.current.company) === co) (RFX.dive.people || []).forEach(p => add(Object.assign({type:'lead'}, p), 'deep dive'));
+  return out;
+}
+
+function c47FromBase(base, person, rfxId){
+  const ctx = c47Resolve({type: base.meta.c47type || 'lead', name: person.name, company: base.meta.company, email: person.email});
+  if(person.title && !ctx.title) ctx.title = person.title;
+  const warn = c47WarnText(person.email, person.emailStatus);
+  const snapshot = Object.assign({}, ctx);
+  const purpose = base.meta.purpose || 'Introduction';
+  return {
+    to: person.email, subject: base.subject, body: c47Regreet(base.body, person.name), kind: base.kind,
+    meta: Object.assign({}, base.meta, {contactName: person.name || base.meta.company, followUp: ''}),
+    note: (warn ? '<strong>' + esc(warn) + '</strong><br>' : '') + 'The same email you sent to ' + esc(base.toName || base.to) + ', with the greeting changed. It goes to ' + esc(person.name || person.email) + ' on its own.',
+    onSent: async (j) => {
+      if(j && j.comm) B2.comms.push(j.comm);
+      await c47AfterEmailHooks(snapshot, rfxId || base.meta.ref || '', purpose + ': ' + (MAIL.d && MAIL.d.subject || base.subject), '');
+      logActivity('contact_logged', {company: snapshot.company, detail: 'email'});
+      c47AfterLog();
+    },
+  };
+}
+
+// Every email sent through Review and Send is remembered so it can go to the rest of the company
+(function(){
+  const _a = mailAfterSent;
+  mailAfterSent = function(d){
+    _a.apply(this, arguments);
+    try{
+      C47.sentTo = C47.sentTo || new Set();
+      String(d.to || '').split(/[,;\s]+/).filter(Boolean).forEach(e => C47.sentTo.add(c47n(e)));
+      const meta = d.meta || {};
+      if(!['outreach', 'email'].includes(d.kind) || meta.entityType === 'candidate' || !meta.company) { C47.last = null; return; }
+      C47.last = {at: Date.now(), to: d.to, toName: meta.contactName || d.to, subject: d.subject, body: d.body, kind: d.kind, meta: Object.assign({}, meta)};
+      if(MAIL.queue) return;
+      const others = c47OthersFor(meta.company, C47.sentTo).filter(o => !C47.bounced[c47n(o.email)] || !/does not exist|invalid|opted out|suppression/i.test(C47.bounced[c47n(o.email)].reason));
+      if(!others.length) return;
+      const box = document.querySelector('#mailOv .b46-box'); if(!box) return;
+      const row = document.createElement('div');
+      row.className = 'b46-note';
+      row.innerHTML = '<strong>' + others.length + ' other contact' + (others.length === 1 ? '' : 's') + ' at ' + esc(meta.company) + '</strong>: ' + others.map(o => esc(o.name || o.email)).join(', ') +
+        '. Send them this same email? Each person gets their own separate email with their name in the greeting, and you review each one.' +
+        '<div class="b46-row" style="margin-top:8px;"><button class="b46-btn gold" onclick="c47SendToOthers()">Send to the other ' + others.length + '</button></div>';
+      const actions = box.querySelector('.b46-row:last-child');
+      box.insertBefore(row, actions || null);
+      C47.others = others;
+    }catch(e){ /* the send itself is done */ }
+  };
+})();
+
+function c47SendToOthers(){
+  const base = C47.last, others = C47.others || [];
+  if(!base || !others.length) return;
+  MAIL.open = false;
+  const items = others.map(o => ({label: (o.name || o.email) + ' · ' + base.meta.company, build: async () => c47FromBase(base, o, base.meta.ref)}));
+  mailQueueStart(items, () => { showToast('Finished emailing ' + base.meta.company); c47AfterLog(); });
+}
+
+/* ---------- deep dive: free template email per person, and email everyone ---------- */
+function c47DiveEmail(i){
+  const p = RFX.dive && RFX.dive.people && RFX.dive.people[i], r = RFX.current;
+  if(!p || !r || !p.email) return;
+  closeModal('rfxDiveModal');
+  c47EmailStart({type:'lead', name:p.name || '', company:r.company, email:p.email, title:p.title || '', rfxId:r.id, tpl:'tpl-lead-live-advert', emailStatus:p.email_status || ''});
+}
+
+function c47DiveAll(){
+  const r = RFX.current, people = ((RFX.dive && RFX.dive.people) || []).filter(p => p.email);
+  if(!r || !people.length){ showToast('The deep dive found no email addresses'); return; }
+  const box = b46Shell('c47AllOv');
+  box.style.maxWidth = '560px';
+  box.innerHTML = '<div style="display:flex;justify-content:space-between;"><div><div class="b46-k">EMAIL EVERYONE</div><h3>' + esc(r.company) + ' · ' + people.length + ' contact' + (people.length === 1 ? '' : 's') + '</h3></div>' +
+    '<button onclick="b46Close(\'c47AllOv\')" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;align-self:flex-start;">&times;</button></div>' +
+    '<div class="b46-sub">' + people.map(p => esc(p.name || p.email) + (p.title ? ' (' + esc(p.title) + ')' : '')).join(', ') + '</div>' +
+    '<div class="b46-note">Each person gets their <strong>own separate email</strong>, never one email to everyone. You write or check the first one, and the rest reuse it with their name in the greeting. You review each before it sends.</div>' +
+    '<div class="b46-row" style="margin-top:12px;flex-direction:column;align-items:stretch;">' +
+      '<button class="b46-btn gold" onclick="c47DiveAllGo(\'template\')">Free template: Introduction - live advert</button>' +
+      '<button class="b46-btn" onclick="c47DiveAllGo(\'ai\')">AI draft for the first person, reused for the rest (one AI draft)</button></div>';
+}
+
+function c47DiveAllGo(mode){
+  b46Close('c47AllOv');
+  const r = RFX.current, people = ((RFX.dive && RFX.dive.people) || []).filter(p => p.email);
+  if(!r) return;
+  closeModal('rfxDiveModal');
+  const started = Date.now();
+  const items = people.map((p, i) => ({label: (p.name || p.email) + ' · ' + r.company, build: async () => {
+    const base = C47.last && C47.last.at >= started && c47n(C47.last.meta.company) === c47n(r.company) ? C47.last : null;
+    const person = {name:p.name || '', title:p.title || '', email:p.email, emailStatus:p.email_status || ''};
+    if(base) return c47FromBase(base, person, r.id);
+    if(mode === 'ai') return outreachBuild(r.id, p);
+    await Promise.all([c47Load(), c47LoadRfx()]);
+    const ctx = c47Resolve({type:'lead', name:p.name || '', company:r.company, email:p.email});
+    if(p.title && !ctx.title) ctx.title = p.title;
+    return c47Compose(ctx, {tpl:'tpl-lead-live-advert', rfxId:r.id, emailStatus:p.email_status || ''});
+  }}));
+  mailQueueStart(items, () => { showToast('Finished emailing ' + r.company); if(typeof rfxLoad === 'function') rfxLoad(); });
+}
+
+(function(){
+  if(typeof rfxRenderDive !== 'function') return;
+  const _d = rfxRenderDive;
+  rfxRenderDive = function(){
+    _d.apply(this, arguments);
+    try{
+      if(!RFX.dive || !RFX.current) return;
+      c47LoadBounced();
+      const people = RFX.dive.people || [];
+      document.querySelectorAll('#rfxDiveBody .rfx-person').forEach(function(card, i){
+        const p = people[i], btns = card.querySelector('.btns');
+        if(!p || !p.email || !btns || btns.querySelector('.c47-tplbtn')) return;
+        const b = document.createElement('button');
+        b.className = 'b46-out c47-tplbtn'; b.textContent = 'Email with template'; b.title = 'Free: the live advert introduction filled from this deep dive (no AI)';
+        b.setAttribute('onclick', 'c47DiveEmail(' + i + ')');
+        btns.insertBefore(b, btns.querySelector('.b46-out') || null);
+        const bad = C47.bounced[c47n(p.email)];
+        if(bad && !card.querySelector('.c47-bounce')){ const w = document.createElement('div'); w.className = 'ln c47-bounce'; w.style.color = '#a33'; w.textContent = bad.reason; btns.parentNode.insertBefore(w, btns); }
+      });
+      const withEmail = people.filter(p => p.email).length;
+      const bar = document.querySelector('#rfxDiveBody .b46-divebar');
+      if(bar && withEmail > 1 && !bar.querySelector('.c47-allbtn')){
+        const b = document.createElement('button');
+        b.className = 'b46-btn gold c47-allbtn'; b.style.marginLeft = '6px'; b.textContent = 'Email everyone (' + withEmail + ')';
+        b.onclick = c47DiveAll;
+        bar.appendChild(b);
+      }
+    }catch(e){ /* the deep dive still shows */ }
+  };
+})();
+
+/* ============================================================
+   Build 47.3: background tabs stop their every-minute refreshes
+   Each open tab used to re-read the pipeline every minute, so two or three tabs used up the
+   Google Sheets read budget and everything queued. A hidden tab now skips its refreshes and
+   catches up the moment you come back to it.
+   ============================================================ */
+var BG47 = {missed:{}, lastOps:Date.now()};
+(function(){
+  const pause = (name, fn) => function(){
+    if(document.hidden){ BG47.missed[name] = true; return Promise.resolve(); }
+    return fn.apply(this, arguments);
+  };
+  syncSubmissions = pause('board', syncSubmissions);
+  rpCheck = pause('replies', rpCheck);
+  tpCheck = pause('pool', tpCheck);
+  const _ro = refreshOps;
+  refreshOps = function(){ if(document.hidden){ BG47.missed.ops = true; return Promise.resolve(); } BG47.lastOps = Date.now(); return _ro.apply(this, arguments); };
+  document.addEventListener('visibilitychange', () => {
+    if(document.hidden || !signedInUser) return;
+    const m = BG47.missed; BG47.missed = {};
+    if(m.board) syncSubmissions();
+    if(m.replies) rpCheck(false);
+    if(m.pool) tpCheck();
+    if(m.ops && Date.now() - BG47.lastOps > 2 * 60 * 1000) refreshOps(true);
+  });
+})();
+
+/* Keep the directory fresh after sign-in so the first click is quick */
+(function(){
+  const _si = signIn;
+  signIn = function(user){ _si(user); };
 })();
 </script>
 </body>
