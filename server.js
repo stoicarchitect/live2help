@@ -5277,6 +5277,14 @@ const DEFAULT_TEMPLATES = [
     "updated_by": "system"
   },
   {
+    "id": "tpl-lead-live-advert",
+    "name": "Introduction - live advert",
+    "category": "Lead",
+    "subject": "Your {{advert_role}} vacancy at {{company}}",
+    "body": "Hi {{contact_first_name}},\n\nI noticed {{company}} is advertising for a {{advert_role}} in {{advert_location}}, and the advert has now been live for {{days_advertised}} days.\n\nWe recruit for roles like this across the Midlands and can usually put a screened shortlist in front of you within 5 to 7 working days. You only pay if you hire.\n{{other_roles_line}}\nWould a 10 minute call this week be useful to talk it through?\n\n{{signature}}",
+    "updated_by": "system"
+  },
+  {
     "id": "tpl-lead-after-call",
     "name": "Follow-up after a call",
     "category": "Lead",
@@ -5346,7 +5354,7 @@ let tplMigrated = false;
 async function migrateTemplates() {
   if (tplMigrated) return;
   const all = await templatesTable.listAll();
-  if (all.some(t => t.id === '__templates_v5')) { tplMigrated = true; return; }
+  if (all.some(t => t.id === '__templates_v6')) { tplMigrated = true; return; }
   for (const d of DEFAULT_TEMPLATES) {
     const ex = all.find(t => t.id === d.id);
     if (!ex || ex.updated_by === 'system') await templatesTable.upsert(d);
@@ -5355,7 +5363,7 @@ async function migrateTemplates() {
     const ex = all.find(t => t.id === oldId);
     if (ex && ex.updated_by === 'system') await templatesTable.remove(oldId);
   }
-  await templatesTable.upsert({ id: '__templates_v5', name: 'migration marker', category: '', subject: '', body: '', updated_by: 'system' });
+  await templatesTable.upsert({ id: '__templates_v6', name: 'migration marker', category: '', subject: '', body: '', updated_by: 'system' });
   tplMigrated = true;
 }
 
@@ -13026,7 +13034,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '26 Oct 2026 - build 47 (email and call from contacts, contact timeline, activity report)';
+const SERVER_BUILD = '26 Oct 2026 - build 47.2 (email and call, live advert intro, send to other contacts, bounce flags)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -15169,6 +15177,20 @@ app.post('/api/mail/send', async (req, res) => {
     console.error('POST /api/mail/send error:', e.message);
     res.status(e.aiBudget ? 429 : 502).json({ error: 'The email could not be sent: ' + e.message + '. Nothing went out, so you can try again or use the .eml backup.' });
   }
+});
+
+// Build 47: addresses that have bounced or opted out, so the Email buttons can warn before sending
+app.get('/api/mail/bounced', async (req, res) => {
+  try {
+    const bad = { hard_bounce: 'Bounced (address does not exist)', soft_bounce: 'Bounced (temporary)', blocked: 'Blocked by their server', invalid_email: 'Invalid address', spam: 'Marked as spam', unsubscribed: 'Opted out' };
+    const out = {};
+    (await mailLogTable.list().catch(() => [])).forEach(o => {
+      if (!bad[o.status]) return;
+      String(o.to || '').split(/[,;\s]+/).map(lc).filter(Boolean).forEach(e => { if (!out[e] || o.status === 'hard_bounce') out[e] = { reason: bad[o.status], at: o.event_at || o.at }; });
+    });
+    (await suppressionTable.list().catch(() => [])).forEach(sp => { const e = lc(sp.email); if (e && !out[e]) out[e] = { reason: sp.reason || 'On the suppression list', at: sp.added_at || '' }; });
+    res.json({ data: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Brevo calls this when an email is delivered, opened, bounced and so on.

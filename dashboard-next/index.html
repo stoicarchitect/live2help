@@ -16736,7 +16736,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '26 Oct 2026 - build 47.1';
+var PAGE_BUILD = '26 Oct 2026 - build 47.2';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -18838,7 +18838,7 @@ function c47AfterLog(){
 const C47_CAT = {lead:'Lead', client:'Client', candidate:'Candidate'};
 // Which templates show first for each kind of contact
 const C47_ORDER = {
-  lead: ['tpl-lead-intro', 'tpl-lead-after-call', 'tpl-lead-chase', 'tpl-lead-spec', 'tpl-lead-talent-suite'],
+  lead: ['tpl-lead-live-advert', 'tpl-lead-intro', 'tpl-lead-after-call', 'tpl-lead-chase', 'tpl-lead-spec', 'tpl-lead-talent-suite'],
   client: ['tpl-client-new-role', 'tpl-client-follow-up', 'tpl-client-feedback-chase', 'tpl-client-placement', 'tpl-client-rejection', 'tpl-client-invoice-chase'],
   candidate: ['tpl-candidate-availability', 'tpl-interview-confirmation', 'tpl-offer-cover', 'tpl-information-request', 'tpl-references-request', 'tpl-start-reminder', 'tpl-day-one', 'tpl-week-one', 'tpl-month-one', 'tpl-candidate-rejection'],
 };
@@ -18868,12 +18868,18 @@ function c47CompanyCands(company){
 }
 
 async function c47EmailStart(h){
-  C47.mail = {ctx: c47Resolve(h), loading:true};
+  C47.mail = {ctx: c47Resolve(h), loading:true, rfxId:h.rfxId || '', tpl:h.tpl, emailStatus:h.emailStatus || ''};
   const box = b46Shell('c47MailOv');
   box.innerHTML = '<div class="b46-k">EMAIL</div><div style="padding:18px 0;color:#777;font-size:13px;">Loading the contact and templates...</div>';
-  await c47Load();
+  await Promise.all([c47Load(), c47LoadRfx()]);
   if(!C47.mail) return;
   C47.mail.ctx = c47Resolve(h);
+  if(h.title && !C47.mail.ctx.title) C47.mail.ctx.title = h.title;
+  // leads with a live advert start on the advert introduction
+  const ads47 = C47.mail.ctx.type === 'lead' ? c47AdvertsFor(C47.mail.ctx.company, C47.mail.rfxId) : [];
+  if(C47.mail.tpl === undefined && ads47.length) C47.mail.tpl = 'tpl-lead-live-advert';
+  // a lead found through Role Finder: sending moves its advert on and sets the 4 day follow-up, same as the deep dive
+  if(!C47.mail.rfxId && ads47.length) C47.mail.rfxId = ads47[0].id;
   C47.mail.loading = false;
   c47EmailRender();
 }
@@ -18902,6 +18908,7 @@ function c47EmailRender(err){
     '<div style="display:flex;justify-content:space-between;gap:10px;"><div><div class="b46-k">EMAIL</div><h3>Email ' + esc(ctx.name || ctx.email) + '</h3></div>' +
     '<button onclick="c47EmailClose()" title="Close" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;align-self:flex-start;">&times;</button></div>' +
     c47WhoHtml(ctx, ctx.email) +
+    c47WarnHtml(ctx.email, m.emailStatus) +
     c47TypeFields('c47m', ctx) +
     '<label>What is this email for?</label><select id="c47mTpl">' +
       (tp.mine.length ? '<optgroup label="' + c47Attr(C47_CAT[t] || 'Templates') + ' templates">' + tp.mine.map(opt).join('') + '</optgroup>' : '') +
@@ -18975,13 +18982,67 @@ function c47Vars(ctx, m){
   let inv = cand ? invs.find(i => c47n(i.candidateName) === c47n(cand.c.name) && c47n(i.company) === c47n(v.company)) : null;
   if(!inv && ctx.type !== 'candidate' && ctx.company) inv = invs.filter(i => c47n(i.company) === c47n(ctx.company) && i.status !== 'paid').sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)))[0];
   if(inv){ v.invoice_ref = inv.number; v.fee_amount = opsMoney(inv.amount); if(!v.role && inv.role) v.role = inv.role; }
+  // live adverts from Role Finder, used by the "Introduction - live advert" template
+  if(ctx.type !== 'candidate' && ctx.company){
+    const ads = c47AdvertsFor(ctx.company, m.rfxId);
+    if(ads.length){
+      const a = ads[0];
+      v.advert_role = a.role || '';
+      v.advert_location = a.location || '';
+      if(a.days != null && a.days !== '') v.days_advertised = String(a.days);
+      if(a.salary) v.advert_salary = a.salary;
+      const others = [...new Set(ads.slice(1).map(x => x.role).filter(r => r && c47n(r) !== c47n(a.role)))].slice(0, 3);
+      if(others.length) v.other_roles_line = '\nI can also help with the ' + (others.length > 1 ? others.slice(0, -1).join(', ') + ' and ' + others[others.length - 1] : others[0]) + ' role' + (others.length > 1 ? 's' : '') + ' you are advertising.\n';
+      if(!v.role) v.role = a.role || '';
+    }
+  }
   return v;
 }
 
 // Anything a template needs that the records do not have becomes a [BRACKET] to fill in on the review screen
 function c47Fill(text, vars){
   const r = tplMerge(text, vars);
-  return r.text.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (x, k) => '[' + k.replace(/_/g, ' ').toUpperCase() + ']');
+  return r.text.replace(/\{\{\s*[a-z_]+_line\s*\}\}/gi, '').replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (x, k) => '[' + k.replace(/_/g, ' ').toUpperCase() + ']');
+}
+
+// Builds the Review and Send data for one contact from a template, with no AI
+function c47Compose(ctx, m){
+  const tpl = (B2.templates || []).find(x => x.id === m.tpl);
+  const vars = c47Vars(ctx, m);
+  const subject = tpl ? c47Fill(tpl.subject, vars) : '';
+  const body = tpl ? c47Fill(tpl.body, vars) : ('Hi ' + (ctx.type === 'candidate' ? (vars.first_name || '') : (vars.contact_first_name || '')) + ',\n\n\n\n' + vars.signature);
+  const purpose = tpl ? tpl.name : 'Email';
+  const kind = ctx.type === 'lead' ? 'outreach' : (ctx.type === 'candidate' ? 'candidate' : 'email');
+  const fu = m.fu || '', task = !!m.task, snapshot = Object.assign({}, ctx), rfxId = m.rfxId || '';
+  const role = vars.role || ctx.role || '';
+  const missing = (subject + body).match(/\[[A-Z][A-Z ]{2,}\]/g) || [];
+  const notes = [];
+  const warn = c47WarnText(ctx.email, m.emailStatus);
+  if(warn) notes.push('<strong>' + esc(warn) + '</strong>');
+  if(missing.length) notes.push('Fill in the highlighted [BRACKETS] before sending: ' + esc([...new Set(missing)].join(', ')));
+  return {
+    to: ctx.email, subject, body, kind,
+    meta: {entityType: ctx.type === 'candidate' ? 'candidate' : 'client', contactName: ctx.name || ctx.company, entity: ctx.type === 'candidate' ? ctx.name : '', company: ctx.company || vars.company || '', role, purpose, followUp: fu, ref: rfxId, c47type: ctx.type},
+    note: notes.join('<br>'),
+    onSent: async (j) => {
+      if(j && j.comm) B2.comms.push(j.comm);
+      await c47AfterEmailHooks(snapshot, rfxId, purpose + ': ' + (MAIL.d && MAIL.d.subject || subject), fu);
+      if(task) await c47Task(snapshot, purpose, purpose + ': ' + subject, fu);
+      logActivity('contact_logged', {candidate: snapshot.type === 'candidate' ? snapshot.name : '', role, company: snapshot.company, detail: 'email'});
+      c47AfterLog();
+    },
+  };
+}
+
+// After an email to a lead: adverts found through Role Finder move on (with a follow-up in the Cold Call Tracker); other leads get a tracker entry
+async function c47AfterEmailHooks(ctx, rfxId, summary, fu){
+  if(rfxId){
+    const k = await b2Post('/api/outreach/sent', {rfx: rfxId, kind: 'outreach', contactName: ctx.name || '', company: ctx.company, subject: summary, followUpDays: 4}).catch(() => null);
+    if(k && k.followUp) showToast('Follow-up added to the Cold Call Tracker for ' + k.followUp);
+    C47.calls.push({company:ctx.company, contactNames:ctx.name, contactType:'email', dateCalled:c47Today(), notes:'Outreach email sent', followupDate:k && k.followUp || '', outcome:'attempt', status:'active'});
+  }else if(ctx.type === 'lead' && ctx.company){
+    await c47ColdCall(ctx, 'email', 'attempt', summary, fu);
+  }
 }
 
 function c47EmailNext(){
@@ -18990,28 +19051,9 @@ function c47EmailNext(){
   const ctx = m.ctx;
   if(!ctx.type) ctx.type = 'lead';
   if(m.fu && !/^\d{4}-\d{2}-\d{2}$/.test(m.fu)){ c47EmailRender('Enter the follow-up date as YYYY-MM-DD, or pick it from the calendar.'); return; }
-  const tpl = (B2.templates || []).find(x => x.id === m.tpl);
-  const vars = c47Vars(ctx, m);
-  const subject = tpl ? c47Fill(tpl.subject, vars) : '';
-  const body = tpl ? c47Fill(tpl.body, vars) : ('Hi ' + (ctx.type === 'candidate' ? (vars.first_name || '') : (vars.contact_first_name || '')) + ',\n\n\n\n' + vars.signature);
-  const purpose = tpl ? tpl.name : 'Email';
-  const kind = ctx.type === 'lead' ? 'outreach' : (ctx.type === 'candidate' ? 'candidate' : 'email');
-  const fu = m.fu, task = m.task, snapshot = Object.assign({}, ctx);
-  const role = vars.role || ctx.role || '';
-  const missing = (subject + body).match(/\[[A-Z][A-Z ]{2,}\]/g) || [];
+  const data = c47Compose(ctx, m);
   C47.mail = null; b46Close('c47MailOv');
-  mailOpen({
-    to: ctx.email, subject, body, kind,
-    meta: {entityType: ctx.type === 'candidate' ? 'candidate' : 'client', contactName: ctx.name || ctx.company, entity: ctx.type === 'candidate' ? ctx.name : '', company: ctx.company || vars.company || '', role, purpose, followUp: fu},
-    note: missing.length ? 'Fill in the highlighted [BRACKETS] before sending: ' + esc([...new Set(missing)].join(', ')) : '',
-    onSent: async (j) => {
-      if(j && j.comm) B2.comms.push(j.comm);
-      if(snapshot.type === 'lead' && snapshot.company) await c47ColdCall(snapshot, 'email', 'attempt', purpose + ': ' + subject, fu);
-      if(task) await c47Task(snapshot, purpose, purpose + ': ' + subject, fu);
-      logActivity('contact_logged', {candidate: snapshot.type === 'candidate' ? snapshot.name : '', role, company: snapshot.company, detail: 'email'});
-      c47AfterLog();
-    },
-  });
+  mailOpen(data);
 }
 
 /* ============================================================
@@ -19263,6 +19305,194 @@ editClient = async function(company){
     }catch(e){ document.getElementById('c47cmErr').innerHTML = '<div class="b46-err">' + esc(e.message) + '</div>'; this.disabled = false; this.textContent = 'Save company'; }
   };
 };
+
+/* ============================================================
+   Build 47.2: live advert introductions, send to the other contacts, bounce flags
+   ============================================================ */
+C47.rfx = []; C47.rfxAt = 0; C47.bounced = {}; C47.bouncedAt = 0; C47.last = null;
+
+async function c47LoadRfx(force){
+  if(typeof RFX !== 'undefined' && RFX.results && RFX.results.length && !force) return;
+  if(!force && C47.rfxAt && Date.now() - C47.rfxAt < 5 * 60 * 1000) return;
+  try{ const j = await b2Api('/api/role-finder/results'); C47.rfx = j.data || []; C47.rfxAt = Date.now(); }catch(e){ /* adverts are optional */ }
+}
+function c47AdvertsFor(company, rfxId){
+  const co = c47n(company); if(!co) return [];
+  const norm = x => c47n(x).replace(/\b(ltd|limited|plc|llp|uk|group|the)\b/g, '').replace(/[^a-z0-9]/g, '');
+  const want = norm(company);
+  const all = (typeof RFX !== 'undefined' && RFX.results && RFX.results.length) ? RFX.results : (C47.rfx || []);
+  const ads = all.filter(r => r && norm(r.company) === want && !['dismissed', 'agency'].includes(r.status));
+  ads.sort((a, b) => (rfxId && a.id === rfxId ? -1 : rfxId && b.id === rfxId ? 1 : 0) || ((b.days || 0) - (a.days || 0)));
+  return ads;
+}
+
+async function c47LoadBounced(force){
+  if(!force && C47.bouncedAt && Date.now() - C47.bouncedAt < 2 * 60 * 1000) return;
+  try{ const j = await b2Api('/api/mail/bounced'); C47.bounced = j.data || {}; C47.bouncedAt = Date.now(); }catch(e){ /* optional */ }
+}
+function c47WarnText(email, emailStatus){
+  const b = email && C47.bounced[c47n(email)];
+  if(b) return 'Warning: ' + email + ' - ' + b.reason + (b.at ? ' (' + c47Fmt(b.at) + ')' : '') + '. Check the address before sending.';
+  if(emailStatus && /guess|pattern|unverified/i.test(emailStatus)) return 'This address is a ' + emailStatus + ', not one found published. Check it before sending.';
+  return '';
+}
+function c47WarnHtml(email, emailStatus){ const t = c47WarnText(email, emailStatus); return t ? '<div class="b46-err">' + esc(t) + '</div>' : ''; }
+
+(function(){
+  const _l = c47Load;
+  c47Load = async function(force){ await Promise.all([_l(force), c47LoadBounced(force)]); };
+})();
+
+// Swaps the greeting line for the new person, leaving the rest of the email exactly as sent
+function c47Regreet(body, name){
+  const first = String(name || '').trim().split(/\s+/)[0] || '';
+  const greet = first ? 'Hi ' + first + ',' : 'Hello,';
+  const lines = String(body || '').split('\n');
+  const i = lines.findIndex(l => l.trim());
+  if(i >= 0 && /^(hi|hello|dear|good (morning|afternoon)|hey)\b[^\n]{0,60},\s*$/i.test(lines[i].trim())) lines[i] = greet;
+  else lines.unshift(greet, '');
+  return lines.join('\n');
+}
+
+function c47OthersFor(company, exclude){
+  const co = c47n(company); if(!co) return [];
+  const seen = new Set([...exclude].map(c47n));
+  const out = [];
+  const add = (p, src) => {
+    const e = c47n(p.email); if(!e || seen.has(e)) return;
+    seen.add(e);
+    out.push({name:p.name || '', title:p.title || '', email:p.email, emailStatus:p.email_status || p.emailStatus || '', type:p.type || 'lead', src});
+  };
+  c47Directory().filter(d => d.type !== 'candidate' && c47n(d.company) === co).forEach(d => add(d, 'contact'));
+  if(typeof RFX !== 'undefined' && RFX.dive && RFX.current && c47n(RFX.current.company) === co) (RFX.dive.people || []).forEach(p => add(Object.assign({type:'lead'}, p), 'deep dive'));
+  return out;
+}
+
+function c47FromBase(base, person, rfxId){
+  const ctx = c47Resolve({type: base.meta.c47type || 'lead', name: person.name, company: base.meta.company, email: person.email});
+  if(person.title && !ctx.title) ctx.title = person.title;
+  const warn = c47WarnText(person.email, person.emailStatus);
+  const snapshot = Object.assign({}, ctx);
+  const purpose = base.meta.purpose || 'Introduction';
+  return {
+    to: person.email, subject: base.subject, body: c47Regreet(base.body, person.name), kind: base.kind,
+    meta: Object.assign({}, base.meta, {contactName: person.name || base.meta.company, followUp: ''}),
+    note: (warn ? '<strong>' + esc(warn) + '</strong><br>' : '') + 'The same email you sent to ' + esc(base.toName || base.to) + ', with the greeting changed. It goes to ' + esc(person.name || person.email) + ' on its own.',
+    onSent: async (j) => {
+      if(j && j.comm) B2.comms.push(j.comm);
+      await c47AfterEmailHooks(snapshot, rfxId || base.meta.ref || '', purpose + ': ' + (MAIL.d && MAIL.d.subject || base.subject), '');
+      logActivity('contact_logged', {company: snapshot.company, detail: 'email'});
+      c47AfterLog();
+    },
+  };
+}
+
+// Every email sent through Review and Send is remembered so it can go to the rest of the company
+(function(){
+  const _a = mailAfterSent;
+  mailAfterSent = function(d){
+    _a.apply(this, arguments);
+    try{
+      C47.sentTo = C47.sentTo || new Set();
+      String(d.to || '').split(/[,;\s]+/).filter(Boolean).forEach(e => C47.sentTo.add(c47n(e)));
+      const meta = d.meta || {};
+      if(!['outreach', 'email'].includes(d.kind) || meta.entityType === 'candidate' || !meta.company) { C47.last = null; return; }
+      C47.last = {at: Date.now(), to: d.to, toName: meta.contactName || d.to, subject: d.subject, body: d.body, kind: d.kind, meta: Object.assign({}, meta)};
+      if(MAIL.queue) return;
+      const others = c47OthersFor(meta.company, C47.sentTo).filter(o => !C47.bounced[c47n(o.email)] || !/does not exist|invalid|opted out|suppression/i.test(C47.bounced[c47n(o.email)].reason));
+      if(!others.length) return;
+      const box = document.querySelector('#mailOv .b46-box'); if(!box) return;
+      const row = document.createElement('div');
+      row.className = 'b46-note';
+      row.innerHTML = '<strong>' + others.length + ' other contact' + (others.length === 1 ? '' : 's') + ' at ' + esc(meta.company) + '</strong>: ' + others.map(o => esc(o.name || o.email)).join(', ') +
+        '. Send them this same email? Each person gets their own separate email with their name in the greeting, and you review each one.' +
+        '<div class="b46-row" style="margin-top:8px;"><button class="b46-btn gold" onclick="c47SendToOthers()">Send to the other ' + others.length + '</button></div>';
+      const actions = box.querySelector('.b46-row:last-child');
+      box.insertBefore(row, actions || null);
+      C47.others = others;
+    }catch(e){ /* the send itself is done */ }
+  };
+})();
+
+function c47SendToOthers(){
+  const base = C47.last, others = C47.others || [];
+  if(!base || !others.length) return;
+  MAIL.open = false;
+  const items = others.map(o => ({label: (o.name || o.email) + ' · ' + base.meta.company, build: async () => c47FromBase(base, o, base.meta.ref)}));
+  mailQueueStart(items, () => { showToast('Finished emailing ' + base.meta.company); c47AfterLog(); });
+}
+
+/* ---------- deep dive: free template email per person, and email everyone ---------- */
+function c47DiveEmail(i){
+  const p = RFX.dive && RFX.dive.people && RFX.dive.people[i], r = RFX.current;
+  if(!p || !r || !p.email) return;
+  closeModal('rfxDiveModal');
+  c47EmailStart({type:'lead', name:p.name || '', company:r.company, email:p.email, title:p.title || '', rfxId:r.id, tpl:'tpl-lead-live-advert', emailStatus:p.email_status || ''});
+}
+
+function c47DiveAll(){
+  const r = RFX.current, people = ((RFX.dive && RFX.dive.people) || []).filter(p => p.email);
+  if(!r || !people.length){ showToast('The deep dive found no email addresses'); return; }
+  const box = b46Shell('c47AllOv');
+  box.style.maxWidth = '560px';
+  box.innerHTML = '<div style="display:flex;justify-content:space-between;"><div><div class="b46-k">EMAIL EVERYONE</div><h3>' + esc(r.company) + ' · ' + people.length + ' contact' + (people.length === 1 ? '' : 's') + '</h3></div>' +
+    '<button onclick="b46Close(\'c47AllOv\')" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;align-self:flex-start;">&times;</button></div>' +
+    '<div class="b46-sub">' + people.map(p => esc(p.name || p.email) + (p.title ? ' (' + esc(p.title) + ')' : '')).join(', ') + '</div>' +
+    '<div class="b46-note">Each person gets their <strong>own separate email</strong>, never one email to everyone. You write or check the first one, and the rest reuse it with their name in the greeting. You review each before it sends.</div>' +
+    '<div class="b46-row" style="margin-top:12px;flex-direction:column;align-items:stretch;">' +
+      '<button class="b46-btn gold" onclick="c47DiveAllGo(\'template\')">Free template: Introduction - live advert</button>' +
+      '<button class="b46-btn" onclick="c47DiveAllGo(\'ai\')">AI draft for the first person, reused for the rest (one AI draft)</button></div>';
+}
+
+function c47DiveAllGo(mode){
+  b46Close('c47AllOv');
+  const r = RFX.current, people = ((RFX.dive && RFX.dive.people) || []).filter(p => p.email);
+  if(!r) return;
+  closeModal('rfxDiveModal');
+  const started = Date.now();
+  const items = people.map((p, i) => ({label: (p.name || p.email) + ' · ' + r.company, build: async () => {
+    const base = C47.last && C47.last.at >= started && c47n(C47.last.meta.company) === c47n(r.company) ? C47.last : null;
+    const person = {name:p.name || '', title:p.title || '', email:p.email, emailStatus:p.email_status || ''};
+    if(base) return c47FromBase(base, person, r.id);
+    if(mode === 'ai') return outreachBuild(r.id, p);
+    await Promise.all([c47Load(), c47LoadRfx()]);
+    const ctx = c47Resolve({type:'lead', name:p.name || '', company:r.company, email:p.email});
+    if(p.title && !ctx.title) ctx.title = p.title;
+    return c47Compose(ctx, {tpl:'tpl-lead-live-advert', rfxId:r.id, emailStatus:p.email_status || ''});
+  }}));
+  mailQueueStart(items, () => { showToast('Finished emailing ' + r.company); if(typeof rfxLoad === 'function') rfxLoad(); });
+}
+
+(function(){
+  if(typeof rfxRenderDive !== 'function') return;
+  const _d = rfxRenderDive;
+  rfxRenderDive = function(){
+    _d.apply(this, arguments);
+    try{
+      if(!RFX.dive || !RFX.current) return;
+      c47LoadBounced();
+      const people = RFX.dive.people || [];
+      document.querySelectorAll('#rfxDiveBody .rfx-person').forEach(function(card, i){
+        const p = people[i], btns = card.querySelector('.btns');
+        if(!p || !p.email || !btns || btns.querySelector('.c47-tplbtn')) return;
+        const b = document.createElement('button');
+        b.className = 'b46-out c47-tplbtn'; b.textContent = 'Email with template'; b.title = 'Free: the live advert introduction filled from this deep dive (no AI)';
+        b.setAttribute('onclick', 'c47DiveEmail(' + i + ')');
+        btns.insertBefore(b, btns.querySelector('.b46-out') || null);
+        const bad = C47.bounced[c47n(p.email)];
+        if(bad && !card.querySelector('.c47-bounce')){ const w = document.createElement('div'); w.className = 'ln c47-bounce'; w.style.color = '#a33'; w.textContent = bad.reason; btns.parentNode.insertBefore(w, btns); }
+      });
+      const withEmail = people.filter(p => p.email).length;
+      const bar = document.querySelector('#rfxDiveBody .b46-divebar');
+      if(bar && withEmail > 1 && !bar.querySelector('.c47-allbtn')){
+        const b = document.createElement('button');
+        b.className = 'b46-btn gold c47-allbtn'; b.style.marginLeft = '6px'; b.textContent = 'Email everyone (' + withEmail + ')';
+        b.onclick = c47DiveAll;
+        bar.appendChild(b);
+      }
+    }catch(e){ /* the deep dive still shows */ }
+  };
+})();
 
 /* Keep the directory fresh after sign-in so the first click is quick */
 (function(){
