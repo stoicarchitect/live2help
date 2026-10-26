@@ -2154,6 +2154,71 @@ app.delete('/api/clients/:company', async (req, res) => {
   }
 });
 
+/* ---------- Build 47: edit or remove one contact row (clients and lead clients) ----------
+   A contact is found by the row's timestamp plus company, with name and email as a fallback,
+   so editing one person never touches the other contacts at the same company. */
+function contactRowMatches(row, m) {
+  const same = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+  if (!same(row[1], m.company)) return false;
+  if (m.timestamp && row[0] === m.timestamp) return true;
+  return same(row[4], m.contactName) && same(row[6], m.email);
+}
+function contactTab(kind) { return kind === 'lead' ? { tab: LEAD_CLIENT_TAB, read: readLeadClientRows } : { tab: CLIENT_TAB, read: readClientRows }; }
+
+app.put('/api/contacts/update', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const m = b.match || {}, u = b.update || {};
+    const t = contactTab(b.kind);
+    if (!m.company) return res.status(400).json({ error: 'Which company is this contact at?' });
+    const email = String(u.email || '').trim();
+    if (b.kind !== 'lead' && !email) return res.status(400).json({ error: 'A client contact needs an email address' });
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'That email address does not look right' });
+    const rows = await t.read();
+    const idx = rows.findIndex(r => contactRowMatches(r, m));
+    if (idx < 0) return res.status(404).json({ error: 'That contact was not found. Refresh and try again.' });
+    const cur = rowToClient(rows[idx]);
+    const next = { ...cur };
+    ['contactName', 'jobTitle', 'email', 'phone', 'notes', 'address', 'postcode'].forEach(k => { if (u[k] !== undefined) next[k] = String(u[k] || '').trim().slice(0, 500); });
+    const sheets = getSheetsClient();
+    const data = [{ range: `${t.tab}!A${idx + 2}:J${idx + 2}`, values: [clientToRow(next)] }];
+    // optionally keep the address the same on every contact row for the company
+    if (b.addressForAll && (u.address !== undefined || u.postcode !== undefined)) {
+      rows.forEach((r, i) => {
+        if (i === idx || String(r[1] || '').trim().toLowerCase() !== String(m.company).trim().toLowerCase()) return;
+        data.push({ range: `${t.tab}!C${i + 2}:D${i + 2}`, values: [[next.address, next.postcode]] });
+      });
+    }
+    await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: CLIENT_SHEET_ID, requestBody: { valueInputOption: 'RAW', data } });
+    auditLog(auditActorOf(req), 'updated', b.kind === 'lead' ? 'lead contact' : 'client contact', `${next.contactName} - ${next.company}`, `was ${cur.contactName} <${cur.email}>`);
+    res.json({ ok: true, data: next, updatedRows: data.length });
+  } catch (e) {
+    console.error('PUT /api/contacts/update error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/contacts/remove', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const m = b.match || {};
+    const t = contactTab(b.kind);
+    const rows = await t.read();
+    const idx = rows.findIndex(r => contactRowMatches(r, m));
+    if (idx < 0) return res.status(404).json({ error: 'That contact was not found. Refresh and try again.' });
+    const others = rows.filter((r, i) => i !== idx && String(r[1] || '').trim().toLowerCase() === String(m.company || '').trim().toLowerCase()).length;
+    if (b.kind !== 'lead' && !others) return res.status(409).json({ error: 'This is the only contact for the client. Add another contact first, or delete the client.' });
+    const sheetId = await sheetIdForTab(CLIENT_SHEET_ID, t.tab);
+    await getSheetsClient().spreadsheets.batchUpdate({ spreadsheetId: CLIENT_SHEET_ID, requestBody: { requests: [{ deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: idx + 1, endIndex: idx + 2 } } }] } });
+    const gone = rowToClient(rows[idx]);
+    auditLog(auditActorOf(req), 'deleted', b.kind === 'lead' ? 'lead contact' : 'client contact', `${gone.contactName} - ${gone.company}`, gone.email);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('POST /api/contacts/remove error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 /* ======================================================================
    Lead Clients - prospect management
    ====================================================================== */
@@ -5200,6 +5265,80 @@ const DEFAULT_TEMPLATES = [
     "subject": "One month in",
     "body": "Hi {{first_name}},\n\nYou have now been at {{company}} for a month. How are things going with the {{role}} role, and does it feel like the right fit?\n\nI will also check in with {{contact_name}} to make sure everything is going well from their side.\n\n{{signature}}",
     "updated_by": "system"
+  },
+  /* Build 47: templates for the Email button on contacts. Lead templates go out as first-contact emails
+     (branded footer, opt-out and the daily first-contact cap apply). */
+  {
+    "id": "tpl-lead-intro",
+    "name": "Introduction",
+    "category": "Lead",
+    "subject": "Recruitment support for {{company}}",
+    "body": "Hi {{contact_first_name}},\n\nI am {{sender_name}} from Live 2 Help Recruitment. We help businesses across the Midlands hire permanent staff in sales, engineering, technical, operations and office roles, and every candidate we put forward has been screened against the brief before you see them.\n\nIf {{company}} has a role open now, or one coming up in the next few months, I would welcome a 10 minute call to understand what you need.\n\nWould later this week suit you?\n\n{{signature}}",
+    "updated_by": "system"
+  },
+  {
+    "id": "tpl-lead-after-call",
+    "name": "Follow-up after a call",
+    "category": "Lead",
+    "subject": "Good to speak today - {{company}}",
+    "body": "Hi {{contact_first_name}},\n\nThank you for your time on the phone today.\n\nAs promised, here is a short summary of how we work:\n- A screened shortlist, usually within 5 to 7 working days\n- Every candidate checked against your brief before you see them\n- You only pay if you hire\n\n[ADD ANYTHING SPECIFIC YOU DISCUSSED]\n\nIf you send over the job description, I will get started straight away.\n\n{{signature}}",
+    "updated_by": "system"
+  },
+  {
+    "id": "tpl-lead-spec",
+    "name": "Spec candidate introduction",
+    "category": "Lead",
+    "subject": "A candidate who may suit {{company}}",
+    "body": "Hi {{contact_first_name}},\n\nI am working with a candidate who I think could add real value at {{company}}:\n\n[CANDIDATE HEADLINE, e.g. Field Sales Manager, 8 years in building products]\n- [KEY STRENGTH 1]\n- [KEY STRENGTH 2]\n- [LOCATION AND AVAILABILITY]\n\nI can send an anonymised profile today. Would you like to see it?\n\n{{signature}}",
+    "updated_by": "system"
+  },
+  {
+    "id": "tpl-lead-talent-suite",
+    "name": "Talent Suite showcase",
+    "category": "Lead",
+    "subject": "Free hiring tools for {{company}}",
+    "body": "Hi {{contact_first_name}},\n\nWe have built a set of free tools for hiring managers: a role and advert builder, interview kits and scorecards, all written by recruiters.\n\nThey are free to use with no obligation, and the link is at the bottom of this email.\n\nIf you have a role you would rather hand over completely, I would be happy to talk it through. Is there anything you are hiring for at the moment?\n\n{{signature}}",
+    "updated_by": "system"
+  },
+  {
+    "id": "tpl-lead-chase",
+    "name": "Gentle follow-up (no reply)",
+    "category": "Lead",
+    "subject": "Following up - recruitment support for {{company}}",
+    "body": "Hi {{contact_first_name}},\n\nI wanted to follow up on my last email in case it was missed.\n\nIf you have any hiring planned, even a single role, I would be happy to help. If the timing is not right, just let me know and I will check back in a few months.\n\nWould a quick call next week work?\n\n{{signature}}",
+    "updated_by": "system"
+  },
+  {
+    "id": "tpl-client-new-role",
+    "name": "New role check-in",
+    "category": "Client",
+    "subject": "Any hiring coming up at {{company}}?",
+    "body": "Hi {{contact_first_name}},\n\nI hope all is well at {{company}}.\n\nI am planning our search work for the next few weeks and wanted to check whether you have any new roles coming up, or any you are struggling to fill, so we can get ahead of them for you.\n\nWould a quick 10 minute call this week be useful?\n\n{{signature}}",
+    "updated_by": "system"
+  },
+  {
+    "id": "tpl-client-feedback-chase",
+    "name": "Interview feedback chase",
+    "category": "Client",
+    "subject": "Feedback on {{candidate_name}} - {{role}}",
+    "body": "Hi {{contact_first_name}},\n\nThank you for meeting {{candidate_name}} for the {{role}} role.\n\nCould you share your feedback when you have a moment? Even a couple of lines helps, so I can keep {{first_name}} updated and keep momentum on the search.\n\n{{signature}}",
+    "updated_by": "system"
+  },
+  {
+    "id": "tpl-client-invoice-chase",
+    "name": "Invoice reminder",
+    "category": "Client",
+    "subject": "Invoice {{invoice_ref}} - friendly reminder",
+    "body": "Hi {{contact_first_name}},\n\nI hope you are well. This is a friendly reminder that invoice {{invoice_ref}} for the {{role}} placement ({{fee_amount}}) is now due.\n\nCould you let me know when payment is scheduled? If it has already gone, thank you, and please ignore this email.\n\n{{signature}}",
+    "updated_by": "system"
+  },
+  {
+    "id": "tpl-candidate-availability",
+    "name": "Availability check",
+    "category": "Candidate",
+    "subject": "{{role}} - your availability",
+    "body": "Hi {{first_name}},\n\nGood news - {{company}} would like to move forward with you for the {{role}} role.\n\nCould you reply with the days and times you are free over the next week, so I can arrange the interview?\n\n{{signature}}",
+    "updated_by": "system"
   }
 ];
 
@@ -5207,7 +5346,7 @@ let tplMigrated = false;
 async function migrateTemplates() {
   if (tplMigrated) return;
   const all = await templatesTable.listAll();
-  if (all.some(t => t.id === '__templates_v4')) { tplMigrated = true; return; }
+  if (all.some(t => t.id === '__templates_v5')) { tplMigrated = true; return; }
   for (const d of DEFAULT_TEMPLATES) {
     const ex = all.find(t => t.id === d.id);
     if (!ex || ex.updated_by === 'system') await templatesTable.upsert(d);
@@ -5216,7 +5355,7 @@ async function migrateTemplates() {
     const ex = all.find(t => t.id === oldId);
     if (ex && ex.updated_by === 'system') await templatesTable.remove(oldId);
   }
-  await templatesTable.upsert({ id: '__templates_v4', name: 'migration marker', category: '', subject: '', body: '', updated_by: 'system' });
+  await templatesTable.upsert({ id: '__templates_v5', name: 'migration marker', category: '', subject: '', body: '', updated_by: 'system' });
   tplMigrated = true;
 }
 
@@ -12887,7 +13026,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '24 Oct 2026 - build 46 (one-click email, AI spend, spec CV sends)';
+const SERVER_BUILD = '26 Oct 2026 - build 47 (email and call from contacts, contact timeline, activity report)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -15010,16 +15149,22 @@ app.post('/api/mail/send', async (req, res) => {
       message_id: messageId, status: 'sent', event_at: now, ref: String(meta.ref || '').slice(0, 120),
     };
     await mailLogTable.append(row).catch(e => console.error('Email log failed:', e.message));
+    let comm = null;
     if (b.log !== false) {
-      commsTable.append({
+      // Build 47: lowercase channel and direction so the comms log filters match; leads log under the client scope
+      const et = String(meta.entityType || (meta.entity ? 'candidate' : 'client')).toLowerCase();
+      const purpose = String(meta.purpose || '').replace(/[\r\n]+/g, ' ').slice(0, 80);
+      const fu = /^\d{4}-\d{2}-\d{2}$/.test(String(meta.followUp || '')) ? meta.followUp : '';
+      comm = {
         id: 'cm-' + Date.now().toString(36), timestamp: now, user: me,
-        entity_type: meta.entityType || (meta.entity ? 'candidate' : 'client'), entity_name: meta.entity || meta.contactName || to[0],
-        company: meta.company || '', role: meta.role || '', channel: 'Email', direction: 'Out',
-        summary: `${subject}${row.attachments ? ' (attached: ' + row.attachments + ')' : ''}`.slice(0, 480), follow_up_date: '', follow_up_done: '',
-      }).catch(() => {});
+        entity_type: et === 'candidate' ? 'candidate' : 'client', entity_name: meta.contactName || meta.entity || to[0],
+        company: meta.company || '', role: meta.role || '', channel: 'email', direction: 'outbound',
+        summary: `${purpose ? purpose + ': ' : ''}${subject}${row.attachments ? ' (attached: ' + row.attachments + ')' : ''}`.slice(0, 480), follow_up_date: fu, follow_up_done: '',
+      };
+      await commsTable.append(comm).catch(() => { comm = null; });
     }
     auditLog(auditActorOf(req), 'email_sent', kind, to.join(', '), subject);
-    res.json({ ok: true, id: row.id, messageId, counts: { today: counts.today + 1, dailyLimit: MAIL_DAILY_LIMIT } });
+    res.json({ ok: true, id: row.id, messageId, comm, counts: { today: counts.today + 1, dailyLimit: MAIL_DAILY_LIMIT } });
   } catch (e) {
     console.error('POST /api/mail/send error:', e.message);
     res.status(e.aiBudget ? 429 : 502).json({ error: 'The email could not be sent: ' + e.message + '. Nothing went out, so you can try again or use the .eml backup.' });
