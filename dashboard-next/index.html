@@ -13729,7 +13729,7 @@ function ipTuneEmail(subject, body, iv, p){
 
 <script>
 function serverBuildLabel(b){
-  var m = String(b || '').match(/build ([0-9]+)/);
+  var m = String(b || '').match(/build ([0-9]+(?:\.[0-9]+)?)/);
   return (m && parseInt(m[1], 10) >= 6) ? 'build ' + m[1] : 'older';
 }
 </script>
