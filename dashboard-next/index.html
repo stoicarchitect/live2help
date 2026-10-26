@@ -16736,7 +16736,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '26 Oct 2026 - build 47';
+var PAGE_BUILD = '26 Oct 2026 - build 47.1';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -19167,9 +19167,15 @@ function c47FindContact(m){
 
 async function c47ContactEdit(m, err){
   if(!C47E || C47E.m !== m){
-    await Promise.all([loadApplicantClientList(), c47Load(true)]);
-    const rec = c47FindContact(m) || {company:m.company, contactName:m.contactName, email:m.email, timestamp:m.timestamp};
-    C47E = {m, rec:Object.assign({}, rec)};
+    // open straight away from what is already loaded; only fetch when this contact is not in memory yet
+    let rec = c47FindContact(m);
+    if(!rec){
+      const box0 = b46Shell('c47EditOv');
+      box0.innerHTML = '<div class="b46-k">EDIT CONTACT</div><div style="padding:18px 0;color:#777;font-size:13px;">Opening ' + esc(m.contactName || 'contact') + '...</div>';
+      await (m.kind === 'lead' ? c47Load(true) : loadApplicantClientList());
+      rec = c47FindContact(m);
+    }
+    C47E = {m, rec:Object.assign({}, rec || {company:m.company, contactName:m.contactName, email:m.email, timestamp:m.timestamp})};
   }
   const r = C47E.rec, lead = m.kind === 'lead';
   const others = (lead ? (C47.leads || []) : (APPLICANT_CLIENT_LIST || [])).filter(c => c47n(c.company) === c47n(m.company)).length;
