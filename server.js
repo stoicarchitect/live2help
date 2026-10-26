@@ -515,7 +515,9 @@ function getSheetsClient() {
      of failing, and a quota refusal pauses everything briefly before carrying on */
 let sheetsWriteGen = 0; // bumped on every Sheets write so shared read results are dropped straight away
 function sheetsQuotaGuard(client) {
-  const READ_TTL = 8000, PER_MIN = 50;
+  // Build 47.4: reads are kept for 60 seconds. Every write made through this server clears that spreadsheet's
+  // saved reads at once, and application forms post through the server too, so nothing shown goes stale.
+  const READ_TTL = 60000, PER_MIN = 50;
   const cache = new Map();
   const inflight = new Map();
   const reads = [], writes = [];
@@ -13053,7 +13055,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '26 Oct 2026 - build 47.3 (fewer Sheets reads: batched applications, shared board refresh)';
+const SERVER_BUILD = '26 Oct 2026 - build 47.4 (60 second shared read cache)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

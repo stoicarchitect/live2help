@@ -16736,7 +16736,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '26 Oct 2026 - build 47.3';
+var PAGE_BUILD = '26 Oct 2026 - build 47.4';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -18875,20 +18875,26 @@ function c47CompanyCands(company){
 }
 
 async function c47EmailStart(h){
-  C47.mail = {ctx: c47Resolve(h), loading:true, rfxId:h.rfxId || '', tpl:h.tpl, emailStatus:h.emailStatus || ''};
-  const box = b46Shell('c47MailOv');
-  box.innerHTML = '<div class="b46-k">EMAIL</div><div style="padding:18px 0;color:#777;font-size:13px;">Loading the contact and templates...</div>';
-  await Promise.all([c47Load(), c47LoadRfx(), c47LoadBounced()]);
-  if(!C47.mail) return;
-  C47.mail.ctx = c47Resolve(h);
-  if(h.title && !C47.mail.ctx.title) C47.mail.ctx.title = h.title;
-  // leads with a live advert start on the advert introduction
-  const ads47 = C47.mail.ctx.type === 'lead' ? c47AdvertsFor(C47.mail.ctx.company, C47.mail.rfxId) : [];
-  if(C47.mail.tpl === undefined && ads47.length) C47.mail.tpl = 'tpl-lead-live-advert';
-  // a lead found through Role Finder: sending moves its advert on and sets the 4 day follow-up, same as the deep dive
-  if(!C47.mail.rfxId && ads47.length) C47.mail.rfxId = ads47[0].id;
-  C47.mail.loading = false;
+  // Build 47.4: the card opens straight away from what is already loaded; anything missing loads behind it
+  const m = C47.mail = {ctx: c47Resolve(h), loading:true, rfxId:h.rfxId || '', tpl:h.tpl, tplUser: h.tpl !== undefined, emailStatus:h.emailStatus || ''};
+  if(h.title && !m.ctx.title) m.ctx.title = h.title;
+  c47EmailDefaults(m);
   c47EmailRender();
+  await Promise.all([c47Load(), c47LoadRfx(), c47LoadBounced()]);
+  if(C47.mail !== m) return;
+  c47EmailCollect();
+  if(!m.tplUser) m.tpl = h.tpl;
+  // re-check who it is now the directory is loaded; keep anything typed only if it is still unknown
+  { const ctx = c47Resolve(h); if(h.title && !ctx.title) ctx.title = h.title; if(ctx.known || !document.getElementById('c47mType')) m.ctx = ctx; }
+  m.loading = false;
+  c47EmailDefaults(m);
+  c47EmailRender();
+}
+function c47EmailDefaults(m){
+  const ads = m.ctx.type === 'lead' ? c47AdvertsFor(m.ctx.company, m.rfxId) : [];
+  if(!m.tplUser && ads.length) m.tpl = 'tpl-lead-live-advert';
+  // a lead found through Role Finder: sending moves its advert on and sets the 4 day follow-up, same as the deep dive
+  if(!m.rfxId && ads.length) m.rfxId = ads[0].id;
 }
 
 function c47EmailRender(err){
@@ -18917,6 +18923,7 @@ function c47EmailRender(err){
     c47WhoHtml(ctx, ctx.email) +
     c47WarnHtml(ctx.email, m.emailStatus) +
     c47TypeFields('c47m', ctx) +
+    (m.loading ? '<div class="b46-sub" style="margin-top:6px;">Checking adverts and bounce history in the background...</div>' : '') +
     '<label>What is this email for?</label><select id="c47mTpl">' +
       (tp.mine.length ? '<optgroup label="' + c47Attr(C47_CAT[t] || 'Templates') + ' templates">' + tp.mine.map(opt).join('') + '</optgroup>' : '') +
       (tp.general.length ? '<optgroup label="General">' + tp.general.map(opt).join('') + '</optgroup>' : '') +
@@ -18931,6 +18938,8 @@ function c47EmailRender(err){
     '<label style="margin-top:16px;">Recent with this contact</label>' + c47HistoryHtml(c47History(ctx, 5));
   const typeSel = document.getElementById('c47mType');
   if(typeSel) typeSel.onchange = () => { c47EmailCollect(); m.ctx.type = typeSel.value; m.tpl = undefined; c47EmailRender(); };
+  const tplSel = document.getElementById('c47mTpl');
+  if(tplSel) tplSel.addEventListener('change', () => { m.tplUser = true; });
 }
 
 function c47EmailCollect(){
