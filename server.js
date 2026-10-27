@@ -1119,8 +1119,9 @@ function getDriveClient() {
 }
 
 // Build 48.0: a preview request can read Drive but never create, change or remove files
+const drivesGuarded = new WeakSet(); // build 48.2: Google's Drive client cannot take extra properties
 function drivePreviewGuard(drive) {
-  if (drive.__previewGuarded) return drive;
+  if (drivesGuarded.has(drive)) return drive;
   const guard = (obj, names) => names.forEach(n => {
     if (!obj || typeof obj[n] !== 'function') return;
     const orig = obj[n].bind(obj);
@@ -1128,7 +1129,7 @@ function drivePreviewGuard(drive) {
   });
   guard(drive.files, ['create', 'update', 'copy', 'delete', 'emptyTrash']);
   guard(drive.permissions, ['create', 'update', 'delete']);
-  drive.__previewGuarded = true;
+  drivesGuarded.add(drive);
   return drive;
 }
 
@@ -13913,7 +13914,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '27 Oct 2026 - build 48.1 (candidates can move to Postgres)';
+const SERVER_BUILD = '27 Oct 2026 - build 48.2 (Drive fix)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
