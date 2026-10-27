@@ -34,7 +34,7 @@ const inject = `
     b.textContent = 'PREVIEW - test data only. Areas not yet moved are read only and no emails are sent. ';
     b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:2147483647;background:#C9A84C;color:#0B0B18;font:600 12px/1.4 sans-serif;text-align:center;padding:6px 12px;pointer-events:none;';
     var btn = document.createElement('button');
-    btn.textContent = 'Reset test candidates';
+    btn.textContent = 'Reset test data';
     btn.style.cssText = 'pointer-events:auto;margin-left:10px;background:#0B0B18;color:#C9A84C;border:0;border-radius:4px;padding:3px 10px;font:600 12px sans-serif;cursor:pointer;';
     btn.onclick = function(){
       btn.disabled = true; btn.textContent = 'Adding...';
