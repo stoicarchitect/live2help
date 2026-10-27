@@ -121,6 +121,8 @@ const TABLE_GROUPS = {
   'Users': 'auth',
 };
 const SIMPLE_TABLES = []; // every makeSimpleTable table, for import, copy back and the nightly backup
+// build 48.5: tables that are also written directly, so they move as whole tabs (GRID_ROUTES), not as st_ tables
+const WHOLE_TAB_TABLES = new Set(['Role Finder Results', 'Competitors', 'Competitor Adverts']);
 
 const pgIdent = s => '"' + String(s).replace(/"/g, '""') + '"';
 function pgTableName(tab, otherSheet) {
@@ -177,6 +179,10 @@ const GRID_ROUTES = [
   // phase 3: clients, lead clients and cold calls (client sheet) and tasks (tracker sheet)
   { group: 'clients', sheets: () => [SHEET_ID, CLIENT_SHEET_ID], test: (sid, title) =>
     (sid === CLIENT_SHEET_ID && ['Dashboard', 'Lead Clients', 'ColdCalls'].includes(title)) || (sid === SHEET_ID && title === 'Tasks') },
+  // phase 4 (build 48.5): invoices and KPI targets (client sheet)
+  { group: 'finance', sheets: () => [CLIENT_SHEET_ID], test: (sid, title) => sid === CLIENT_SHEET_ID && ['Invoices', 'KPI Targets'].includes(title) },
+  // phase 4 (build 48.5): Role Finder tabs that are also written directly, so they move as whole tabs
+  { group: 'rolefinder', sheets: () => [SHEET_ID], test: (sid, title) => sid === SHEET_ID && WHOLE_TAB_TABLES.has(title) },
 ];
 function gridGroupOf(sid, title) {
   if (!sid || !title) return null;
@@ -623,6 +629,8 @@ const AUTH_ENABLED = !!(AUTH_USERS && AUTH_USERS.length);
 const AUTH_SECRET = process.env.AUTH_SECRET ||
   crypto.createHash('sha256').update('l2h-auth|' + (process.env.GOOGLE_SERVICE_ACCOUNT_JSON || 'dev')).digest('hex');
 const TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
+const EMERGENCY_LOGIN_KEY = String(process.env.EMERGENCY_LOGIN_KEY || '').length >= 32 ? String(process.env.EMERGENCY_LOGIN_KEY) : '';
+if (process.env.EMERGENCY_LOGIN_KEY && !EMERGENCY_LOGIN_KEY) console.error('EMERGENCY_LOGIN_KEY is shorter than 32 characters, so emergency sign in is off.');
 
 function signToken(payload) {
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -761,6 +769,16 @@ app.post('/api/login', async (req, res) => {
   let rec = loginAttempts.get(lockKey);
   if (!rec || rec.reset < now) rec = { count: 0, reset: now + 15 * 60 * 1000 };
   if (rec.count >= 10) return res.status(429).json({ error: 'Too many attempts. Please try again in a few minutes.' });
+  // build 48.5: emergency sign in for an admin, which never reads the Users table (so it works
+  // even if that table is unavailable). Set EMERGENCY_LOGIN_KEY on Render (32+ characters).
+  const emUser = username ? AUTH_USERS.find(u => u.key === username && u.admin) : null;
+  if (emUser && EMERGENCY_LOGIN_KEY && safeEqual(EMERGENCY_LOGIN_KEY, pw)) {
+    loginAttempts.delete(lockKey);
+    console.warn(`Emergency sign in used by ${emUser.key} from ${ip}`);
+    res.json({ token: sessionToken(emUser, { em: true }), user: { key: emUser.key, name: emUser.name, admin: emUser.admin }, mustChange: false });
+    try { auditLog(emUser.key, 'emergency login', 'session', emUser.name, ip); } catch (e) { /* best effort */ }
+    return;
+  }
   let creds;
   try { creds = await loadCreds(); } catch (e) {
     return res.status(503).json({ error: 'Sign in is temporarily unavailable. Please try again in a minute.' });
@@ -5330,7 +5348,9 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
   // Build 48.0: each call goes to Google Sheets or Postgres, decided by the table's group
   const group = TABLE_GROUPS[tab] || 'other';
   const pgName = pgTableName(tab, !!sheetId);
-  const poolNow = () => pgPoolFor(group);
+  // build 48.5: a whole-tab table always goes through the Sheets client, which the router sends to Postgres
+  const wholeTab = !sheetId && WHOLE_TAB_TABLES.has(tab);
+  const poolNow = () => (wholeTab ? null : pgPoolFor(group));
   const pgWrote = () => { sheetsWriteGen++; };
 
   async function ensure() {
@@ -5553,7 +5573,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
       });
     },
   };
-  SIMPLE_TABLES.push(meta);
+  if (!wholeTab) SIMPLE_TABLES.push(meta);
 
   if (path) {
     const g = guard ? [guard] : [];
@@ -13966,7 +13986,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '27 Oct 2026 - build 48.4 (task and cold call deletes on Postgres)';
+const SERVER_BUILD = '27 Oct 2026 - build 48.5 (finance, Role Finder, records, planning and system on Postgres ready; emergency sign in)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
