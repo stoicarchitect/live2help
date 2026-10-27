@@ -377,6 +377,12 @@ async function gridStructural(c, sid, req) {
     await c.query(`update grid_tabs set ${col} = ${col} + $3 where spreadsheet = $1 and sheet_id = $2`, [sid, d.sheetId, d.length || 0]);
     return {};
   }
+  // build 48.4: a whole-row deleteRange (tasks, cold calls) is the same as deleting those rows
+  if (req.deleteRange) {
+    const g = req.deleteRange.range || {};
+    if (req.deleteRange.shiftDimension !== 'ROWS' || g.startColumnIndex != null || g.endColumnIndex != null) throw new Error('Only whole-row deletes are supported for tabs held in the database');
+    return gridStructural(c, sid, { deleteDimension: { range: { sheetId: g.sheetId, dimension: 'ROWS', startIndex: g.startRowIndex, endIndex: g.endRowIndex } } });
+  }
   if (req.deleteDimension) {
     const g = req.deleteDimension.range || {};
     if (g.dimension !== 'ROWS') throw new Error('Only row deletes are supported for tabs held in the database');
@@ -391,8 +397,10 @@ async function gridStructural(c, sid, req) {
     await c.query('update grid_tabs set row_count = greatest(1, row_count - $3) where spreadsheet = $1 and title = $2', [sid, t.title, k]);
     return {};
   }
-  // formatting and other cosmetic requests have no meaning in the database
-  return {};
+  // formatting requests have no meaning in the database; anything else must not be silently ignored
+  const kind = Object.keys(req)[0];
+  if (['repeatCell', 'updateSheetProperties', 'updateDimensionProperties', 'autoResizeDimensions', 'updateBorders', 'mergeCells', 'setDataValidation', 'addConditionalFormatRule'].includes(kind)) return {};
+  throw new Error(`The ${kind} change is not supported for tabs held in the database`);
 }
 
 // The client every part of the server uses. Same methods and answers as the Google client.
@@ -485,6 +493,7 @@ function makeSheetsRouter(real) {
           const id = rq.deleteSheet ? rq.deleteSheet.sheetId
             : rq.appendDimension ? rq.appendDimension.sheetId
             : rq.deleteDimension ? (rq.deleteDimension.range || {}).sheetId
+            : rq.deleteRange ? (rq.deleteRange.range || {}).sheetId
             : rq.updateSheetProperties ? (rq.updateSheetProperties.properties || {}).sheetId
             : rq.repeatCell ? (rq.repeatCell.range || {}).sheetId
             : rq.updateDimensionProperties ? (rq.updateDimensionProperties.range || {}).sheetId
@@ -13957,7 +13966,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '27 Oct 2026 - build 48.3 (clients and tasks can move to Postgres)';
+const SERVER_BUILD = '27 Oct 2026 - build 48.4 (task and cold call deletes on Postgres)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
