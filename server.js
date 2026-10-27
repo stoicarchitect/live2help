@@ -5,6 +5,7 @@ import { AsyncLocalStorage } from 'async_hooks';
 import { google } from 'googleapis';
 import PDFDocument from 'pdfkit';
 import nodemailer from 'nodemailer';
+import pg from 'pg';
 import path from 'path';
 import fs from 'fs';
 import { Readable } from 'stream';
@@ -30,13 +31,135 @@ google.options({
 });
 
 // Build 46: every outgoing request goes through here, so AI calls can be costed and capped
-function fetch(url, opts) { return aiTrackedFetch(url, opts); }
+function fetch(url, opts) {
+  // Build 48.0: a preview request never takes a real payment
+  if (typeof url === 'string' && url.startsWith('https://api.stripe.com/') && String((opts && opts.method) || 'GET').toUpperCase() !== 'GET' && isPreview()) {
+    return Promise.reject(previewBlocked('Stripe'));
+  }
+  return aiTrackedFetch(url, opts);
+}
 const aiCtx = new AsyncLocalStorage();
 
 const app = express();
 app.use(cors());
 // keep the exact bytes for the Stripe webhook so its signature can be checked
 app.use(express.json({ limit: '15mb', verify: (req, res, buf) => { if (req.originalUrl.startsWith('/api/stripe/webhook')) req.rawBody = buf; } }));
+
+/* ======================================================================
+   Build 48.0: storage switch (Google Sheets or Postgres)
+
+   Every makeSimpleTable table belongs to a group (see TABLE_GROUPS). Each group is read and
+   written in Google Sheets unless it is switched on for Postgres:
+   - PG_LIVE_GROUPS (comma list) moves those groups to DATABASE_URL for the live workspace
+   - PG_PREVIEW_GROUPS (comma list) moves those groups to PREVIEW_DATABASE_URL, but only for
+     requests from /dashboard-next (they carry the x-l2h-preview header)
+   Removing a group from the list puts it straight back on Sheets (the fallback).
+   Tables are created automatically from each table's header; nobody creates tables by hand.
+
+   Preview safety: a preview request can never change live data. Google Sheets writes, Drive
+   changes, outgoing emails and Stripe payments are refused or skipped while in preview, so areas
+   not yet moved to Postgres are read only on /dashboard-next.
+   ====================================================================== */
+const storeCtx = new AsyncLocalStorage();
+app.use((req, res, next) => {
+  if (req.get('x-l2h-preview') === '1') return storeCtx.run({ preview: true }, next);
+  next();
+});
+function isPreview() { const s = storeCtx.getStore(); return !!(s && s.preview); }
+function previewBlocked(what) {
+  const e = new Error(`Preview mode: ${what} is read only on /dashboard-next. Nothing was changed.`);
+  e.previewBlocked = true;
+  return e;
+}
+
+function envGroupList(name) {
+  return String(process.env[name] || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+}
+const PG_LIVE_GROUPS = new Set(envGroupList('PG_LIVE_GROUPS'));
+// sign in always reads the live Users table, so 'auth' never moves to the preview database
+const PG_PREVIEW_GROUPS = new Set(envGroupList('PG_PREVIEW_GROUPS').filter(g => g !== 'auth'));
+
+function makePgPool(url, label) {
+  if (!url) return null;
+  let ssl = false;
+  try {
+    const host = new URL(url).hostname;
+    const external = host.includes('.') && host !== 'localhost' && host !== '127.0.0.1';
+    if (process.env.PGSSL === 'on' || (process.env.PGSSL !== 'off' && external)) ssl = { rejectUnauthorized: false };
+  } catch (e) { /* leave ssl off */ }
+  const pool = new pg.Pool({ connectionString: url, ssl, max: 5, idleTimeoutMillis: 30000 });
+  pool.on('error', e => console.error(`Postgres (${label}) connection error:`, e.message));
+  return pool;
+}
+const pgLivePool = makePgPool(process.env.DATABASE_URL, 'live');
+const pgPreviewPool = (process.env.PREVIEW_DATABASE_URL && process.env.PREVIEW_DATABASE_URL === process.env.DATABASE_URL)
+  ? (console.error('PREVIEW_DATABASE_URL is the same as DATABASE_URL. Preview must use its own test database, so preview stays on Sheets.'), null)
+  : makePgPool(process.env.PREVIEW_DATABASE_URL, 'preview');
+
+// Which Postgres database (if any) this call should use for a group. null means Google Sheets.
+function pgPoolFor(group) {
+  if (isPreview()) return (pgPreviewPool && PG_PREVIEW_GROUPS.has(group)) ? pgPreviewPool : null;
+  return (pgLivePool && PG_LIVE_GROUPS.has(group)) ? pgLivePool : null;
+}
+
+// Phase 2: candidates, phase 3: clients, phase 4: the rest
+const TABLE_GROUPS = {
+  'Applicant Roles': 'candidates', 'Candidate Details': 'candidates', 'Submission Drafts': 'candidates',
+  'Interview Packs': 'candidates', 'Offer Details': 'candidates', 'Compliance': 'candidates', 'Signatures': 'candidates',
+  'Pool CV Index': 'candidates', 'Pool Match Scores': 'candidates', 'Spec CVs': 'candidates', 'Spec Sends': 'candidates',
+  'Spec Checkins': 'candidates', 'Referrals': 'candidates',
+  'Client Sites': 'clients', 'Client Terms': 'clients', 'Client Feedback': 'clients', 'Comms Log': 'clients',
+  'Lead Pipeline': 'clients', 'Funnel Leads': 'clients', 'Site Details': 'clients', 'Reply Links': 'clients',
+  'Employees': 'hr', 'Holiday Requests': 'hr', 'Absences': 'hr', 'HR Documents': 'hr', 'Reviews': 'hr', 'Commission': 'hr',
+  'Role Finder Searches': 'rolefinder', 'Role Finder Results': 'rolefinder', 'Agency Block List': 'rolefinder',
+  'Role Finder Dismissed': 'rolefinder', 'Competitors': 'rolefinder', 'Competitor Adverts': 'rolefinder',
+  'Talent Suite Users': 'talentsuite', 'Talent Suite Orders': 'talentsuite', 'Credit Purchases': 'talentsuite',
+  'Week Plans': 'planning', 'Roadmap': 'planning', 'Marketing': 'planning', 'Ad Spend': 'planning',
+  'Roles': 'records', 'Role Notes': 'records', 'Role Briefs': 'records', 'Placements': 'records',
+  'Interviews': 'records', 'Templates': 'records', 'Activity': 'records',
+  'Audit Log': 'system', 'Email Log': 'system', 'AI Usage': 'system', 'Settings': 'system', 'Suppression List': 'system',
+  'Users': 'auth',
+};
+const SIMPLE_TABLES = []; // every makeSimpleTable table, for import, copy back and the nightly backup
+
+const pgIdent = s => '"' + String(s).replace(/"/g, '""') + '"';
+function pgTableName(tab, otherSheet) {
+  const slug = String(tab).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 50);
+  return (otherSheet ? 'hr_' : 'st_') + slug;
+}
+const pgEnsured = new WeakMap(); // pool -> Map(table name -> promise)
+function pgEnsureTable(pool, name, header, seed) {
+  let m = pgEnsured.get(pool);
+  if (!m) { m = new Map(); pgEnsured.set(pool, m); }
+  if (!m.has(name)) {
+    const p = (async () => {
+      const t = pgIdent(name);
+      const had = (await pool.query('select to_regclass($1) as t', [name])).rows[0].t;
+      await pool.query(`create table if not exists ${t} (_row bigserial primary key, ${header.map(h => `${pgIdent(h)} text`).join(', ')})`);
+      // columns added to a header in later builds appear automatically
+      await pool.query(`alter table ${t} ${header.map(h => `add column if not exists ${pgIdent(h)} text`).join(', ')}`);
+      await pool.query(`create index if not exists ${pgIdent(name + '_key')} on ${t} (${pgIdent(header[0])})`);
+      if (!had && seed && seed.length) await pgInsertRows(pool, name, header, seed.map(o => header.map(h => (o[h] == null ? '' : String(o[h])))));
+    })();
+    p.catch(() => m.delete(name)); // a failed attempt is tried again next time
+    m.set(name, p);
+  }
+  return m.get(name);
+}
+async function pgInsertRows(client, name, header, rows) {
+  const cols = header.map(pgIdent).join(', ');
+  const per = Math.max(1, Math.floor(20000 / header.length));
+  for (let i = 0; i < rows.length; i += per) {
+    const chunk = rows.slice(i, i + per);
+    const params = [];
+    const values = chunk.map(r => '(' + header.map((h, j) => { params.push(r[j] == null ? '' : String(r[j])); return '$' + params.length; }).join(', ') + ')');
+    await client.query(`insert into ${pgIdent(name)} (${cols}) values ${values.join(', ')}`, params);
+  }
+}
+async function pgReadAll(pool, name, header) {
+  const r = await pool.query({ text: `select ${header.map(pgIdent).join(', ')} from ${pgIdent(name)} order by _row`, rowMode: 'array' });
+  return r.rows.map(row => row.map(v => (v == null ? '' : v)));
+}
 
 /* ======================================================================
    Server-side login (Batch 3)
@@ -561,6 +684,7 @@ function sheetsQuotaGuard(client) {
   const wrapWrite = (obj, name) => {
     const orig = obj[name].bind(obj);
     obj[name] = async (params = {}, ...rest) => {
+      if (isPreview()) throw previewBlocked('Google Sheets'); // build 48.0
       sheetsWriteGen++;
       clearFor(params.spreadsheetId);
       try { return await run(writes, () => orig(params, ...rest)); }
@@ -579,8 +703,22 @@ function sheetsQuotaGuard(client) {
 function getDriveClient() {
   if (driveClientCache) return driveClientCache;
   const auth = getAuthClient();
-  driveClientCache = google.drive({ version: 'v3', auth });
+  driveClientCache = drivePreviewGuard(google.drive({ version: 'v3', auth }));
   return driveClientCache;
+}
+
+// Build 48.0: a preview request can read Drive but never create, change or remove files
+function drivePreviewGuard(drive) {
+  if (drive.__previewGuarded) return drive;
+  const guard = (obj, names) => names.forEach(n => {
+    if (!obj || typeof obj[n] !== 'function') return;
+    const orig = obj[n].bind(obj);
+    obj[n] = (...args) => (isPreview() ? Promise.reject(previewBlocked('Google Drive')) : orig(...args));
+  });
+  guard(drive.files, ['create', 'update', 'copy', 'delete', 'emptyTrash']);
+  guard(drive.permissions, ['create', 'update', 'delete']);
+  drive.__previewGuarded = true;
+  return drive;
 }
 
 // Drive client used for creating folders and saving CV files.
@@ -597,7 +735,7 @@ function getUploadDriveClient() {
   if (oauthUploadsConfigured()) {
     const oauth = new google.auth.OAuth2(process.env.GOOGLE_OAUTH_CLIENT_ID, process.env.GOOGLE_OAUTH_CLIENT_SECRET);
     oauth.setCredentials({ refresh_token: process.env.GOOGLE_OAUTH_REFRESH_TOKEN });
-    uploadDriveCache = google.drive({ version: 'v3', auth: oauth });
+    uploadDriveCache = drivePreviewGuard(google.drive({ version: 'v3', auth: oauth }));
   } else {
     uploadDriveCache = getDriveClient();
   }
@@ -2456,6 +2594,17 @@ const emailTransporter = nodemailer.createTransport({
     pass: process.env.BREVO_SMTP_PASS,
   },
 });
+// Build 48.0: emails asked for from /dashboard-next are not sent
+{
+  const realSendMail = emailTransporter.sendMail.bind(emailTransporter);
+  emailTransporter.sendMail = async (msg, ...rest) => {
+    if (isPreview()) {
+      console.log('Preview mode: email not sent:', msg && msg.subject);
+      return { messageId: 'preview-not-sent', accepted: [], rejected: [], preview: true };
+    }
+    return realSendMail(msg, ...rest);
+  };
+}
 // Every email shows "Live 2 Help Recruitment" as the sender name. Sent over SMTP, the From line decides the name
 // the inbox shows (not the Brevo sender settings), and a bare address made Gmail show "office".
 const EMAIL_FROM_NAME = process.env.EMAIL_FROM_NAME || 'Live 2 Help Recruitment';
@@ -4749,8 +4898,15 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
   let ready = false;
   let chain = Promise.resolve();
   const lock = fn => { const run = chain.then(fn); chain = run.catch(() => {}); return run; };
+  // Build 48.0: each call goes to Google Sheets or Postgres, decided by the table's group
+  const group = TABLE_GROUPS[tab] || 'other';
+  const pgName = pgTableName(tab, !!sheetId);
+  const poolNow = () => pgPoolFor(group);
+  const pgWrote = () => { sheetsWriteGen++; };
 
   async function ensure() {
+    const pool = poolNow();
+    if (pool) return pgEnsureTable(pool, pgName, header, seed);
     if (ready) return;
     const sheets = getSheetsClient();
     const ss = await sheets.spreadsheets.get({ spreadsheetId: SID_OF(), fields: 'sheets.properties.title' });
@@ -4786,12 +4942,17 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
   // Every write through this table clears it, so reads after a write are always fresh.
   let cache = null;
   const invalidate = () => { cache = null; };
-  async function readRows() {
-    await ensure();
-    if (cache && Date.now() - cache.at < 3000) return cache.rows.map(r => r.slice());
+  async function sheetsReadRows() {
     const sheets = getSheetsClient();
     const r = await sheets.spreadsheets.values.get({ spreadsheetId: SID_OF(), range: `'${tab}'!A2:${lastCol}` });
-    const rows = r.data.values || [];
+    return r.data.values || [];
+  }
+  async function readRows() {
+    await ensure();
+    const pool = poolNow();
+    if (pool) return pgReadAll(pool, pgName, header);
+    if (cache && Date.now() - cache.at < 3000) return cache.rows.map(r => r.slice());
+    const rows = await sheetsReadRows();
     cache = { at: Date.now(), rows };
     return rows.map(x => x.slice());
   }
@@ -4803,12 +4964,27 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
   };
   const toObj = row => { const r = pad(row); const o = {}; header.forEach((h, i) => { o[h] = r[i]; }); return o; };
   const toRow = o => header.map(h => (o[h] == null ? '' : String(o[h])));
+  const setCols = header.map((h, i) => `${pgIdent(h)} = $${i + 1}`).join(', ');
+  const firstRowOf = async (pool, id) => {
+    const r = await pool.query(`select _row from ${pgIdent(pgName)} where ${pgIdent(header[0])} = $1 order by _row limit 1`, [id]);
+    return r.rows[0] ? r.rows[0]._row : null;
+  };
 
   async function listAll() { return (await readRows()).filter(r => r && r[0]).map(toObj); }
   async function list() { return (await listAll()).filter(o => !String(o.id).startsWith('__')); }
 
   function upsert(obj) {
     return lock(async () => {
+      const pool = poolNow();
+      if (pool) {
+        await ensure();
+        const row = toRow(obj);
+        const at = await firstRowOf(pool, row[0]);
+        if (at == null) await pgInsertRows(pool, pgName, header, [row]);
+        else await pool.query(`update ${pgIdent(pgName)} set ${setCols} where _row = $${width + 1}`, [...row, at]);
+        pgWrote();
+        return toObj(row);
+      }
       const sheets = getSheetsClient();
       const rows = await readRows();
       const idx = rows.findIndex(r => r && r[0] === obj.id);
@@ -4833,6 +5009,12 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
   function append(obj) {
     return lock(async () => {
       await ensure();
+      const pool = poolNow();
+      if (pool) {
+        await pgInsertRows(pool, pgName, header, [toRow(obj)]);
+        pgWrote();
+        return toObj(toRow(obj));
+      }
       invalidate();
       const sheets = getSheetsClient();
       await sheets.spreadsheets.values.append({
@@ -4845,6 +5027,15 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
 
   function remove(id) {
     return lock(async () => {
+      const pool = poolNow();
+      if (pool) {
+        await ensure();
+        const at = await firstRowOf(pool, id);
+        if (at == null) return false;
+        await pool.query(`delete from ${pgIdent(pgName)} where _row = $1`, [at]);
+        pgWrote();
+        return true;
+      }
       const sheets = getSheetsClient();
       const rows = await readRows();
       const idx = rows.findIndex(r => r && r[0] === id);
@@ -4858,6 +5049,29 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
 
   function updateWhere(pred, mutate) {
     return lock(async () => {
+      const pool = poolNow();
+      if (pool) {
+        await ensure();
+        const r = await pool.query({ text: `select _row, ${header.map(pgIdent).join(', ')} from ${pgIdent(pgName)} order by _row`, rowMode: 'array' });
+        const changes = [];
+        r.rows.forEach(([at, ...vals]) => {
+          const row = vals.map(v => (v == null ? '' : v));
+          if (!row[0]) return;
+          const o = toObj(row);
+          if (pred(o)) changes.push([at, toRow(mutate({ ...o }) || o)]);
+        });
+        if (changes.length) {
+          const c = await pool.connect();
+          try {
+            await c.query('begin');
+            for (const [at, row] of changes) await c.query(`update ${pgIdent(pgName)} set ${setCols} where _row = $${width + 1}`, [...row, at]);
+            await c.query('commit');
+          } catch (e) { await c.query('rollback').catch(() => {}); throw e; }
+          finally { c.release(); }
+          pgWrote();
+        }
+        return changes.length;
+      }
       const sheets = getSheetsClient();
       const rows = await readRows();
       const data = [];
@@ -4876,6 +5090,37 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
       return data.length;
     });
   }
+
+  // Build 48.0: used by the one-off import, the copy back to Sheets and the nightly backup
+  const meta = {
+    tab, header, group, pgName, label, spreadsheetId: SID_OF, lastCol,
+    async sheetsRows() { return (await sheetsReadRows()).filter(r => r && r[0]).map(pad); },
+    async pgRows(pool) { await pgEnsureTable(pool, pgName, header, null); return (await pgReadAll(pool, pgName, header)).filter(r => r[0]); },
+    async replacePg(pool, rows) {
+      await pgEnsureTable(pool, pgName, header, null);
+      const c = await pool.connect();
+      try {
+        await c.query('begin');
+        await c.query(`delete from ${pgIdent(pgName)}`);
+        await pgInsertRows(c, pgName, header, rows);
+        await c.query('commit');
+      } catch (e) { await c.query('rollback').catch(() => {}); throw e; }
+      finally { c.release(); }
+      pgWrote();
+    },
+    async replaceSheets(rows) {
+      await lock(async () => {
+        const sheets = getSheetsClient();
+        invalidate();
+        await sheets.spreadsheets.values.clear({ spreadsheetId: SID_OF(), range: `'${tab}'!A2:${lastCol}` });
+        await sheetsEnsureGrid(SID_OF(), tab, rows.length + 2, width);
+        if (rows.length) await sheets.spreadsheets.values.update({
+          spreadsheetId: SID_OF(), range: `'${tab}'!A2:${lastCol}${rows.length + 1}`, valueInputOption: 'RAW', requestBody: { values: rows },
+        });
+      });
+    },
+  };
+  SIMPLE_TABLES.push(meta);
 
   if (path) {
     const g = guard ? [guard] : [];
@@ -4914,7 +5159,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
       } catch (e) { console.error(`DELETE ${path} error:`, e.message); res.status(500).json({ error: e.message }); }
     });
   }
-  return { list, listAll, upsert, append, remove, updateWhere, ensure, invalidate };
+  return { list, listAll, upsert, append, remove, updateWhere, ensure, invalidate, meta };
 }
 
 /* ---------- Users (personal passwords, stored as hashes only) ---------- */
@@ -8232,7 +8477,11 @@ async function alertDan(kind, subject, text) {
 }
 
 /* ---------- Health and keep-alive ---------- */
-app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
+app.get('/api/health', (req, res) => res.json({
+  ok: true, time: new Date().toISOString(),
+  // build 48.0: which storage this request is using (preview shows its own groups)
+  storage: { preview: isPreview(), postgres_groups: [...(isPreview() ? PG_PREVIEW_GROUPS : PG_LIVE_GROUPS)], database: !!(isPreview() ? pgPreviewPool : pgLivePool) },
+}));
 
 if (process.env.RENDER_EXTERNAL_URL) {
   setInterval(() => {
@@ -8334,7 +8583,10 @@ async function runBackup() {
       await drive.files.update({ fileId: f.id, requestBody: { trashed: true } });
     }
   }
-  const status = { at: new Date().toISOString(), ok: true, made, methods, folderId };
+  // Build 48.0: the data held in Postgres goes into its own dated, readable Google Sheet
+  const database = await backupDatabaseToDrive(drive, folderId, date);
+  if (database && !database.skipped) made.push(database.name);
+  const status = { at: new Date().toISOString(), ok: true, made, methods, folderId, database };
   await settingsTable.upsert({ id: 'backup_last', value: JSON.stringify(status), updated_by: 'system' });
   return status;
 }
@@ -8393,6 +8645,120 @@ app.get('/api/backup/status', requireAdmin, async (req, res) => {
     res.json(row ? JSON.parse(row.value) : { ok: null });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+/* ---------- Build 48.0: storage switch tools (admin only, live workspace only) ---------- */
+function storageGuard(req, res) {
+  if (isPreview()) { res.status(400).json({ error: 'Storage tools only run from the live workspace, not /dashboard-next.' }); return false; }
+  if (!pgLivePool) { res.status(400).json({ error: 'DATABASE_URL is not set on the server.' }); return false; }
+  return true;
+}
+const storageGroupNames = () => [...new Set(SIMPLE_TABLES.map(t => t.group))].sort();
+
+app.get('/api/storage/status', requireAdmin, async (req, res) => {
+  try {
+    const out = {
+      build: SERVER_BUILD,
+      live_database: !!pgLivePool, preview_database: !!pgPreviewPool,
+      database_plan: process.env.DATABASE_PLAN || 'not set',
+      live_groups: [...PG_LIVE_GROUPS], preview_groups: [...PG_PREVIEW_GROUPS],
+      groups: {},
+    };
+    for (const g of storageGroupNames()) {
+      const tables = [];
+      for (const t of SIMPLE_TABLES.filter(x => x.group === g)) {
+        let rows = null;
+        if (pgLivePool) {
+          const had = (await pgLivePool.query('select to_regclass($1) as t', [t.pgName])).rows[0].t;
+          rows = had ? +(await pgLivePool.query(`select count(*)::int as n from ${pgIdent(t.pgName)} where coalesce(${pgIdent(t.header[0])}, '') <> ''`)).rows[0].n : 0;
+        }
+        tables.push({ tab: t.tab, postgres_rows: rows });
+      }
+      out.groups[g] = { live: PG_LIVE_GROUPS.has(g) ? 'postgres' : 'sheets', preview: PG_PREVIEW_GROUPS.has(g) ? 'postgres (test data)' : 'sheets (read only)', tables };
+    }
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// One-off copy of a group's Google Sheets tabs into the live database, before the group is switched on.
+app.post('/api/storage/import', requireAdmin, async (req, res) => {
+  try {
+    if (!storageGuard(req, res)) return;
+    if (process.env.DATABASE_PLAN !== 'paid') return res.status(400).json({ error: 'Set DATABASE_PLAN=paid on Render first. Real data never goes into a free database (it is deleted after 30 days).' });
+    const group = String((req.body || {}).group || '').toLowerCase();
+    const tables = SIMPLE_TABLES.filter(t => t.group === group);
+    if (!tables.length) return res.status(400).json({ error: `Unknown group. Groups: ${storageGroupNames().join(', ')}` });
+    if (PG_LIVE_GROUPS.has(group)) return res.status(400).json({ error: `${group} is already live on Postgres, so importing would overwrite newer data. Take it out of PG_LIVE_GROUPS first.` });
+    const result = [];
+    for (const t of tables) {
+      const rows = await t.sheetsRows();
+      await t.replacePg(pgLivePool, rows);
+      const back = await t.pgRows(pgLivePool);
+      result.push({ tab: t.tab, sheets_rows: rows.length, postgres_rows: back.length, match: rows.length === back.length });
+    }
+    auditLog(auditActorOf(req), 'imported', 'storage', group, result.map(r => `${r.tab} ${r.postgres_rows}`).join(', '));
+    res.json({ ok: result.every(r => r.match), group, tables: result });
+  } catch (e) { console.error('Storage import error:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Fallback: copy a live group's Postgres data back over its Google Sheets tabs, so Sheets can take over again.
+app.post('/api/storage/copy-back', requireAdmin, async (req, res) => {
+  try {
+    if (!storageGuard(req, res)) return;
+    const group = String((req.body || {}).group || '').toLowerCase();
+    const tables = SIMPLE_TABLES.filter(t => t.group === group);
+    if (!tables.length) return res.status(400).json({ error: `Unknown group. Groups: ${storageGroupNames().join(', ')}` });
+    if (!PG_LIVE_GROUPS.has(group)) return res.status(400).json({ error: `${group} is not live on Postgres, so Sheets already holds its data.` });
+    const result = [];
+    for (const t of tables) {
+      const rows = await t.pgRows(pgLivePool);
+      await t.replaceSheets(rows);
+      result.push({ tab: t.tab, rows: rows.length });
+    }
+    auditLog(auditActorOf(req), 'copied back', 'storage', group, result.map(r => `${r.tab} ${r.rows}`).join(', '));
+    res.json({ ok: true, group, tables: result, next: `Now remove ${group} from PG_LIVE_GROUPS on Render.` });
+  } catch (e) { console.error('Storage copy back error:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Nightly: everything held in the live database, as a readable dated Google Sheet in the backup folder
+async function backupDatabaseToDrive(drive, folderId, date) {
+  if (!pgLivePool || !PG_LIVE_GROUPS.size) return null;
+  const tables = SIMPLE_TABLES.filter(t => PG_LIVE_GROUPS.has(t.group));
+  if (!tables.length) return null;
+  const name = `Workspace database backup ${date}`;
+  const existing = await drive.files.list({ q: `'${folderId}' in parents and name='${name}' and trashed=false`, fields: 'files(id)', pageSize: 1 });
+  if (existing.data.files && existing.data.files.length) return { name, skipped: 'already made today' };
+  const file = await drive.files.create({ requestBody: { name, mimeType: 'application/vnd.google-apps.spreadsheet', parents: [folderId] }, fields: 'id' });
+  const fileId = file.data.id;
+  const bot = botEmail();
+  if (bot) await drive.permissions.create({ fileId, sendNotificationEmail: false, requestBody: { type: 'user', role: 'writer', emailAddress: bot } });
+  const sheets = getSheetsClient();
+  const titleOf = t => (t.pgName.startsWith('hr_') ? 'HR - ' : '') + t.tab;
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: fileId, fields: 'sheets.properties' });
+  const starter = (meta.data.sheets || [])[0];
+  const data = [];
+  const requests = [];
+  let total = 0;
+  for (const t of tables) {
+    const rows = (await t.pgRows(pgLivePool)).map(r => r.map(v => (v.length > 49000 ? v.slice(0, 49000) + ' [cut for backup]' : v)));
+    total += rows.length;
+    requests.push({ addSheet: { properties: { title: titleOf(t), gridProperties: { rowCount: rows.length + 10, columnCount: Math.max(t.header.length, 1) } } } });
+    data.push({ range: `'${titleOf(t).replace(/'/g, "''")}'!A1`, values: [t.header, ...rows] });
+  }
+  if (starter) requests.push({ deleteSheet: { sheetId: starter.properties.sheetId } });
+  await sheets.spreadsheets.batchUpdate({ spreadsheetId: fileId, requestBody: { requests } });
+  // written in parts so one large table never makes the request too big
+  let part = [], size = 0;
+  const flush = async () => { if (part.length) await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: fileId, requestBody: { valueInputOption: 'RAW', data: part } }); part = []; size = 0; };
+  for (const d of data) {
+    const bytes = JSON.stringify(d.values).length;
+    if (size + bytes > 4000000) await flush();
+    part.push(d); size += bytes;
+  }
+  await flush();
+  const all = await drive.files.list({ q: `'${folderId}' in parents and name contains 'Workspace database backup' and trashed=false`, orderBy: 'createdTime desc', fields: 'files(id)', pageSize: 100 });
+  for (const f of (all.data.files || []).slice(BACKUP_KEEP)) await drive.files.update({ fileId: f.id, requestBody: { trashed: true } });
+  return { name, tables: tables.length, rows: total };
+}
 
 /* ---------- KPI engine (replaces the old placeholder maths) ---------- */
 function quarterBounds(label) {
@@ -13055,7 +13421,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '26 Oct 2026 - build 47.4 (60 second shared read cache)';
+const SERVER_BUILD = '27 Oct 2026 - build 48.0 (storage switch: Sheets or Postgres)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
