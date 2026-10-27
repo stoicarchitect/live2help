@@ -162,6 +162,414 @@ async function pgReadAll(pool, name, header) {
 }
 
 /* ======================================================================
+   Build 48.1: whole Google Sheets tabs held in Postgres ("grid" store)
+
+   The candidate pipeline, the Applications tabs and the Candidate Pool are read and written
+   by many parts of the server using row numbers and column letters. Rather than rewrite each
+   of them, getSheetsClient() hands back a router: calls for a tab listed in GRID_ROUTES go to
+   Postgres when that tab's group is switched on, and every other call goes to Google Sheets
+   exactly as before. Postgres keeps each tab as rows of cells with the same row numbers, so
+   every existing read, write, append, clear and row delete behaves the same, just faster.
+   ====================================================================== */
+const GRID_ROUTES = [
+  // phase 2: the candidate pipeline (Dashboard tab), every Applications tab and the Candidate Pool
+  { group: 'candidates', test: (sid, title) => sid === SHEET_ID && (title === 'Dashboard' || title === 'Candidate Pool' || /^Applications - /.test(title)) },
+];
+function gridGroupOf(sid, title) {
+  if (!sid || !title) return null;
+  const r = GRID_ROUTES.find(x => x.test(sid, title));
+  return r ? r.group : null;
+}
+function gridPoolFor(sid, title) { const g = gridGroupOf(sid, title); return g ? pgPoolFor(g) : null; }
+// every database that holds tabs of this spreadsheet for this call (live or preview)
+function gridPoolsForSheet(sid) {
+  const out = [];
+  for (const r of GRID_ROUTES) {
+    const pool = pgPoolFor(r.group);
+    if (pool && !out.includes(pool)) out.push(pool);
+  }
+  return sid === SHEET_ID ? out : [];
+}
+
+const gridSchemaReady = new WeakMap();
+function gridSchema(pool) {
+  if (!gridSchemaReady.has(pool)) {
+    const p = pool.query(`
+      create table if not exists grid_tabs (
+        spreadsheet text not null, title text not null, sheet_id bigint not null unique,
+        row_count int not null default 1000, col_count int not null default 26, frozen int not null default 0,
+        created_at timestamptz not null default now(), primary key (spreadsheet, title));
+      create sequence if not exists grid_sheet_ids start 2000000001;
+      create table if not exists grid_rows (
+        spreadsheet text not null, title text not null, r int not null, cells text[] not null,
+        primary key (spreadsheet, title, r));`);
+    p.catch(() => gridSchemaReady.delete(pool));
+    gridSchemaReady.set(pool, p);
+  }
+  return gridSchemaReady.get(pool);
+}
+
+function gridColNum(letters) { let n = 0; for (const ch of String(letters).toUpperCase()) n = n * 26 + (ch.charCodeAt(0) - 64); return n; }
+function gridColLetter(n) { let s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+const GRID_MAX = 2147483647;
+function gridParse(range) {
+  const m = String(range).match(/^(?:'((?:[^']|'')+)'|([^!]+))(?:!(.*))?$/);
+  if (!m) throw new Error(`Unable to parse range: ${range}`);
+  const title = m[1] != null ? m[1].replace(/''/g, "'") : m[2];
+  const ref = (m[3] || '').trim();
+  if (!ref) return { title, c1: 1, r1: 1, c2: GRID_MAX, r2: GRID_MAX };
+  const p = ref.match(/^([A-Za-z]*)(\d*)(?::([A-Za-z]*)(\d*))?$/);
+  if (!p) throw new Error(`Unable to parse range: ${range}`);
+  const c1 = p[1] ? gridColNum(p[1]) : 1, r1 = p[2] ? +p[2] : 1;
+  if (p[3] == null && p[4] == null) return { title, c1, r1, c2: p[1] ? c1 : GRID_MAX, r2: p[2] ? r1 : GRID_MAX };
+  return { title, c1, r1, c2: p[3] ? gridColNum(p[3]) : GRID_MAX, r2: p[4] ? +p[4] : GRID_MAX };
+}
+const gridQuote = t => `'${String(t).replace(/'/g, "''")}'`;
+function gridLabel(a, rows, cols) {
+  const end = a.c2 === GRID_MAX ? gridColLetter(Math.max(a.c1, a.c1 + Math.max(cols, 1) - 1)) : gridColLetter(a.c2);
+  const last = a.r2 === GRID_MAX ? a.r1 + Math.max(rows, 1) - 1 : a.r2;
+  return `${gridQuote(a.title)}!${gridColLetter(a.c1)}${a.r1}:${end}${last}`;
+}
+const gridTrim = arr => { let n = arr.length; while (n && (arr[n - 1] == null || arr[n - 1] === '')) n--; return arr.slice(0, n).map(v => (v == null ? '' : v)); };
+
+async function gridTx(pool, fn) {
+  await gridSchema(pool);
+  const c = await pool.connect();
+  try {
+    await c.query('begin');
+    const out = await fn(c);
+    await c.query('commit');
+    sheetsWriteGen++;
+    return out;
+  } catch (e) { await c.query('rollback').catch(() => {}); throw e; }
+  finally { c.release(); }
+}
+async function gridEnsureTab(c, sid, title, props) {
+  const g = (props && props.gridProperties) || {};
+  await c.query(`insert into grid_tabs (spreadsheet, title, sheet_id, row_count, col_count, frozen)
+    values ($1, $2, nextval('grid_sheet_ids'), $3, $4, $5) on conflict (spreadsheet, title) do nothing`,
+    [sid, title, g.rowCount || 1000, g.columnCount || 26, g.frozenRowCount || 0]);
+  return (await c.query('select * from grid_tabs where spreadsheet = $1 and title = $2 for update', [sid, title])).rows[0];
+}
+
+async function gridGet(pool, sid, range) {
+  await gridSchema(pool);
+  const a = gridParse(range);
+  const r = await pool.query('select r, cells from grid_rows where spreadsheet = $1 and title = $2 and r >= $3 and r <= $4 order by r',
+    [sid, a.title, a.r1, a.r2]);
+  const out = [];
+  let width = 0;
+  for (const row of r.rows) {
+    const win = gridTrim(row.cells.slice(a.c1 - 1, a.c2 === GRID_MAX ? undefined : a.c2));
+    if (!win.length) continue;
+    out[row.r - a.r1] = win;
+    width = Math.max(width, win.length);
+  }
+  for (let i = 0; i < out.length; i++) if (!out[i]) out[i] = [];
+  const res = { range: gridLabel(a, out.length, width), majorDimension: 'ROWS' };
+  if (out.length) res.values = out;
+  return res;
+}
+// write a block of values with its top left cell at (r1, c1); null leaves a cell as it is
+async function gridWriteBlock(c, sid, title, r1, c1, values) {
+  if (!values || !values.length) return 0;
+  const rowsAt = values.map((_, i) => r1 + i);
+  const have = new Map((await c.query('select r, cells from grid_rows where spreadsheet = $1 and title = $2 and r = any($3::int[]) for update',
+    [sid, title, rowsAt])).rows.map(x => [x.r, x.cells]));
+  for (let i = 0; i < values.length; i++) {
+    const r = r1 + i;
+    const cells = (have.get(r) || []).slice();
+    (values[i] || []).forEach((v, j) => {
+      if (v === null || v === undefined) return;
+      const k = c1 - 1 + j;
+      while (cells.length < k) cells.push('');
+      cells[k] = typeof v === 'string' ? v : String(v);
+    });
+    const tidy = gridTrim(cells);
+    if (tidy.length) {
+      await c.query(`insert into grid_rows (spreadsheet, title, r, cells) values ($1, $2, $3, $4)
+        on conflict (spreadsheet, title, r) do update set cells = excluded.cells`, [sid, title, r, tidy]);
+    } else if (have.has(r)) {
+      await c.query('delete from grid_rows where spreadsheet = $1 and title = $2 and r = $3', [sid, title, r]);
+    }
+  }
+  return values.length;
+}
+async function gridUpdate(pool, sid, range, values) {
+  const a = gridParse(range);
+  return gridTx(pool, async c => {
+    await gridEnsureTab(c, sid, a.title);
+    const n = await gridWriteBlock(c, sid, a.title, a.r1, a.c1, values);
+    const cols = Math.max(0, ...(values || []).map(v => (v || []).length));
+    return { spreadsheetId: sid, updatedRange: gridLabel({ ...a, c2: GRID_MAX, r2: GRID_MAX }, n, cols), updatedRows: n, updatedColumns: cols, updatedCells: n * cols };
+  });
+}
+async function gridAppend(pool, sid, range, values) {
+  const a = gridParse(range);
+  return gridTx(pool, async c => {
+    await gridEnsureTab(c, sid, a.title); // locks the tab, so two appends never land on the same row
+    const last = (await c.query('select coalesce(max(r), 0) as m from grid_rows where spreadsheet = $1 and title = $2 and r >= $3 and r <= $4',
+      [sid, a.title, a.r1, a.r2])).rows[0].m;
+    const start = Math.max(last + 1, a.r1);
+    const n = await gridWriteBlock(c, sid, a.title, start, a.c1, values);
+    const cols = Math.max(0, ...(values || []).map(v => (v || []).length));
+    const updatedRange = gridLabel({ ...a, r1: start, c2: GRID_MAX, r2: GRID_MAX }, n, cols);
+    return { spreadsheetId: sid, tableRange: gridLabel(a, last, cols), updates: { spreadsheetId: sid, updatedRange, updatedRows: n, updatedColumns: cols, updatedCells: n * cols } };
+  });
+}
+async function gridClearIn(c, sid, a) {
+  const rows = (await c.query('select r, cells from grid_rows where spreadsheet = $1 and title = $2 and r >= $3 and r <= $4 for update',
+    [sid, a.title, a.r1, a.r2])).rows;
+  for (const row of rows) {
+    const cells = row.cells.slice();
+    const end = Math.min(cells.length, a.c2 === GRID_MAX ? cells.length : a.c2);
+    for (let k = a.c1 - 1; k < end; k++) cells[k] = '';
+    const tidy = gridTrim(cells);
+    if (tidy.length) await c.query('update grid_rows set cells = $4 where spreadsheet = $1 and title = $2 and r = $3', [sid, a.title, row.r, tidy]);
+    else await c.query('delete from grid_rows where spreadsheet = $1 and title = $2 and r = $3', [sid, a.title, row.r]);
+  }
+}
+async function gridClear(pool, sid, range) {
+  const a = gridParse(range);
+  await gridTx(pool, c => gridClearIn(c, sid, a));
+  return { spreadsheetId: sid, clearedRange: gridLabel(a, 1, 1) };
+}
+async function gridTabsOf(pool, sid) {
+  await gridSchema(pool);
+  const r = await pool.query(`select t.title, t.sheet_id, t.row_count, t.col_count, t.frozen,
+      coalesce(max(g.r), 0) as max_r, coalesce(max(array_length(g.cells, 1)), 0) as max_c
+    from grid_tabs t left join grid_rows g on g.spreadsheet = t.spreadsheet and g.title = t.title
+    where t.spreadsheet = $1 group by t.title, t.sheet_id, t.row_count, t.col_count, t.frozen, t.created_at order by t.created_at, t.title`, [sid]);
+  return r.rows.map(t => ({
+    properties: {
+      sheetId: Number(t.sheet_id), title: t.title, sheetType: 'GRID',
+      gridProperties: { rowCount: Math.max(t.row_count, t.max_r), columnCount: Math.max(t.col_count, t.max_c), ...(t.frozen ? { frozenRowCount: t.frozen } : {}) },
+    },
+  }));
+}
+async function gridTabBySheetId(c, sid, sheetId) {
+  return (await c.query('select * from grid_tabs where spreadsheet = $1 and sheet_id = $2 for update', [sid, sheetId])).rows[0] || null;
+}
+// one structural request (add or delete a tab, add grid space, delete rows) against Postgres
+async function gridStructural(c, sid, req) {
+  if (req.addSheet) {
+    const p = req.addSheet.properties || {};
+    const had = (await c.query('select 1 from grid_tabs where spreadsheet = $1 and title = $2', [sid, p.title])).rows.length;
+    if (had) { const e = new Error(`Invalid requests[0].addSheet: A sheet with the name "${p.title}" already exists. Please enter another name.`); e.code = 400; throw e; }
+    const t = await gridEnsureTab(c, sid, p.title, p);
+    return { addSheet: { properties: { sheetId: Number(t.sheet_id), title: t.title, sheetType: 'GRID', gridProperties: { rowCount: t.row_count, columnCount: t.col_count } } } };
+  }
+  if (req.deleteSheet) {
+    const t = await gridTabBySheetId(c, sid, req.deleteSheet.sheetId);
+    if (t) {
+      await c.query('delete from grid_rows where spreadsheet = $1 and title = $2', [sid, t.title]);
+      await c.query('delete from grid_tabs where spreadsheet = $1 and title = $2', [sid, t.title]);
+    }
+    return {};
+  }
+  if (req.appendDimension) {
+    const d = req.appendDimension;
+    const col = d.dimension === 'COLUMNS' ? 'col_count' : 'row_count';
+    await c.query(`update grid_tabs set ${col} = ${col} + $3 where spreadsheet = $1 and sheet_id = $2`, [sid, d.sheetId, d.length || 0]);
+    return {};
+  }
+  if (req.deleteDimension) {
+    const g = req.deleteDimension.range || {};
+    if (g.dimension !== 'ROWS') throw new Error('Only row deletes are supported for tabs held in the database');
+    const t = await gridTabBySheetId(c, sid, g.sheetId);
+    if (!t) return {};
+    const from = (g.startIndex || 0) + 1, to = g.endIndex, k = to - from + 1;
+    if (k <= 0) return {};
+    await c.query('delete from grid_rows where spreadsheet = $1 and title = $2 and r >= $3 and r <= $4', [sid, t.title, from, to]);
+    // rows below move up, in two steps so no row number is ever used twice
+    await c.query('update grid_rows set r = -(r - $4) where spreadsheet = $1 and title = $2 and r > $3', [sid, t.title, to, k]);
+    await c.query('update grid_rows set r = -r where spreadsheet = $1 and title = $2 and r < 0', [sid, t.title]);
+    await c.query('update grid_tabs set row_count = greatest(1, row_count - $3) where spreadsheet = $1 and title = $2', [sid, t.title, k]);
+    return {};
+  }
+  // formatting and other cosmetic requests have no meaning in the database
+  return {};
+}
+
+// The client every part of the server uses. Same methods and answers as the Google client.
+function makeSheetsRouter(real) {
+  const titleOfRange = range => { try { return gridParse(range).title; } catch (e) { return null; } };
+  const poolForRange = (sid, range) => gridPoolFor(sid, titleOfRange(range));
+  const wrap = data => ({ data, status: 200 });
+  const v = real.spreadsheets.values;
+  const values = {
+    get: async (p = {}, ...rest) => {
+      const pool = poolForRange(p.spreadsheetId, p.range);
+      return pool ? wrap(await gridGet(pool, p.spreadsheetId, p.range)) : v.get(p, ...rest);
+    },
+    batchGet: async (p = {}, ...rest) => {
+      const ranges = p.ranges || [];
+      if (!ranges.some(r => poolForRange(p.spreadsheetId, r))) return v.batchGet(p, ...rest);
+      const realIdx = ranges.map((r, i) => (poolForRange(p.spreadsheetId, r) ? -1 : i)).filter(i => i >= 0);
+      const realRes = realIdx.length ? await v.batchGet({ ...p, ranges: realIdx.map(i => ranges[i]) }, ...rest) : null;
+      const valueRanges = [];
+      for (let i = 0; i < ranges.length; i++) {
+        const pool = poolForRange(p.spreadsheetId, ranges[i]);
+        valueRanges.push(pool ? await gridGet(pool, p.spreadsheetId, ranges[i]) : realRes.data.valueRanges[realIdx.indexOf(i)]);
+      }
+      return wrap({ spreadsheetId: p.spreadsheetId, valueRanges });
+    },
+    update: async (p = {}, ...rest) => {
+      const pool = poolForRange(p.spreadsheetId, p.range);
+      return pool ? wrap(await gridUpdate(pool, p.spreadsheetId, p.range, (p.requestBody || p.resource || {}).values)) : v.update(p, ...rest);
+    },
+    append: async (p = {}, ...rest) => {
+      const pool = poolForRange(p.spreadsheetId, p.range);
+      return pool ? wrap(await gridAppend(pool, p.spreadsheetId, p.range, (p.requestBody || p.resource || {}).values)) : v.append(p, ...rest);
+    },
+    clear: async (p = {}, ...rest) => {
+      const pool = poolForRange(p.spreadsheetId, p.range);
+      return pool ? wrap(await gridClear(pool, p.spreadsheetId, p.range)) : v.clear(p, ...rest);
+    },
+    batchUpdate: async (p = {}, ...rest) => {
+      const body = p.requestBody || p.resource || {};
+      const data = body.data || [];
+      const mine = data.filter(d => poolForRange(p.spreadsheetId, d.range));
+      if (!mine.length) return v.batchUpdate(p, ...rest);
+      const others = data.filter(d => !poolForRange(p.spreadsheetId, d.range));
+      const byPool = new Map();
+      mine.forEach(d => { const pool = poolForRange(p.spreadsheetId, d.range); byPool.set(pool, [...(byPool.get(pool) || []), d]); });
+      let total = 0;
+      for (const [pool, list] of byPool) {
+        total += await gridTx(pool, async c => {
+          let n = 0;
+          for (const d of list) { const a = gridParse(d.range); await gridEnsureTab(c, p.spreadsheetId, a.title); n += await gridWriteBlock(c, p.spreadsheetId, a.title, a.r1, a.c1, d.values); }
+          return n;
+        });
+      }
+      if (others.length) await v.batchUpdate({ ...p, requestBody: { ...body, data: others } }, ...rest);
+      return wrap({ spreadsheetId: p.spreadsheetId, totalUpdatedRows: total });
+    },
+    batchClear: async (p = {}, ...rest) => {
+      const body = p.requestBody || p.resource || {};
+      const ranges = body.ranges || [];
+      if (!ranges.some(r => poolForRange(p.spreadsheetId, r))) return v.batchClear(p, ...rest);
+      for (const r of ranges) { const pool = poolForRange(p.spreadsheetId, r); if (pool) await gridClear(pool, p.spreadsheetId, r); }
+      const others = ranges.filter(r => !poolForRange(p.spreadsheetId, r));
+      if (others.length) await v.batchClear({ ...p, requestBody: { ...body, ranges: others } }, ...rest);
+      return wrap({ spreadsheetId: p.spreadsheetId, clearedRanges: ranges });
+    },
+  };
+  const spreadsheets = {
+    values,
+    get: async (p = {}, ...rest) => {
+      const pools = gridPoolsForSheet(p.spreadsheetId);
+      const res = await real.spreadsheets.get(p, ...rest);
+      if (!pools.length) return res;
+      const keep = (res.data.sheets || []).filter(s => !gridPoolFor(p.spreadsheetId, s.properties.title));
+      const mine = [];
+      for (const pool of pools) (await gridTabsOf(pool, p.spreadsheetId)).forEach(t => { if (gridPoolFor(p.spreadsheetId, t.properties.title) === pool) mine.push(t); });
+      const sheets = [...keep, ...mine].map((s, i) => ({ ...s, properties: { ...s.properties, index: i } }));
+      return { ...res, data: { ...res.data, sheets } };
+    },
+    batchUpdate: async (p = {}, ...rest) => {
+      const pools = gridPoolsForSheet(p.spreadsheetId);
+      const body = p.requestBody || p.resource || {};
+      const reqs = body.requests || [];
+      if (!pools.length || !reqs.length) return real.spreadsheets.batchUpdate(p, ...rest);
+      // which database (if any) each request belongs to
+      const owner = [];
+      for (const rq of reqs) {
+        let pool = null;
+        if (rq.addSheet) pool = gridPoolFor(p.spreadsheetId, (rq.addSheet.properties || {}).title);
+        else {
+          const id = rq.deleteSheet ? rq.deleteSheet.sheetId
+            : rq.appendDimension ? rq.appendDimension.sheetId
+            : rq.deleteDimension ? (rq.deleteDimension.range || {}).sheetId
+            : rq.updateSheetProperties ? (rq.updateSheetProperties.properties || {}).sheetId
+            : rq.repeatCell ? (rq.repeatCell.range || {}).sheetId
+            : rq.updateDimensionProperties ? (rq.updateDimensionProperties.range || {}).sheetId
+            : rq.autoResizeDimensions ? (rq.autoResizeDimensions.dimensions || {}).sheetId : undefined;
+          if (id != null) {
+            for (const pl of pools) {
+              await gridSchema(pl);
+              if ((await pl.query('select 1 from grid_tabs where spreadsheet = $1 and sheet_id = $2', [p.spreadsheetId, id])).rows.length) { pool = pl; break; }
+            }
+          }
+        }
+        owner.push(pool);
+      }
+      const replies = new Array(reqs.length).fill({});
+      for (const pool of pools) {
+        const idx = owner.map((o, i) => (o === pool ? i : -1)).filter(i => i >= 0);
+        if (!idx.length) continue;
+        await gridTx(pool, async c => { for (const i of idx) replies[i] = await gridStructural(c, p.spreadsheetId, reqs[i]); });
+      }
+      const realIdx = owner.map((o, i) => (o ? -1 : i)).filter(i => i >= 0);
+      if (realIdx.length) {
+        const r = await real.spreadsheets.batchUpdate({ ...p, requestBody: { ...body, requests: realIdx.map(i => reqs[i]) } }, ...rest);
+        const rr = (r.data && r.data.replies) || [];
+        realIdx.forEach((i, k) => { replies[i] = rr[k] || {}; });
+      }
+      return wrap({ spreadsheetId: p.spreadsheetId, replies });
+    },
+  };
+  return { spreadsheets, __real: real };
+}
+
+// Whole-tab copies, used by the import, the copy back and the nightly backup
+async function gridReadRealTab(real, sid, title) {
+  const r = await real.spreadsheets.values.get({ spreadsheetId: sid, range: gridQuote(title) });
+  return (r.data.values || []).map(row => gridTrim(row.map(v => (v == null ? '' : String(v)))));
+}
+async function gridReplaceTab(pool, sid, props, rows) {
+  await gridTx(pool, async c => {
+    const title = props.title;
+    await c.query('delete from grid_rows where spreadsheet = $1 and title = $2', [sid, title]);
+    await c.query('delete from grid_tabs where spreadsheet = $1 and title = $2', [sid, title]);
+    const g = props.gridProperties || {};
+    const idTaken = props.sheetId != null && (await c.query('select 1 from grid_tabs where sheet_id = $1', [props.sheetId])).rows.length;
+    await c.query(`insert into grid_tabs (spreadsheet, title, sheet_id, row_count, col_count, frozen)
+      values ($1, $2, ${props.sheetId != null && !idTaken ? '$6' : "nextval('grid_sheet_ids')"}, $3, $4, $5)`,
+      [sid, title, g.rowCount || 1000, g.columnCount || 26, g.frozenRowCount || 0, ...(props.sheetId != null && !idTaken ? [props.sheetId] : [])]);
+    const list = [];
+    rows.forEach((cells, i) => { if (cells && cells.length) list.push([i + 1, cells]); });
+    for (let i = 0; i < list.length; i += 500) {
+      const chunk = list.slice(i, i + 500);
+      const params = [sid, title];
+      const vals = chunk.map(([r, cells]) => { params.push(r, cells); return `($1, $2, $${params.length - 1}, $${params.length})`; });
+      await c.query(`insert into grid_rows (spreadsheet, title, r, cells) values ${vals.join(', ')}`, params);
+    }
+  });
+}
+async function gridReadPgTab(pool, sid, title) {
+  await gridSchema(pool);
+  const r = await pool.query('select r, cells from grid_rows where spreadsheet = $1 and title = $2 order by r', [sid, title]);
+  const out = [];
+  r.rows.forEach(x => { out[x.r - 1] = x.cells; });
+  for (let i = 0; i < out.length; i++) if (!out[i]) out[i] = [];
+  return out;
+}
+// Fallback: write a database tab back over the Google Sheets tab of the same name, row for row
+async function gridCopyTabToSheets(title, rows) {
+  const real = getRealSheetsClient();
+  const width = Math.max(1, ...rows.map(r => r.length));
+  let ss = await real.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties(sheetId,title,gridProperties)' });
+  let tab = (ss.data.sheets || []).find(t => t.properties.title === title);
+  if (!tab) {
+    await real.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title, gridProperties: { rowCount: rows.length + 100, columnCount: width } } } }] } });
+    ss = await real.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties(sheetId,title,gridProperties)' });
+    tab = (ss.data.sheets || []).find(t => t.properties.title === title);
+  }
+  const g = tab.properties.gridProperties || {};
+  const grow = [];
+  if ((g.rowCount || 0) < rows.length + 1) grow.push({ appendDimension: { sheetId: tab.properties.sheetId, dimension: 'ROWS', length: rows.length + 100 - (g.rowCount || 0) } });
+  if ((g.columnCount || 0) < width) grow.push({ appendDimension: { sheetId: tab.properties.sheetId, dimension: 'COLUMNS', length: width - (g.columnCount || 0) } });
+  if (grow.length) await real.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { requests: grow } });
+  await real.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: gridQuote(title) });
+  const full = rows.map(r => { const a = r.slice(); while (a.length < width) a.push(''); return a; });
+  for (let i = 0; i < full.length; i += 2000) {
+    const part = full.slice(i, i + 2000);
+    await real.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `${gridQuote(title)}!A${i + 1}`, valueInputOption: 'RAW', requestBody: { values: part } });
+  }
+}
+
+/* ======================================================================
    Server-side login (Batch 3)
 
    Turn it on by setting the L2H_USERS environment variable on Render, e.g.
@@ -623,9 +1031,12 @@ function getAuthClient() {
 function getSheetsClient() {
   if (sheetsClientCache) return sheetsClientCache;
   const auth = getAuthClient();
-  sheetsClientCache = sheetsQuotaGuard(google.sheets({ version: 'v4', auth }));
+  // build 48.1: the router sends tabs held in Postgres there, everything else to Google as before
+  sheetsClientCache = makeSheetsRouter(sheetsQuotaGuard(google.sheets({ version: 'v4', auth })));
   return sheetsClientCache;
 }
+// Google Sheets itself, never the database (import, copy back)
+function getRealSheetsClient() { return getSheetsClient().__real; }
 
 /* ---------- Google Sheets quota guard (build 28) ----------
    Google allows about 60 reads and 60 writes a minute for this service account, shared by
@@ -821,6 +1232,7 @@ const applicantRolesTable = makeSimpleTable({
 });
 let applicantRolesCache = { at: 0, list: null };
 async function getApplicantRoles() {
+  if (isPreview()) return applicantRolesTable.list(); // build 48.1: preview never shares the live cache
   if (applicantRolesCache.list && Date.now() - applicantRolesCache.at < 15000) return applicantRolesCache.list;
   const list = await applicantRolesTable.list();
   applicantRolesCache = { at: Date.now(), list };
@@ -962,6 +1374,7 @@ async function readApplicationsRows(strict = false) {
 let candidatesCache = null, candidatesInflight = null;
 app.get('/api/candidates', async (req, res) => {
   try {
+    if (isPreview()) return res.json({ data: await buildCandidatesGrouped() }); // build 48.1: preview has its own data
     if (candidatesCache && candidatesCache.gen === sheetsWriteGen && Date.now() - candidatesCache.at < 20000) return res.json({ data: candidatesCache.data });
     if (!candidatesInflight) {
       const gen = sheetsWriteGen;
@@ -2115,7 +2528,7 @@ const LEAD_CLIENT_RANGE = `${LEAD_CLIENT_TAB}!A2:J`;
 // deleting with a fixed sheetId of 0 hits whichever tab was created first, not the one meant.
 const tabIdCache = new Map();
 async function sheetIdForTab(spreadsheetId, title) {
-  const key = spreadsheetId + '|' + title;
+  const key = (isPreview() ? 'preview|' : '') + spreadsheetId + '|' + title;
   if (tabIdCache.has(key)) return tabIdCache.get(key);
   const sheets = getSheetsClient();
   const ss = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets.properties(sheetId,title)' });
@@ -4369,10 +4782,10 @@ function escDriveQuery(s) {
 
 // ---- Tab bootstrap -----------------------------------------------------
 
-let poolTabReady = false;
+let poolTabReady = false, poolTabReadyPreview = false;
 
 async function ensurePoolTab() {
-  if (poolTabReady) return;
+  if (isPreview() ? poolTabReadyPreview : poolTabReady) return;
   const sheets = getSheetsClient();
   const gridFields = 'sheets.properties(sheetId,title,gridProperties)';
   let ss = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: gridFields });
@@ -4406,7 +4819,7 @@ async function ensurePoolTab() {
       requestBody: { values: [POOL_HEADER] },
     });
   }
-  poolTabReady = true;
+  if (isPreview()) poolTabReadyPreview = true; else poolTabReady = true;
 }
 
 // Short-lived cache so busy screens do not exhaust Google's per-minute read quota.
@@ -4416,14 +4829,16 @@ let poolRowsCacheAt = 0;
 const POOL_CACHE_MS = 10000;
 
 async function readPoolRows() {
-  if (poolRowsCache && Date.now() - poolRowsCacheAt < POOL_CACHE_MS) return poolRowsCache;
+  if (!isPreview() && poolRowsCache && Date.now() - poolRowsCacheAt < POOL_CACHE_MS) return poolRowsCache;
   await ensurePoolTab();
   const sheets = getSheetsClient();
   const result = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
     range: `'${POOL_TAB}'!A2:${POOL_LAST_COL}`,
   });
-  poolRowsCache = result.data.values || [];
+  const rows = result.data.values || [];
+  if (isPreview()) return rows; // build 48.1: preview rows never go in the live cache
+  poolRowsCache = rows;
   poolRowsCacheAt = Date.now();
   return poolRowsCache;
 }
@@ -4907,6 +5322,9 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
   async function ensure() {
     const pool = poolNow();
     if (pool) return pgEnsureTable(pool, pgName, header, seed);
+    return sheetsEnsure();
+  }
+  async function sheetsEnsure() {
     if (ready) return;
     const sheets = getSheetsClient();
     const ss = await sheets.spreadsheets.get({ spreadsheetId: SID_OF(), fields: 'sheets.properties.title' });
@@ -5094,7 +5512,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
   // Build 48.0: used by the one-off import, the copy back to Sheets and the nightly backup
   const meta = {
     tab, header, group, pgName, label, spreadsheetId: SID_OF, lastCol,
-    async sheetsRows() { return (await sheetsReadRows()).filter(r => r && r[0]).map(pad); },
+    async sheetsRows() { await sheetsEnsure(); return (await sheetsReadRows()).filter(r => r && r[0]).map(pad); },
     async pgRows(pool) { await pgEnsureTable(pool, pgName, header, null); return (await pgReadAll(pool, pgName, header)).filter(r => r[0]); },
     async replacePg(pool, rows) {
       await pgEnsureTable(pool, pgName, header, null);
@@ -5110,6 +5528,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
     },
     async replaceSheets(rows) {
       await lock(async () => {
+        await sheetsEnsure();
         const sheets = getSheetsClient();
         invalidate();
         await sheets.spreadsheets.values.clear({ spreadsheetId: SID_OF(), range: `'${tab}'!A2:${lastCol}` });
@@ -8652,7 +9071,17 @@ function storageGuard(req, res) {
   if (!pgLivePool) { res.status(400).json({ error: 'DATABASE_URL is not set on the server.' }); return false; }
   return true;
 }
-const storageGroupNames = () => [...new Set(SIMPLE_TABLES.map(t => t.group))].sort();
+const storageGroupNames = () => [...new Set([...SIMPLE_TABLES.map(t => t.group), ...GRID_ROUTES.map(r => r.group)])].sort();
+// build 48.1: whole tabs in a group, as Google Sheets has them now
+async function realGridTabsOfGroup(group) {
+  const real = getRealSheetsClient();
+  const ss = await real.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties(sheetId,title,gridProperties)' });
+  return (ss.data.sheets || []).map(s => s.properties).filter(pr => gridGroupOf(SHEET_ID, pr.title) === group);
+}
+async function pgGridTabsOfGroup(pool, group) {
+  return (await gridTabsOf(pool, SHEET_ID)).map(t => t.properties).filter(pr => gridGroupOf(SHEET_ID, pr.title) === group);
+}
+const nonEmptyRows = rows => rows.filter(r => r && r.some(v => v !== '' && v != null)).length;
 
 app.get('/api/storage/status', requireAdmin, async (req, res) => {
   try {
@@ -8673,6 +9102,11 @@ app.get('/api/storage/status', requireAdmin, async (req, res) => {
         }
         tables.push({ tab: t.tab, postgres_rows: rows });
       }
+      if (pgLivePool) {
+        for (const pr of await pgGridTabsOfGroup(pgLivePool, g)) {
+          tables.push({ tab: pr.title, postgres_rows: nonEmptyRows(await gridReadPgTab(pgLivePool, SHEET_ID, pr.title)), whole_tab: true });
+        }
+      }
       out.groups[g] = { live: PG_LIVE_GROUPS.has(g) ? 'postgres' : 'sheets', preview: PG_PREVIEW_GROUPS.has(g) ? 'postgres (test data)' : 'sheets (read only)', tables };
     }
     res.json(out);
@@ -8686,7 +9120,7 @@ app.post('/api/storage/import', requireAdmin, async (req, res) => {
     if (process.env.DATABASE_PLAN !== 'paid') return res.status(400).json({ error: 'Set DATABASE_PLAN=paid on Render first. Real data never goes into a free database (it is deleted after 30 days).' });
     const group = String((req.body || {}).group || '').toLowerCase();
     const tables = SIMPLE_TABLES.filter(t => t.group === group);
-    if (!tables.length) return res.status(400).json({ error: `Unknown group. Groups: ${storageGroupNames().join(', ')}` });
+    if (!storageGroupNames().includes(group)) return res.status(400).json({ error: `Unknown group. Groups: ${storageGroupNames().join(', ')}` });
     if (PG_LIVE_GROUPS.has(group)) return res.status(400).json({ error: `${group} is already live on Postgres, so importing would overwrite newer data. Take it out of PG_LIVE_GROUPS first.` });
     const result = [];
     for (const t of tables) {
@@ -8694,6 +9128,20 @@ app.post('/api/storage/import', requireAdmin, async (req, res) => {
       await t.replacePg(pgLivePool, rows);
       const back = await t.pgRows(pgLivePool);
       result.push({ tab: t.tab, sheets_rows: rows.length, postgres_rows: back.length, match: rows.length === back.length });
+    }
+    // build 48.1: whole tabs keep every row in the same place, headings included
+    const realTabs = await realGridTabsOfGroup(group);
+    for (const pr of realTabs) {
+      const rows = await gridReadRealTab(getRealSheetsClient(), SHEET_ID, pr.title);
+      await gridReplaceTab(pgLivePool, SHEET_ID, pr, rows);
+      const back = await gridReadPgTab(pgLivePool, SHEET_ID, pr.title);
+      const same = JSON.stringify(rows.map(r => r.join('\u0001'))) === JSON.stringify(back.map(r => r.join('\u0001')));
+      result.push({ tab: pr.title, sheets_rows: nonEmptyRows(rows), postgres_rows: nonEmptyRows(back), match: same && nonEmptyRows(rows) === nonEmptyRows(back), whole_tab: true });
+    }
+    // tabs that no longer exist in Sheets are removed from the database copy
+    const names = new Set(realTabs.map(t => t.title));
+    for (const pr of await pgGridTabsOfGroup(pgLivePool, group)) {
+      if (!names.has(pr.title)) await gridTx(pgLivePool, c => gridStructural(c, SHEET_ID, { deleteSheet: { sheetId: pr.sheetId } }));
     }
     auditLog(auditActorOf(req), 'imported', 'storage', group, result.map(r => `${r.tab} ${r.postgres_rows}`).join(', '));
     res.json({ ok: result.every(r => r.match), group, tables: result });
@@ -8706,7 +9154,7 @@ app.post('/api/storage/copy-back', requireAdmin, async (req, res) => {
     if (!storageGuard(req, res)) return;
     const group = String((req.body || {}).group || '').toLowerCase();
     const tables = SIMPLE_TABLES.filter(t => t.group === group);
-    if (!tables.length) return res.status(400).json({ error: `Unknown group. Groups: ${storageGroupNames().join(', ')}` });
+    if (!storageGroupNames().includes(group)) return res.status(400).json({ error: `Unknown group. Groups: ${storageGroupNames().join(', ')}` });
     if (!PG_LIVE_GROUPS.has(group)) return res.status(400).json({ error: `${group} is not live on Postgres, so Sheets already holds its data.` });
     const result = [];
     for (const t of tables) {
@@ -8714,16 +9162,53 @@ app.post('/api/storage/copy-back', requireAdmin, async (req, res) => {
       await t.replaceSheets(rows);
       result.push({ tab: t.tab, rows: rows.length });
     }
+    for (const pr of await pgGridTabsOfGroup(pgLivePool, group)) {
+      const rows = await gridReadPgTab(pgLivePool, SHEET_ID, pr.title);
+      await gridCopyTabToSheets(pr.title, rows);
+      result.push({ tab: pr.title, rows: nonEmptyRows(rows), whole_tab: true });
+    }
     auditLog(auditActorOf(req), 'copied back', 'storage', group, result.map(r => `${r.tab} ${r.rows}`).join(', '));
     res.json({ ok: true, group, tables: result, next: `Now remove ${group} from PG_LIVE_GROUPS on Render.` });
   } catch (e) { console.error('Storage copy back error:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Build 48.1: fill the preview database with a few clearly marked test candidates (preview only)
+app.post('/api/storage/preview-seed', requireAdmin, async (req, res) => {
+  try {
+    if (!isPreview()) return res.status(400).json({ error: 'Test data can only be added from /dashboard-next.' });
+    if (!pgPoolFor('candidates')) return res.status(400).json({ error: 'Add candidates to PG_PREVIEW_GROUPS on Render first.' });
+    const sheets = getSheetsClient();
+    const today = todayISO();
+    const ss = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties(sheetId,title)' });
+    const drop = (ss.data.sheets || []).filter(t => gridPoolFor(SHEET_ID, t.properties.title) && /^(Dashboard|Applications - Test Role)$/.test(t.properties.title));
+    if (drop.length) await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { requests: drop.map(t => ({ deleteSheet: { sheetId: t.properties.sheetId } })) } });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID, range: `${TAB}!A1:L4`, valueInputOption: 'RAW', requestBody: { values: [
+        ['ID', 'Company', 'Role', 'Name', 'Stage', 'Date', 'Notes', 'Salary', 'Email', 'Phone', 'Invoice Number', 'Start Date'],
+        ['test-p1', 'Test Client Ltd', 'Test Role', 'Test Alice Example', 'submitted', today, '[test] preview candidate', '35000', 'alice@example.com', '07700 900001', '', ''],
+        ['test-p2', 'Test Client Ltd', 'Test Role', 'Test Ben Example', 'interview', today, '[test] preview candidate', '38000', 'ben@example.com', '07700 900002', '', ''],
+        ['test-p3', 'Test Client Ltd', 'Test Role', 'Test Cara Example', 'offer', today, '[test] preview candidate', '41000', 'cara@example.com', '07700 900003', '', ''],
+      ] },
+    });
+    const head = new Array(26).fill('');
+    Object.assign(head, { 0: 'Application ID', 1: 'Date Applied', 2: 'Name', 3: 'Email', 4: 'Phone', 15: 'Salary Expectation', 17: 'Company', 18: 'Contact', 19: 'Status', 20: 'Notes', 21: 'Privacy Notice Accepted', 22: 'Consent Date', 23: 'Wording Version', 24: 'Talent Pool Consent', 25: 'CV Link' });
+    const app = (id, name, n) => { const r = new Array(26).fill(''); Object.assign(r, { 0: id, 1: today, 2: name, 3: `applicant${n}@example.com`, 4: `07700 90001${n}`, 15: '32000', 19: 'applied', 20: '[test]', 21: 'Yes', 22: new Date().toISOString(), 24: 'Yes' }); return r; };
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID, range: `'Applications - Test Role'!A1:Z4`, valueInputOption: 'RAW',
+      requestBody: { values: [head, app('test-a1', 'Test Dev Applicant', 1), app('test-a2', 'Test Eve Applicant', 2), app('test-a3', 'Test Finn Applicant', 3)] },
+    });
+    await ensurePoolTab();
+    res.json({ ok: true, added: { pipeline: 3, applications: 3 } });
+  } catch (e) { console.error('Preview seed error:', e.message); res.status(500).json({ error: e.message }); }
 });
 
 // Nightly: everything held in the live database, as a readable dated Google Sheet in the backup folder
 async function backupDatabaseToDrive(drive, folderId, date) {
   if (!pgLivePool || !PG_LIVE_GROUPS.size) return null;
   const tables = SIMPLE_TABLES.filter(t => PG_LIVE_GROUPS.has(t.group));
-  if (!tables.length) return null;
+  const wholeTabs = [];
+  for (const g of PG_LIVE_GROUPS) for (const pr of await pgGridTabsOfGroup(pgLivePool, g)) wholeTabs.push(pr.title);
+  if (!tables.length && !wholeTabs.length) return null;
   const name = `Workspace database backup ${date}`;
   const existing = await drive.files.list({ q: `'${folderId}' in parents and name='${name}' and trashed=false`, fields: 'files(id)', pageSize: 1 });
   if (existing.data.files && existing.data.files.length) return { name, skipped: 'already made today' };
@@ -8744,6 +9229,13 @@ async function backupDatabaseToDrive(drive, folderId, date) {
     requests.push({ addSheet: { properties: { title: titleOf(t), gridProperties: { rowCount: rows.length + 10, columnCount: Math.max(t.header.length, 1) } } } });
     data.push({ range: `'${titleOf(t).replace(/'/g, "''")}'!A1`, values: [t.header, ...rows] });
   }
+  for (const title of wholeTabs) {
+    const rows = (await gridReadPgTab(pgLivePool, SHEET_ID, title)).map(r => r.map(v => (v.length > 49000 ? v.slice(0, 49000) + ' [cut for backup]' : v)));
+    total += nonEmptyRows(rows);
+    const cols = Math.max(1, ...rows.map(r => r.length));
+    requests.push({ addSheet: { properties: { title, gridProperties: { rowCount: rows.length + 10, columnCount: cols } } } });
+    if (rows.length) data.push({ range: `${gridQuote(title)}!A1`, values: rows });
+  }
   if (starter) requests.push({ deleteSheet: { sheetId: starter.properties.sheetId } });
   await sheets.spreadsheets.batchUpdate({ spreadsheetId: fileId, requestBody: { requests } });
   // written in parts so one large table never makes the request too big
@@ -8757,7 +9249,7 @@ async function backupDatabaseToDrive(drive, folderId, date) {
   await flush();
   const all = await drive.files.list({ q: `'${folderId}' in parents and name contains 'Workspace database backup' and trashed=false`, orderBy: 'createdTime desc', fields: 'files(id)', pageSize: 100 });
   for (const f of (all.data.files || []).slice(BACKUP_KEEP)) await drive.files.update({ fileId: f.id, requestBody: { trashed: true } });
-  return { name, tables: tables.length, rows: total };
+  return { name, tables: tables.length + wholeTabs.length, rows: total };
 }
 
 /* ---------- KPI engine (replaces the old placeholder maths) ---------- */
@@ -13421,7 +13913,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '27 Oct 2026 - build 48.0 (storage switch: Sheets or Postgres)';
+const SERVER_BUILD = '27 Oct 2026 - build 48.1 (candidates can move to Postgres)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
