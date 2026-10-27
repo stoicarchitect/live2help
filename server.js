@@ -173,7 +173,10 @@ async function pgReadAll(pool, name, header) {
    ====================================================================== */
 const GRID_ROUTES = [
   // phase 2: the candidate pipeline (Dashboard tab), every Applications tab and the Candidate Pool
-  { group: 'candidates', test: (sid, title) => sid === SHEET_ID && (title === 'Dashboard' || title === 'Candidate Pool' || /^Applications - /.test(title)) },
+  { group: 'candidates', sheets: () => [SHEET_ID], test: (sid, title) => sid === SHEET_ID && (title === 'Dashboard' || title === 'Candidate Pool' || /^Applications - /.test(title)) },
+  // phase 3: clients, lead clients and cold calls (client sheet) and tasks (tracker sheet)
+  { group: 'clients', sheets: () => [SHEET_ID, CLIENT_SHEET_ID], test: (sid, title) =>
+    (sid === CLIENT_SHEET_ID && ['Dashboard', 'Lead Clients', 'ColdCalls'].includes(title)) || (sid === SHEET_ID && title === 'Tasks') },
 ];
 function gridGroupOf(sid, title) {
   if (!sid || !title) return null;
@@ -185,10 +188,11 @@ function gridPoolFor(sid, title) { const g = gridGroupOf(sid, title); return g ?
 function gridPoolsForSheet(sid) {
   const out = [];
   for (const r of GRID_ROUTES) {
+    if (!r.sheets().includes(sid)) continue;
     const pool = pgPoolFor(r.group);
     if (pool && !out.includes(pool)) out.push(pool);
   }
-  return sid === SHEET_ID ? out : [];
+  return out;
 }
 
 const gridSchemaReady = new WeakMap();
@@ -546,26 +550,26 @@ async function gridReadPgTab(pool, sid, title) {
   return out;
 }
 // Fallback: write a database tab back over the Google Sheets tab of the same name, row for row
-async function gridCopyTabToSheets(title, rows) {
+async function gridCopyTabToSheets(sid, title, rows) {
   const real = getRealSheetsClient();
   const width = Math.max(1, ...rows.map(r => r.length));
-  let ss = await real.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties(sheetId,title,gridProperties)' });
+  let ss = await real.spreadsheets.get({ spreadsheetId: sid, fields: 'sheets.properties(sheetId,title,gridProperties)' });
   let tab = (ss.data.sheets || []).find(t => t.properties.title === title);
   if (!tab) {
-    await real.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title, gridProperties: { rowCount: rows.length + 100, columnCount: width } } } }] } });
-    ss = await real.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties(sheetId,title,gridProperties)' });
+    await real.spreadsheets.batchUpdate({ spreadsheetId: sid, requestBody: { requests: [{ addSheet: { properties: { title, gridProperties: { rowCount: rows.length + 100, columnCount: width } } } }] } });
+    ss = await real.spreadsheets.get({ spreadsheetId: sid, fields: 'sheets.properties(sheetId,title,gridProperties)' });
     tab = (ss.data.sheets || []).find(t => t.properties.title === title);
   }
   const g = tab.properties.gridProperties || {};
   const grow = [];
   if ((g.rowCount || 0) < rows.length + 1) grow.push({ appendDimension: { sheetId: tab.properties.sheetId, dimension: 'ROWS', length: rows.length + 100 - (g.rowCount || 0) } });
   if ((g.columnCount || 0) < width) grow.push({ appendDimension: { sheetId: tab.properties.sheetId, dimension: 'COLUMNS', length: width - (g.columnCount || 0) } });
-  if (grow.length) await real.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { requests: grow } });
-  await real.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: gridQuote(title) });
+  if (grow.length) await real.spreadsheets.batchUpdate({ spreadsheetId: sid, requestBody: { requests: grow } });
+  await real.spreadsheets.values.clear({ spreadsheetId: sid, range: gridQuote(title) });
   const full = rows.map(r => { const a = r.slice(); while (a.length < width) a.push(''); return a; });
   for (let i = 0; i < full.length; i += 2000) {
     const part = full.slice(i, i + 2000);
-    await real.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `${gridQuote(title)}!A${i + 1}`, valueInputOption: 'RAW', requestBody: { values: part } });
+    await real.spreadsheets.values.update({ spreadsheetId: sid, range: `${gridQuote(title)}!A${i + 1}`, valueInputOption: 'RAW', requestBody: { values: part } });
   }
 }
 
@@ -9074,14 +9078,25 @@ function storageGuard(req, res) {
 }
 const storageGroupNames = () => [...new Set([...SIMPLE_TABLES.map(t => t.group), ...GRID_ROUTES.map(r => r.group)])].sort();
 // build 48.1: whole tabs in a group, as Google Sheets has them now
+const sheetsOfGroup = group => [...new Set(GRID_ROUTES.filter(r => r.group === group).flatMap(r => r.sheets()))];
 async function realGridTabsOfGroup(group) {
   const real = getRealSheetsClient();
-  const ss = await real.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties(sheetId,title,gridProperties)' });
-  return (ss.data.sheets || []).map(s => s.properties).filter(pr => gridGroupOf(SHEET_ID, pr.title) === group);
+  const out = [];
+  for (const sid of sheetsOfGroup(group)) {
+    const ss = await real.spreadsheets.get({ spreadsheetId: sid, fields: 'sheets.properties(sheetId,title,gridProperties)' });
+    (ss.data.sheets || []).map(x => x.properties).filter(pr => gridGroupOf(sid, pr.title) === group).forEach(pr => out.push({ ...pr, sid }));
+  }
+  return out;
 }
 async function pgGridTabsOfGroup(pool, group) {
-  return (await gridTabsOf(pool, SHEET_ID)).map(t => t.properties).filter(pr => gridGroupOf(SHEET_ID, pr.title) === group);
+  const out = [];
+  for (const sid of sheetsOfGroup(group)) {
+    (await gridTabsOf(pool, sid)).map(t => t.properties).filter(pr => gridGroupOf(sid, pr.title) === group).forEach(pr => out.push({ ...pr, sid }));
+  }
+  return out;
 }
+// how a whole tab is named in reports and the backup ("Dashboard" exists in both spreadsheets)
+const gridTabLabel = pr => (pr.sid === CLIENT_SHEET_ID ? 'Clients - ' : '') + pr.title;
 const nonEmptyRows = rows => rows.filter(r => r && r.some(v => v !== '' && v != null)).length;
 
 app.get('/api/storage/status', requireAdmin, async (req, res) => {
@@ -9105,7 +9120,7 @@ app.get('/api/storage/status', requireAdmin, async (req, res) => {
       }
       if (pgLivePool) {
         for (const pr of await pgGridTabsOfGroup(pgLivePool, g)) {
-          tables.push({ tab: pr.title, postgres_rows: nonEmptyRows(await gridReadPgTab(pgLivePool, SHEET_ID, pr.title)), whole_tab: true });
+          tables.push({ tab: gridTabLabel(pr), postgres_rows: nonEmptyRows(await gridReadPgTab(pgLivePool, pr.sid, pr.title)), whole_tab: true });
         }
       }
       out.groups[g] = { live: PG_LIVE_GROUPS.has(g) ? 'postgres' : 'sheets', preview: PG_PREVIEW_GROUPS.has(g) ? 'postgres (test data)' : 'sheets (read only)', tables };
@@ -9133,16 +9148,16 @@ app.post('/api/storage/import', requireAdmin, async (req, res) => {
     // build 48.1: whole tabs keep every row in the same place, headings included
     const realTabs = await realGridTabsOfGroup(group);
     for (const pr of realTabs) {
-      const rows = await gridReadRealTab(getRealSheetsClient(), SHEET_ID, pr.title);
-      await gridReplaceTab(pgLivePool, SHEET_ID, pr, rows);
-      const back = await gridReadPgTab(pgLivePool, SHEET_ID, pr.title);
+      const rows = await gridReadRealTab(getRealSheetsClient(), pr.sid, pr.title);
+      await gridReplaceTab(pgLivePool, pr.sid, pr, rows);
+      const back = await gridReadPgTab(pgLivePool, pr.sid, pr.title);
       const same = JSON.stringify(rows.map(r => r.join('\u0001'))) === JSON.stringify(back.map(r => r.join('\u0001')));
-      result.push({ tab: pr.title, sheets_rows: nonEmptyRows(rows), postgres_rows: nonEmptyRows(back), match: same && nonEmptyRows(rows) === nonEmptyRows(back), whole_tab: true });
+      result.push({ tab: gridTabLabel(pr), sheets_rows: nonEmptyRows(rows), postgres_rows: nonEmptyRows(back), match: same && nonEmptyRows(rows) === nonEmptyRows(back), whole_tab: true });
     }
     // tabs that no longer exist in Sheets are removed from the database copy
-    const names = new Set(realTabs.map(t => t.title));
+    const names = new Set(realTabs.map(t => t.sid + '|' + t.title));
     for (const pr of await pgGridTabsOfGroup(pgLivePool, group)) {
-      if (!names.has(pr.title)) await gridTx(pgLivePool, c => gridStructural(c, SHEET_ID, { deleteSheet: { sheetId: pr.sheetId } }));
+      if (!names.has(pr.sid + '|' + pr.title)) await gridTx(pgLivePool, c => gridStructural(c, pr.sid, { deleteSheet: { sheetId: pr.sheetId } }));
     }
     auditLog(auditActorOf(req), 'imported', 'storage', group, result.map(r => `${r.tab} ${r.postgres_rows}`).join(', '));
     res.json({ ok: result.every(r => r.match), group, tables: result });
@@ -9164,9 +9179,9 @@ app.post('/api/storage/copy-back', requireAdmin, async (req, res) => {
       result.push({ tab: t.tab, rows: rows.length });
     }
     for (const pr of await pgGridTabsOfGroup(pgLivePool, group)) {
-      const rows = await gridReadPgTab(pgLivePool, SHEET_ID, pr.title);
-      await gridCopyTabToSheets(pr.title, rows);
-      result.push({ tab: pr.title, rows: nonEmptyRows(rows), whole_tab: true });
+      const rows = await gridReadPgTab(pgLivePool, pr.sid, pr.title);
+      await gridCopyTabToSheets(pr.sid, pr.title, rows);
+      result.push({ tab: gridTabLabel(pr), rows: nonEmptyRows(rows), whole_tab: true });
     }
     auditLog(auditActorOf(req), 'copied back', 'storage', group, result.map(r => `${r.tab} ${r.rows}`).join(', '));
     res.json({ ok: true, group, tables: result, next: `Now remove ${group} from PG_LIVE_GROUPS on Render.` });
@@ -9177,9 +9192,36 @@ app.post('/api/storage/copy-back', requireAdmin, async (req, res) => {
 app.post('/api/storage/preview-seed', requireAdmin, async (req, res) => {
   try {
     if (!isPreview()) return res.status(400).json({ error: 'Test data can only be added from /dashboard-next.' });
-    if (!pgPoolFor('candidates')) return res.status(400).json({ error: 'Add candidates to PG_PREVIEW_GROUPS on Render first.' });
+    if (!pgPoolFor('candidates') && !pgPoolFor('clients')) return res.status(400).json({ error: 'Add candidates or clients to PG_PREVIEW_GROUPS on Render first.' });
     const sheets = getSheetsClient();
     const today = todayISO();
+    const added = {};
+    // build 48.3: test clients, leads, cold calls and tasks
+    if (pgPoolFor('clients')) {
+      const cs = await sheets.spreadsheets.get({ spreadsheetId: CLIENT_SHEET_ID, fields: 'sheets.properties(sheetId,title)' });
+      const old = (cs.data.sheets || []).filter(t => gridPoolFor(CLIENT_SHEET_ID, t.properties.title));
+      if (old.length) await sheets.spreadsheets.batchUpdate({ spreadsheetId: CLIENT_SHEET_ID, requestBody: { requests: old.map(t => ({ deleteSheet: { sheetId: t.properties.sheetId } })) } });
+      const ts = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties(sheetId,title)' });
+      const oldTasks = (ts.data.sheets || []).filter(t => t.properties.title === TASKS_TAB && gridPoolFor(SHEET_ID, TASKS_TAB));
+      if (oldTasks.length) await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { requests: oldTasks.map(t => ({ deleteSheet: { sheetId: t.properties.sheetId } })) } });
+      const now = new Date().toISOString();
+      const clientHead = ['Timestamp', 'Company', 'Address', 'Postcode', 'Contact Name', 'Job Title', 'Email', 'Phone', 'Folder Created', 'Notes'];
+      await sheets.spreadsheets.values.update({ spreadsheetId: CLIENT_SHEET_ID, range: `${CLIENT_TAB}!A1:J3`, valueInputOption: 'RAW', requestBody: { values: [clientHead,
+        [now, 'Test Client Ltd', '1 Test Street, Telford', 'TF1 1AA', 'Test Pat Manager', 'Operations Manager', 'pat@example.com', '07700 900101', 'No', '[test]'],
+        [now, 'Test Client Ltd', '1 Test Street, Telford', 'TF1 1AA', 'Test Sam Buyer', 'Buyer', 'sam@example.com', '07700 900102', 'No', '[test]']] } });
+      await sheets.spreadsheets.values.update({ spreadsheetId: CLIENT_SHEET_ID, range: `${LEAD_CLIENT_TAB}!A1:J3`, valueInputOption: 'RAW', requestBody: { values: [clientHead,
+        [now, 'Test Lead Co', '2 Test Road, Stoke', 'ST4 1AA', 'Test Lee Director', 'Director', 'lee@example.com', '07700 900103', 'No', '[test]'],
+        [now, 'Test Prospect plc', '3 Test Way, Wolverhampton', 'WV1 1AA', 'Test Kim HR', 'HR Manager', 'kim@example.com', '07700 900104', 'No', '[test]']] } });
+      await sheets.spreadsheets.values.update({ spreadsheetId: CLIENT_SHEET_ID, range: `${COLD_CALLS_TAB}!A1:I2`, valueInputOption: 'RAW', requestBody: { values: [
+        ['Company', 'Contact Names', 'Contact Type', 'Date Called', 'Notes', 'Follow-up Date', 'Status', 'Outcome', 'Created At'],
+        ['Test Lead Co', 'Test Lee Director', 'call', today, '[test] asked to call back', today, 'active', 'attempt', now]] } });
+      await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `${TASKS_TAB}!A1:I3`, valueInputOption: 'RAW', requestBody: { values: [
+        ['ID', 'User', 'Title', 'Priority', 'Due Date', 'Context', 'Status', 'Recurring', 'Archived'],
+        ['test-task-1', 'dan', 'Test task: call Test Lead Co', 'high', today, '[test]', 'todo', 'none', 'false'],
+        ['test-task-2', 'ella', 'Test task: send spec CV', 'medium', today, '[test]', 'todo', 'none', 'false']] } });
+      added.clients = 2; added.leads = 2; added.coldCalls = 1; added.tasks = 2;
+    }
+    if (!pgPoolFor('candidates')) return res.json({ ok: true, added });
     const ss = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties(sheetId,title)' });
     const drop = (ss.data.sheets || []).filter(t => gridPoolFor(SHEET_ID, t.properties.title) && /^(Dashboard|Applications - Test Role)$/.test(t.properties.title));
     if (drop.length) await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { requests: drop.map(t => ({ deleteSheet: { sheetId: t.properties.sheetId } })) } });
@@ -9199,7 +9241,7 @@ app.post('/api/storage/preview-seed', requireAdmin, async (req, res) => {
       requestBody: { values: [head, app('test-a1', 'Test Dev Applicant', 1), app('test-a2', 'Test Eve Applicant', 2), app('test-a3', 'Test Finn Applicant', 3)] },
     });
     await ensurePoolTab();
-    res.json({ ok: true, added: { pipeline: 3, applications: 3 } });
+    res.json({ ok: true, added: { ...added, pipeline: 3, applications: 3 } });
   } catch (e) { console.error('Preview seed error:', e.message); res.status(500).json({ error: e.message }); }
 });
 
@@ -9208,7 +9250,7 @@ async function backupDatabaseToDrive(drive, folderId, date) {
   if (!pgLivePool || !PG_LIVE_GROUPS.size) return null;
   const tables = SIMPLE_TABLES.filter(t => PG_LIVE_GROUPS.has(t.group));
   const wholeTabs = [];
-  for (const g of PG_LIVE_GROUPS) for (const pr of await pgGridTabsOfGroup(pgLivePool, g)) wholeTabs.push(pr.title);
+  for (const g of PG_LIVE_GROUPS) for (const pr of await pgGridTabsOfGroup(pgLivePool, g)) wholeTabs.push(pr);
   if (!tables.length && !wholeTabs.length) return null;
   const name = `Workspace database backup ${date}`;
   const existing = await drive.files.list({ q: `'${folderId}' in parents and name='${name}' and trashed=false`, fields: 'files(id)', pageSize: 1 });
@@ -9230,8 +9272,9 @@ async function backupDatabaseToDrive(drive, folderId, date) {
     requests.push({ addSheet: { properties: { title: titleOf(t), gridProperties: { rowCount: rows.length + 10, columnCount: Math.max(t.header.length, 1) } } } });
     data.push({ range: `'${titleOf(t).replace(/'/g, "''")}'!A1`, values: [t.header, ...rows] });
   }
-  for (const title of wholeTabs) {
-    const rows = (await gridReadPgTab(pgLivePool, SHEET_ID, title)).map(r => r.map(v => (v.length > 49000 ? v.slice(0, 49000) + ' [cut for backup]' : v)));
+  for (const pr of wholeTabs) {
+    const title = gridTabLabel(pr);
+    const rows = (await gridReadPgTab(pgLivePool, pr.sid, pr.title)).map(r => r.map(v => (v.length > 49000 ? v.slice(0, 49000) + ' [cut for backup]' : v)));
     total += nonEmptyRows(rows);
     const cols = Math.max(1, ...rows.map(r => r.length));
     requests.push({ addSheet: { properties: { title, gridProperties: { rowCount: rows.length + 10, columnCount: cols } } } });
@@ -13914,7 +13957,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '27 Oct 2026 - build 48.2 (Drive fix)';
+const SERVER_BUILD = '27 Oct 2026 - build 48.3 (clients and tasks can move to Postgres)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
