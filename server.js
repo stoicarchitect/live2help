@@ -7269,10 +7269,12 @@ app.post('/api/onboarding/:clientId/send-signed', requireAdmin, async (req, res)
 // Nightly backup: the live onboarding tables, as extra tabs in the database backup sheet
 async function onbBackupTabs(pool) {
   await onbEnsure(pool);
+  await onbSiteSchema(pool); // go-live: client_billing is created here
   const defs = [
     ['Onboarding', 'select client_id, company, status, paused, steps, recipients, reminders, started_by, started_at, completed_at, updated_at from onboarding order by company'],
     ['Onboarding Signatures', 'select id, client_id, doc, version, signer_name, signer_email, signer_title, method, consented, ip, signed_at, countersigned_by, countersigned_at, pdf_drive_id, audit from onboarding_signatures order by id'],
-    ['Onboarding Site Form', 'select client_id, answers, sections_done, status, submitted_at, pdf_drive_id, updated_by, updated_at from onboarding_site_form order by client_id'],
+    ['Onboarding Site Form', 'select client_id, answers, sections_done, status, submitted_at, pdf_drive_id, applied, updated_by, updated_at from onboarding_site_form order by client_id'],
+    ['Client Billing', 'select * from client_billing order by client_id'], // go-live: added to the nightly backup
   ];
   const out = [];
   for (const [title, sql] of defs) {
@@ -10957,11 +10959,14 @@ app.post('/api/storage/preview-seed', requireAdmin, async (req, res) => {
 
 // Nightly: everything held in the live database, as a readable dated Google Sheet in the backup folder
 async function backupDatabaseToDrive(drive, folderId, date) {
-  if (!pgLivePool || !PG_LIVE_GROUPS.size) return null;
+  if (!pgLivePool) return null;
   const tables = SIMPLE_TABLES.filter(t => PG_LIVE_GROUPS.has(t.group));
   const wholeTabs = [];
   for (const g of PG_LIVE_GROUPS) for (const pr of await pgGridTabsOfGroup(pgLivePool, g)) wholeTabs.push(pr);
-  if (!tables.length && !wholeTabs.length) return null;
+  // go-live: onboarding tables are backed up even when no Sheets group has moved to Postgres
+  let onbTabs = [];
+  try { onbTabs = await onbBackupTabs(pgLivePool); } catch (e) { console.error('Backup: onboarding tables skipped:', e.message); }
+  if (!tables.length && !wholeTabs.length && !onbTabs.length) return null;
   const name = `Workspace database backup ${date}`;
   const existing = await drive.files.list({ q: `'${folderId}' in parents and name='${name}' and trashed=false`, fields: 'files(id)', pageSize: 1 });
   if (existing.data.files && existing.data.files.length) return { name, skipped: 'already made today' };
@@ -10991,14 +10996,12 @@ async function backupDatabaseToDrive(drive, folderId, date) {
     if (rows.length) data.push({ range: `${gridQuote(title)}!A1`, values: rows });
   }
   // build 49.0: onboarding tables (Postgres only, so they are not in SIMPLE_TABLES)
-  try {
-    for (const t of await onbBackupTabs(pgLivePool)) {
-      const rows = t.rows.map(r => r.map(v => (v.length > 49000 ? v.slice(0, 49000) + ' [cut for backup]' : v)));
-      total += Math.max(0, rows.length - 1);
-      requests.push({ addSheet: { properties: { title: t.title, gridProperties: { rowCount: rows.length + 10, columnCount: Math.max(1, rows[0].length) } } } });
-      data.push({ range: `${gridQuote(t.title)}!A1`, values: rows });
-    }
-  } catch (e) { console.error('Backup: onboarding tables skipped:', e.message); }
+  for (const t of onbTabs) {
+    const rows = t.rows.map(r => r.map(v => (v.length > 49000 ? v.slice(0, 49000) + ' [cut for backup]' : v)));
+    total += Math.max(0, rows.length - 1);
+    requests.push({ addSheet: { properties: { title: t.title, gridProperties: { rowCount: rows.length + 10, columnCount: Math.max(1, rows[0].length) } } } });
+    data.push({ range: `${gridQuote(t.title)}!A1`, values: rows });
+  }
   if (starter) requests.push({ deleteSheet: { sheetId: starter.properties.sheetId } });
   await sheets.spreadsheets.batchUpdate({ spreadsheetId: fileId, requestBody: { requests } });
   // written in parts so one large table never makes the request too big
@@ -11012,7 +11015,7 @@ async function backupDatabaseToDrive(drive, folderId, date) {
   await flush();
   const all = await drive.files.list({ q: `'${folderId}' in parents and name contains 'Workspace database backup' and trashed=false`, orderBy: 'createdTime desc', fields: 'files(id)', pageSize: 100 });
   for (const f of (all.data.files || []).slice(BACKUP_KEEP)) await drive.files.update({ fileId: f.id, requestBody: { trashed: true } });
-  return { name, tables: tables.length + wholeTabs.length, rows: total };
+  return { name, tables: tables.length + wholeTabs.length + onbTabs.length, rows: total };
 }
 
 /* ---------- KPI engine (replaces the old placeholder maths) ---------- */
@@ -15758,7 +15761,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '30 Oct 2026 - build 49.6 (onboarding phase 4: site form to client record, site pack, Drive PDF, report, late payment charge)';
+const SERVER_BUILD = '30 Oct 2026 - build 49.7 (go-live: onboarding screens on /dashboard, onboarding and client billing in the nightly backup)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

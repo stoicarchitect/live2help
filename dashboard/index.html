@@ -1039,6 +1039,14 @@
     #toast,.toast{bottom:calc(72px + env(safe-area-inset-bottom)) !important;}
     .board-scroll-btn{display:none !important;}
   }
+/* build 49.3: lead client roles */
+.lead-cap{display:inline-block;background:#FBF0DC;color:#7A4E0C;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:600;letter-spacing:.2px;white-space:nowrap}
+.stage-col.lead-locked{opacity:.55;background:repeating-linear-gradient(135deg,transparent 0 10px,rgba(201,168,76,.07) 10px 20px)}
+.stage-col.lead-locked .stage-head .c{font-size:10.5px;text-transform:uppercase;letter-spacing:.4px}
+tr.lead-sec td{background:#FBF7EC;border-top:2px solid var(--gold,#C9A84C);padding:10px 12px}
+tr.lead-sec b{display:block;color:var(--navy,#0B0B18);font-size:13.5px}
+tr.lead-sec span{color:#7A6A45;font-size:12.5px}
+.lead-hint{background:#FBF0DC;color:#7A4E0C;border-radius:6px;padding:8px 10px;font-size:12.5px;margin:6px 0 4px}
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -2840,6 +2848,25 @@ async function loadCandidates(){
   }
 }
 
+/* ---------- build 49.3: roles for lead clients stop at Submitted until they are onboarded ---------- */
+const LEAD_ROLES = {names:new Set(), at:0, loading:null};
+const leadNorm = s => String(s || '').toLowerCase().replace(/\b(ltd|limited|plc|llp|uk|group)\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+function loadLeadCompanies(force){
+  if(!force && (LEAD_ROLES.loading || Date.now() - LEAD_ROLES.at < 60000)) return LEAD_ROLES.loading || Promise.resolve();
+  LEAD_ROLES.loading = fetch(`${API_BASE}/api/lead-pipeline`).then(r => r.ok ? r.json() : {data:[]}).then(j => {
+    LEAD_ROLES.names = new Set((j.data || []).filter(l => !l.is_client).map(l => leadNorm(l.company)).filter(Boolean));
+    LEAD_ROLES.list = (j.data || []).filter(l => !l.is_client && !['lost', 'archived'].includes(l.stage)).map(l => l.company);
+    LEAD_ROLES.at = Date.now();
+  }).catch(() => {}).finally(() => { LEAD_ROLES.loading = null; });
+  return LEAD_ROLES.loading;
+}
+function isLeadCompany(company){ return !!company && LEAD_ROLES.names.has(leadNorm(company)); }
+const LEAD_CAP_RANK = 2; // index of Submitted in STAGES order
+function stageLockedForLead(company, stageKey){
+  if(!isLeadCompany(company) || stageKey === 'rejected') return false;
+  return STAGES.findIndex(s => s.key === stageKey) > LEAD_CAP_RANK;
+}
+
 async function saveCandidate(c){
   try{
     const res = await fetch(`${API_BASE}/api/candidates`, {
@@ -2849,6 +2876,8 @@ async function saveCandidate(c){
     });
     if(!res.ok){
       const err = await res.json().catch(()=>({}));
+      // the move was refused (lead client): put the board back as it was
+      if(err.code === 'LEAD_STAGE_CAP'){ showToast(err.error); loadLeadCompanies(true); loadCandidates(); return; }
       throw new Error(err.error || ('Server returned ' + res.status));
     }
   }catch(e){
@@ -3043,13 +3072,17 @@ function renderBoard(){
   tbCompany.textContent = currentCompany.toUpperCase();
   tbRole.textContent = currentRole;
   tbMeta.textContent = candidates.length + (candidates.length === 1 ? ' candidate in pipeline' : ' candidates in pipeline');
+  const leadRole = isLeadCompany(currentCompany);
+  if(leadRole) tbMeta.innerHTML = esc(tbMeta.textContent) + ' · <span class="lead-cap" title="Interviews, offers and starts unlock once they have signed both agreements and moved to Clients">Lead client: CVs up to Submitted until onboarded</span>';
+  if(!LEAD_ROLES.at) loadLeadCompanies().then(() => { if(isLeadCompany(currentCompany)) renderBoard(); });
 
   board.innerHTML = '';
   STAGES.forEach(stage => {
     const col = document.createElement('div');
-    col.className = 'stage-col';
+    const locked = leadRole && stageLockedForLead(currentCompany, stage.key);
+    col.className = 'stage-col' + (locked ? ' lead-locked' : '');
     const inStage = candidates.filter(c => c.stage === stage.key);
-    col.innerHTML = `<div class="stage-head"><span class="t">${stage.label}</span><span class="c">${inStage.length}</span></div>`;
+    col.innerHTML = `<div class="stage-head"><span class="t">${stage.label}</span><span class="c">${locked && !inStage.length ? 'Locked' : inStage.length}</span></div>`;
     const body = document.createElement('div');
     body.className = 'stage-body';
     if(inStage.length === 0){
@@ -3376,6 +3409,8 @@ function buildStageButtons(c){
     const label = !r ? 'Start the submission draft' : (r.status === 'email_built' ? 'Confirm the email was sent' : (r.status === 'approved' ? 'Build the client email' : 'Review the submission draft'));
     html += `<button class="primary" onclick="subOpenFromCard()">${label}</button>`;
     html += `<button onclick="subSkipToSubmitted()">Mark as Submitted (skip automation)</button>`;
+  } else if(nextKey && stageLockedForLead(currentCompany, nextKey)){
+    html += `<button class="primary" disabled title="Unlocks once ${esc(currentCompany)} has signed both agreements and moved to Clients">${esc(stageObj.label)} unlocks once ${esc(currentCompany)} is onboarded</button>`;
   } else if(nextKey){
     html += `<button class="primary" onclick="advanceStage('${nextKey}')">Move to ${stageObj.label}</button>`;
   }
@@ -4022,6 +4057,27 @@ async function loadInvoices(){
   }
 }
 
+// build 49.6: late payment charge under Terms clause 6.3 (1% of the original value, plus 1% per further full month)
+function invLateLine(inv){
+  const lt = inv.late; if(!lt) return '';
+  const gbp = n => '£' + Number(n).toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2});
+  if(lt.waived) return `<div class="invoice-dates" style="color:#8a8f9e">Late charge of ${gbp(lt.would_be)} waived${lt.waived_note ? ': ' + escHtml49(lt.waived_note) : ''} <a href="#" onclick="invLateWaive('${inv.number}', false);return false;">Restore</a></div>`;
+  if(lt.applies && lt.charge > 0) return `<div class="invoice-dates" style="color:#B54708" title="1% of the original invoice value from ${fmtDateShort(lt.from)}, then 1% for each further full month. Fixed, never compounds.">Late charge ${gbp(lt.charge)} (${lt.count} x 1%) · balance ${gbp(lt.total_due)}${inv.status !== 'paid' && lt.next ? ' · next 1% on ' + fmtDateShort(lt.next) : ''} <a href="#" onclick="invLateWaive('${inv.number}', true);return false;">Waive</a></div>`;
+  if(lt.reason === 'older_terms' || lt.reason === 'no_2026_terms') return inv.status !== 'paid' && inv.dueDate && inv.dueDate < new Date().toISOString().slice(0, 10) ? `<div class="invoice-dates" style="color:#8a8f9e" title="Late charges apply only to invoices dated after the client signed the 2026 Terms">No late charge: client not on the 2026 Terms</div>` : '';
+  return '';
+}
+function escHtml49(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+async function invLateWaive(number, waive){
+  let note = '';
+  if(waive){ note = prompt('Waive the late payment charge on ' + number + '? Add a short reason (optional):', ''); if(note === null) return; }
+  else if(!confirm('Restore the late payment charge on ' + number + '?')) return;
+  try{
+    const r = await fetch(API_BASE + '/api/invoices/' + encodeURIComponent(number) + '/late-charge', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({waive, note})});
+    const j = await r.json().catch(() => ({}));
+    if(!r.ok) throw new Error(j.error || 'Could not save');
+    if(typeof loadInvoices === 'function') loadInvoices();
+  }catch(e){ alert(e.message); }
+}
 function renderInvoiceCard(inv){
   const statusClass = inv.status === 'paid' ? 'status-paid' : inv.status === 'sent' ? 'status-sent' : '';
   const methodLabel = inv.status === 'paid' && inv.paymentMethod
@@ -4044,7 +4100,7 @@ function renderInvoiceCard(inv){
       <div class="invoice-candidate">${inv.candidateName}${inv.role ? ' &middot; ' + inv.role : ''}</div>
       <div class="invoice-amount">£${Number(inv.amount).toLocaleString('en-GB', {minimumFractionDigits:2})}</div>
       <div class="invoice-dates">${fmtDateShort(inv.date)} &rarr; ${fmtDateShort(inv.dueDate)}</div>
-      ${methodLabel}${payNote}
+      ${methodLabel}${payNote}${invLateLine(inv)}
       <div class="invoice-card-actions">
         <button onclick="downloadInvoicePDF('${inv.number}')">Download PDF</button>
         ${canPay ? `<button onclick="copyInvoicePayLink('${inv.number}')" title="Copy the client's Pay by Bank link to paste into your email">Copy pay link</button>` : ''}
@@ -4378,24 +4434,20 @@ function escapeAttr(text){
 async function moveLeadToClient(company, contactName){
   if(!confirm(`Move ${company} from Lead Clients to active Clients?`)) return;
   try{
-    const lead = leadClientsData.find(c => c.company === company && c.contactName === contactName);
+    const lead = (typeof leadClientsData !== 'undefined' ? leadClientsData : []).find(c => c.company === company && c.contactName === contactName);
     if(!lead) throw new Error('Lead client not found');
-    
-    await fetch(`${API_BASE}/api/clients`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(lead)
-    });
-    
+    // build 49.1: only remove the lead once the client has really been created
+    await l2hClientPost(lead);
     await fetch(`${API_BASE}/api/lead-clients/${encodeURIComponent(company)}/${encodeURIComponent(contactName)}`, {
       method: 'DELETE'
-    });
+    }).catch(() => {});
     
     if(!CLIENT_TERMS.some(t => t.id === clientTermsKey(company))) await saveClientTerms(company, 14, true); // new clients start on 14 days
     showToast(`${company} moved to active Clients`);
     loadLeadClients();
     loadClients();
   }catch(e){
+    if(e.cancelled) return;
     showToast('Could not move lead client: ' + e.message);
   }
 }
@@ -4587,33 +4639,34 @@ async function submitAddClient(){
     return;
   }
   
+  const payload = {
+    company,
+    address: document.getElementById('clientAddressInput').value.trim(),
+    postcode: document.getElementById('clientPostcodeInput').value.trim(),
+    contactName,
+    jobTitle: document.getElementById('clientJobTitleInput').value.trim(),
+    email,
+    phone: document.getElementById('clientPhoneInput').value.trim(),
+    notes: document.getElementById('clientNotesInput').value.trim()
+  };
   try{
-    const res = await fetch(`${API_BASE}/api/clients`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        company,
-        address: document.getElementById('clientAddressInput').value.trim(),
-        postcode: document.getElementById('clientPostcodeInput').value.trim(),
-        contactName,
-        jobTitle: document.getElementById('clientJobTitleInput').value.trim(),
-        email,
-        phone: document.getElementById('clientPhoneInput').value.trim(),
-        notes: document.getElementById('clientNotesInput').value.trim()
-      })
-    });
-    
-    if(!res.ok) throw new Error('Server returned ' + res.status);
+    let addJson;
+    try{ addJson = await l2hClientPost(payload); }
+    catch(e){
+      // build 49.2: a new company needs the onboarding pack sent, or signed copies uploaded
+      if(e.code === 'NEEDS_ONBOARDING_CHOICE'){ closeModal('addClientOverlay'); onbChoiceOpen(payload, e.can_override); return; }
+      throw e;
+    }
     const termsEl = document.getElementById('clientTermsInput');
     if(termsEl && String(clientTermsDays(company)) !== termsEl.value || (termsEl && !CLIENT_TERMS.some(t => t.id === clientTermsKey(company)))){
       await saveClientTerms(company, termsEl.value, true);
     }
-    const addJson = await res.json().catch(() => ({}));
     showToast(addJson.folders && addJson.folders.ok ? 'Client added and their Drive folders are ready'
       : 'Client added. The Drive folders could not be created' + (addJson.folders && addJson.folders.error ? ' (' + addJson.folders.error + ')' : '') + ' - use Create missing folders to try again');
     closeModal('addClientOverlay');
     loadClients();
   }catch(e){
+    if(e.cancelled) return;
     showToast('Could not add client: ' + e.message);
   }
 }
@@ -6434,14 +6487,16 @@ function renderRoles(){
     body.innerHTML = '<tr><td colspan="11" class="empty-row">' + (all.length ? 'No roles match these filters.' : 'No roles yet. Add one to get started.') + '</td></tr>';
     return;
   }
-  body.innerHTML = list.map(r => {
+  if(!LEAD_ROLES.at) loadLeadCompanies().then(() => { if(LEAD_ROLES.names.size) renderRoles(); });
+  const clientRows = list.filter(r => !isLeadCompany(r.company)), leadRows = list.filter(r => isLeadCompany(r.company));
+  const rowsHtml = arr => arr.map(r => {
     const opened = opsDateOnly(r.date_opened);
     const end = opsDateOnly(r.date_closed) || today;
     const days = opened ? opsDaysBetween(opened, end) : '';
     const hasBoard = !!(DATA[r.company] && Object.keys(DATA[r.company]).some(k => k.trim().toLowerCase() === r.role.trim().toLowerCase()));
     return `<tr>
       <td class="strong">${esc(r.role)}${r.stored ? '' : '<span class="status-pill auto" title="Created automatically from the pipeline">Auto</span>'}${r.ref ? `<div style="font-size:10.5px;color:#999;font-weight:400;letter-spacing:.3px;">${esc(r.ref)}</div>` : ''}</td>
-      <td>${esc(r.company)}</td>
+      <td>${esc(r.company)}${isLeadCompany(r.company) ? '<div><span class="lead-cap" title="Candidates go up to Submitted until they are onboarded">Lead client</span></div>' : ''}</td>
       <td>${r.contact ? esc(r.contact) : '<span style="color:#bbb;">Not set</span>'}</td>
       <td>${r.salary_band ? esc(r.salary_band) : '<span style="color:#bbb;">Not set</span>'}</td>
       <td>${roleAutoFee(r.salary_band) ? roleAutoFee(r.salary_band) + '%' : '<span style="color:#bbb;" title="Fills in automatically once a salary is added">Awaiting salary</span>'}</td>
@@ -6460,6 +6515,8 @@ function renderRoles(){
       </div></td>
     </tr>`;
   }).join('');
+  body.innerHTML = (clientRows.length ? rowsHtml(clientRows) : (leadRows.length ? '<tr><td colspan="11" class="empty-row">No client roles match these filters.</td></tr>' : '')) +
+    (leadRows.length ? `<tr class="lead-sec"><td colspan="11"><b>Lead client roles</b><span>Source and submit CVs to win the business. Candidates go up to Submitted. Interviews, offers and starts unlock once the lead has signed both agreements and moved to Clients.</span></td></tr>` + rowsHtml(leadRows) : '');
 }
 
 /* ---------- Role notes ---------- */
@@ -6614,9 +6671,11 @@ function rmRefreshContacts(){
 function openRoleModal(id){
   editingRoleId = id || null;
   const r = id ? mergedRoles().find(x => x.id === id) : null;
+  if(!LEAD_ROLES.at) loadLeadCompanies().then(() => { if(document.getElementById('roleModal').classList.contains('visible')) rmLeadHint(); });
   const companies = [...new Set([].concat(
     (APPLICANT_CLIENT_LIST || []).map(c => c.company),
-    Object.keys(DATA).filter(c => c !== UNASSIGNED_LABEL)
+    Object.keys(DATA).filter(c => c !== UNASSIGNED_LABEL),
+    LEAD_ROLES.list || []
   ).filter(Boolean))].sort();
   document.getElementById('rmCompanyList').innerHTML = companies.map(c => `<option value="${esc(c)}">`).join('');
   document.getElementById('roleModalTitle').textContent = r ? 'Edit role' : 'Add role';
@@ -6640,6 +6699,16 @@ function openRoleModal(id){
   rmRefreshContacts();
   document.getElementById('roleModal').classList.add('visible');
   rmCheckForm();
+  rmLeadHint();
+}
+// Tell the user when the role is for a lead client
+function rmLeadHint(){
+  const inp = document.getElementById('rmCompany'); if(!inp) return;
+  let el = document.getElementById('rmLeadHint');
+  if(!el){ el = document.createElement('div'); el.id = 'rmLeadHint'; el.className = 'lead-hint'; inp.insertAdjacentElement('afterend', el); inp.addEventListener('input', rmLeadHint); }
+  const lead = isLeadCompany(inp.value.trim());
+  el.style.display = lead ? 'block' : 'none';
+  el.textContent = lead ? inp.value.trim() + ' is a lead client. You can source and submit CVs to win the business. Candidates stop at Submitted until they have signed both agreements and moved to Clients.' : '';
 }
 
 async function saveRole(){
@@ -11367,6 +11436,7 @@ const SITE_FIELD_DEFS = [
   {key:'safety_requirements', label:'Site safety requirements', section:'What to Wear'},
   {key:'accessibility', label:'Accessibility (lifts, toilets, access)', section:'Health, Safety and Accessibility'},
   {key:'refreshments', label:'Refreshments', section:'Health, Safety and Accessibility'},
+  {key:'prayer_room', label:'Prayer or quiet room', section:'Health, Safety and Accessibility'},
   {key:'dietary', label:'Dietary needs', section:'Health, Safety and Accessibility'},
   {key:'induction', label:'Health and safety induction', section:'Health, Safety and Accessibility'},
   {key:'interview_duration', label:'Expected length of visit', section:'Good to Know'},
@@ -15688,6 +15758,7 @@ function lpxOpen(id){
       ${contacts ? `<label>Contacts on Lead Clients</label><div class="rfx-list">${contacts}</div>` : ''}
       <label>Activity</label><div class="rfx-list">${l.calls ? `${l.calls} logged contact${l.calls === 1 ? '' : 's'}, last ${esc(rfxFmt(l.last_call))}${l.last_outcome ? ' (' + esc(l.last_outcome) + ')' : ''}` : 'No calls logged yet'}${l.next_followup ? `<br>Next follow-up ${esc(rfxFmt(l.next_followup))}` : ''}${l.live_roles && l.live_roles.length ? '<br>Live adverts: ' + l.live_roles.map(esc).join(', ') : ''}</div>
       ${hist ? `<label>Stage history</label><div class="lpx-hist">${hist}</div>` : ''}
+      ${l.is_client ? '' : `<label>Onboarding</label><div class="rfx-list">${lpxOnbLine(l)}</div>`}
       <div class="actions"><button class="cancel" onclick="lpxLogCall()">Log a call</button><button class="save" onclick="lpxSaveModal()">Save</button></div>
       <div class="actions" style="margin-top:8px;">
         ${l.is_client ? '<button class="cancel" disabled>Already a client</button>' : '<button class="save" style="background:#2D6A3E;border-color:#2D6A3E;" onclick="lpxConvert()">Convert to client</button>'}
@@ -15695,6 +15766,120 @@ function lpxOpen(id){
       </div>
     </div>`;
   document.getElementById('lpxModal').classList.add('visible');
+}
+
+// build 49.1: a lead is onboarded from the Terms stage, and only becomes a client once both agreements are signed
+function lpxOnbLine(l){
+  const o = typeof onbStatus41 === 'function' ? onbStatus41(l.company) : null;
+  const st = o && o.steps ? o.steps : {};
+  const signed = ['terms', 'dsa'].filter(k => (st[k] || {}).status === 'signed').length;
+  const btn = `<button class="cancel" style="margin-top:6px" data-onbco="${esc(l.company)}" onclick="onbOpenCompany41(this.dataset.onbco)">${o ? 'Open onboarding' : 'Start onboarding'}</button>`;
+  if(o) return `${signed}/2 agreements signed${o.status === 'complete' ? ' · onboarding complete' : ''}<br>${btn}`;
+  if(l.stage === 'terms') return `Not started. Start it to send the agreements. ${esc(l.company)} becomes a client once both are signed.<br>${btn}`;
+  return 'Opens at the Terms stage. Converting to a client needs both agreements signed.';
+}
+// Shared by Convert to client and Move to clients: shows why it is locked, and lets Dan override
+async function l2hClientPost(body){
+  const send = async b => { const r = await fetch(`${API_BASE}/api/clients`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(b)}); const j = await r.json().catch(() => ({})); return {r, j}; };
+  let {r, j} = await send(body);
+  if(r.status === 409 && j.code === 'NEEDS_ONBOARDING_CHOICE' && !body.override){ const e = new Error(j.error); e.code = j.code; e.can_override = j.can_override; throw e; }
+  if(r.status === 409 && j.code === 'NEEDS_ONBOARDING'){
+    if(!j.can_override) throw new Error(j.error);
+    if(!confirm(j.error + '\n\nOverride and make them a client anyway? This is recorded in the audit log.')) { const e = new Error('cancelled'); e.cancelled = true; throw e; }
+    ({r, j} = await send({...body, override:true}));
+    if(r.ok) return {...j, overridden:true};
+  }
+  if(!r.ok) throw new Error(j.error || ('Server returned ' + r.status));
+  return j;
+}
+
+/* ---------- build 49.2: Add client for a new company asks how the agreements will be signed ---------- */
+function onbChoiceEl(){
+  let el = document.getElementById('onbChoice');
+  if(!el){
+    el = document.createElement('div'); el.id = 'onbChoice';
+    el.innerHTML = '<style>#onbChoice{position:fixed;inset:0;z-index:1200;display:none;align-items:center;justify-content:center;padding:16px}#onbChoice.visible{display:flex}#onbChoice .bk{position:absolute;inset:0;background:rgba(8,14,28,.55)}#onbChoice .bx{position:relative;background:#fff;border-radius:12px;max-width:560px;width:100%;max-height:calc(100vh - 32px);overflow:auto;padding:22px;box-shadow:0 20px 50px rgba(0,0,0,.3)}#onbChoice h2{font-family:var(--f-display,inherit);color:var(--navy,#0B0B18);font-size:20px;margin:0 0 6px}#onbChoice .sub{color:#666;font-size:13.5px;margin:0 0 14px}#onbChoice .opt{display:block;width:100%;text-align:left;border:1px solid var(--border,#ddd);background:#fff;border-radius:10px;padding:14px 16px;margin-bottom:10px;cursor:pointer;font:inherit}#onbChoice .opt:hover{border-color:var(--gold,#C9A84C)}#onbChoice .opt b{display:block;color:var(--navy,#0B0B18);font-size:15px;margin-bottom:3px}#onbChoice .opt span{color:#666;font-size:13px}#onbChoice label{display:block;font-size:13px;color:#555;margin:10px 0 4px}#onbChoice input{width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid var(--border,#ddd);border-radius:8px;font:inherit}#onbChoice .warn{background:#FBF0DC;color:#7A4E0C;border-left:3px solid #C9A84C;border-radius:8px;padding:12px 14px;font-size:14px;margin:4px 0 14px}#onbChoice .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}#onbChoice .btn{border:1px solid var(--border,#ddd);background:#fff;border-radius:8px;padding:9px 16px;cursor:pointer;font:inherit;font-weight:500}#onbChoice .btn.pri{background:var(--navy,#0B0B18);color:#fff;border-color:var(--navy,#0B0B18)}#onbChoice .err{color:var(--danger,#B4382B);font-size:13px;margin-top:8px}#onbChoice .lnk{background:none;border:none;color:#888;font-size:12.5px;text-decoration:underline;cursor:pointer;padding:6px 0}</style><div class="bk" data-onbc="close"></div><div class="bx" role="dialog" aria-modal="true" aria-labelledby="onbChoiceH"></div>';
+    document.body.appendChild(el);
+    el.addEventListener('click', e => { const t = e.target.closest('[data-onbc]'); if(t) onbChoiceAct(t.dataset.onbc, t); });
+  }
+  return el;
+}
+let ONB_CHOICE = null;
+function onbChoiceOpen(payload, canOverride){
+  const te = document.getElementById('clientTermsInput');
+  ONB_CHOICE = {payload, canOverride, terms: (ONB_CHOICE && ONB_CHOICE.payload === payload && ONB_CHOICE.terms) || (te && te.value) || '14'};
+  const co = esc(payload.company);
+  onbChoiceEl().querySelector('.bx').innerHTML = `<h2 id="onbChoiceH">Does ${co} need the onboarding pack?</h2>
+    <p class="sub">Every client needs a signed Terms of Engagement and Data Sharing Agreement before we work for them.</p>
+    <button class="opt" data-onbc="send"><b>Yes, send them the onboarding</b><span>${co} is added as a lead client at Terms and onboarding starts. You then choose who signs and send the link. They become a client once both agreements are signed.</span></button>
+    <button class="opt" data-onbc="upload"><b>No, they have already signed our agreements</b><span>Upload the signed Terms of Engagement and Data Sharing Agreement (PDF). ${co} is then added as a client.</span></button>
+    <div class="row"><button class="btn" data-onbc="close">Cancel</button></div>
+    ${canOverride ? '<button class="lnk" data-onbc="override">Add as a client without signed agreements (Dan only, recorded in the audit log)</button>' : ''}`;
+  onbChoiceEl().classList.add('visible');
+}
+function onbChoiceUploadForm(){
+  const p = ONB_CHOICE.payload, today = new Date().toISOString().slice(0, 10);
+  onbChoiceEl().querySelector('.bx').innerHTML = `<h2 id="onbChoiceH">Upload the signed agreements</h2>
+    <p class="sub">${esc(p.company)} is added as a client once both are uploaded. Signed copies are filed in their Drive folder under Agreements and only Dan can open them.</p>
+    <label for="onbUpTerms">Signed Terms of Engagement (PDF)</label><input type="file" id="onbUpTerms" accept="application/pdf,.pdf">
+    <label for="onbUpDsa">Signed Data Sharing Agreement (PDF)</label><input type="file" id="onbUpDsa" accept="application/pdf,.pdf">
+    <label for="onbUpName">Signed for ${esc(p.company)} by</label><input id="onbUpName" value="${esc(p.contactName || '')}" placeholder="Full name">
+    <label for="onbUpDate">Date signed</label><input type="date" id="onbUpDate" value="${today}" max="${today}">
+    <div class="err" id="onbUpErr" role="alert"></div>
+    <div class="row"><button class="btn pri" data-onbc="doupload">Upload and add client</button><button class="btn" data-onbc="back">Back</button></div>`;
+}
+function onbReadPdf(input){
+  return new Promise((resolve, reject) => {
+    const f = input.files && input.files[0];
+    if(!f) return reject(new Error('Choose both PDF files'));
+    if(!/\.pdf$/i.test(f.name) && f.type !== 'application/pdf') return reject(new Error(f.name + ' is not a PDF'));
+    if(f.size > 10 * 1024 * 1024) return reject(new Error(f.name + ' is larger than 10 MB'));
+    const r = new FileReader(); r.onload = () => resolve({name: f.name, data: String(r.result)}); r.onerror = () => reject(new Error('Could not read ' + f.name)); r.readAsDataURL(f);
+  });
+}
+async function onbChoiceAct(what, btn){
+  const c = ONB_CHOICE; if(!c && what !== 'close') return;
+  const el = onbChoiceEl(), id = c ? c.payload.company.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') : '';
+  if(what === 'close'){ el.classList.remove('visible'); ONB_CHOICE = null; return; }
+  if(what === 'back'){ onbChoiceOpen(c.payload, c.canOverride); return; }
+  if(what === 'upload'){ onbChoiceUploadForm(); return; }
+  if(what === 'open'){ el.classList.remove('visible'); ONB_CHOICE = null; if(typeof onbOpenCompany41 === 'function') onbOpenCompany41(c.payload.company); return; }
+  btn.disabled = true;
+  try{
+    if(what === 'send'){
+      const j = await b2Post('/api/onboarding/new-client-lead', c.payload);
+      el.querySelector('.bx').innerHTML = `<h2 id="onbChoiceH">${esc(c.payload.company)} is a lead client for now</h2>
+        <div class="warn"><b>Do not start any work for ${esc(c.payload.company)} yet.</b><br>They have been added as a lead client at the Terms stage, not as a client. They move to Clients once both agreements are signed. This note is saved on their lead record.</div>
+        <p class="sub">Onboarding has started. Next: confirm who signs for them and send the link.${j.data && j.data.recipients && j.data.recipients.signatory ? ' ' + esc(j.data.recipients.signatory.name) + ' has been suggested as the signatory.' : ''}</p>
+        <div class="row"><button class="btn pri" data-onbc="open">Open their onboarding</button><button class="btn" data-onbc="close">Close</button></div>`;
+      if(typeof loadLeadClients === 'function') loadLeadClients();
+      return;
+    }
+    if(what === 'doupload'){
+      const err = document.getElementById('onbUpErr'); err.textContent = '';
+      const name = document.getElementById('onbUpName').value.trim(), date = document.getElementById('onbUpDate').value;
+      let terms, dsa;
+      try{ terms = await onbReadPdf(document.getElementById('onbUpTerms')); dsa = await onbReadPdf(document.getElementById('onbUpDsa')); }
+      catch(e){ err.textContent = e.message; btn.disabled = false; return; }
+      btn.textContent = 'Uploading...';
+      for(const [doc, f] of [['terms', terms], ['dsa', dsa]]){
+        try{ await b2Post('/api/onboarding/' + id + '/upload', {company: c.payload.company, doc, file: f.data, file_name: f.name, signer_name: name, signed_date: date}); }
+        catch(e){ if(!/already signed/i.test(e.message)){ err.textContent = e.message; btn.disabled = false; btn.textContent = 'Upload and add client'; return; } }
+      }
+      await l2hClientPost(c.payload);
+      await saveClientTerms(c.payload.company, c.terms, true);
+      el.classList.remove('visible'); ONB_CHOICE = null;
+      showToast(c.payload.company + ' added as a client with their signed agreements on file');
+      loadClients();
+      return;
+    }
+    if(what === 'override'){
+      if(!confirm('Add ' + c.payload.company + ' as a client without signed agreements? This is recorded in the audit log.')){ btn.disabled = false; return; }
+      await l2hClientPost({...c.payload, override:true});
+      await saveClientTerms(c.payload.company, c.terms, true);
+      el.classList.remove('visible'); ONB_CHOICE = null; showToast(c.payload.company + ' added as a client (override recorded)'); loadClients();
+    }
+  }catch(e){ btn.disabled = false; showToast(e.message); }
 }
 
 function LPX_STAGES_FOR_SELECT(){ return ['identified','contacted','interested','meeting','terms','lost','archived']; }
@@ -15732,11 +15917,11 @@ async function lpxConvert(){
   if(!email){ showToast('Add the main contact email first, then convert'); return; }
   if(!confirm(`Convert ${l.company} to an active client? Their client record and Drive folders will be created.`)) return;
   try{
-    await b2Post('/api/clients', {company: l.company, contactName: b2Val('lpxName') || l.contact_name, jobTitle: b2Val('lpxTitle') || l.job_title, email,
+    const res = await l2hClientPost({company: l.company, contactName: b2Val('lpxName') || l.contact_name, jobTitle: b2Val('lpxTitle') || l.job_title, email,
       phone: b2Val('lpxPhone') || l.phone, address: b2Val('lpxAddr') || l.address, postcode: '', notes: b2Val('lpxNotes') || l.notes});
-    await lpxSave(l, {stage:'converted', email});
+    try{ await lpxSave(l, res.overridden ? {stage:'converted', email, override:true} : {stage:'converted', email}); }catch(e2){ /* the client record is what counts; the pipeline shows them as converted anyway */ }
     closeModal('lpxModal'); lpxLoad(); showToast(`${l.company} is now a client`);
-  }catch(e){ showToast('Could not convert: ' + e.message); }
+  }catch(e){ if(!e.cancelled) showToast('Could not convert: ' + e.message); }
 }
 
 async function lpxSuppress(){
@@ -16736,7 +16921,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '26 Oct 2026 - build 47.4';
+var PAGE_BUILD = '30 Oct 2026 - build 49.7';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -17034,12 +17219,316 @@ function buildTagApply(){
 
   /* ---------------- CRM: Accounts ---------------- */
   const CRM = { filter:'all', q:'', accounts:[], open:{}, sel:null, loaded:0 };
+  /* ---------------- Client onboarding (phase 1 checklist, phase 2 portal, signing and countersign) ---------------- */
+  const ONB = { byId:new Map(), error:'', x:{}, steps:{terms:'Terms of Engagement 2026', dsa:'Data Sharing Agreement', countersign:'Countersigned by Daniel Brown', welcome:'Welcome letter', pricing:'Recruitment Pricing 2026', site_form:'Site and account form'} };
+  const ONB_MANUAL = {welcome:['viewed','Mark viewed'], pricing:['viewed','Mark viewed']};
+  const onbId = name => String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const onbOverall = o => !o ? ['Not started', ''] : ({started:['Started', 'gold'], in_progress:['In progress', 'gold'], awaiting_countersign:['Awaiting countersign', 'warn'], complete:['Onboarded', 'ok']}[o.status] || [o.status, '']);
+  const onbStep = (k, s) => {
+    const v = (s && s.status) || 'pending';
+    const label = ({pending:'Not started', sent:'Sent', viewed:'Viewed', in_progress:'In progress', signed:'Signed', complete:'Complete', done:'Done'}[v] || v);
+    const cls = ['signed', 'complete', 'done'].includes(v) ? 'ok' : (v === 'pending' ? '' : (k === 'countersign' ? 'warn' : 'gold'));
+    return [label, ['welcome', 'pricing'].includes(k) && v === 'viewed' ? 'ok' : cls];
+  };
+  // Leads can be onboarded from the Terms stage. Clients any time.
+  const onbEligible = a => a.type === 'client' || a.stage === 'terms' || ONB.byId.has(onbId(a.name));
+  function onbPanel(a){
+    if(!onbEligible(a)) return a.type === 'lead' ? `<div class="d41-sec"><span class="d41-eyebrow">Onboarding</span><div class="p41-empty">Onboarding opens once this lead reaches Terms in the pipeline.</div></div>` : '';
+    const id = onbId(a.name), o = ONB.byId.get(id);
+    if(ONB.error) return `<div class="d41-sec"><span class="d41-eyebrow">Onboarding</span><div class="p41-note">Onboarding is not available right now. ${h(ONB.error)}</div></div>`;
+    const [ol, oc] = onbOverall(o);
+    if(!o) return `<div class="d41-sec"><span class="d41-eyebrow">Onboarding</span>
+      <div class="p41-row"><div class="m"><div><b>Not started</b></div><div class="s">${a.type === 'lead' ? 'Get the agreements signed before ' + h(a.name) + ' becomes a client.' : 'Track the agreements, welcome pack and site form for ' + h(a.name) + '.'}</div></div><button class="p41-btn pri sm" data-onb41="start">Start onboarding</button></div></div>`;
+    const admin = isAdmin41(), x = ONB.x[id] || {};
+    const sig = (o.recipients || {}).signatory, wel = (o.recipients || {}).welcome;
+    const anySigned = ['terms', 'dsa'].some(k => ((o.steps || {})[k] || {}).status === 'signed');
+    const who = sig && !x.editWho
+      ? `<div class="p41-row"><div class="m"><div><b>Signs for ${h(a.name)}:</b> ${h(sig.name)}, ${h(sig.title)}</div><div class="s">${h(sig.email)}${wel && wel.email ? ' · welcome pack to ' + h(wel.name || wel.email) : ''}</div></div>${anySigned ? '' : '<button class="p41-btn sm" data-onb41="editwho">Change</button>'}</div>`
+      : onbWhoForm(a, x, sig, wel);
+    const link = sig && !x.editWho ? onbSendBlock(a, o, x) : '';
+    const sigs = x.sigs || [];
+    const waiting = sigs.filter(s => s.signed_at && !s.countersigned_at);
+    const rows = Object.keys(ONB.steps).map(k => {
+      const s = (o.steps || {})[k] || {}, [sl, sc] = onbStep(k, s);
+      let act = '';
+      if(admin && ONB_MANUAL[k] && s.status !== 'viewed') act = `<button class="p41-btn sm" data-onb41="step" data-step="${k}" data-status="${ONB_MANUAL[k][0]}">${ONB_MANUAL[k][1]}</button>`;
+      if(admin && (k === 'terms' || k === 'dsa')){ const sg = sigs.find(z => z.doc === k); if(sg && sg.has_pdf) act = `<button class="p41-btn sm" data-onb41="pdf" data-sig="${h(sg.id)}" data-name="${h(ONB.steps[k])}">Open signed copy</button>`; }
+      if(admin && k === 'countersign' && waiting.length) act = `<button class="p41-btn pri sm" data-onb41="countersign">Countersign</button>`;
+      if(k === 'site_form') act = `<button class="p41-btn sm" data-onb41="form">${s.status === 'complete' ? 'View' : 'Fill in'}</button>`;
+      const sg = sigs.find(z => z.doc === k);
+      const sub = sg && sg.signed_at ? `Signed by ${h(sg.signer_name)} · ${fmt41(String(sg.signed_at).slice(0, 10), true)}${sg.countersigned_at ? ' · countersigned' : ''}` : (s.at ? fmt41(String(s.at).slice(0, 10), true) + (s.manual ? ' · recorded by hand' : '') : '');
+      return `<div class="p41-row"><div class="m"><div><b>${h(ONB.steps[k])}</b></div>${sub ? `<div class="s">${sub}</div>` : ''}</div>${act}<span class="p41-pill ${sc}">${sl}</span></div>`;
+    }).join('');
+    const drive = admin && sigs.some(s => s.countersigned_at && !s.pdf_drive_id) && !x.preview ? '<div class="p41-bar" style="margin-top:6px"><button class="p41-btn sm" data-onb41="drive">File signed copies in Drive</button></div>' : '';
+    return `<div class="d41-sec"><span class="d41-eyebrow">Onboarding</span>
+      <div class="p41-row"><div class="m"><div><span class="p41-pill ${oc}">${ol}</span></div><div class="s">Started ${fmt41(String(o.started_at).slice(0, 10), true)}${o.started_by ? ' by ' + h(typeof userLabel === 'function' ? userLabel(o.started_by) : o.started_by) : ''}${o.completed_at ? ' · completed ' + fmt41(String(o.completed_at).slice(0, 10), true) : ''}</div></div></div>
+      ${who}${link}
+      <div style="margin-top:6px">${rows}</div>${drive}${onbAppliedBlock(a, o, x)}
+      <label class="p41-row" style="cursor:pointer"><div class="m"><div><b>Pause automatic reminders</b></div><div class="s">Stops the day 3 and day 7 reminders for this client once they are switched on.</div></div><input type="checkbox" data-onb41="pause" ${o.paused ? 'checked' : ''}></label>
+      ${admin ? '' : '<div class="p41-note" style="margin-top:8px">Signed documents are visible to Dan only.</div>'}</div>`;
+  }
+  // build 49.6: where the submitted site form went (client record, interview site, Drive)
+  function onbAppliedBlock(a, o, x){
+    if(((o.steps || {}).site_form || {}).status !== 'complete') return '';
+    const sf = x.sf; if(!sf) return '<div class="p41-empty" style="margin-top:6px">Loading the site form...</div>';
+    if(sf.error || !sf.data) return '';
+    const ap = sf.data.applied || {}, bl = sf.billing, cl = ap.client || {}, st = ap.site || {}, pdf = ap.pdf || {};
+    const row = (t, s2, pill, cls, act) => `<div class="p41-row"><div class="m"><div><b>${t}</b></div>${s2 ? `<div class="s">${s2}</div>` : ''}</div>${act || ''}<span class="p41-pill ${cls}">${pill}</span></div>`;
+    const err = p => p && p.error ? `<div class="s" style="color:var(--danger)">${h(p.error)}</div>` : '';
+    if(!ap.at) return `<div class="p41-panel" style="padding:12px;margin-top:8px"><b style="display:block;color:var(--navy)">Site form to the client record</b><div class="p41-bar" style="margin-top:6px"><button class="p41-btn pri sm" data-onb41="sfapply">Apply to client record</button></div></div>`;
+    const billing = bl ? [bl.billing_name && bl.billing_email ? `${h(bl.billing_name)} (${h(bl.billing_email)})` : h(bl.billing_email || ''), bl.ap_email ? 'accounts ' + h(bl.ap_email) : '', bl.po_required === 'Yes' ? 'PO ' + h(bl.po_number || 'required') : ''].filter(Boolean).join(' · ') : '';
+    const added = ((cl.contacts || {}).added || []), already = ((cl.contacts || {}).already || []);
+    const addr = cl.address || {};
+    const addrRow = addr.status === 'conflict'
+      ? row('Registered address', `On file: ${h(addr.current)}<br>Form: ${h(addr.form)}`, 'Different', 'warn', '<button class="p41-btn sm" data-onb41="sfaddr">Use the form address</button>')
+      : addr.status === 'set' ? row('Registered address', h(addr.form) + (addr.replaced ? ' · replaced the old address' : ' · added to the client record'), 'Saved', 'ok')
+      : addr.status === 'same' ? row('Registered address', 'Matches the client record', 'Same', 'ok')
+      : addr.status === 'not_client' ? row('Registered address and hiring managers', `Saved once ${h(a.name)} is on the Clients list. Press Apply again after moving them.`, 'Waiting', 'gold')
+      : (cl.error ? row('Client record', err(cl), 'Problem', 'bad') : '');
+    const contactsRow = cl.error || addr.status === 'not_client' ? '' : row('Hiring managers', added.length ? 'Added as contacts: ' + h(added.join(', ')) : (already.length ? 'Already contacts: ' + h(already.join(', ')) : 'None on the form'), added.length ? added.length + ' added' : 'No change', added.length ? 'ok' : '');
+    const siteRow = st.error ? row('Interview site', err(st), 'Problem', 'bad')
+      : st.status === 'none' ? row('Interview site', 'The form has no site details', 'None', '')
+      : row('Interview site', st.status === 'filled' ? `Blank details filled on ${h(st.site_name || 'the existing site')}${st.kept ? ' · ' + st.kept + ' details you typed were kept' : ''}` : 'Saved to Sites. Every Site Pack sent with an interview invite uses it.', st.status === 'filled' ? st.fields + ' filled' : 'Saved', 'ok');
+    const pdfRow = pdf.fileId ? row('PDF in Drive', 'Client folder > Site Info', 'Filed', 'ok', '<button class="p41-btn sm" data-onb41="sfpdf">Open PDF</button>')
+      : pdf.skipped === 'preview' || sf.preview ? row('PDF in Drive', 'Not filed from /dashboard-next (test data)', 'Preview', '', '<button class="p41-btn sm" data-onb41="sfpdf">Open PDF</button>')
+      : row('PDF in Drive', pdf.error ? err(pdf) : 'Not filed yet', 'Not filed', 'warn', '<button class="p41-btn sm" data-onb41="sfpdf">Open PDF</button><button class="p41-btn sm" data-onb41="sfdrive">File in Drive</button>');
+    return `<div class="p41-panel" style="padding:12px;margin-top:8px"><b style="display:block;color:var(--navy);margin-bottom:2px">Site form to the client record</b>
+      <div class="s" style="color:var(--muted);font-size:12.5px;margin-bottom:4px">Applied ${fmt41(String(ap.at).slice(0, 10), true)}${ap.by ? ' by ' + h(ap.by) : ''}. Nothing typed into the record is overwritten without asking.</div>
+      ${bl ? row('Billing details', billing || 'Saved', 'On invoices', 'ok') : (ap.billing && ap.billing.error ? row('Billing details', err(ap.billing), 'Problem', 'bad') : '')}
+      ${addrRow}${contactsRow}${siteRow}${pdfRow}
+      <div class="p41-bar" style="margin-top:8px"><button class="p41-btn sm" data-onb41="sfapply">Apply again</button></div></div>`;
+  }
+  // build 49.4: recipient check, send, reminders and signed copies
+  const addDays41 = (iso, n) => { const d = new Date(iso); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  function onbSendBlock(a, o, x){
+    const sd = o.sending || {}, chk = x.check, admin = isAdmin41();
+    const linkNote = x.link ? `<div class="p41-note" style="margin-top:8px"><b>Portal link${x.link.preview ? ' (preview, test data)' : ''}</b><div style="display:flex;gap:6px;margin:6px 0"><input class="p41-in" readonly value="${h(x.link.url)}" style="flex:1" onfocus="this.select()"><button class="p41-btn sm" data-copy41="${h(x.link.url)}">Copy</button></div>Valid until ${fmt41(String(x.link.expires_at).slice(0,10), true)}.</div>` : '';
+    if(!sd.sent_at){
+      const people = chk ? chk.people.map(p => `<div class="p41-row"><div class="m"><div><b>${h(p.name)}</b> · ${h(p.role)}</div><div class="s">${h(p.email || 'No email')} · gets: ${h(p.gets.join(', '))}</div>${p.problem ? `<div class="s" style="color:var(--danger)">${h(p.problem)}</div>` : ''}</div>${p.problem ? '<span class="p41-pill bad">Check</span>' : '<span class="p41-pill ok">OK</span>'}</div>`).join('') : '<div class="p41-empty">Checking addresses...</div>';
+      const anyBad = chk && chk.people.some(p => p.problem && !/temporary/.test(p.problem));
+      return `<div class="p41-panel" style="padding:12px;margin-top:6px"><b style="display:block;color:var(--navy);margin-bottom:4px">Send the onboarding pack</b>
+        <div class="s" style="color:var(--muted);font-size:12.5px;margin-bottom:6px">${chk ? `${chk.emails} emails: a welcome from you, then the agreements and the welcome pack from Daniel Brown at clients@. Each person gets their own email. ${chk.today} of ${chk.dailyLimit} sent today.` : ''}</div>
+        ${people}
+        <label class="p41-row" style="cursor:pointer"><div class="m"><div><b>Recipients confirmed</b></div><div class="s">${anyBad ? 'Fix the address marked Check first (Change, above).' : 'The signatory can sign contracts for the company and the addresses are right.'}</div></div><input type="checkbox" id="onbConfirm"${anyBad || !chk ? ' disabled' : ''} onchange="document.getElementById('onbSendBtn').disabled=!this.checked"></label>
+        <div class="p41-bar" style="margin-top:8px"><button class="p41-btn pri sm" id="onbSendBtn" data-onb41="send" disabled>Send onboarding pack</button><button class="p41-btn sm" data-onb41="link">Just make a link</button></div>${linkNote}</div>`;
+    }
+    const due = n => addDays41(sd.sent_at, n);
+    const when = (v, n) => v === 'skipped' ? 'Skipped' : (v ? 'Sent ' + fmt41(String(v).slice(0, 10), true) : (o.paused ? 'Paused' : (o.status === 'complete' || o.status === 'awaiting_countersign' ? 'Not needed' : 'Due ' + fmt41(due(n), true))));
+    const signedOut = sd.completion_sent_at ? `<div class="p41-row"><div class="m"><div><b>Signed copies emailed</b></div><div class="s">${fmt41(String(sd.completion_sent_at).slice(0, 10), true)} to the signatory, copy to clients@</div></div><span class="p41-pill ok">Sent</span></div>`
+      : (admin && (o.steps || {}).countersign && o.steps.countersign.status === 'done' && !((o.steps || {}).countersign || {}).uploaded ? `<div class="p41-bar" style="margin-top:6px"><button class="p41-btn sm" data-onb41="sendsigned">Email signed copies</button></div>` : '');
+    return `<div class="p41-panel" style="padding:12px;margin-top:6px"><b style="display:block;color:var(--navy);margin-bottom:4px">Onboarding pack sent ${fmt41(String(sd.sent_at).slice(0, 10), true)}${sd.sent_by ? ' by ' + h(typeof userLabel === 'function' ? userLabel(sd.sent_by) : sd.sent_by) : ''}</b>
+      <dl class="p41-kv"><dt>Day 3 reminder</dt><dd>${when(sd.r1, 3)}</dd><dt>Day 7 reminder</dt><dd>${when(sd.r2, 7)}</dd>${sd.chase_email_at ? `<dt>Consultant chase</dt><dd>Emailed ${fmt41(String(sd.chase_email_at).slice(0, 10), true)} (nothing signed by day 3)</dd>` : ''}<dt>Day 10 call task</dt><dd>${sd.call_task ? 'Added ' + fmt41(String(sd.call_task).slice(0, 10), true) : (o.status === 'complete' || o.status === 'awaiting_countersign' ? 'Not needed' : 'If still outstanding on ' + fmt41(due(10), true) + ', with an email to the consultant')}</dd></dl>
+      ${signedOut}
+      <div class="p41-bar" style="margin-top:8px"><button class="p41-btn sm" data-onb41="copylink">Copy portal link</button>${o.status === 'complete' ? '' : '<button class="p41-btn sm" data-onb41="resend">Resend</button>'}</div>${linkNote}</div>`;
+  }
+  function onbWhoForm(a, x, sig, wel){
+    const cs = (x.contacts || []).filter(c => c.name);
+    const opt = (sel) => `<option value="">${cs.length ? 'Choose a contact...' : 'No contacts saved yet'}</option>` + cs.map((c, i) => `<option value="${i}"${sel === i ? ' selected' : ''}>${h(c.name)}${c.title ? ' · ' + h(c.title) : ''}</option>`).join('');
+    const v = sig || {};
+    return `<div class="p41-panel" style="padding:12px;margin-top:4px"><b style="display:block;margin-bottom:8px;color:var(--navy)">Who signs for ${h(a.name)}?</b>
+      <div class="p41-note" style="margin-bottom:8px">Choose someone authorised to sign contracts for the company.</div>
+      <select class="p41-in" data-onbpick="s" style="width:100%;margin-bottom:6px">${opt(-1)}</select>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><input class="p41-in" id="onbSName" placeholder="Full name" value="${h(v.name || '')}"><input class="p41-in" id="onbSTitle" placeholder="Job title" value="${h(v.title || '')}"></div>
+      <input class="p41-in" id="onbSEmail" placeholder="Email" value="${h(v.email || '')}" style="width:100%;margin-top:6px">
+      <b style="display:block;margin:10px 0 6px;color:var(--navy);font-size:13px">Welcome pack to</b>
+      <select class="p41-in" id="onbWPick" style="width:100%"><option value="">The signatory</option>${cs.map((c, i) => `<option value="${i}"${wel && wel.email && c.email === wel.email ? ' selected' : ''}>${h(c.name)}${c.email ? ' · ' + h(c.email) : ''}</option>`).join('')}</select>
+      <div class="p41-err" id="onbWhoErr" style="margin-top:6px"></div>
+      <div class="p41-bar" style="margin-top:8px"><button class="p41-btn pri sm" data-onb41="savewho">Save</button>${sig ? '<button class="p41-btn sm" data-onb41="cancelwho">Cancel</button>' : ''}</div></div>`;
+  }
+  // Load contacts and (for Dan) signature records into the open drawer
+  async function onbHydrate(a){
+    const id = onbId(a.name), o = ONB.byId.get(id); if(!o) return;
+    const x = ONB.x[id] = ONB.x[id] || {};
+    const jobs = [];
+    if(!x.contacts) jobs.push(api41('/api/onboarding/' + id + '/contacts?company=' + encodeURIComponent(a.name)).then(j => { x.contacts = j.contacts || []; }).catch(() => { x.contacts = []; }));
+    if(isAdmin41() && !x.sigs) jobs.push(api41('/api/onboarding/' + id + '/signatures').then(j => { x.sigs = j.data || []; }).catch(() => {}));
+    if(!x.check && (o.recipients || {}).signatory && !(o.sending || {}).sent_at) jobs.push(api41('/api/onboarding/' + id + '/send-check').then(j => { x.check = j; }).catch(() => {}));
+    if(!x.sf && ((o.steps || {}).site_form || {}).status === 'complete') jobs.push(api41('/api/onboarding/' + id + '/site-form').then(j => { x.sf = j; }).catch(() => { x.sf = {error:true}; }));
+    if(!jobs.length) return;
+    await Promise.all(jobs);
+    if(CRM.sel === a.key) crmOpen(a.key, true);
+  }
+  async function onbPost(path, body){
+    const r = await fetch(API_BASE + path, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body || {})});
+    const j = await r.json().catch(() => ({}));
+    if(!r.ok){ const e = new Error(j.error || ('Server returned ' + r.status)); e.code = j.code; e.can_override = j.can_override; throw e; }
+    return j;
+  }
+  async function onbAct(a, what, el){
+    const id = onbId(a.name), x = ONB.x[id] = ONB.x[id] || {};
+    try{
+      let j;
+      if(what === 'start'){ j = await onbPost('/api/onboarding/' + id + '/start', {company:a.name}); toast41(j.created ? 'Onboarding started for ' + a.name : 'Onboarding was already started'); }
+      else if(what === 'pause'){ j = await onbPost('/api/onboarding/' + id + '/pause', {paused:!!el.checked}); toast41(el.checked ? 'Reminders paused' : 'Reminders on'); }
+      else if(what === 'step'){ j = await onbPost('/api/onboarding/' + id + '/steps/' + el.dataset.step, {status:el.dataset.status}); toast41('Saved'); }
+      else if(what === 'editwho'){ x.editWho = true; crmOpen(CRM.sel, true); return; }
+      else if(what === 'cancelwho'){ x.editWho = false; crmOpen(CRM.sel, true); return; }
+      else if(what === 'savewho'){
+        const wp = $('onbWPick').value, cs = (x.contacts || []).filter(c => c.name), w = wp === '' ? null : cs[+wp];
+        j = await onbPost('/api/onboarding/' + id + '/recipients', {signatory:{name:$('onbSName').value, title:$('onbSTitle').value, email:$('onbSEmail').value}, welcome: w ? {name:w.name, email:w.email} : null});
+        x.editWho = false; x.check = null; toast41('Signatory saved');
+      }
+      else if(what === 'send' || what === 'resend'){
+        if(what === 'resend' && !confirm('Send the onboarding pack again? The reminder clock starts again.')) return;
+        if(what === 'send' && !($('onbConfirm') || {}).checked){ toast41('Tick Recipients confirmed first'); return; }
+        el.disabled = true; el.textContent = 'Sending...';
+        j = await onbPost('/api/onboarding/' + id + '/send', {confirmed:true, resend: what === 'resend'});
+        toast41(j.preview ? 'Preview: ' + j.sent.length + ' emails prepared (nothing is sent from /dashboard-next)' : j.sent.length + ' emails sent');
+      }
+      else if(what === 'copylink'){
+        const r = await api41('/api/onboarding/' + id + '/link');
+        x.link = {url:r.url, expires_at:r.expires_at, preview: /&p=1$/.test(r.url)};
+        try{ await navigator.clipboard.writeText(r.url); toast41('Portal link copied'); }catch(e2){ toast41('Link shown below'); }
+      }
+      else if(what === 'sendsigned'){ el.disabled = true; await onbPost('/api/onboarding/' + id + '/send-signed', {}); toast41('Signed copies emailed'); const r = await api41('/api/onboarding/' + id); j = {data: r.data}; }
+      else if(what === 'link'){
+        if(x.link && !confirm('Create a new link? The link you made earlier will stop working.')) return;
+        const o = ONB.byId.get(id);
+        if(!x.link && o && o.steps && o.steps.terms && o.steps.terms.status !== 'pending' && !confirm('A link was made before. Create a new one? The old link will stop working.')) return;
+        j = await onbPost('/api/onboarding/' + id + '/link', {}); x.link = {url:j.url, expires_at:j.expires_at, preview:j.preview}; x.preview = j.preview; toast41('Portal link ready to copy');
+      }
+      else if(what === 'drive'){ const r = await onbPost('/api/onboarding/' + id + '/file-drive', {}); const bad = (r.filed || []).filter(f => f.error); toast41(bad.length ? 'Drive: ' + bad[0].error : 'Filed in Drive under Agreements'); x.sigs = null; }
+      else if(what === 'pdf'){ onbOpenPdf(a, el.dataset.sig, el.dataset.name); return; }
+      else if(what === 'countersign'){ onbCountersign(a); return; }
+      else if(what === 'form'){ onbForm(a); return; }
+      else if(what === 'sfapply'){ el.disabled = true; await onbPost('/api/onboarding/' + id + '/site-form/apply', {}); x.sf = null; toast41('Site form applied to the client record'); await crmLoad(true); return; }
+      else if(what === 'sfaddr'){ if(!confirm('Replace the address on the client record with the registered address from the form?')) return; await onbPost('/api/onboarding/' + id + '/site-form/use-address', {}); x.sf = null; toast41('Address updated'); await crmLoad(true); return; }
+      else if(what === 'sfdrive'){ el.disabled = true; await onbPost('/api/onboarding/' + id + '/site-form/file-drive', {}); x.sf = null; toast41('Filed in Drive under Site Info'); }
+      else if(what === 'sfpdf'){ onbSiteFormPdf(a); return; }
+      if(j && j.data) ONB.byId.set(id, j.data);
+    }catch(e){
+      if(what === 'savewho'){ const er = $('onbWhoErr'); if(er){ er.textContent = e.message; return; } }
+      toast41(e.message); if(what === 'pause' && el) el.checked = !el.checked;
+    }
+    crmOpen(CRM.sel); crmRender();
+  }
+  document.addEventListener('change', e => {
+    const t = e.target; if(!t || !t.dataset || t.dataset.onbpick !== 's') return;
+    const a = CRM.accounts.find(z => z.key === CRM.sel); if(!a) return;
+    const c = ((ONB.x[onbId(a.name)] || {}).contacts || []).filter(z => z.name)[+t.value];
+    if(c){ $('onbSName').value = c.name || ''; $('onbSTitle').value = c.title || ''; $('onbSEmail').value = c.email || ''; }
+  });
+  function onbViewer(title){
+    $('vw41Title').textContent = title;
+    ['sign41', 'onbSign41'].forEach(k => { const old = $(k); if(old) old.remove(); });
+    $('vw41Dl').style.display = '';
+    $('viewer41').classList.add('open');
+  }
+  async function onbFetchPdf(a, sigId){
+    const r = await fetch(API_BASE + '/api/onboarding/' + onbId(a.name) + '/signatures/' + encodeURIComponent(sigId) + '/pdf');
+    if(!r.ok){ const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Could not open the signed copy'); }
+    return URL.createObjectURL(await r.blob());
+  }
+  async function onbOpenPdf(a, sigId, name){
+    onbViewer(name || 'Signed copy');
+    $('vw41Body').innerHTML = '<div class="p41-empty" style="padding:24px">Opening...</div>';
+    try{
+      const url = await onbFetchPdf(a, sigId);
+      $('vw41Body').innerHTML = `<iframe title="${h(name || 'Signed copy')}" src="${url}"></iframe>`;
+      $('vw41Dl').onclick = () => { const l = document.createElement('a'); l.href = url; l.download = `${a.name} - ${name || 'Signed'}.pdf`.replace(/[\\/:*?"<>|]/g, ''); document.body.appendChild(l); l.click(); l.remove(); };
+    }catch(e){ $('vw41Body').innerHTML = `<div style="padding:24px"><div class="p41-err">${h(e.message)}</div></div>`; }
+  }
+  async function onbSiteFormPdf(a){
+    onbViewer('Site and account form · ' + a.name);
+    $('vw41Body').innerHTML = '<div class="p41-empty" style="padding:24px">Opening...</div>';
+    try{
+      const r = await fetch(API_BASE + '/api/onboarding/' + onbId(a.name) + '/site-form/pdf');
+      if(!r.ok){ const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Could not open the PDF'); }
+      const url = URL.createObjectURL(await r.blob());
+      $('vw41Body').innerHTML = `<iframe title="Site and account form" src="${url}"></iframe>`;
+      $('vw41Dl').onclick = () => { const l = document.createElement('a'); l.href = url; l.download = `${a.name} - Site and Account Form.pdf`.replace(/[\\/:*?"<>|]/g, ''); document.body.appendChild(l); l.click(); l.remove(); };
+    }catch(e){ $('vw41Body').innerHTML = `<div style="padding:24px"><div class="p41-err">${h(e.message)}</div></div>`; }
+  }
+  // Countersign every agreement this client has signed, with one signature
+  async function onbCountersign(a){
+    const id = onbId(a.name), x = ONB.x[id] || {};
+    const waiting = (x.sigs || []).filter(s => s.signed_at && !s.countersigned_at);
+    if(!waiting.length){ toast41('Nothing is waiting for your countersignature'); return; }
+    let me = 'Daniel Brown';
+    try{ const q = await api41('/api/onboarding-queue'); if(q.me) me = q.me; }catch(e){}
+    onbViewer(waiting.map(s => (ONB.steps[s.doc] || s.doc)).join(' and '));
+    $('vw41Body').innerHTML = '<div class="p41-empty" style="padding:24px">Opening...</div>';
+    try{ const url = await onbFetchPdf(a, waiting[0].id); $('vw41Body').innerHTML = `<iframe title="Signed by the client" src="${url}"></iframe>`; $('vw41Dl').style.display = 'none'; }
+    catch(e){ $('vw41Body').innerHTML = `<div style="padding:24px"><div class="p41-err">${h(e.message)}</div></div>`; }
+    const panel = document.createElement('div'); panel.className = 'sign41'; panel.id = 'onbSign41';
+    const names = waiting.map(s => `${h(ONB.steps[s.doc] || s.doc)} (signed by ${h(s.signer_name)}, ${fmt41(String(s.signed_at).slice(0, 10), true)})`).join('<br>');
+    panel.innerHTML = `<div class="sign41-in"><div class="sign41-h"><b>Countersign for Live 2 Help Recruitment Ltd</b><span>${names}</span>${waiting.length > 1 ? `<span>${waiting.map(s => `<button class="p41-btn sm" data-onbprev="${h(s.id)}">Read ${h(ONB.steps[s.doc] || s.doc)}</button>`).join(' ')}</span>` : ''}</div>
+      <div class="sign41-grid"><label>Type your name<input class="p41-in" id="onbCsName" value="${h(me)}" autocomplete="name"></label>
+      <div><div class="sign41-lab">Or draw your signature <button type="button" class="p41-btn sm" id="onbCsClear">Clear</button></div><canvas id="onbCsPad" class="sign41-pad" aria-label="Draw your signature here"></canvas></div></div>
+      <label class="sign41-ok"><input type="checkbox" id="onbCsAgree"> I am countersigning ${waiting.length > 1 ? 'these agreements' : 'this agreement'} for Live 2 Help Recruitment Ltd. I understand this is my electronic signature.</label>
+      <div class="p41-err" id="onbCsErr"></div>
+      <div class="p41-bar"><button class="p41-btn pri" id="onbCsGo">Countersign ${waiting.length > 1 ? 'both' : ''}</button><button class="p41-btn" data-vw41="close">Not now</button></div></div>`;
+    $('vw41Body').parentNode.appendChild(panel);
+    panel.addEventListener('click', async ev => { const b = ev.target.closest('[data-onbprev]'); if(!b) return; try{ $('vw41Body').querySelector('iframe').src = await onbFetchPdf(a, b.dataset.onbprev); }catch(e2){ toast41(e2.message); } });
+    const pad = $('onbCsPad'), ctx = pad.getContext('2d'); let strokes = 0, drawing = false, last = null;
+    const r = pad.getBoundingClientRect(), dpr = window.devicePixelRatio || 1; pad.width = Math.round(r.width * dpr); pad.height = Math.round(r.height * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.strokeStyle = '#0B0B18';
+    const pt = e => { const b = pad.getBoundingClientRect(); return {x: e.clientX - b.left, y: e.clientY - b.top}; };
+    pad.onpointerdown = e => { e.preventDefault(); pad.setPointerCapture(e.pointerId); drawing = true; last = pt(e); ctx.beginPath(); ctx.arc(last.x, last.y, 1.1, 0, Math.PI * 2); ctx.fillStyle = '#0B0B18'; ctx.fill(); strokes++; };
+    pad.onpointermove = e => { if(!drawing) return; const p = pt(e); ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; };
+    pad.onpointerup = pad.onpointercancel = () => { drawing = false; };
+    $('onbCsClear').onclick = () => { ctx.clearRect(0, 0, pad.width, pad.height); strokes = 0; };
+    $('onbCsGo').onclick = async () => {
+      const err = $('onbCsErr'); err.textContent = '';
+      if(!$('onbCsAgree').checked){ err.textContent = 'Please tick to confirm'; return; }
+      const body = strokes ? {method:'drawn', signature: pad.toDataURL('image/png'), agree:true} : {method:'typed', typed: $('onbCsName').value, agree:true};
+      const btn = $('onbCsGo'); btn.disabled = true; btn.textContent = 'Countersigning...';
+      try{
+        const j = await onbPost('/api/onboarding/' + id + '/countersign', body);
+        if(j.data) ONB.byId.set(id, j.data);
+        x.sigs = null;
+        const bad = (j.filed || []).filter(f => f.error);
+        $('viewer41').classList.remove('open');
+        const mailNote = j.emailed && j.emailed.error ? ' The signed copies email failed: use Email signed copies.' : (j.emailed ? ' Signed copies emailed to the client.' : '');
+        toast41((bad.length ? 'Countersigned. Drive filing failed, use File signed copies in Drive to try again.' : ((j.filed || []).some(f => f.skipped) ? 'Countersigned (preview, so nothing was filed in Drive or emailed)' : 'Countersigned and filed in Drive under Agreements.')) + ((j.filed || []).some(f => f.skipped) ? '' : mailNote));
+        crmOpen(CRM.sel); crmRender();
+      }catch(e2){ err.textContent = e2.message; btn.disabled = false; btn.textContent = 'Countersign'; }
+    };
+  }
+  // Site and account form, filled in or checked by the team (same fields as the client portal)
+  async function onbForm(a){
+    const id = onbId(a.name);
+    onbViewer('Site and account form · ' + a.name);
+    $('vw41Dl').style.display = 'none';
+    $('vw41Body').innerHTML = '<div class="p41-empty" style="padding:24px">Opening...</div>';
+    let j; try{ j = await api41('/api/onboarding/' + id + '/site-form'); }catch(e){ $('vw41Body').innerHTML = `<div style="padding:24px"><div class="p41-err">${h(e.message)}</div></div>`; return; }
+    const ans = (j.data && j.data.answers) || {};
+    const field = f => {
+      const v = ans[f.k];
+      if(f.type === 'rows'){ const rows = (Array.isArray(v) && v.length ? v : [{}]).concat([{}]); return `<div style="grid-column:1/-1"><div class="sign41-lab">${h(f.label)}</div>${rows.map((r, i) => `<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:6px">${f.cols.map(c => `<input class="p41-in" placeholder="${h(c[1])}" data-onbrow="${f.k}" data-i="${i}" data-c="${c[0]}" value="${h(r[c[0]] || '')}">`).join('')}</div>`).join('')}</div>`; }
+      const lab = `${h(f.label)}${f.req ? ' *' : ''}`;
+      if(f.type === 'yesno' || f.type === 'select'){ const ops = f.type === 'yesno' ? ['Yes', 'No'] : f.options; return `<label>${lab}<select class="p41-in" data-onbk="${f.k}"><option value=""></option>${ops.map(o => `<option${v === o ? ' selected' : ''}>${h(o)}</option>`).join('')}</select></label>`; }
+      if(f.type === 'textarea') return `<label style="grid-column:1/-1">${lab}<textarea class="p41-in" rows="2" data-onbk="${f.k}">${h(v || '')}</textarea></label>`;
+      return `<label>${lab}<input class="p41-in" data-onbk="${f.k}" value="${h(v || '')}"></label>`;
+    };
+    $('vw41Body').innerHTML = `<div style="padding:18px;max-width:860px;margin:0 auto">
+      ${j.data && j.data.updated_at ? `<div class="p41-note" style="margin-bottom:12px">Last saved ${fmt41(String(j.data.updated_at).slice(0, 10), true)}${j.data.updated_by ? ' by ' + h(j.data.updated_by) : ''}${j.data.submitted_at ? ' · submitted' : ' · not submitted yet'}</div>` : ''}
+      ${(j.sections || []).map(sec => `<div class="d41-sec" style="margin-bottom:14px"><span class="d41-eyebrow">${h(sec.title)}</span><div class="sign41-grid" style="grid-template-columns:1fr 1fr">${sec.fields.map(field).join('')}</div></div>`).join('')}
+      <div class="p41-err" id="onbFormErr"></div>
+      <div class="p41-bar" style="position:sticky;bottom:0;background:var(--lightbg);padding:10px 0"><button class="p41-btn pri" data-onbsave="1">Submit form</button><button class="p41-btn" data-onbsave="0">Save draft</button></div></div>`;
+    $('vw41Body').onclick = async ev => {
+      const b = ev.target.closest('[data-onbsave]'); if(!b) return;
+      const out = {};
+      $('vw41Body').querySelectorAll('[data-onbk]').forEach(el => { if(el.value.trim()) out[el.dataset.onbk] = el.value.trim(); });
+      $('vw41Body').querySelectorAll('[data-onbrow]').forEach(el => { const k = el.dataset.onbrow, i = +el.dataset.i; out[k] = out[k] || []; out[k][i] = out[k][i] || {}; out[k][i][el.dataset.c] = el.value.trim(); });
+      Object.keys(out).forEach(k => { if(Array.isArray(out[k])) out[k] = out[k].filter(r => r && Object.values(r).some(Boolean)); });
+      b.disabled = true;
+      try{ const r = await onbPost('/api/onboarding/' + id + '/site-form', {answers: out, submit: b.dataset.onbsave === '1'}); if(r.data) ONB.byId.set(id, r.data); if(ONB.x[id]) ONB.x[id].sf = null; if(r.applied) CRM.loaded = 0; $('viewer41').classList.remove('open'); $('vw41Body').onclick = null; toast41(b.dataset.onbsave === '1' ? 'Site form submitted' : 'Draft saved'); crmOpen(CRM.sel); crmRender(); }
+      catch(e){ $('onbFormErr').textContent = e.message; b.disabled = false; }
+    };
+  }
+  // Used by the lead pipeline: open a company's onboarding in Accounts
+  window.onbOpenCompany41 = async company => { if(typeof closeModal === 'function') closeModal('lpxModal'); switchTab('crmAccounts'); await crmLoad(true); crmOpen(norm41(company)); };
+  window.onbStatus41 = company => ONB.byId.get(onbId(company)) || null;
   async function crmLoad(force){
     if(CRM.loaded && !force && Date.now() - CRM.loaded < 60000){ crmRender(); return; }
     const safe = p => api41(p).catch(() => ({data:[]}));
-    const [cl, lc, lp, sites, comms, terms, calls, inv] = await Promise.all([
+    const [cl, lc, lp, sites, comms, terms, calls, inv, onb] = await Promise.all([
       safe('/api/clients'), safe('/api/lead-clients'), safe('/api/lead-pipeline'), safe('/api/client-sites'), safe('/api/comms'),
-      safe('/api/client-terms'), safe('/api/cold-calls'), isAdmin41() ? safe('/api/invoices') : Promise.resolve({data:[]}) ]);
+      safe('/api/client-terms'), safe('/api/cold-calls'), isAdmin41() ? safe('/api/invoices') : Promise.resolve({data:[]}),
+      api41('/api/onboarding').catch(e => ({data:[], error:e.message})) ]);
+    ONB.error = onb.error || '';
+    ONB.steps = onb.steps || ONB.steps;
+    ONB.byId = new Map((onb.data || []).map(o => [o.client_id, o]));
     const map = new Map();
     const get = (company, type) => {
       const k = norm41(company); if(!k) return null;
@@ -17093,13 +17582,17 @@ function buildTagApply(){
   const hp41 = hl => hl ? `<span class="p41-pill ${hl.band === 'Healthy' ? 'ok' : hl.band === 'Watch' ? 'warn' : 'bad'}">${hl.band} · ${hl.s}</span>` : '';
   const stageLbl = s => ({identified:'Identified', contacted:'Contacted', interested:'Interested', meeting:'Meeting', terms:'Terms', converted:'Converted', lost:'Lost', archived:'Archived'}[s] || (s ? s : ''));
   function crmRender(){
-    const F = [['all','All'],['client','Clients'],['lead','Leads'],['risk','Needs attention']];
+    const toSign = CRM.accounts.filter(a => (ONB.byId.get(onbId(a.name)) || {}).status === 'awaiting_countersign').length;
+    const notOnb = ONB.error ? 0 : CRM.accounts.filter(a => a.type === 'client' && !ONB.byId.has(onbId(a.name))).length;
+    const F = [['all','All'],['client','Clients'],['lead','Leads'],['risk','Needs attention']].concat(isAdmin41() && toSign ? [['sign','To countersign (' + toSign + ')']] : []).concat(notOnb ? [['noonb','Not onboarded (' + notOnb + ')']] : []).concat(ONB.error ? [] : [['onbrep','Onboarding report']]);
     $('crm41F').innerHTML = F.map(([k,l]) => `<button class="p41-chip" data-crmf="${k}" aria-pressed="${CRM.filter === k}">${l}</button>`).join('');
     const q = CRM.q.toLowerCase();
     let list = CRM.accounts.filter(a => !q || [a.name, a.address, a.postcode, ...a.contacts.flatMap(c => [c.name, c.email, c.title, c.notes])].join(' ').toLowerCase().includes(q));
     if(CRM.filter === 'client') list = list.filter(a => a.type === 'client');
     if(CRM.filter === 'lead') list = list.filter(a => a.type === 'lead');
     if(CRM.filter === 'risk') list = list.filter(a => a.health && a.health.band !== 'Healthy');
+    if(CRM.filter === 'sign') list = list.filter(a => (ONB.byId.get(onbId(a.name)) || {}).status === 'awaiting_countersign');
+    if(CRM.filter === 'noonb') list = list.filter(a => a.type === 'client' && !ONB.byId.has(onbId(a.name)));
     const all = CRM.accounts;
     $('crm41Stats').innerHTML = [
       ['Clients', all.filter(a => a.type === 'client').length, 'With a signed relationship'],
@@ -17107,14 +17600,31 @@ function buildTagApply(){
       ['Contacts', all.reduce((n, a) => n + a.contacts.length, 0), 'Across every account'],
       ['Need attention', all.filter(a => a.health && a.health.band !== 'Healthy').length, 'From client health']
     ].map(([k,v,n]) => `<div class="p41-stat"><span class="k">${k}</span><span class="v">${v}</span><span class="n">${n}</span></div>`).join('');
+    if(CRM.filter === 'onbrep'){ onbReportRender(); return; }
     if(!list.length){ $('crm41List').innerHTML = `<div class="p41-panel"><div class="p41-empty">${CRM.accounts.length ? 'No accounts match that search.' : 'No accounts yet. Add a client or a lead to get started.'}</div></div>`; return; }
-    $('crm41List').innerHTML = accTable(list);
+    $('crm41List').innerHTML = (CRM.filter === 'noonb' && isAdmin41() ? `<div class="p41-note" style="margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:220px">These clients have no signed Terms or Data Sharing Agreement on file. Start onboarding for all of them, then open each one to confirm who signs and press Send. If a client already signed paper copies, use Add client's upload instead.</span><button class="p41-btn pri sm" data-onbbulk="1">Start onboarding for all ${list.length}</button></div>` : '') + accTable(list);
+  }
+  // build 49.6: onboarding report - average days to onboard and what is outstanding, by step
+  async function onbReportRender(){
+    const host = $('crm41List');
+    host.innerHTML = '<div class="p41-panel"><div class="p41-empty">Loading the onboarding report...</div></div>';
+    let r; try{ r = (await api41('/api/onboarding-report')).data; }catch(e){ host.innerHTML = `<div class="p41-panel"><div class="p41-err">${h(e.message)}</div></div>`; return; }
+    if(CRM.filter !== 'onbrep') return;
+    const d = v => v == null ? '-' : (v + (v === 1 ? ' day' : ' days'));
+    const stat = (k, v, n) => `<div class="p41-stat"><span class="k">${k}</span><span class="v">${v}</span><span class="n">${n}</span></div>`;
+    const STEP = {terms:'Terms', dsa:'DSA', countersign:'Countersign', welcome:'Welcome letter', pricing:'Pricing', site_form:'Site form'};
+    const keyOf = co => norm41(co);
+    host.innerHTML = `<div class="p41-grid g4" style="margin-bottom:12px">${stat('Onboarded', r.complete + ' of ' + r.total, 'Clients fully onboarded')}${stat('Average time', d(r.avg_days_to_onboard), r.complete ? 'Pack sent to fully onboarded' : 'None complete yet')}${stat('Time to sign', d(r.avg_days_to_sign), 'Pack sent to both agreements signed')}${stat('In progress', r.in_progress, (r.awaiting_countersign ? r.awaiting_countersign + ' waiting for your countersignature' : 'Nothing waiting on Daniel') + (r.paused ? ' · ' + r.paused + ' paused' : ''))}</div>
+      <div class="p41-panel" style="margin-bottom:12px;padding:12px"><b style="display:block;color:var(--navy);margin-bottom:6px">Outstanding by step</b>
+        ${r.outstanding.map(o => `<div class="p41-row"><div class="m"><div><b>${h(o.label)}</b></div>${o.count ? `<div class="s">${h(o.companies.slice(0, 8).join(', '))}${o.companies.length > 8 ? ' and ' + (o.companies.length - 8) + ' more' : ''}</div>` : ''}</div><span class="p41-pill ${o.count ? 'warn' : 'ok'}">${o.count}</span></div>`).join('')}
+        ${r.fastest_days != null ? `<div class="s" style="color:var(--muted);font-size:12.5px;margin-top:6px">Fastest ${d(r.fastest_days)}, slowest ${d(r.slowest_days)}.</div>` : ''}</div>
+      ${r.open.length ? `<div class="p41-tw"><table><thead><tr><th>Company</th><th>Status</th><th>Open for</th><th>Waiting on</th></tr></thead><tbody>${r.open.map(o => `<tr class="click" tabindex="0" data-acc="${h(keyOf(o.company))}"><td class="co"><b>${h(o.company)}</b><span>${o.sent ? 'Pack sent' : 'Pack not sent yet'}${o.paused ? ' · reminders paused' : ''}</span></td><td>${(() => { const [l, c] = onbOverall({status:o.status}); return `<span class="p41-pill ${c}">${l}</span>`; })()}</td><td>${d(o.days_open)}</td><td>${o.waiting_on.map(k => `<span class="p41-pill">${h(STEP[k] || k)}</span>`).join(' ')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="p41-panel"><div class="p41-empty">Every client that has started onboarding is fully onboarded.</div></div>'}`;
   }
   function accTable(list){
     return `<div class="p41-tw"><table><thead><tr><th>Company</th><th>Contacts</th><th>Type and stage</th><th>Health</th><th>Live roles</th><th>Last contact</th></tr></thead><tbody>
       ${list.map(a => `<tr class="click" tabindex="0" data-acc="${h(a.key)}"><td class="co"><b>${h(a.name)}</b><span>${h([a.address, a.postcode].filter(Boolean).join(', ') || 'No address yet')}</span></td>
         <td>${a.contacts.length} · ${h((a.contacts[0] || {}).name || 'None')}</td>
-        <td>${a.type === 'client' ? '<span class="p41-pill ok">Client</span>' : '<span class="p41-pill">Lead</span>'} ${a.stage ? `<span class="p41-pill gold">${h(stageLbl(a.stage))}</span>` : ''}</td>
+        <td>${a.type === 'client' ? '<span class="p41-pill ok">Client</span>' : '<span class="p41-pill">Lead</span>'} ${a.stage ? `<span class="p41-pill gold">${h(stageLbl(a.stage))}</span>` : ''}${(a.type === 'client' || ONB.byId.has(onbId(a.name))) && !ONB.error ? (() => { const ob = ONB.byId.get(onbId(a.name)); if(ob && ob.status === 'complete') return ` <span class="p41-pill ok" title="Agreements signed and countersigned, welcome pack viewed, site form in">Onboarded</span>`; const [l, c] = onbOverall(ob); return ` <span class="p41-pill ${c}" title="Onboarding">Onboarding: ${l}</span>`; })() : ''}</td>
         <td>${hp41(a.health) || '<span class="p41-pill">Not scored</span>'}</td><td>${a.roles.length}</td><td>${a.last ? fmt41(a.last, true) : '<span class="p41-pill warn">Never</span>'}</td></tr>`).join('')}
       </tbody></table></div>`;
   }
@@ -17137,14 +17647,14 @@ function buildTagApply(){
   document.addEventListener('input', e => { const t = e.target; if(t && t.dataset && t.dataset.lq41) listRender(t.dataset.lq41); });
   ['loadClients','loadLeadClients'].forEach(fn => { const orig = window[fn]; if(typeof orig !== 'function') return; window[fn] = async function(){ const r = await orig.apply(this, arguments); CRM.loaded = 0; const t = fn === 'loadClients' ? 'clients' : 'leadClients'; if($(t === 'clients' ? 'clientsView' : 'leadClientsView') && $(t === 'clients' ? 'clientsView' : 'leadClientsView').classList.contains('visible')) listLoad(t); return r; }; });
 
-  function crmOpen(key){
+  function crmOpen(key, keep){
     const a = CRM.accounts.find(x => x.key === key); if(!a) return;
     CRM.sel = key;
     const lead = a.lead;
     const commsSorted = a.comms.slice().sort((x, y) => String(y.timestamp).localeCompare(String(x.timestamp))).slice(0, 15);
     const hist = lead ? String(lead.history || '').split('\n').filter(Boolean).reverse().map(x => { const [d, s, who] = x.split('|'); return {d, s, who}; }) : [];
     $('drawer41Body').innerHTML = `
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${a.type === 'client' ? '<span class="p41-pill ok">Client</span>' : '<span class="p41-pill">Lead</span>'}${a.stage ? `<span class="p41-pill gold">${h(stageLbl(a.stage))}</span>` : ''}${hp41(a.health)}<button class="p41-btn sm" data-x41="close" style="margin-left:auto">Close</button></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${a.type === 'client' ? '<span class="p41-pill ok">Client</span>' : '<span class="p41-pill">Lead</span>'}${(ONB.byId.get(onbId(a.name)) || {}).status === 'complete' ? '<span class="p41-pill ok">Onboarded</span>' : ''}${a.stage ? `<span class="p41-pill gold">${h(stageLbl(a.stage))}</span>` : ''}${hp41(a.health)}<button class="p41-btn sm" data-x41="close" style="margin-left:auto">Close</button></div>
       <div><h2>${h(a.name)}</h2><div style="color:var(--muted)">${h([a.address, a.postcode].filter(Boolean).join(', ') || 'No address recorded')}</div></div>
       <div class="p41-bar">${(() => { const me = a.contacts.find(x => x.email), mp = a.contacts.find(x => x.phone); const at = x => `data-c47-type="${h(a.type)}" data-c47-name="${h(x.name || '')}" data-c47-company="${h(a.name)}"`; return (me ? `<a class="p41-btn sm" href="mailto:${h(me.email)}" ${at(me)} title="Email ${h(me.name || '')}">Email</a>` : '') + (mp ? `<a class="p41-btn sm" href="tel:${h(String(mp.phone).replace(/\s+/g, ''))}" ${at(mp)} title="Call ${h(mp.name || '')}">Call</a>` : ''); })()}<button class="p41-btn pri sm" data-x41="log">Log contact</button>${a.type === 'client' ? '<button class="p41-btn sm" data-x41="edit" title="Company address and payment terms">Edit company</button>' : ''}<button class="p41-btn sm" data-x41="addc">+ Contact</button>${lead ? '<button class="p41-btn sm" data-x41="lead">Open in pipeline</button>' : ''}<button class="p41-btn sm" data-x41="task">+ Task</button></div>
       ${a.health && a.health.why.length ? `<div class="p41-note"><b>Health:</b> ${h(a.health.why.join(', '))}</div>` : ''}
@@ -17160,6 +17670,7 @@ function buildTagApply(){
       <div class="d41-sec"><span class="d41-eyebrow">Terms and money</span><dl class="p41-kv"><dt>Payment terms</dt><dd><select class="p41-in" data-terms41="${h(a.name)}">${['','14','30'].map(v => `<option value="${v}"${String(a.terms) === v ? ' selected' : ''}>${v ? v + ' days' : 'Not set'}</option>`).join('')}</select></dd><dt>Drive folder</dt><dd>${h(a.folder || 'Not recorded')}</dd>
         ${isAdmin41() ? `<dt>Invoices</dt><dd>${a.invoices.length} · ${money41(a.invoices.reduce((n, i) => n + Number(i.amount || 0), 0))} total · ${a.invoices.filter(i => String(i.status || '').toLowerCase() !== 'paid').length} unpaid</dd>` : ''}</dl></div>` :
       `<div class="d41-sec"><span class="d41-eyebrow">Business development</span><dl class="p41-kv"><dt>Stage</dt><dd>${h(stageLbl(a.stage) || 'Not in pipeline')}</dd><dt>Owner</dt><dd>${h((lead && lead.owner) || 'Not set')}</dd><dt>Source</dt><dd>${h((lead && lead.source) || 'Lead Clients')}</dd><dt>Cold call attempts</dt><dd>${a.calls.length}</dd><dt>Notes</dt><dd>${h((lead && lead.notes) || 'None')}</dd></dl></div>`}
+      ${onbPanel(a)}
       ${a.type === 'client' ? '<div class="p41-bar"><button class="p41-btn sm" data-x41="delc" style="color:var(--danger)">Delete client</button></div>' : ''}
       <div class="d41-sec"><span class="d41-eyebrow">History</span><div class="d41-tl">
         ${[...commsSorted.map(c => ({d:String(c.timestamp).slice(0,10), t:`${h(c.channel || 'Contact')} · ${h(c.direction || '')}`, x:h(c.summary || ''), who:c.user})),
@@ -17169,10 +17680,23 @@ function buildTagApply(){
           .map(x => `<div><b>${x.t}</b><div>${fmt41(x.d, true)}${x.who ? ' · ' + h(typeof userLabel === 'function' ? userLabel(x.who) : x.who) : ''}${x.x ? ' · ' + x.x : ''}</div></div>`).join('') || '<div class="p41-empty">No history yet.</div>'}
       </div></div>`;
     $('drawer41').classList.add('open');
+    if(!keep && ONB.byId.has(onbId(a.name))) onbHydrate(a);
   }
   document.addEventListener('click', e => {
-    const t = e.target.closest('[data-crmf],[data-acc],[data-x41],[data-ctc41],[data-copy41],[data-role41]');
+    const t = e.target.closest('[data-crmf],[data-acc],[data-x41],[data-ctc41],[data-copy41],[data-role41],[data-onb41],[data-onbbulk]');
     if(!t) return;
+    if(t.dataset.onbbulk){
+      if(!confirm('Start onboarding for every client without it? Nothing is emailed yet: each one still needs its recipient check and Send.')) return;
+      t.disabled = true; t.textContent = 'Starting...';
+      onbPost('/api/onboarding-bulk/start', {}).then(j => { toast41('Onboarding started for ' + j.started.length + ' clients. Open each one to send.'); CRM.filter = 'all'; crmLoad(true); })
+        .catch(err => { toast41(err.message); t.disabled = false; });
+      return;
+    }
+    if(t.dataset.onb41){
+      if(t.dataset.onb41 === 'pause') return; // the checkbox is handled on change, so the label click is not counted twice
+      const ac = CRM.accounts.find(x => x.key === CRM.sel); if(ac) onbAct(ac, t.dataset.onb41, t);
+      return;
+    }
     if(t.dataset.crmf){ CRM.filter = t.dataset.crmf; crmRender(); return; }
     if(t.dataset.acc){ crmOpen(t.dataset.acc); return; }
     if(t.dataset.ctc41){ CRM.open[t.dataset.ctc41] = !CRM.open[t.dataset.ctc41]; crmOpen(CRM.sel); return; }
@@ -17197,7 +17721,8 @@ function buildTagApply(){
     if(e.key === 'Enter' && e.target.matches && e.target.matches('tr[data-acc]')) crmOpen(e.target.dataset.acc);
   });
   document.addEventListener('input', e => { if(e.target && e.target.id === 'crm41Q'){ CRM.q = e.target.value; crmRender(); } });
-  document.addEventListener('change', e => { const t = e.target; if(t && t.dataset && t.dataset.terms41 !== undefined && t.value){ saveClientTerms(t.dataset.terms41, t.value); const a = CRM.accounts.find(x => x.key === CRM.sel); if(a) a.terms = t.value; } });
+  document.addEventListener('change', e => { const t = e.target; if(t && t.dataset && t.dataset.onb41 === 'pause'){ const ac = CRM.accounts.find(x => x.key === CRM.sel); if(ac) onbAct(ac, 'pause', t); return; }
+    if(t && t.dataset && t.dataset.terms41 !== undefined && t.value){ saveClientTerms(t.dataset.terms41, t.value); const a = CRM.accounts.find(x => x.key === CRM.sel); if(a) a.terms = t.value; } });
 
   /* ---------------- People (HR) ---------------- */
   const HR = { tab:'overview', emp:null, me:null, hol:[], abs:[], bradford:{}, docs:[], revs:[], com:[], cal:null, month:null, err:'' };
