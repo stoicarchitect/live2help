@@ -16957,7 +16957,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '30 Oct 2026 - build 49.8 preview';
+var PAGE_BUILD = '30 Oct 2026 - build 49.9 preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -17707,7 +17707,7 @@ function buildTagApply(){
         ${isAdmin41() ? `<dt>Invoices</dt><dd>${a.invoices.length} · ${money41(a.invoices.reduce((n, i) => n + Number(i.amount || 0), 0))} total · ${a.invoices.filter(i => String(i.status || '').toLowerCase() !== 'paid').length} unpaid</dd>` : ''}</dl></div>` :
       `<div class="d41-sec"><span class="d41-eyebrow">Business development</span><dl class="p41-kv"><dt>Stage</dt><dd>${h(stageLbl(a.stage) || 'Not in pipeline')}</dd><dt>Owner</dt><dd>${h((lead && lead.owner) || 'Not set')}</dd><dt>Source</dt><dd>${h((lead && lead.source) || 'Lead Clients')}</dd><dt>Cold call attempts</dt><dd>${a.calls.length}</dd><dt>Notes</dt><dd>${h((lead && lead.notes) || 'None')}</dd></dl></div>`}
       ${onbPanel(a)}
-      ${a.type === 'client' ? '<div class="p41-bar"><button class="p41-btn sm" data-x41="delc" style="color:var(--danger)">Delete client</button></div>' : ''}
+      ${a.type === 'client' ? '<div class="p41-bar"><button class="p41-btn sm" data-x41="delc" style="color:var(--danger)">Delete client</button></div>' : (isAdmin41() ? '<div class="p41-bar"><button class="p41-btn sm" data-x41="dellead" style="color:var(--danger)">Delete lead</button></div>' : '')}
       <div class="d41-sec"><span class="d41-eyebrow">History</span><div class="d41-tl">
         ${[...commsSorted.map(c => ({d:String(c.timestamp).slice(0,10), t:`${h(c.channel || 'Contact')} · ${h(c.direction || '')}`, x:h(c.summary || ''), who:c.user})),
            ...a.calls.map(c => ({d:String(c.dateCalled || '').slice(0,10), t:'Cold call · ' + h(c.contactType || ''), x:h([c.contactNames, c.outcome, c.notes].filter(Boolean).join(' · ')), who:''})),
@@ -17749,6 +17749,15 @@ function buildTagApply(){
     if(x === 'mv'){ closeDrawer41(); moveLeadToClient(a.name, t.dataset.name); return; }
     if(x === 'dl'){ closeDrawer41(); deleteLeadClient(a.name, t.dataset.name); return; }
     if(x === 'delc'){ closeDrawer41(); deleteClient(a.name); return; }
+    if(x === 'dellead'){ // build 49.9: delete the whole lead (Lead Clients contacts and pipeline entry), Dan only
+      if(!confirm(`Delete the lead ${a.name}? This removes its lead contacts and its Lead Pipeline entry.`)) return;
+      const o = ONB.byId.get(onbId(a.name));
+      const withOnb = !!o && confirm(`${a.name} also has an onboarding record (${o.status}). Delete that too, with its signatures, site form and billing details?\n\nOK deletes it. Cancel keeps it. Files in Drive are not touched.`);
+      api41('/api/lead-accounts/' + encodeURIComponent(a.name) + (withOnb ? '?onboarding=1' : ''), {method:'DELETE'})
+        .then(j => { closeDrawer41(); toast41(`${a.name} deleted (${j.lead_rows} lead contact${j.lead_rows === 1 ? '' : 's'}, ${j.pipeline} pipeline${j.onboarding ? ', onboarding record' : ''})`); if(typeof loadLeadClients === 'function') loadLeadClients(); crmLoad(true); })
+        .catch(e => toast41('Could not delete: ' + e.message));
+      return;
+    }
     if(x === 'task'){ closeDrawer41(); switchTab('tasks'); toast41('Add the task for ' + a.name); return; }
   });
   function closeDrawer41(){ $('drawer41').classList.remove('open'); CRM.sel = null; }

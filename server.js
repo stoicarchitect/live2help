@@ -2657,6 +2657,51 @@ async function readLeadClientRows() {
   }
 }
 
+// Build 49.9: delete a whole lead account (Dan only). Removes every Lead Clients row for the company and
+// its Lead Pipeline entry. With ?onboarding=1 it also removes the onboarding record, signatures, site form,
+// billing details and the site made from the form (Drive files are left alone). Clients use Delete client.
+app.delete('/api/lead-accounts/:company', async (req, res) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Only Dan can delete a lead' });
+    const company = String(req.params.company || '').trim();
+    if (!company) return res.status(400).json({ error: 'Company is required' });
+    const n = rfxNormCompany(company);
+    const info = await onbCompanyInfo(company);
+    if (info.isClient) return res.status(409).json({ error: `${company} is on the Clients list. Use Delete client instead.` });
+    const out = { lead_rows: 0, pipeline: 0, onboarding: false };
+    // Lead Clients rows (bottom up so the row numbers stay right)
+    const rows = await readLeadClientRows();
+    const idx = rows.map((r, i) => (r[1] && rfxNormCompany(r[1]) === n ? i : -1)).filter(i => i >= 0).reverse();
+    if (idx.length) {
+      const leadTabId = await sheetIdForTab(CLIENT_SHEET_ID, LEAD_CLIENT_TAB);
+      await getSheetsClient().spreadsheets.batchUpdate({ spreadsheetId: CLIENT_SHEET_ID, requestBody: {
+        requests: idx.map(i => ({ deleteDimension: { range: { sheetId: leadTabId, dimension: 'ROWS', startIndex: i + 1, endIndex: i + 2 } } })) } });
+      out.lead_rows = idx.length;
+    }
+    // Lead Pipeline entry
+    for (const l of (await lpxTable.list()).filter(l => rfxNormCompany(l.company) === n)) { await lpxTable.remove(l.id); out.pipeline++; }
+    // Onboarding (only when asked)
+    if (String(req.query.onboarding || '') === '1') {
+      const id = slugifyRole(company);
+      const pool = onbPool(); await onbEnsure(pool); await onbSiteSchema(pool);
+      const c = await pool.connect();
+      try {
+        await c.query('begin');
+        for (const t of ['onboarding_signatures', 'onboarding_site_form', 'client_billing', 'onboarding']) await c.query(`delete from ${t} where client_id = $1`, [id]);
+        await c.query('commit');
+      } catch (e) { await c.query('rollback').catch(() => {}); throw e; } finally { c.release(); }
+      await clientSitesTable.remove('onb-' + id).catch(() => {});
+      out.onboarding = true;
+    }
+    if (!out.lead_rows && !out.pipeline && !out.onboarding) return res.status(404).json({ error: `No lead found for ${company}` });
+    auditLog(auditActorOf(req), 'deleted', 'lead', company, `${out.lead_rows} lead contact(s), ${out.pipeline} pipeline entr${out.pipeline === 1 ? 'y' : 'ies'}${out.onboarding ? ', onboarding record' : ''}`);
+    res.json({ ok: true, ...out });
+  } catch (e) {
+    console.error('DELETE /api/lead-accounts error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET all clients
 app.get('/api/clients', async (req, res) => {
   try {
@@ -15841,7 +15886,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '30 Oct 2026 - build 49.8 (onboarding pack timing: welcome first, agreements after 5 minutes, welcome pack after 10)';
+const SERVER_BUILD = '30 Oct 2026 - build 49.9 (Delete lead on lead accounts)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
