@@ -5752,7 +5752,7 @@ function onbOut(r) {
     client_id: r.client_id, company: r.company, status: r.status, paused: !!r.paused, steps,
     recipients: r.recipients || {}, started_by: r.started_by, started_at: r.started_at, completed_at: r.completed_at, updated_at: r.updated_at,
     // build 49.4: what has been emailed and when
-    sending: (({ sent_at, sent_by, r1, r2, call_task, completion_sent_at, signed_notice_at }) => ({ sent_at, sent_by, r1, r2, call_task, completion_sent_at, signed_notice_at }))(r.reminders || {}),
+    sending: (({ sent_at, sent_by, r1, r2, call_task, completion_sent_at, signed_notice_at, chase_email_at }) => ({ sent_at, sent_by, r1, r2, call_task, completion_sent_at, signed_notice_at, chase_email_at }))(r.reminders || {}),
   };
 }
 function onbClientIdOf(req, res) {
@@ -6729,12 +6729,26 @@ app.post('/api/onboarding/:clientId/send', async (req, res) => {
     row = await onbUpdate(pool, id, c => {
       ['welcome', 'pricing'].forEach(k => { if ((c.steps[k] || {}).status === 'pending') c.steps[k] = { status: 'sent', at: now }; });
       // a resend starts the reminder clock again
-      return { ...c, reminders: { ...(c.reminders || {}), sent_at: now, sent_by: me, r1: null, r2: null, call_task: null } };
+      return { ...c, reminders: { ...(c.reminders || {}), sent_at: now, sent_by: me, r1: null, r2: null, call_task: null, chase_email_at: null } };
     });
     auditLog(auditActorOf(req), b.resend ? 'resent' : 'sent', 'onboarding', row.company, sent.map(s => `${s.key} to ${s.to}`).join(', '));
     res.json({ ok: true, sent, preview: sent.some(s => s.preview), data: onbOut(row) });
   } catch (e) { onbErr(res, 'POST onboarding send', e); }
 });
+
+// build 49.5: the consultant is the client's closest contact, so they get an email (not a dashboard alert)
+async function onbMailConsultant(row, subject, lines) {
+  const who = String(row.started_by || 'ella').split(' ')[0];
+  const key = TEAM_DEFAULTS[who] ? who : 'ella';
+  const p = profileOf(key);
+  if (!onbEmailOk(p.email)) return null;
+  await emailTransporter.sendMail({ from: `"Live 2 Help Workspace" <${process.env.BREVO_SENDER_EMAIL || ONB_FROM.email}>`, to: p.email, subject, text: `Hi ${onbFirst(p.fullName)},\n\n${lines.join('\n\n')}\n\nLive 2 Help Workspace` });
+  return key;
+}
+function onbSignatoryLine(row) {
+  const sig = ((row.recipients || {}).signatory) || {};
+  return `Signatory: ${sig.name || 'not set'}${sig.title ? ', ' + sig.title : ''}${sig.email ? ' (' + sig.email + ')' : ''}.`;
+}
 
 // Day 3 and day 7 reminders, then a call task on day 10. Runs from the daily job (and on demand for Dan).
 async function runOnboardingReminders(pool, opts = {}) {
@@ -6754,6 +6768,14 @@ async function runOnboardingReminders(pool, opts = {}) {
         const who = String(row.started_by || 'ella').split(' ')[0];
         await addAutoTasks([{ key: 'onb-call-' + row.client_id, user: TEAM_DEFAULTS[who] ? who : 'ella', title: `Call ${row.company} about onboarding: ${onbList(todo.map(t => t.replace(/^your /, '')))} still outstanding`,
           priority: 'High', dueDate: rfxToday(), context: `Onboarding sent ${String(rem.sent_at).slice(0, 10)}. Two reminders have gone. Signatory: ${sig.name}${sig.email ? ' (' + sig.email + ')' : ''}.` }]);
+        // build 49.5: and an email to the consultant
+        try {
+          await onbMailConsultant(row, `Call ${row.company} today: onboarding still not complete`, [
+            `It has been 10 days since we sent ${row.company} their onboarding pack and two reminders have gone. Still outstanding: ${onbList(todo.map(t => t.replace(/^your /, '')))}.`,
+            onbSignatoryLine(row),
+            `Please give them a call today to help them finish it. No more automatic emails will go to them. A call task has been added to your tasks, and you can copy their portal link from their record in Accounts.`]);
+          result.consultantEmails = (result.consultantEmails || 0) + 1;
+        } catch (e) { result.failed.push(`${row.company}: consultant email ${e.message}`); }
         await onbUpdate(pool, row.client_id, c => ({ ...c, reminders: { ...(c.reminders || {}), call_task: new Date(now).toISOString() } }));
         result.tasks++;
         continue;
@@ -6772,6 +6794,18 @@ async function runOnboardingReminders(pool, opts = {}) {
       await onbUpdate(pool, row.client_id, c => ({ ...c, reminders: { ...(c.reminders || {}), [key === 'reminder2' ? 'r2' : 'r1']: new Date(now).toISOString(), ...(key === 'reminder2' && !(c.reminders || {}).r1 ? { r1: 'skipped' } : {}) } }));
       auditLog('system', 'reminder sent', 'onboarding', row.company, `${key === 'reminder2' ? 'day 7' : 'day 3'}: ${onbList(todo)}`);
       result.reminders++;
+      // build 49.5: day 3 and nothing signed yet: the consultant chases them personally
+      const st = k => ((row.steps || {})[k] || {}).status;
+      if (key === 'reminder1' && st('terms') !== 'signed' && st('dsa') !== 'signed' && !rem.chase_email_at) {
+        try {
+          await onbMailConsultant(row, `Please chase ${row.company}: agreements not signed yet`, [
+            `${row.company} have not signed either agreement yet, so a day 3 reminder has just gone to them from Daniel at clients@.`,
+            onbSignatoryLine(row),
+            `As their closest contact, please give them a call or drop them an email to check they received it and whether they need any help signing. They can sign from their phone in about five minutes. You can copy their portal link from their record in Accounts if they need it again.`]);
+          await onbUpdate(pool, row.client_id, c => ({ ...c, reminders: { ...(c.reminders || {}), chase_email_at: new Date(now).toISOString() } }));
+          result.consultantEmails = (result.consultantEmails || 0) + 1;
+        } catch (e) { result.failed.push(`${row.company}: consultant email ${e.message}`); }
+      }
     } catch (e) { result.failed.push(`${row.company}: ${e.message}`); console.error('Onboarding reminder failed:', row.company, e.message); }
   }
   return result;
@@ -15242,7 +15276,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '30 Oct 2026 - build 49.4 (client onboarding phase 3: emails, reminders, signed copies)';
+const SERVER_BUILD = '30 Oct 2026 - build 49.5 (onboarding: consultant chase email on day 3, call email on day 10)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
