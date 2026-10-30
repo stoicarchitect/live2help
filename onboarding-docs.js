@@ -299,3 +299,56 @@ export function buildDocPdf({ PDFDocument, logo, meta, blocks, sign }) {
     } catch (e) { reject(e); }
   });
 }
+
+/* ---------- onboarding emails (build 49.4) ----------
+   /onboarding-docs/emails.md holds every email. Each "## " section has a **Subject:** line and a body.
+   {{signature}} is replaced by the sender's HTML signature. **[Label]** (link) becomes a gold button. */
+const EMAIL_KEYS = [[/^Email 1\b/i, 'email1'], [/^Email 2\b/i, 'email2'], [/^Email 3\b/i, 'email3'], [/^Reminder 1\b/i, 'reminder1'], [/^Reminder 2\b/i, 'reminder2'], [/^Completion\b/i, 'completion']];
+export function parseEmails(raw) {
+  const body = String(raw).replace(/^---\n[\s\S]*?\n---\n/, '');
+  const out = {};
+  body.split(/\n(?=## )/).forEach(sec => {
+    const h = sec.match(/^## (.+)$/m); if (!h) return;
+    const key = (EMAIL_KEYS.find(([re]) => re.test(h[1].trim())) || [])[1]; if (!key) return;
+    const lines = sec.split('\n');
+    const si = lines.findIndex(l => /^\*\*Subject:\*\*/.test(l));
+    if (si < 0) return;
+    out[key] = { subject: lines[si].replace(/^\*\*Subject:\*\*\s*/, '').trim(), body: lines.slice(si + 1).join('\n').trim() };
+  });
+  return out;
+}
+const escH = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const FONT = "font-family:Calibri,'Segoe UI',Arial,sans-serif;";
+function emailInline(s) {
+  return escH(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+}
+// vars are filled first (values are escaped); signatureHtml / signatureText replace {{signature}}
+export function renderEmail(tpl, vars, signatureHtml, signatureText) {
+  const fill = (s, forHtml) => String(s).replace(/\{\{\s*([a-z_]+)\s*\}\}/g, (all, k) => (k === 'signature' ? '\u0000SIG\u0000' : (vars[k] == null ? '' : String(vars[k]))));
+  const subject = fill(tpl.subject).replace(/\s+/g, ' ').trim();
+  const src = fill(tpl.body);
+  const btnRe = /^\*\*\[([^\]]+)\]\*\*\s*\(([^)\s]+)\)\s*(.*)$/;
+  const html = [], text = [];
+  src.split(/\n{2,}/).forEach(par => {
+    const p = par.trim(); if (!p) return;
+    if (p === '\u0000SIG\u0000') { html.push(`<div style="margin-top:6px;">${signatureHtml || ''}</div>`); text.push(signatureText || ''); return; }
+    const b = p.match(btnRe);
+    if (b) {
+      const href = /^https?:\/\//i.test(b[2]) ? b[2] : '#';
+      html.push(`<table role="presentation" cellpadding="0" cellspacing="0" style="margin:6px 0 16px;"><tr><td style="background:#0B0B18;border-radius:6px;border-bottom:3px solid #C9A84C;"><a href="${escH(href)}" style="display:inline-block;padding:12px 24px;${FONT}font-size:11.5pt;font-weight:bold;color:#ffffff;text-decoration:none;">${escH(b[1])}</a></td></tr></table>`);
+      text.push(`${b[1]}: ${b[2]}`);
+      return;
+    }
+    const lines = p.split('\n');
+    if (lines.every(l => /^\s*-\s+/.test(l)) || lines.every(l => /^\s*\d+\.\s+/.test(l))) {
+      const ol = /^\s*\d+\./.test(lines[0]);
+      const items = lines.map(l => l.replace(/^\s*(?:-|\d+\.)\s+/, ''));
+      html.push(`<${ol ? 'ol' : 'ul'} style="margin:0 0 12px 0;padding-left:22px;${FONT}font-size:11pt;color:#222;">${items.map(i => `<li style="margin:0 0 4px 0;">${emailInline(i)}</li>`).join('')}</${ol ? 'ol' : 'ul'}>`);
+      text.push(items.map((i, n) => (ol ? `${n + 1}. ` : '- ') + i.replace(/\*\*/g, '')).join('\n'));
+      return;
+    }
+    html.push(`<p style="margin:0 0 12px 0;${FONT}font-size:11pt;color:#222;line-height:1.45;">${lines.map(emailInline).join('<br>')}</p>`);
+    text.push(p.replace(/\*\*/g, ''));
+  });
+  return { subject, html: `<html><body style="margin:0;padding:16px;background:#ffffff;">${html.join('\n')}</body></html>`, text: text.join('\n\n') };
+}

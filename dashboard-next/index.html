@@ -17259,9 +17259,7 @@ function buildTagApply(){
     const who = sig && !x.editWho
       ? `<div class="p41-row"><div class="m"><div><b>Signs for ${h(a.name)}:</b> ${h(sig.name)}, ${h(sig.title)}</div><div class="s">${h(sig.email)}${wel && wel.email ? ' · welcome pack to ' + h(wel.name || wel.email) : ''}</div></div>${anySigned ? '' : '<button class="p41-btn sm" data-onb41="editwho">Change</button>'}</div>`
       : onbWhoForm(a, x, sig, wel);
-    const link = sig && !x.editWho ? (x.link
-      ? `<div class="p41-note" style="margin-top:8px"><b>Portal link${x.link.preview ? ' (preview, test data)' : ''}</b><div style="display:flex;gap:6px;margin:6px 0"><input class="p41-in" readonly value="${h(x.link.url)}" style="flex:1" onfocus="this.select()"><button class="p41-btn sm" data-copy41="${h(x.link.url)}">Copy</button></div>Valid until ${fmt41(String(x.link.expires_at).slice(0,10), true)}. Copy it now, it is not shown again. Emails go out automatically from the next phase, so send it yourself for now.</div>`
-      : `<div class="p41-row"><div class="m"><div><b>Client portal</b></div><div class="s">${o.status === 'complete' ? 'Onboarding is complete.' : 'One secure link for the client to sign, read and fill in the site form. A new link replaces the old one.'}</div></div><button class="p41-btn ${o.steps && o.steps.terms && o.steps.terms.status === 'pending' ? 'pri ' : ''}sm" data-onb41="link">${o.steps && o.steps.terms && o.steps.terms.status !== 'pending' ? 'New link' : 'Create link'}</button></div>`) : '';
+    const link = sig && !x.editWho ? onbSendBlock(a, o, x) : '';
     const sigs = x.sigs || [];
     const waiting = sigs.filter(s => s.signed_at && !s.countersigned_at);
     const rows = Object.keys(ONB.steps).map(k => {
@@ -17283,6 +17281,29 @@ function buildTagApply(){
       <label class="p41-row" style="cursor:pointer"><div class="m"><div><b>Pause automatic reminders</b></div><div class="s">Stops the day 3 and day 7 reminders for this client once they are switched on.</div></div><input type="checkbox" data-onb41="pause" ${o.paused ? 'checked' : ''}></label>
       ${admin ? '' : '<div class="p41-note" style="margin-top:8px">Signed documents are visible to Dan only.</div>'}</div>`;
   }
+  // build 49.4: recipient check, send, reminders and signed copies
+  const addDays41 = (iso, n) => { const d = new Date(iso); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  function onbSendBlock(a, o, x){
+    const sd = o.sending || {}, chk = x.check, admin = isAdmin41();
+    const linkNote = x.link ? `<div class="p41-note" style="margin-top:8px"><b>Portal link${x.link.preview ? ' (preview, test data)' : ''}</b><div style="display:flex;gap:6px;margin:6px 0"><input class="p41-in" readonly value="${h(x.link.url)}" style="flex:1" onfocus="this.select()"><button class="p41-btn sm" data-copy41="${h(x.link.url)}">Copy</button></div>Valid until ${fmt41(String(x.link.expires_at).slice(0,10), true)}.</div>` : '';
+    if(!sd.sent_at){
+      const people = chk ? chk.people.map(p => `<div class="p41-row"><div class="m"><div><b>${h(p.name)}</b> · ${h(p.role)}</div><div class="s">${h(p.email || 'No email')} · gets: ${h(p.gets.join(', '))}</div>${p.problem ? `<div class="s" style="color:var(--danger)">${h(p.problem)}</div>` : ''}</div>${p.problem ? '<span class="p41-pill bad">Check</span>' : '<span class="p41-pill ok">OK</span>'}</div>`).join('') : '<div class="p41-empty">Checking addresses...</div>';
+      const anyBad = chk && chk.people.some(p => p.problem && !/temporary/.test(p.problem));
+      return `<div class="p41-panel" style="padding:12px;margin-top:6px"><b style="display:block;color:var(--navy);margin-bottom:4px">Send the onboarding pack</b>
+        <div class="s" style="color:var(--muted);font-size:12.5px;margin-bottom:6px">${chk ? `${chk.emails} emails: a welcome from you, then the agreements and the welcome pack from Daniel Brown at clients@. Each person gets their own email. ${chk.today} of ${chk.dailyLimit} sent today.` : ''}</div>
+        ${people}
+        <label class="p41-row" style="cursor:pointer"><div class="m"><div><b>Recipients confirmed</b></div><div class="s">${anyBad ? 'Fix the address marked Check first (Change, above).' : 'The signatory can sign contracts for the company and the addresses are right.'}</div></div><input type="checkbox" id="onbConfirm"${anyBad || !chk ? ' disabled' : ''} onchange="document.getElementById('onbSendBtn').disabled=!this.checked"></label>
+        <div class="p41-bar" style="margin-top:8px"><button class="p41-btn pri sm" id="onbSendBtn" data-onb41="send" disabled>Send onboarding pack</button><button class="p41-btn sm" data-onb41="link">Just make a link</button></div>${linkNote}</div>`;
+    }
+    const due = n => addDays41(sd.sent_at, n);
+    const when = (v, n) => v === 'skipped' ? 'Skipped' : (v ? 'Sent ' + fmt41(String(v).slice(0, 10), true) : (o.paused ? 'Paused' : (o.status === 'complete' || o.status === 'awaiting_countersign' ? 'Not needed' : 'Due ' + fmt41(due(n), true))));
+    const signedOut = sd.completion_sent_at ? `<div class="p41-row"><div class="m"><div><b>Signed copies emailed</b></div><div class="s">${fmt41(String(sd.completion_sent_at).slice(0, 10), true)} to the signatory, copy to clients@</div></div><span class="p41-pill ok">Sent</span></div>`
+      : (admin && (o.steps || {}).countersign && o.steps.countersign.status === 'done' && !((o.steps || {}).countersign || {}).uploaded ? `<div class="p41-bar" style="margin-top:6px"><button class="p41-btn sm" data-onb41="sendsigned">Email signed copies</button></div>` : '');
+    return `<div class="p41-panel" style="padding:12px;margin-top:6px"><b style="display:block;color:var(--navy);margin-bottom:4px">Onboarding pack sent ${fmt41(String(sd.sent_at).slice(0, 10), true)}${sd.sent_by ? ' by ' + h(typeof userLabel === 'function' ? userLabel(sd.sent_by) : sd.sent_by) : ''}</b>
+      <dl class="p41-kv"><dt>Day 3 reminder</dt><dd>${when(sd.r1, 3)}</dd><dt>Day 7 reminder</dt><dd>${when(sd.r2, 7)}</dd><dt>Day 10 call task</dt><dd>${sd.call_task ? 'Added ' + fmt41(String(sd.call_task).slice(0, 10), true) : (o.status === 'complete' || o.status === 'awaiting_countersign' ? 'Not needed' : 'If still outstanding on ' + fmt41(due(10), true))}</dd></dl>
+      ${signedOut}
+      <div class="p41-bar" style="margin-top:8px"><button class="p41-btn sm" data-onb41="copylink">Copy portal link</button>${o.status === 'complete' ? '' : '<button class="p41-btn sm" data-onb41="resend">Resend</button>'}</div>${linkNote}</div>`;
+  }
   function onbWhoForm(a, x, sig, wel){
     const cs = (x.contacts || []).filter(c => c.name);
     const opt = (sel) => `<option value="">${cs.length ? 'Choose a contact...' : 'No contacts saved yet'}</option>` + cs.map((c, i) => `<option value="${i}"${sel === i ? ' selected' : ''}>${h(c.name)}${c.title ? ' · ' + h(c.title) : ''}</option>`).join('');
@@ -17303,7 +17324,9 @@ function buildTagApply(){
     const x = ONB.x[id] = ONB.x[id] || {};
     const jobs = [];
     if(!x.contacts) jobs.push(api41('/api/onboarding/' + id + '/contacts?company=' + encodeURIComponent(a.name)).then(j => { x.contacts = j.contacts || []; }).catch(() => { x.contacts = []; }));
-    if(isAdmin41()) jobs.push(api41('/api/onboarding/' + id + '/signatures').then(j => { x.sigs = j.data || []; }).catch(() => {}));
+    if(isAdmin41() && !x.sigs) jobs.push(api41('/api/onboarding/' + id + '/signatures').then(j => { x.sigs = j.data || []; }).catch(() => {}));
+    if(!x.check && (o.recipients || {}).signatory && !(o.sending || {}).sent_at) jobs.push(api41('/api/onboarding/' + id + '/send-check').then(j => { x.check = j; }).catch(() => {}));
+    if(!jobs.length) return;
     await Promise.all(jobs);
     if(CRM.sel === a.key) crmOpen(a.key, true);
   }
@@ -17325,8 +17348,21 @@ function buildTagApply(){
       else if(what === 'savewho'){
         const wp = $('onbWPick').value, cs = (x.contacts || []).filter(c => c.name), w = wp === '' ? null : cs[+wp];
         j = await onbPost('/api/onboarding/' + id + '/recipients', {signatory:{name:$('onbSName').value, title:$('onbSTitle').value, email:$('onbSEmail').value}, welcome: w ? {name:w.name, email:w.email} : null});
-        x.editWho = false; toast41('Signatory saved');
+        x.editWho = false; x.check = null; toast41('Signatory saved');
       }
+      else if(what === 'send' || what === 'resend'){
+        if(what === 'resend' && !confirm('Send the onboarding pack again? The reminder clock starts again.')) return;
+        if(what === 'send' && !($('onbConfirm') || {}).checked){ toast41('Tick Recipients confirmed first'); return; }
+        el.disabled = true; el.textContent = 'Sending...';
+        j = await onbPost('/api/onboarding/' + id + '/send', {confirmed:true, resend: what === 'resend'});
+        toast41(j.preview ? 'Preview: ' + j.sent.length + ' emails prepared (nothing is sent from /dashboard-next)' : j.sent.length + ' emails sent');
+      }
+      else if(what === 'copylink'){
+        const r = await api41('/api/onboarding/' + id + '/link');
+        x.link = {url:r.url, expires_at:r.expires_at, preview: /&p=1$/.test(r.url)};
+        try{ await navigator.clipboard.writeText(r.url); toast41('Portal link copied'); }catch(e2){ toast41('Link shown below'); }
+      }
+      else if(what === 'sendsigned'){ el.disabled = true; await onbPost('/api/onboarding/' + id + '/send-signed', {}); toast41('Signed copies emailed'); const r = await api41('/api/onboarding/' + id); j = {data: r.data}; }
       else if(what === 'link'){
         if(x.link && !confirm('Create a new link? The link you made earlier will stop working.')) return;
         const o = ONB.byId.get(id);
@@ -17409,7 +17445,8 @@ function buildTagApply(){
         x.sigs = null;
         const bad = (j.filed || []).filter(f => f.error);
         $('viewer41').classList.remove('open');
-        toast41(bad.length ? 'Countersigned. Drive filing failed, use File signed copies in Drive to try again.' : ((j.filed || []).some(f => f.skipped) ? 'Countersigned (preview, so nothing was filed in Drive)' : 'Countersigned and filed in Drive under Agreements'));
+        const mailNote = j.emailed && j.emailed.error ? ' The signed copies email failed: use Email signed copies.' : (j.emailed ? ' Signed copies emailed to the client.' : '');
+        toast41((bad.length ? 'Countersigned. Drive filing failed, use File signed copies in Drive to try again.' : ((j.filed || []).some(f => f.skipped) ? 'Countersigned (preview, so nothing was filed in Drive or emailed)' : 'Countersigned and filed in Drive under Agreements.')) + ((j.filed || []).some(f => f.skipped) ? '' : mailNote));
         crmOpen(CRM.sel); crmRender();
       }catch(e2){ err.textContent = e2.message; btn.disabled = false; btn.textContent = 'Countersign'; }
     };
@@ -17513,7 +17550,8 @@ function buildTagApply(){
   const stageLbl = s => ({identified:'Identified', contacted:'Contacted', interested:'Interested', meeting:'Meeting', terms:'Terms', converted:'Converted', lost:'Lost', archived:'Archived'}[s] || (s ? s : ''));
   function crmRender(){
     const toSign = CRM.accounts.filter(a => (ONB.byId.get(onbId(a.name)) || {}).status === 'awaiting_countersign').length;
-    const F = [['all','All'],['client','Clients'],['lead','Leads'],['risk','Needs attention']].concat(isAdmin41() && toSign ? [['sign','To countersign (' + toSign + ')']] : []);
+    const notOnb = ONB.error ? 0 : CRM.accounts.filter(a => a.type === 'client' && !ONB.byId.has(onbId(a.name))).length;
+    const F = [['all','All'],['client','Clients'],['lead','Leads'],['risk','Needs attention']].concat(isAdmin41() && toSign ? [['sign','To countersign (' + toSign + ')']] : []).concat(notOnb ? [['noonb','Not onboarded (' + notOnb + ')']] : []);
     $('crm41F').innerHTML = F.map(([k,l]) => `<button class="p41-chip" data-crmf="${k}" aria-pressed="${CRM.filter === k}">${l}</button>`).join('');
     const q = CRM.q.toLowerCase();
     let list = CRM.accounts.filter(a => !q || [a.name, a.address, a.postcode, ...a.contacts.flatMap(c => [c.name, c.email, c.title, c.notes])].join(' ').toLowerCase().includes(q));
@@ -17521,6 +17559,7 @@ function buildTagApply(){
     if(CRM.filter === 'lead') list = list.filter(a => a.type === 'lead');
     if(CRM.filter === 'risk') list = list.filter(a => a.health && a.health.band !== 'Healthy');
     if(CRM.filter === 'sign') list = list.filter(a => (ONB.byId.get(onbId(a.name)) || {}).status === 'awaiting_countersign');
+    if(CRM.filter === 'noonb') list = list.filter(a => a.type === 'client' && !ONB.byId.has(onbId(a.name)));
     const all = CRM.accounts;
     $('crm41Stats').innerHTML = [
       ['Clients', all.filter(a => a.type === 'client').length, 'With a signed relationship'],
@@ -17529,7 +17568,7 @@ function buildTagApply(){
       ['Need attention', all.filter(a => a.health && a.health.band !== 'Healthy').length, 'From client health']
     ].map(([k,v,n]) => `<div class="p41-stat"><span class="k">${k}</span><span class="v">${v}</span><span class="n">${n}</span></div>`).join('');
     if(!list.length){ $('crm41List').innerHTML = `<div class="p41-panel"><div class="p41-empty">${CRM.accounts.length ? 'No accounts match that search.' : 'No accounts yet. Add a client or a lead to get started.'}</div></div>`; return; }
-    $('crm41List').innerHTML = accTable(list);
+    $('crm41List').innerHTML = (CRM.filter === 'noonb' && isAdmin41() ? `<div class="p41-note" style="margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:220px">These clients have no signed Terms or Data Sharing Agreement on file. Start onboarding for all of them, then open each one to confirm who signs and press Send. If a client already signed paper copies, use Add client's upload instead.</span><button class="p41-btn pri sm" data-onbbulk="1">Start onboarding for all ${list.length}</button></div>` : '') + accTable(list);
   }
   function accTable(list){
     return `<div class="p41-tw"><table><thead><tr><th>Company</th><th>Contacts</th><th>Type and stage</th><th>Health</th><th>Live roles</th><th>Last contact</th></tr></thead><tbody>
@@ -17594,8 +17633,15 @@ function buildTagApply(){
     if(!keep && ONB.byId.has(onbId(a.name))) onbHydrate(a);
   }
   document.addEventListener('click', e => {
-    const t = e.target.closest('[data-crmf],[data-acc],[data-x41],[data-ctc41],[data-copy41],[data-role41],[data-onb41]');
+    const t = e.target.closest('[data-crmf],[data-acc],[data-x41],[data-ctc41],[data-copy41],[data-role41],[data-onb41],[data-onbbulk]');
     if(!t) return;
+    if(t.dataset.onbbulk){
+      if(!confirm('Start onboarding for every client without it? Nothing is emailed yet: each one still needs its recipient check and Send.')) return;
+      t.disabled = true; t.textContent = 'Starting...';
+      onbPost('/api/onboarding-bulk/start', {}).then(j => { toast41('Onboarding started for ' + j.started.length + ' clients. Open each one to send.'); CRM.filter = 'all'; crmLoad(true); })
+        .catch(err => { toast41(err.message); t.disabled = false; });
+      return;
+    }
     if(t.dataset.onb41){
       if(t.dataset.onb41 === 'pause') return; // the checkbox is handled on change, so the label click is not counted twice
       const ac = CRM.accounts.find(x => x.key === CRM.sel); if(ac) onbAct(ac, t.dataset.onb41, t);

@@ -5751,6 +5751,8 @@ function onbOut(r) {
   return {
     client_id: r.client_id, company: r.company, status: r.status, paused: !!r.paused, steps,
     recipients: r.recipients || {}, started_by: r.started_by, started_at: r.started_at, completed_at: r.completed_at, updated_at: r.updated_at,
+    // build 49.4: what has been emailed and when
+    sending: (({ sent_at, sent_by, r1, r2, call_task, completion_sent_at, signed_notice_at }) => ({ sent_at, sent_by, r1, r2, call_task, completion_sent_at, signed_notice_at }))(r.reminders || {}),
   };
 }
 function onbClientIdOf(req, res) {
@@ -5770,9 +5772,9 @@ async function onbUpdate(pool, clientId, mutate) {
     const done = status === 'complete';
     const r = await c.query(
       `update onboarding set steps = $2::jsonb, paused = $3, recipients = $4::jsonb, status = $5,
-         completed_at = case when $6::boolean then coalesce(completed_at, now()) else null end, tokens = $7::jsonb, updated_at = now()
+         completed_at = case when $6::boolean then coalesce(completed_at, now()) else null end, tokens = $7::jsonb, reminders = $8::jsonb, updated_at = now()
        where client_id = $1 returning *`,
-      [clientId, JSON.stringify(next.steps), !!next.paused, JSON.stringify(next.recipients || {}), status, done, JSON.stringify(next.tokens || cur.tokens || {})]);
+      [clientId, JSON.stringify(next.steps), !!next.paused, JSON.stringify(next.recipients || {}), status, done, JSON.stringify(next.tokens || cur.tokens || {}), JSON.stringify(next.reminders || cur.reminders || {})]);
     await c.query('commit');
     return r.rows[0];
   } catch (e) { await c.query('rollback').catch(() => {}); throw e; }
@@ -6180,6 +6182,14 @@ app.post('/api/portal/:token/sign/:doc', async (req, res) => {
     await onbUpdate(pool, row.client_id, c => { c.steps[ONB_DOCS[key].step] = { status: 'signed', at: now }; return c; });
     await onbEvent(pool, row.client_id, `Signed: ${ONB_DOCS[key].name}`, req);
     auditLog('client portal', 'signed', 'onboarding', row.company, `${ONB_DOCS[key].name} signed by ${sig.name}`);
+    // build 49.4: tell Dan once both agreements are signed, so he can countersign
+    const both = (await pool.query('select doc from onboarding_signatures where client_id = $1 and signed_at is not null', [row.client_id])).rows.map(x => x.doc);
+    if (both.includes('terms') && both.includes('dsa')) {
+      mailDan(`${row.company} has signed both agreements`, `${sig.name} (${sig.title}) signed the Terms of Engagement and the Data Sharing Agreement for ${row.company} through the client portal.
+
+Open the client in Accounts in the Live 2 Help Workspace and press Countersign. They are emailed their signed copies as soon as you do.`)
+        .then(() => onbUpdate(pool, row.client_id, c => ({ ...c, reminders: { ...(c.reminders || {}), signed_notice_at: new Date().toISOString() } }))).catch(() => {});
+    }
     res.json({ ok: true, signed_at: now });
   } catch (e) { onbErr(res, 'POST portal sign', e); }
 });
@@ -6246,14 +6256,9 @@ app.post('/api/onboarding/:clientId/link', async (req, res) => {
     const missing = new Set();
     for (const k of Object.keys(ONB_DOCS)) (await onbRenderDoc(pool, cur, k)).missing.forEach(m => missing.add(m));
     if (missing.size) return res.status(400).json({ error: `Add the ${[...missing].map(m => ONB_VAR_LABELS[m] || m).join(', ')} to the client record first`, missing: [...missing] });
-    const token = crypto.randomBytes(24).toString('base64url');
-    const now = new Date(), expires = new Date(now.getTime() + ONB_LINK_DAYS * 86400000);
-    const row = await onbUpdate(pool, id, c => {
-      ['terms', 'dsa', 'welcome', 'pricing', 'site_form'].forEach(k => { if ((c.steps[k] || {}).status === 'pending') c.steps[k] = { status: 'sent', at: now.toISOString() }; });
-      return { ...c, tokens: { ...(c.tokens || {}), portal: { hash: onbHashToken(token), created_at: now.toISOString(), expires_at: expires.toISOString(), created_by: actorOf(req) } } };
-    });
+    const { url, expires_at, row } = await onbMakeLink(pool, id, actorOf(req));
     auditLog(auditActorOf(req), 'created', 'onboarding', row.company, 'portal link created');
-    res.json({ ok: true, url: `${ONB_PORTAL_URL}#t=${token}${isPreview() ? '&p=1' : ''}`, expires_at: expires.toISOString(), preview: isPreview(), data: onbOut(row) });
+    res.json({ ok: true, url, expires_at, preview: isPreview(), data: onbOut(row) });
   } catch (e) { onbErr(res, 'POST onboarding link', e); }
 });
 
@@ -6365,8 +6370,14 @@ app.post('/api/onboarding/:clientId/countersign', requireAdmin, async (req, res)
       try { const r = await onbFileToDrive(pool, o.company, s); filed.push({ doc: s.doc, ...r }); }
       catch (e) { console.error('Onboarding Drive filing failed:', e.message); filed.push({ doc: s.doc, error: friendlyDriveError(e) }); }
     }
-    if (!row) row = (await pool.query('select * from onboarding where client_id = $1', [id])).rows[0];
-    res.json({ ok: true, countersigned: done.map(s => s.doc), filed, data: onbOut(row) });
+    // build 49.4: the client gets both signed copies once everything is countersigned
+    let emailed = null;
+    if (row) {
+      try { emailed = await onbSendSignedCopies(pool, id, actorOf(req)); }
+      catch (e) { emailed = { error: e.message }; console.error('Signed copies email failed:', e.message); }
+    }
+    row = (await pool.query('select * from onboarding where client_id = $1', [id])).rows[0];
+    res.json({ ok: true, countersigned: done.map(s => s.doc), filed, emailed, data: onbOut(row) });
   } catch (e) { onbErr(res, 'POST onboarding countersign', e); }
 });
 
@@ -6531,6 +6542,290 @@ app.post('/api/onboarding/:clientId/upload', async (req, res) => {
     try { filed = await onbFileToDrive(pool, company, ins.rows[0]); } catch (e) { filed = { error: friendlyDriveError(e) }; }
     res.json({ ok: true, filed, data: onbOut(row) });
   } catch (e) { onbErr(res, 'POST onboarding upload', e); }
+});
+
+/* ======================================================================
+   Build 49.4: onboarding emails (phase 3)
+
+   - "Send onboarding pack" after the recipient check: Email 1 from the signed-in consultant (their own
+     signature), then Emails 2 and 3 from Daniel Brown at clients@ (welcome letter and pricing attached).
+     Each person gets their own email. Texts live in /onboarding-docs/emails.md.
+   - The portal link is kept encrypted (as well as hashed) so reminders can reuse the same link.
+   - Reminders on day 3 and day 7 send automatically from the daily job, only while something is
+     outstanding and the client is not paused. Day 10: a call task for the consultant instead.
+   - Dan is emailed when a client has signed both agreements. After Dan countersigns, the client gets
+     the signed copies (Dan gets a copy at clients@).
+   - Every send is checked against the 300 a day Brevo limit and logged in the Email Log and comms.
+   - Preview (/dashboard-next) runs everything except the actual sending.
+   ====================================================================== */
+const ONB_FROM = { name: 'Daniel Brown', email: process.env.ONBOARDING_FROM_EMAIL || 'clients@live2helprecruitment.co.uk' };
+let onbEmailTpl = null;
+function onbTemplates() {
+  if (!onbEmailTpl) {
+    try { onbEmailTpl = onbDocs.parseEmails(fs.readFileSync(path.join(__dirname, 'onboarding-docs', 'emails.md'), 'utf8')); }
+    catch (e) { console.error('Onboarding emails are missing:', e.message); onbEmailTpl = {}; }
+  }
+  return onbEmailTpl;
+}
+const onbLinkKey = () => crypto.createHash('sha256').update(String(AUTH_SECRET) + '|onboarding-link').digest();
+function onbEncrypt(t) {
+  const iv = crypto.randomBytes(12), c = crypto.createCipheriv('aes-256-gcm', onbLinkKey(), iv);
+  const enc = Buffer.concat([c.update(String(t), 'utf8'), c.final()]);
+  return [iv, c.getAuthTag(), enc].map(b => b.toString('base64url')).join('.');
+}
+function onbDecrypt(s) {
+  try {
+    const [iv, tag, enc] = String(s || '').split('.').map(x => Buffer.from(x, 'base64url'));
+    const d = crypto.createDecipheriv('aes-256-gcm', onbLinkKey(), iv); d.setAuthTag(tag);
+    return Buffer.concat([d.update(enc), d.final()]).toString('utf8');
+  } catch (e) { return null; }
+}
+const onbUrlFor = (token, preview) => `${ONB_PORTAL_URL}#t=${token}${preview ? '&p=1' : ''}`;
+// A new link (replaces the old one). Steps still pending are marked as sent.
+async function onbMakeLink(pool, id, actor) {
+  const token = crypto.randomBytes(24).toString('base64url');
+  const now = new Date(), expires = new Date(now.getTime() + ONB_LINK_DAYS * 86400000);
+  const row = await onbUpdate(pool, id, c => {
+    ['terms', 'dsa', 'welcome', 'pricing', 'site_form'].forEach(k => { if ((c.steps[k] || {}).status === 'pending') c.steps[k] = { status: 'sent', at: now.toISOString() }; });
+    return { ...c, tokens: { ...(c.tokens || {}), portal: { hash: onbHashToken(token), enc: onbEncrypt(token), preview: isPreview(), created_at: now.toISOString(), expires_at: expires.toISOString(), created_by: actor } } };
+  });
+  return { url: onbUrlFor(token, isPreview()), expires_at: expires.toISOString(), row };
+}
+// The current link, if it can still be used (reminders and "Copy link")
+function onbCurrentUrl(row) {
+  const t = row && row.tokens && row.tokens.portal;
+  if (!t || t.revoked || !t.enc || (t.expires_at && Date.parse(t.expires_at) < Date.now() + 2 * 86400000)) return null;
+  const token = onbDecrypt(t.enc);
+  return token && onbHashToken(token) === t.hash ? onbUrlFor(token, t.preview) : null;
+}
+// Addresses that bounced, were blocked or opted out (from the Brevo webhook and the suppression list)
+async function onbBadAddresses() {
+  const bad = { hard_bounce: 'bounced (address does not exist)', blocked: 'blocked by their server', invalid_email: 'invalid address', spam: 'marked us as spam', unsubscribed: 'opted out', soft_bounce: 'bounced recently (temporary)' };
+  const out = {};
+  (await mailLogTable.list().catch(() => [])).forEach(o => {
+    if (!bad[o.status]) return;
+    String(o.to || '').split(/[,;\s]+/).map(lc).filter(Boolean).forEach(e => { if (!out[e] || o.status !== 'soft_bounce') out[e] = { reason: bad[o.status], hard: o.status !== 'soft_bounce' }; });
+  });
+  (await suppressionTable.list().catch(() => [])).forEach(sp => { const e = lc(sp.email); if (e) out[e] = { reason: sp.reason || 'on the suppression list', hard: true }; });
+  return out;
+}
+const onbFirst = n => String(n || '').trim().split(/\s+/)[0] || '';
+function onbList(items) { return items.length > 1 ? items.slice(0, -1).join(', ') + ' and ' + items[items.length - 1] : (items[0] || ''); }
+
+// Sends one onboarding email. from: 'clients' (Daniel Brown at clients@) or a user key (their own address).
+async function onbSendEmail({ key, from, to, vars, attachments, company, actor, bccClients }) {
+  const tpl = onbTemplates()[key];
+  if (!tpl) throw new Error(`The ${key} email text is missing`);
+  if (!onbEmailOk(to)) throw new Error(`${to || 'The recipient'} is not a valid email address`);
+  const counts = await mailCounts(actor || 'system');
+  if (counts.today >= MAIL_DAILY_LIMIT) throw new Error(`Today's limit of ${MAIL_DAILY_LIMIT} emails through Brevo has been reached. Try again tomorrow.`);
+  const sender = from === 'clients' ? { name: ONB_FROM.name, email: ONB_FROM.email, sig: 'clients' } : (() => { const p = profileOf(from); return { name: p.fullName, email: p.email, sig: p.key }; })();
+  const sig = await loadSignature(sender.sig);
+  const r = onbDocs.renderEmail(tpl, vars, sig.html || `<p style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#222;"><strong>${htmlEsc(sender.name)}</strong></p>`, sig.text || sender.name);
+  const files = (sig.images || []).map((im, i) => ({ filename: `logo${i + 1}.${/png/.test(im.mime) ? 'png' : 'jpg'}`, content: im.base64, encoding: 'base64', contentType: im.mime, cid: im.cid }))
+    .concat((attachments || []).map(a => ({ filename: a.filename, content: a.content, contentType: 'application/pdf' })));
+  const info = await emailTransporter.sendMail({
+    from: `"${String(sender.name).replace(/["<>]/g, '')}" <${sender.email}>`, replyTo: sender.email, sender: sender.email,
+    to, bcc: bccClients ? ONB_FROM.email : (from === 'clients' ? undefined : sender.email),
+    subject: r.subject, text: r.text, html: r.html, attachments: files, headers: { 'X-L2H-Kind': 'onboarding' },
+  });
+  const now = new Date().toISOString();
+  const messageId = String((info && info.messageId) || '').replace(/[<>]/g, '');
+  await mailLogTable.append({ id: 'em-' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), at: now, day: rfxToday(), user: actor || 'system', from: sender.email,
+    to, cc: '', subject: r.subject, kind: 'onboarding', company: String(company || '').slice(0, 120), role: '', entity: '', attachments: (attachments || []).map(a => a.filename).join(', ').slice(0, 400),
+    message_id: messageId, status: 'sent', event_at: now, ref: 'onboarding:' + key }).catch(e => console.error('Email log failed:', e.message));
+  await commsTable.append({ id: 'cm-' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), timestamp: now, user: actor || 'system', entity_type: 'client', entity_name: vars.contact_name || to,
+    company: company || '', role: '', channel: 'email', direction: 'outbound', summary: `Onboarding: ${r.subject}`.slice(0, 480), follow_up_date: '', follow_up_done: '' }).catch(() => {});
+  return { key, to, subject: r.subject, preview: !!(info && info.preview) };
+}
+// Things the client still has to do (for reminders)
+function onbOutstanding(row) {
+  const st = k => ((row.steps || {})[k] || {}).status;
+  const out = [];
+  if (st('terms') !== 'signed') out.push('your Terms of Engagement');
+  if (st('dsa') !== 'signed') out.push('your Data Sharing Agreement');
+  if (st('site_form') !== 'complete') out.push('your site and account form');
+  return out;
+}
+async function onbPdfAttachments(pool, row, keys) {
+  const out = [];
+  for (const k of keys) {
+    const d = await onbRenderDoc(pool, row, k);
+    out.push({ filename: `${ONB_DOCS[k].name}.pdf`, content: await onbDocs.buildDocPdf({ PDFDocument, logo: onbLogo(), meta: d.meta, blocks: d.blocks, sign: null }) });
+  }
+  return out;
+}
+
+// The recipient check: who gets what, and any address problems
+app.get('/api/onboarding/:clientId/send-check', async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const pool = onbPool(); await onbEnsure(pool);
+    const row = (await pool.query('select * from onboarding where client_id = $1', [id])).rows[0];
+    if (!row) return res.status(404).json({ error: 'Onboarding has not been started for this client' });
+    const rec = row.recipients || {}, sig = rec.signatory || null, wel = rec.welcome && rec.welcome.email ? rec.welcome : null;
+    const bad = await onbBadAddresses();
+    const flag = e => !e ? 'Missing email address' : (!onbEmailOk(e) ? 'Email address does not look right' : (bad[lc(e)] ? 'Previously ' + bad[lc(e)].reason : ''));
+    const people = [];
+    if (sig) people.push({ role: 'Signatory', name: sig.name, email: sig.email, gets: ['Welcome (from you)', 'Agreements to sign'].concat(wel && lc(wel.email) !== lc(sig.email) ? [] : ['Welcome pack and site form']), problem: flag(sig.email) });
+    if (wel && (!sig || lc(wel.email) !== lc(sig.email))) people.push({ role: 'Welcome pack', name: wel.name, email: wel.email, gets: ['Welcome (from you)', 'Welcome pack and site form'], problem: flag(wel.email) });
+    const counts = await mailCounts(actorOf(req));
+    res.json({ people, emails: people.reduce((n, p) => n + p.gets.length, 0), today: counts.today, dailyLimit: MAIL_DAILY_LIMIT, sender: profileOf(actorOf(req)).fullName, sent_at: (row.reminders || {}).sent_at || null });
+  } catch (e) { onbErr(res, 'GET onboarding send check', e); }
+});
+
+// Copy the current link (staff only; the link lets the client sign)
+app.get('/api/onboarding/:clientId/link', async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const pool = onbPool(); await onbEnsure(pool);
+    const row = (await pool.query('select * from onboarding where client_id = $1', [id])).rows[0];
+    const url = onbCurrentUrl(row);
+    if (!url) return res.status(404).json({ error: 'There is no current link. Send the onboarding pack or create a new link.' });
+    res.json({ url, expires_at: row.tokens.portal.expires_at });
+  } catch (e) { onbErr(res, 'GET onboarding link', e); }
+});
+
+// Send the onboarding pack: Emails 1, 2 and 3. Needs the recipient check to be confirmed.
+app.post('/api/onboarding/:clientId/send', async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const b = req.body || {};
+    if (b.confirmed !== true) return res.status(400).json({ error: 'Tick "Recipients confirmed" first' });
+    const pool = onbPool(); await onbEnsure(pool);
+    let row = (await pool.query('select * from onboarding where client_id = $1', [id])).rows[0];
+    if (!row) return res.status(404).json({ error: 'Onboarding has not been started for this client' });
+    const rec = row.recipients || {}, sig = rec.signatory;
+    if (!sig || !sig.email) return res.status(400).json({ error: 'Choose who signs for the client first' });
+    if ((row.reminders || {}).sent_at && b.resend !== true) return res.status(409).json({ error: 'The onboarding pack was already sent', code: 'ALREADY_SENT' });
+    const wel = rec.welcome && rec.welcome.email ? rec.welcome : sig;
+    const bad = await onbBadAddresses();
+    const blocked = [sig.email, wel.email].filter((e, i, a) => a.indexOf(e) === i).filter(e => bad[lc(e)] && bad[lc(e)].hard);
+    if (blocked.length) return res.status(409).json({ error: `${blocked.join(', ')} ${blocked.length > 1 ? 'have' : 'has'} ${bad[lc(blocked[0])].reason}. Choose another contact first.` });
+    const counts = await mailCounts(actorOf(req));
+    const planned = 2 + (lc(wel.email) !== lc(sig.email) ? 2 : 1);
+    if (counts.today + planned > MAIL_DAILY_LIMIT) return res.status(429).json({ error: `Sending needs ${planned} emails but only ${Math.max(0, MAIL_DAILY_LIMIT - counts.today)} are left today. Try again tomorrow.` });
+    // the same link in every email (a fresh one if the old one is missing or nearly expired)
+    let url = onbCurrentUrl(row);
+    if (!url) { const made = await onbMakeLink(pool, id, actorOf(req)); url = made.url; row = made.row; }
+    const vars = await onbVars(pool, row);
+    const cons = profileOf(String(row.started_by || actorOf(req)).split(' ')[0]);
+    const base = { company_name: vars.company_name, consultant_first_name: onbFirst(cons.fullName), signing_link: url, form_link: url, portal_link: url };
+    const me = actorOf(req), sent = [];
+    const step = async (args, label) => {
+      try { sent.push(await onbSendEmail({ ...args, company: row.company, actor: me })); }
+      catch (e) { const err = new Error(`${label} could not be sent: ${e.message}`); err.sent = sent; throw err; }
+    };
+    try {
+      const welcomeTo = [sig].concat(lc(wel.email) !== lc(sig.email) ? [wel] : []);
+      for (const p of welcomeTo) await step({ key: 'email1', from: me, to: p.email, vars: { ...base, contact_first_name: onbFirst(p.name), contact_name: p.name } }, `The welcome email to ${p.email}`);
+      await step({ key: 'email2', from: 'clients', to: sig.email, vars: { ...base, contact_first_name: onbFirst(sig.name), contact_name: sig.name } }, 'The agreements email');
+      await step({ key: 'email3', from: 'clients', to: wel.email, vars: { ...base, contact_first_name: onbFirst(wel.name), contact_name: wel.name }, attachments: await onbPdfAttachments(pool, row, ['welcome', 'pricing']) }, 'The welcome pack email');
+    } catch (e) {
+      auditLog(auditActorOf(req), 'email_failed', 'onboarding', row.company, e.message);
+      return res.status(502).json({ error: e.message + (e.sent && e.sent.length ? ` (${e.sent.length} sent before this. Use Resend once it is fixed.)` : ' Nothing was sent.'), sent: e.sent || [] });
+    }
+    const now = new Date().toISOString();
+    row = await onbUpdate(pool, id, c => {
+      ['welcome', 'pricing'].forEach(k => { if ((c.steps[k] || {}).status === 'pending') c.steps[k] = { status: 'sent', at: now }; });
+      // a resend starts the reminder clock again
+      return { ...c, reminders: { ...(c.reminders || {}), sent_at: now, sent_by: me, r1: null, r2: null, call_task: null } };
+    });
+    auditLog(auditActorOf(req), b.resend ? 'resent' : 'sent', 'onboarding', row.company, sent.map(s => `${s.key} to ${s.to}`).join(', '));
+    res.json({ ok: true, sent, preview: sent.some(s => s.preview), data: onbOut(row) });
+  } catch (e) { onbErr(res, 'POST onboarding send', e); }
+});
+
+// Day 3 and day 7 reminders, then a call task on day 10. Runs from the daily job (and on demand for Dan).
+async function runOnboardingReminders(pool, opts = {}) {
+  await onbEnsure(pool);
+  const rows = (await pool.query(`select * from onboarding where status <> 'complete' and not paused and reminders ? 'sent_at' and reminders->>'sent_at' is not null`)).rows;
+  const now = opts.now || Date.now(), result = { checked: rows.length, reminders: 0, tasks: 0, failed: [] };
+  for (const row of rows) {
+    try {
+      const rem = row.reminders || {};
+      const days = Math.floor((now - Date.parse(rem.sent_at)) / 86400000);
+      const todo = onbOutstanding(row);
+      if (!todo.length || days < 3) continue;
+      const rec = row.recipients || {}, sig = rec.signatory;
+      if (!sig || !sig.email) continue;
+      if (days >= 10) {
+        if (rem.call_task) continue;
+        const who = String(row.started_by || 'ella').split(' ')[0];
+        await addAutoTasks([{ key: 'onb-call-' + row.client_id, user: TEAM_DEFAULTS[who] ? who : 'ella', title: `Call ${row.company} about onboarding: ${onbList(todo.map(t => t.replace(/^your /, '')))} still outstanding`,
+          priority: 'High', dueDate: rfxToday(), context: `Onboarding sent ${String(rem.sent_at).slice(0, 10)}. Two reminders have gone. Signatory: ${sig.name}${sig.email ? ' (' + sig.email + ')' : ''}.` }]);
+        await onbUpdate(pool, row.client_id, c => ({ ...c, reminders: { ...(c.reminders || {}), call_task: new Date(now).toISOString() } }));
+        result.tasks++;
+        continue;
+      }
+      const key = days >= 7 ? (rem.r2 ? null : 'reminder2') : (rem.r1 ? null : 'reminder1');
+      if (!key) continue;
+      const url = onbCurrentUrl(row) || (await onbMakeLink(pool, row.client_id, 'system')).url;
+      const wel = rec.welcome && rec.welcome.email ? rec.welcome : null;
+      const vars = await onbVars(pool, row);
+      const sigTodo = todo.filter(t => t !== 'your site and account form' || !wel || lc(wel.email) === lc(sig.email));
+      const send = async (p, items) => onbSendEmail({ key, from: 'clients', to: p.email, company: row.company, actor: 'system',
+        vars: { company_name: vars.company_name, contact_first_name: onbFirst(p.name), contact_name: p.name, outstanding_items: onbList(items), is_are: items.length > 1 ? 'are' : 'is', portal_link: url } });
+      if (sigTodo.length) await send(sig, sigTodo);
+      // the site form went to the welcome pack contact, so they get their own nudge
+      if (wel && lc(wel.email) !== lc(sig.email) && todo.includes('your site and account form')) await send(wel, ['your site and account form']);
+      await onbUpdate(pool, row.client_id, c => ({ ...c, reminders: { ...(c.reminders || {}), [key === 'reminder2' ? 'r2' : 'r1']: new Date(now).toISOString(), ...(key === 'reminder2' && !(c.reminders || {}).r1 ? { r1: 'skipped' } : {}) } }));
+      auditLog('system', 'reminder sent', 'onboarding', row.company, `${key === 'reminder2' ? 'day 7' : 'day 3'}: ${onbList(todo)}`);
+      result.reminders++;
+    } catch (e) { result.failed.push(`${row.company}: ${e.message}`); console.error('Onboarding reminder failed:', row.company, e.message); }
+  }
+  return result;
+}
+app.post('/api/onboarding-reminders/run', requireAdmin, async (req, res) => {
+  try { res.json(await runOnboardingReminders(onbPool())); } catch (e) { onbErr(res, 'POST onboarding reminders', e); }
+});
+
+// Start onboarding for every existing client that has not started yet (each still needs its recipient check)
+app.post('/api/onboarding-bulk/start', requireAdmin, async (req, res) => {
+  try {
+    const pool = onbPool(); await onbEnsure(pool);
+    const rows = (await readClientRows()).filter(r => r[1]).map(rowToClient);
+    const byCo = new Map();
+    rows.forEach(c => { const k = slugifyRole(c.company); if (k && !byCo.has(k)) byCo.set(k, c); });
+    const have = new Set((await pool.query('select client_id from onboarding')).rows.map(r => r.client_id));
+    const started = [];
+    for (const [id, c] of byCo) {
+      if (have.has(id)) continue;
+      await pool.query(`insert into onboarding (client_id, company, status, steps, started_by) values ($1, $2, 'started', $3::jsonb, $4) on conflict (client_id) do nothing`,
+        [id, c.company, JSON.stringify(onbDefaultSteps()), auditActorOf(req)]);
+      // the first contact is suggested as signatory when their details are complete; it is checked before sending
+      const name = String(c.contactName || '').trim();
+      if (name.split(/\s+/).length >= 2 && c.jobTitle && onbEmailOk(c.email)) {
+        await onbUpdate(pool, id, cur => ({ ...cur, recipients: { signatory: { name, title: c.jobTitle, email: lc(c.email) }, suggested: true } }));
+      }
+      started.push(c.company);
+    }
+    auditLog(auditActorOf(req), 'created', 'onboarding', `${started.length} existing clients`, started.join(', ').slice(0, 280));
+    res.json({ ok: true, started });
+  } catch (e) { onbErr(res, 'POST onboarding bulk start', e); }
+});
+
+// After Dan countersigns: the client gets both signed copies (Dan gets a copy at clients@)
+async function onbSendSignedCopies(pool, id, actor) {
+  const row = (await pool.query('select * from onboarding where client_id = $1', [id])).rows[0];
+  const sig = ((row && row.recipients) || {}).signatory;
+  if (!row || !sig || !sig.email) throw new Error('There is no signatory to send the signed copies to');
+  const docs = (await pool.query(`select doc, pdf from onboarding_signatures where client_id = $1 and countersigned_at is not null and method <> 'uploaded' and pdf is not null order by id`, [id])).rows;
+  if (!docs.length) throw new Error('There are no countersigned agreements to send');
+  const cons = profileOf(String(row.started_by || 'ella').split(' ')[0]);
+  const r = await onbSendEmail({ key: 'completion', from: 'clients', to: sig.email, company: row.company, actor, bccClients: true,
+    vars: { company_name: row.company, contact_first_name: onbFirst(sig.name), contact_name: sig.name, consultant_first_name: onbFirst(cons.fullName) },
+    attachments: docs.map(d => ({ filename: `${row.company} - ${ONB_DOCS[d.doc].name} - Signed.pdf`.replace(/[\\/:*?"<>|]/g, ''), content: d.pdf })) });
+  await onbUpdate(pool, id, c => ({ ...c, reminders: { ...(c.reminders || {}), completion_sent_at: new Date().toISOString() } }));
+  return r;
+}
+app.post('/api/onboarding/:clientId/send-signed', requireAdmin, async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const pool = onbPool(); await onbEnsure(pool);
+    const r = await onbSendSignedCopies(pool, id, actorOf(req));
+    res.json({ ok: true, sent: r });
+  } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 // Nightly backup: the live onboarding tables, as extra tabs in the database backup sheet
@@ -10929,6 +11224,8 @@ async function runDailyJob(skipBackup) {
   await step('tasks', reconcileTasks);
   await step('invoiceChase', checkOverdueInvoices);
   await step('talentPoolReconsent', talentPoolReconsentCheck);
+  // build 49.4: onboarding reminders (live database only)
+  if (pgLivePool) await step('onboardingReminders', () => runOnboardingReminders(pgLivePool));
   return result;
 }
 app.get('/api/cron/daily', cronOnly, async (req, res) => {
@@ -14945,7 +15242,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '30 Oct 2026 - build 49.3 (roles for lead clients, candidates capped at Submitted until onboarded)';
+const SERVER_BUILD = '30 Oct 2026 - build 49.4 (client onboarding phase 3: emails, reminders, signed copies)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
