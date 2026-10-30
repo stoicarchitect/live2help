@@ -17070,12 +17070,60 @@ function buildTagApply(){
 
   /* ---------------- CRM: Accounts ---------------- */
   const CRM = { filter:'all', q:'', accounts:[], open:{}, sel:null, loaded:0 };
+  /* ---------------- Client onboarding checklist (phase 1: status only, nothing is emailed yet) ---------------- */
+  const ONB = { byId:new Map(), error:'', steps:{terms:'Terms of Engagement 2026', dsa:'Data Sharing Agreement', countersign:'Countersigned by Daniel Brown', welcome:'Welcome letter', pricing:'Recruitment Pricing 2026', site_form:'Site and account form'} };
+  const ONB_MANUAL = {welcome:['viewed','Mark viewed'], pricing:['viewed','Mark viewed'], site_form:['complete','Mark complete']};
+  const onbId = name => String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const onbOverall = o => !o ? ['Not started', ''] : ({started:['Started', 'gold'], in_progress:['In progress', 'gold'], awaiting_countersign:['Awaiting countersign', 'warn'], complete:['Onboarded', 'ok']}[o.status] || [o.status, '']);
+  const onbStep = (k, s) => {
+    const v = (s && s.status) || 'pending';
+    const label = ({pending:'Not started', sent:'Sent', viewed:'Viewed', in_progress:'In progress', signed:'Signed', complete:'Complete', done:'Done'}[v] || v);
+    const cls = ['signed', 'complete', 'done'].includes(v) ? 'ok' : (v === 'pending' ? '' : (k === 'countersign' ? 'warn' : 'gold'));
+    // view-only documents count as finished once viewed
+    return [label, ['welcome', 'pricing'].includes(k) && v === 'viewed' ? 'ok' : cls];
+  };
+  function onbPanel(a){
+    const id = onbId(a.name), o = ONB.byId.get(id);
+    if(ONB.error) return `<div class="d41-sec"><span class="d41-eyebrow">Onboarding</span><div class="p41-note">Onboarding is not available right now. ${h(ONB.error)}</div></div>`;
+    const [ol, oc] = onbOverall(o);
+    if(!o) return `<div class="d41-sec"><span class="d41-eyebrow">Onboarding</span>
+      <div class="p41-row"><div class="m"><div><b>Not started</b></div><div class="s">Start onboarding to track agreements, the welcome pack and the site form for ${h(a.name)}.</div></div><button class="p41-btn pri sm" data-onb41="start">Start onboarding</button></div>
+      <div class="p41-note" style="margin-top:8px">This builds the checklist only. Sending the onboarding emails is switched on in the next phase.</div></div>`;
+    const admin = isAdmin41();
+    const rows = Object.keys(ONB.steps).map(k => {
+      const s = (o.steps || {})[k] || {}, [sl, sc] = onbStep(k, s);
+      const man = admin && ONB_MANUAL[k] && !(k === 'site_form' ? s.status === 'complete' : s.status === 'viewed')
+        ? `<button class="p41-btn sm" data-onb41="step" data-step="${k}" data-status="${ONB_MANUAL[k][0]}">${ONB_MANUAL[k][1]}</button>` : '';
+      return `<div class="p41-row"><div class="m"><div><b>${h(ONB.steps[k])}</b></div>${s.at ? `<div class="s">${fmt41(String(s.at).slice(0, 10), true)}${s.manual ? ' · recorded by hand' : ''}</div>` : ''}</div>${man}<span class="p41-pill ${sc}">${sl}</span></div>`;
+    }).join('');
+    return `<div class="d41-sec"><span class="d41-eyebrow">Onboarding</span>
+      <div class="p41-row"><div class="m"><div><span class="p41-pill ${oc}">${ol}</span></div><div class="s">Started ${fmt41(String(o.started_at).slice(0, 10), true)}${o.started_by ? ' by ' + h(typeof userLabel === 'function' ? userLabel(o.started_by) : o.started_by) : ''}${o.completed_at ? ' · completed ' + fmt41(String(o.completed_at).slice(0, 10), true) : ''}</div></div></div>
+      ${rows}
+      <label class="p41-row" style="cursor:pointer"><div class="m"><div><b>Pause automatic reminders</b></div><div class="s">Stops the day 3 and day 7 reminders for this client once they are switched on.</div></div><input type="checkbox" data-onb41="pause" ${o.paused ? 'checked' : ''}></label>
+      ${admin ? '' : '<div class="p41-note" style="margin-top:8px">Signed documents are visible to Dan only.</div>'}</div>`;
+  }
+  async function onbAct(a, what, el){
+    const id = onbId(a.name);
+    try{
+      let j;
+      if(what === 'start') j = await b2Post('/api/onboarding/' + id + '/start', {company:a.name});
+      else if(what === 'pause') j = await b2Post('/api/onboarding/' + id + '/pause', {paused:!!el.checked});
+      else if(what === 'step') j = await b2Post('/api/onboarding/' + id + '/steps/' + el.dataset.step, {status:el.dataset.status});
+      if(j && j.data) ONB.byId.set(id, j.data);
+      toast41(what === 'start' ? (j.created ? 'Onboarding started for ' + a.name : 'Onboarding was already started') : 'Saved');
+    }catch(e){ toast41('Could not save: ' + e.message); if(what === 'pause' && el) el.checked = !el.checked; }
+    crmOpen(CRM.sel); crmRender();
+  }
   async function crmLoad(force){
     if(CRM.loaded && !force && Date.now() - CRM.loaded < 60000){ crmRender(); return; }
     const safe = p => api41(p).catch(() => ({data:[]}));
-    const [cl, lc, lp, sites, comms, terms, calls, inv] = await Promise.all([
+    const [cl, lc, lp, sites, comms, terms, calls, inv, onb] = await Promise.all([
       safe('/api/clients'), safe('/api/lead-clients'), safe('/api/lead-pipeline'), safe('/api/client-sites'), safe('/api/comms'),
-      safe('/api/client-terms'), safe('/api/cold-calls'), isAdmin41() ? safe('/api/invoices') : Promise.resolve({data:[]}) ]);
+      safe('/api/client-terms'), safe('/api/cold-calls'), isAdmin41() ? safe('/api/invoices') : Promise.resolve({data:[]}),
+      api41('/api/onboarding').catch(e => ({data:[], error:e.message})) ]);
+    ONB.error = onb.error || '';
+    ONB.steps = onb.steps || ONB.steps;
+    ONB.byId = new Map((onb.data || []).map(o => [o.client_id, o]));
     const map = new Map();
     const get = (company, type) => {
       const k = norm41(company); if(!k) return null;
@@ -17150,7 +17198,7 @@ function buildTagApply(){
     return `<div class="p41-tw"><table><thead><tr><th>Company</th><th>Contacts</th><th>Type and stage</th><th>Health</th><th>Live roles</th><th>Last contact</th></tr></thead><tbody>
       ${list.map(a => `<tr class="click" tabindex="0" data-acc="${h(a.key)}"><td class="co"><b>${h(a.name)}</b><span>${h([a.address, a.postcode].filter(Boolean).join(', ') || 'No address yet')}</span></td>
         <td>${a.contacts.length} · ${h((a.contacts[0] || {}).name || 'None')}</td>
-        <td>${a.type === 'client' ? '<span class="p41-pill ok">Client</span>' : '<span class="p41-pill">Lead</span>'} ${a.stage ? `<span class="p41-pill gold">${h(stageLbl(a.stage))}</span>` : ''}</td>
+        <td>${a.type === 'client' ? '<span class="p41-pill ok">Client</span>' : '<span class="p41-pill">Lead</span>'} ${a.stage ? `<span class="p41-pill gold">${h(stageLbl(a.stage))}</span>` : ''}${a.type === 'client' && !ONB.error ? (() => { const [l, c] = onbOverall(ONB.byId.get(onbId(a.name))); return ` <span class="p41-pill ${c}" title="Onboarding">Onboarding: ${l}</span>`; })() : ''}</td>
         <td>${hp41(a.health) || '<span class="p41-pill">Not scored</span>'}</td><td>${a.roles.length}</td><td>${a.last ? fmt41(a.last, true) : '<span class="p41-pill warn">Never</span>'}</td></tr>`).join('')}
       </tbody></table></div>`;
   }
@@ -17196,6 +17244,7 @@ function buildTagApply(){
       <div class="d41-sec"><span class="d41-eyebrow">Terms and money</span><dl class="p41-kv"><dt>Payment terms</dt><dd><select class="p41-in" data-terms41="${h(a.name)}">${['','14','30'].map(v => `<option value="${v}"${String(a.terms) === v ? ' selected' : ''}>${v ? v + ' days' : 'Not set'}</option>`).join('')}</select></dd><dt>Drive folder</dt><dd>${h(a.folder || 'Not recorded')}</dd>
         ${isAdmin41() ? `<dt>Invoices</dt><dd>${a.invoices.length} · ${money41(a.invoices.reduce((n, i) => n + Number(i.amount || 0), 0))} total · ${a.invoices.filter(i => String(i.status || '').toLowerCase() !== 'paid').length} unpaid</dd>` : ''}</dl></div>` :
       `<div class="d41-sec"><span class="d41-eyebrow">Business development</span><dl class="p41-kv"><dt>Stage</dt><dd>${h(stageLbl(a.stage) || 'Not in pipeline')}</dd><dt>Owner</dt><dd>${h((lead && lead.owner) || 'Not set')}</dd><dt>Source</dt><dd>${h((lead && lead.source) || 'Lead Clients')}</dd><dt>Cold call attempts</dt><dd>${a.calls.length}</dd><dt>Notes</dt><dd>${h((lead && lead.notes) || 'None')}</dd></dl></div>`}
+      ${a.type === 'client' ? onbPanel(a) : ''}
       ${a.type === 'client' ? '<div class="p41-bar"><button class="p41-btn sm" data-x41="delc" style="color:var(--danger)">Delete client</button></div>' : ''}
       <div class="d41-sec"><span class="d41-eyebrow">History</span><div class="d41-tl">
         ${[...commsSorted.map(c => ({d:String(c.timestamp).slice(0,10), t:`${h(c.channel || 'Contact')} · ${h(c.direction || '')}`, x:h(c.summary || ''), who:c.user})),
@@ -17207,8 +17256,13 @@ function buildTagApply(){
     $('drawer41').classList.add('open');
   }
   document.addEventListener('click', e => {
-    const t = e.target.closest('[data-crmf],[data-acc],[data-x41],[data-ctc41],[data-copy41],[data-role41]');
+    const t = e.target.closest('[data-crmf],[data-acc],[data-x41],[data-ctc41],[data-copy41],[data-role41],[data-onb41]');
     if(!t) return;
+    if(t.dataset.onb41){
+      if(t.dataset.onb41 === 'pause') return; // the checkbox is handled on change, so the label click is not counted twice
+      const ac = CRM.accounts.find(x => x.key === CRM.sel); if(ac) onbAct(ac, t.dataset.onb41, t);
+      return;
+    }
     if(t.dataset.crmf){ CRM.filter = t.dataset.crmf; crmRender(); return; }
     if(t.dataset.acc){ crmOpen(t.dataset.acc); return; }
     if(t.dataset.ctc41){ CRM.open[t.dataset.ctc41] = !CRM.open[t.dataset.ctc41]; crmOpen(CRM.sel); return; }
@@ -17233,7 +17287,8 @@ function buildTagApply(){
     if(e.key === 'Enter' && e.target.matches && e.target.matches('tr[data-acc]')) crmOpen(e.target.dataset.acc);
   });
   document.addEventListener('input', e => { if(e.target && e.target.id === 'crm41Q'){ CRM.q = e.target.value; crmRender(); } });
-  document.addEventListener('change', e => { const t = e.target; if(t && t.dataset && t.dataset.terms41 !== undefined && t.value){ saveClientTerms(t.dataset.terms41, t.value); const a = CRM.accounts.find(x => x.key === CRM.sel); if(a) a.terms = t.value; } });
+  document.addEventListener('change', e => { const t = e.target; if(t && t.dataset && t.dataset.onb41 === 'pause'){ const ac = CRM.accounts.find(x => x.key === CRM.sel); if(ac) onbAct(ac, 'pause', t); return; }
+    if(t && t.dataset && t.dataset.terms41 !== undefined && t.value){ saveClientTerms(t.dataset.terms41, t.value); const a = CRM.accounts.find(x => x.key === CRM.sel); if(a) a.terms = t.value; } });
 
   /* ---------------- People (HR) ---------------- */
   const HR = { tab:'overview', emp:null, me:null, hol:[], abs:[], bradford:{}, docs:[], revs:[], com:[], cal:null, month:null, err:'' };

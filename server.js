@@ -5624,6 +5624,237 @@ usersTable = makeSimpleTable({
   label: 'User',
 });
 
+/* ======================================================================
+   Build 49.0: client onboarding (phase 1: tables and the checklist)
+
+   Built straight on Postgres (no Google Sheets version). Live requests use DATABASE_URL, requests
+   from /dashboard-next use PREVIEW_DATABASE_URL, so preview can never touch live onboarding data.
+   Tables are created automatically the first time they are used.
+   - onboarding: one row per client (status, steps, recipients, token hashes, reminder state)
+   - onboarding_signatures: one row per signed document (filled in by the phase 2 signing pages)
+   - onboarding_site_form: the site and account form answers (filled in by phase 2)
+   Ella sees status only. Signed documents and signature records are Dan only.
+   Nothing here sends an email; sending arrives in phase 3.
+   ====================================================================== */
+const ONB_STEPS = {
+  terms: { label: 'Terms of Engagement 2026', allowed: ['pending', 'sent', 'viewed', 'signed'] },
+  dsa: { label: 'Data Sharing Agreement', allowed: ['pending', 'sent', 'viewed', 'signed'] },
+  countersign: { label: 'Countersigned by Daniel Brown', allowed: ['pending', 'done'] },
+  welcome: { label: 'Welcome letter', allowed: ['pending', 'sent', 'viewed'] },
+  pricing: { label: 'Recruitment Pricing 2026', allowed: ['pending', 'sent', 'viewed'] },
+  site_form: { label: 'Site and account form', allowed: ['pending', 'sent', 'in_progress', 'complete'] },
+};
+// steps Dan can set by hand (the signing steps only ever change through the signing pages)
+const ONB_MANUAL_STEPS = ['welcome', 'pricing', 'site_form'];
+const ONB_CLIENT_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+function onbPool() {
+  const pool = isPreview() ? pgPreviewPool : pgLivePool;
+  if (!pool) {
+    throw new Error(isPreview()
+      ? 'The preview test database is not connected, so onboarding is not available on /dashboard-next yet.'
+      : 'The database is not connected, so onboarding is not available.');
+  }
+  return pool;
+}
+
+const onbSchemaReady = new WeakMap();
+function onbEnsure(pool) {
+  if (!onbSchemaReady.has(pool)) {
+    const p = pool.query(`
+      create table if not exists onboarding (
+        client_id text primary key,
+        company text not null,
+        status text not null default 'started',
+        paused boolean not null default false,
+        steps jsonb not null default '{}'::jsonb,
+        recipients jsonb not null default '{}'::jsonb,
+        tokens jsonb not null default '{}'::jsonb,
+        reminders jsonb not null default '{}'::jsonb,
+        started_by text not null default '',
+        started_at timestamptz not null default now(),
+        completed_at timestamptz,
+        updated_at timestamptz not null default now());
+      create table if not exists onboarding_signatures (
+        id bigserial primary key,
+        client_id text not null references onboarding(client_id) on delete cascade,
+        doc text not null,
+        version text not null default '',
+        signer_name text not null default '',
+        signer_email text not null default '',
+        signer_title text not null default '',
+        method text not null default '',
+        signature_image text not null default '',
+        consented boolean not null default false,
+        ip text not null default '',
+        user_agent text not null default '',
+        signed_at timestamptz,
+        countersigned_by text not null default '',
+        countersigned_at timestamptz,
+        pdf_drive_id text not null default '',
+        audit jsonb not null default '[]'::jsonb,
+        created_at timestamptz not null default now());
+      create index if not exists onboarding_signatures_client on onboarding_signatures (client_id);
+      create table if not exists onboarding_site_form (
+        client_id text primary key references onboarding(client_id) on delete cascade,
+        answers jsonb not null default '{}'::jsonb,
+        sections_done jsonb not null default '[]'::jsonb,
+        status text not null default 'not_started',
+        submitted_at timestamptz,
+        pdf_drive_id text not null default '',
+        updated_by text not null default '',
+        updated_at timestamptz not null default now());`);
+    p.catch(() => onbSchemaReady.delete(pool)); // a failed attempt is tried again next time
+    onbSchemaReady.set(pool, p);
+  }
+  return onbSchemaReady.get(pool);
+}
+
+function onbDefaultSteps() {
+  const s = {};
+  Object.keys(ONB_STEPS).forEach(k => { s[k] = { status: 'pending', at: null }; });
+  return s;
+}
+// Overall status comes from the steps, so it can never disagree with the checklist
+function onbDerive(steps) {
+  const st = k => (steps && steps[k] && steps[k].status) || 'pending';
+  const signed = st('terms') === 'signed' && st('dsa') === 'signed';
+  const countersigned = st('countersign') === 'done';
+  const viewed = ['welcome', 'pricing'].every(k => ['viewed'].includes(st(k)));
+  if (signed && countersigned && viewed && st('site_form') === 'complete') return 'complete';
+  if (signed && !countersigned) return 'awaiting_countersign';
+  if (Object.keys(ONB_STEPS).some(k => st(k) !== 'pending')) return 'in_progress';
+  return 'started';
+}
+// What the browser gets: never the token hashes
+function onbOut(r) {
+  const steps = { ...onbDefaultSteps(), ...(r.steps || {}) };
+  return {
+    client_id: r.client_id, company: r.company, status: r.status, paused: !!r.paused, steps,
+    recipients: r.recipients || {}, started_by: r.started_by, started_at: r.started_at, completed_at: r.completed_at, updated_at: r.updated_at,
+  };
+}
+function onbClientIdOf(req, res) {
+  const id = String(req.params.clientId || '').toLowerCase();
+  if (!ONB_CLIENT_ID_RE.test(id) || id.length > 80) { res.status(400).json({ error: 'That is not a valid client reference' }); return null; }
+  return id;
+}
+// Read the row, let the caller change it, save it, all inside one transaction
+async function onbUpdate(pool, clientId, mutate) {
+  const c = await pool.connect();
+  try {
+    await c.query('begin');
+    const cur = (await c.query('select * from onboarding where client_id = $1 for update', [clientId])).rows[0];
+    if (!cur) { await c.query('rollback'); return null; }
+    const next = await mutate({ ...cur, steps: { ...onbDefaultSteps(), ...(cur.steps || {}) } });
+    const status = onbDerive(next.steps);
+    const done = status === 'complete';
+    const r = await c.query(
+      `update onboarding set steps = $2::jsonb, paused = $3, recipients = $4::jsonb, status = $5,
+         completed_at = case when $6::boolean then coalesce(completed_at, now()) else null end, updated_at = now()
+       where client_id = $1 returning *`,
+      [clientId, JSON.stringify(next.steps), !!next.paused, JSON.stringify(next.recipients || {}), status, done]);
+    await c.query('commit');
+    return r.rows[0];
+  } catch (e) { await c.query('rollback').catch(() => {}); throw e; }
+  finally { c.release(); }
+}
+
+// Status for every client (badges on the client list and record). Status only, no signed documents.
+app.get('/api/onboarding', async (req, res) => {
+  try {
+    const pool = onbPool(); await onbEnsure(pool);
+    const r = await pool.query('select * from onboarding order by company');
+    res.json({ data: r.rows.map(onbOut), steps: Object.fromEntries(Object.entries(ONB_STEPS).map(([k, v]) => [k, v.label])) });
+  } catch (e) { console.error('GET /api/onboarding error:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/onboarding/:clientId', async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const pool = onbPool(); await onbEnsure(pool);
+    const r = (await pool.query('select * from onboarding where client_id = $1', [id])).rows[0];
+    res.json({ data: r ? onbOut(r) : null });
+  } catch (e) { console.error('GET /api/onboarding/:id error:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Start onboarding: creates the client's checklist. Safe to press twice. Nothing is emailed in this phase.
+app.post('/api/onboarding/:clientId/start', async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const company = String((req.body && req.body.company) || '').trim().slice(0, 200);
+    if (!company) return res.status(400).json({ error: 'company is required' });
+    if (slugifyRole(company) !== id) return res.status(400).json({ error: 'The client reference does not match the company name' });
+    const pool = onbPool(); await onbEnsure(pool);
+    const ins = await pool.query(
+      `insert into onboarding (client_id, company, status, steps, started_by) values ($1, $2, 'started', $3::jsonb, $4)
+       on conflict (client_id) do nothing returning *`,
+      [id, company, JSON.stringify(onbDefaultSteps()), auditActorOf(req)]);
+    const created = !!ins.rows[0];
+    const row = ins.rows[0] || (await pool.query('select * from onboarding where client_id = $1', [id])).rows[0];
+    if (created) auditLog(auditActorOf(req), 'created', 'onboarding', company, 'onboarding started');
+    res.json({ ok: true, created, data: onbOut(row) });
+  } catch (e) { console.error('POST /api/onboarding/:id/start error:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Pause switch for the automatic reminders (the reminders themselves arrive in phase 3)
+app.post('/api/onboarding/:clientId/pause', async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const paused = !!(req.body && req.body.paused);
+    const pool = onbPool(); await onbEnsure(pool);
+    const row = await onbUpdate(pool, id, cur => ({ ...cur, paused }));
+    if (!row) return res.status(404).json({ error: 'Onboarding has not been started for this client' });
+    auditLog(auditActorOf(req), 'updated', 'onboarding', row.company, paused ? 'reminders paused' : 'reminders resumed');
+    res.json({ ok: true, data: onbOut(row) });
+  } catch (e) { console.error('POST /api/onboarding/:id/pause error:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Dan can record a view-only step or the site form by hand (for example something agreed on a call)
+app.post('/api/onboarding/:clientId/steps/:step', requireAdmin, async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const step = String(req.params.step || '');
+    const status = String((req.body && req.body.status) || '');
+    if (!ONB_MANUAL_STEPS.includes(step)) return res.status(400).json({ error: 'That step is only changed through the signing pages' });
+    if (!ONB_STEPS[step].allowed.includes(status)) return res.status(400).json({ error: `Status must be one of: ${ONB_STEPS[step].allowed.join(', ')}` });
+    const pool = onbPool(); await onbEnsure(pool);
+    const row = await onbUpdate(pool, id, cur => ({ ...cur, steps: { ...cur.steps, [step]: { status, at: new Date().toISOString(), by: actorOf(req), manual: true } } }));
+    if (!row) return res.status(404).json({ error: 'Onboarding has not been started for this client' });
+    auditLog(auditActorOf(req), 'updated', 'onboarding', row.company, `${ONB_STEPS[step].label}: ${status} (set by hand)`);
+    res.json({ ok: true, data: onbOut(row) });
+  } catch (e) { console.error('POST /api/onboarding/:id/steps error:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Signature records are Dan only. The drawn signature image is never sent to the browser here.
+app.get('/api/onboarding/:clientId/signatures', requireAdmin, async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const pool = onbPool(); await onbEnsure(pool);
+    const r = await pool.query(
+      `select id, client_id, doc, version, signer_name, signer_email, signer_title, method, consented, ip, signed_at,
+              countersigned_by, countersigned_at, pdf_drive_id from onboarding_signatures where client_id = $1 order by id`, [id]);
+    res.json({ data: r.rows });
+  } catch (e) { console.error('GET /api/onboarding/:id/signatures error:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Nightly backup: the live onboarding tables, as extra tabs in the database backup sheet
+async function onbBackupTabs(pool) {
+  await onbEnsure(pool);
+  const defs = [
+    ['Onboarding', 'select client_id, company, status, paused, steps, recipients, reminders, started_by, started_at, completed_at, updated_at from onboarding order by company'],
+    ['Onboarding Signatures', 'select id, client_id, doc, version, signer_name, signer_email, signer_title, method, consented, ip, signed_at, countersigned_by, countersigned_at, pdf_drive_id, audit from onboarding_signatures order by id'],
+    ['Onboarding Site Form', 'select client_id, answers, sections_done, status, submitted_at, pdf_drive_id, updated_by, updated_at from onboarding_site_form order by client_id'],
+  ];
+  const out = [];
+  for (const [title, sql] of defs) {
+    const r = await pool.query({ text: sql, rowMode: 'array' });
+    const cell = v => (v == null ? '' : (v instanceof Date ? v.toISOString() : (typeof v === 'object' ? JSON.stringify(v) : String(v))));
+    out.push({ title, rows: [r.fields.map(f => f.name), ...r.rows.map(row => row.map(cell))] });
+  }
+  return out;
+}
+
 /* ---------- Roles / Vacancies ---------- */
 
 const rolesTable = makeSimpleTable({
@@ -9309,6 +9540,15 @@ async function backupDatabaseToDrive(drive, folderId, date) {
     requests.push({ addSheet: { properties: { title, gridProperties: { rowCount: rows.length + 10, columnCount: cols } } } });
     if (rows.length) data.push({ range: `${gridQuote(title)}!A1`, values: rows });
   }
+  // build 49.0: onboarding tables (Postgres only, so they are not in SIMPLE_TABLES)
+  try {
+    for (const t of await onbBackupTabs(pgLivePool)) {
+      const rows = t.rows.map(r => r.map(v => (v.length > 49000 ? v.slice(0, 49000) + ' [cut for backup]' : v)));
+      total += Math.max(0, rows.length - 1);
+      requests.push({ addSheet: { properties: { title: t.title, gridProperties: { rowCount: rows.length + 10, columnCount: Math.max(1, rows[0].length) } } } });
+      data.push({ range: `${gridQuote(t.title)}!A1`, values: rows });
+    }
+  } catch (e) { console.error('Backup: onboarding tables skipped:', e.message); }
   if (starter) requests.push({ deleteSheet: { sheetId: starter.properties.sheetId } });
   await sheets.spreadsheets.batchUpdate({ spreadsheetId: fileId, requestBody: { requests } });
   // written in parts so one large table never makes the request too big
@@ -13986,7 +14226,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '27 Oct 2026 - build 48.5 (finance, Role Finder, records, planning and system on Postgres ready; emergency sign in)';
+const SERVER_BUILD = '30 Oct 2026 - build 49.0 (client onboarding phase 1: Postgres tables and checklist endpoints)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
