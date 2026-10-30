@@ -5789,7 +5789,7 @@ function onbOut(r) {
     client_id: r.client_id, company: r.company, status: r.status, paused: !!r.paused, steps,
     recipients: r.recipients || {}, started_by: r.started_by, started_at: r.started_at, completed_at: r.completed_at, updated_at: r.updated_at,
     // build 49.4: what has been emailed and when
-    sending: (({ sent_at, sent_by, r1, r2, call_task, completion_sent_at, signed_notice_at, chase_email_at }) => ({ sent_at, sent_by, r1, r2, call_task, completion_sent_at, signed_notice_at, chase_email_at }))(r.reminders || {}),
+    sending: (({ sent_at, sent_by, r1, r2, call_task, completion_sent_at, signed_notice_at, chase_email_at, queue }) => ({ sent_at, sent_by, r1, r2, call_task, completion_sent_at, signed_notice_at, chase_email_at, queue: (queue || []).map(q => ({ key: q.key, to: q.to, due_at: q.due_at, status: q.status, sent_at: q.sent_at, error: q.error })) }))(r.reminders || {}),
   };
 }
 function onbClientIdOf(req, res) {
@@ -7120,25 +7120,105 @@ app.post('/api/onboarding/:clientId/send', async (req, res) => {
       try { sent.push(await onbSendEmail({ ...args, company: row.company, actor: me })); }
       catch (e) { const err = new Error(`${label} could not be sent: ${e.message}`); err.sent = sent; throw err; }
     };
+    // build 49.8: Email 1 (welcome from the consultant) goes now. Emails 2 and 3 from clients@ are queued
+    // and sent by the onboarding queue a few minutes later, so the client reads what is coming first.
+    // Preview sends nothing, so it still prepares all three at once.
+    const queueIt = !isPreview();
     try {
       const welcomeTo = [sig].concat(lc(wel.email) !== lc(sig.email) ? [wel] : []);
       for (const p of welcomeTo) await step({ key: 'email1', from: me, to: p.email, vars: { ...base, contact_first_name: onbFirst(p.name), contact_name: p.name } }, `The welcome email to ${p.email}`);
-      await step({ key: 'email2', from: 'clients', to: sig.email, vars: { ...base, contact_first_name: onbFirst(sig.name), contact_name: sig.name } }, 'The agreements email');
-      await step({ key: 'email3', from: 'clients', to: wel.email, vars: { ...base, contact_first_name: onbFirst(wel.name), contact_name: wel.name }, attachments: await onbPdfAttachments(pool, row, ['welcome', 'pricing']) }, 'The welcome pack email');
+      if (!queueIt) {
+        await step({ key: 'email2', from: 'clients', to: sig.email, vars: { ...base, contact_first_name: onbFirst(sig.name), contact_name: sig.name } }, 'The agreements email');
+        await step({ key: 'email3', from: 'clients', to: wel.email, vars: { ...base, contact_first_name: onbFirst(wel.name), contact_name: wel.name }, attachments: await onbPdfAttachments(pool, row, ['welcome', 'pricing']) }, 'The welcome pack email');
+      }
     } catch (e) {
       auditLog(auditActorOf(req), 'email_failed', 'onboarding', row.company, e.message);
       return res.status(502).json({ error: e.message + (e.sent && e.sent.length ? ` (${e.sent.length} sent before this. Use Resend once it is fixed.)` : ' Nothing was sent.'), sent: e.sent || [] });
     }
     const now = new Date().toISOString();
+    const queue = queueIt ? [
+      { key: 'email2', to: sig.email, name: sig.name, due_at: new Date(Date.now() + ONB_PACK_DELAY_MIN.email2 * 60000).toISOString(), status: 'queued' },
+      { key: 'email3', to: wel.email, name: wel.name, due_at: new Date(Date.now() + ONB_PACK_DELAY_MIN.email3 * 60000).toISOString(), status: 'queued' },
+    ] : [];
     row = await onbUpdate(pool, id, c => {
-      ['welcome', 'pricing'].forEach(k => { if ((c.steps[k] || {}).status === 'pending') c.steps[k] = { status: 'sent', at: now }; });
-      // a resend starts the reminder clock again
-      return { ...c, reminders: { ...(c.reminders || {}), sent_at: now, sent_by: me, r1: null, r2: null, call_task: null, chase_email_at: null } };
+      if (!queueIt) ['welcome', 'pricing'].forEach(k => { if ((c.steps[k] || {}).status === 'pending') c.steps[k] = { status: 'sent', at: now }; });
+      // a resend starts the reminder clock again and replaces anything still queued
+      return { ...c, reminders: { ...(c.reminders || {}), sent_at: now, sent_by: me, r1: null, r2: null, call_task: null, chase_email_at: null, queue } };
     });
-    auditLog(auditActorOf(req), b.resend ? 'resent' : 'sent', 'onboarding', row.company, sent.map(s => `${s.key} to ${s.to}`).join(', '));
-    res.json({ ok: true, sent, preview: sent.some(s => s.preview), data: onbOut(row) });
+    auditLog(auditActorOf(req), b.resend ? 'resent' : 'sent', 'onboarding', row.company, sent.map(s => `${s.key} to ${s.to}`).concat(queue.map(q => `${q.key} to ${q.to} queued for ${q.due_at}`)).join(', '));
+    res.json({ ok: true, sent, queued: queue.map(q => ({ key: q.key, to: q.to, due_at: q.due_at })), preview: sent.some(s => s.preview), data: onbOut(row) });
   } catch (e) { onbErr(res, 'POST onboarding send', e); }
 });
+
+// build 49.8: the onboarding email queue. Emails 2 and 3 of the pack are held in reminders.queue and sent
+// here once due. Runs every minute on the live database only; survives restarts because the queue is stored.
+const ONB_PACK_DELAY_MIN = { email2: 5, email3: 10 };
+let onbQueueBusy = false;
+async function runOnboardingQueue() {
+  if (onbQueueBusy || !pgLivePool) return { skipped: true };
+  onbQueueBusy = true;
+  const out = { sent: [], failed: [] };
+  try {
+    const pool = pgLivePool; await onbEnsure(pool);
+    const nowIso = new Date().toISOString();
+    const rows = (await pool.query(`select * from onboarding where coalesce(jsonb_array_length(reminders->'queue'), 0) > 0`)).rows;
+    for (const row of rows) {
+      const q = (row.reminders || {}).queue || [];
+      for (let i = 0; i < q.length; i++) {
+        const it = q[i];
+        if (it.status === 'sending' && Date.parse(it.started_at || 0) < Date.now() - 15 * 60000) {
+          // a send that never finished (for example a restart part way): never resend blindly, flag it
+          await onbQueueSet(pool, row.client_id, it, { status: 'failed', error: 'The server restarted while sending. Check the Email Log, then Resend if it did not go.' });
+          out.failed.push(`${row.company}: ${it.key}`);
+          continue;
+        }
+        if (it.status !== 'queued' || it.due_at > nowIso) continue;
+        if (row.paused) continue;
+        // the welcome pack never overtakes the agreements email
+        if (it.key === 'email3' && q.some(o => o.key === 'email2' && (o.status === 'queued' || o.status === 'sending'))) continue;
+        await onbQueueSet(pool, row.client_id, it, { status: 'sending', started_at: new Date().toISOString() });
+        try {
+          const cur = (await pool.query('select * from onboarding where client_id = $1', [row.client_id])).rows[0];
+          const url = onbCurrentUrl(cur);
+          if (!url) throw new Error('there is no current portal link');
+          const vars = await onbVars(pool, cur);
+          const cons = profileOf(String(cur.started_by || 'ella').split(' ')[0]);
+          const base = { company_name: vars.company_name, consultant_first_name: onbFirst(cons.fullName), signing_link: url, form_link: url, portal_link: url, contact_first_name: onbFirst(it.name), contact_name: it.name };
+          const attachments = it.key === 'email3' ? await onbPdfAttachments(pool, cur, ['welcome', 'pricing']) : undefined;
+          await onbSendEmail({ key: it.key, from: 'clients', to: it.to, vars: base, attachments, company: cur.company, actor: (cur.reminders || {}).sent_by || 'system' });
+          const at = new Date().toISOString();
+          await onbQueueSet(pool, row.client_id, it, { status: 'sent', sent_at: at }, c => {
+            if (it.key === 'email3') ['welcome', 'pricing'].forEach(k => { if ((c.steps[k] || {}).status === 'pending') c.steps[k] = { status: 'sent', at }; });
+          });
+          out.sent.push(`${row.company}: ${it.key} to ${it.to}`);
+        } catch (e) {
+          const tries = (it.attempts || 0) + 1;
+          const gaveUp = tries >= 3;
+          await onbQueueSet(pool, row.client_id, it, gaveUp ? { status: 'failed', attempts: tries, error: e.message } : { status: 'queued', attempts: tries, error: e.message, due_at: new Date(Date.now() + 5 * 60000).toISOString() });
+          if (gaveUp) {
+            out.failed.push(`${row.company}: ${it.key}`);
+            auditLog('system', 'email_failed', 'onboarding', row.company, `${it.key} to ${it.to}: ${e.message}`);
+            alertDan('onboarding-queue', 'Live 2 Help: an onboarding email could not be sent', `${it.key === 'email2' ? 'The agreements email' : 'The welcome pack email'} to ${it.to} (${row.company}) failed 3 times.\n\nReason: ${e.message}\n\nOpen the client record and press Resend once it is fixed.`).catch(() => {});
+          }
+        }
+      }
+    }
+  } catch (e) { console.error('Onboarding queue error:', e.message); }
+  finally { onbQueueBusy = false; }
+  return out;
+}
+// Update one queued email (matched by key, recipient and due time) inside the row's transaction
+function onbQueueSet(pool, clientId, it, patch, extra) {
+  return onbUpdate(pool, clientId, c => {
+    const rem = { ...(c.reminders || {}) };
+    rem.queue = (rem.queue || []).map(q => (q.key === it.key && q.to === it.to && q.due_at === it.due_at ? { ...q, ...patch } : q));
+    if (rem.queue.every(q => q.status === 'sent')) rem.queue = [];
+    const next = { ...c, reminders: rem };
+    if (extra) extra(next);
+    return next;
+  });
+}
+if (pgLivePool) setInterval(() => { runOnboardingQueue().catch(() => {}); }, 60 * 1000);
 
 // build 49.5: the consultant is the client's closest contact, so they get an email (not a dashboard alert)
 async function onbMailConsultant(row, subject, lines) {
@@ -15761,7 +15841,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '30 Oct 2026 - build 49.7 (go-live: onboarding screens on /dashboard, onboarding and client billing in the nightly backup)';
+const SERVER_BUILD = '30 Oct 2026 - build 49.8 (onboarding pack timing: welcome first, agreements after 5 minutes, welcome pack after 10)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

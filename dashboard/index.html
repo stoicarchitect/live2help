@@ -16921,7 +16921,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '30 Oct 2026 - build 49.7';
+var PAGE_BUILD = '30 Oct 2026 - build 49.8';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -17307,7 +17307,7 @@ function buildTagApply(){
       const people = chk ? chk.people.map(p => `<div class="p41-row"><div class="m"><div><b>${h(p.name)}</b> · ${h(p.role)}</div><div class="s">${h(p.email || 'No email')} · gets: ${h(p.gets.join(', '))}</div>${p.problem ? `<div class="s" style="color:var(--danger)">${h(p.problem)}</div>` : ''}</div>${p.problem ? '<span class="p41-pill bad">Check</span>' : '<span class="p41-pill ok">OK</span>'}</div>`).join('') : '<div class="p41-empty">Checking addresses...</div>';
       const anyBad = chk && chk.people.some(p => p.problem && !/temporary/.test(p.problem));
       return `<div class="p41-panel" style="padding:12px;margin-top:6px"><b style="display:block;color:var(--navy);margin-bottom:4px">Send the onboarding pack</b>
-        <div class="s" style="color:var(--muted);font-size:12.5px;margin-bottom:6px">${chk ? `${chk.emails} emails: a welcome from you, then the agreements and the welcome pack from Daniel Brown at clients@. Each person gets their own email. ${chk.today} of ${chk.dailyLimit} sent today.` : ''}</div>
+        <div class="s" style="color:var(--muted);font-size:12.5px;margin-bottom:6px">${chk ? `${chk.emails} emails: a welcome from you straight away, then the agreements (5 minutes later) and the welcome pack (10 minutes later) from Daniel Brown at clients@. Each person gets their own email. ${chk.today} of ${chk.dailyLimit} sent today.` : ''}</div>
         ${people}
         <label class="p41-row" style="cursor:pointer"><div class="m"><div><b>Recipients confirmed</b></div><div class="s">${anyBad ? 'Fix the address marked Check first (Change, above).' : 'The signatory can sign contracts for the company and the addresses are right.'}</div></div><input type="checkbox" id="onbConfirm"${anyBad || !chk ? ' disabled' : ''} onchange="document.getElementById('onbSendBtn').disabled=!this.checked"></label>
         <div class="p41-bar" style="margin-top:8px"><button class="p41-btn pri sm" id="onbSendBtn" data-onb41="send" disabled>Send onboarding pack</button><button class="p41-btn sm" data-onb41="link">Just make a link</button></div>${linkNote}</div>`;
@@ -17317,7 +17317,7 @@ function buildTagApply(){
     const signedOut = sd.completion_sent_at ? `<div class="p41-row"><div class="m"><div><b>Signed copies emailed</b></div><div class="s">${fmt41(String(sd.completion_sent_at).slice(0, 10), true)} to the signatory, copy to clients@</div></div><span class="p41-pill ok">Sent</span></div>`
       : (admin && (o.steps || {}).countersign && o.steps.countersign.status === 'done' && !((o.steps || {}).countersign || {}).uploaded ? `<div class="p41-bar" style="margin-top:6px"><button class="p41-btn sm" data-onb41="sendsigned">Email signed copies</button></div>` : '');
     return `<div class="p41-panel" style="padding:12px;margin-top:6px"><b style="display:block;color:var(--navy);margin-bottom:4px">Onboarding pack sent ${fmt41(String(sd.sent_at).slice(0, 10), true)}${sd.sent_by ? ' by ' + h(typeof userLabel === 'function' ? userLabel(sd.sent_by) : sd.sent_by) : ''}</b>
-      <dl class="p41-kv"><dt>Day 3 reminder</dt><dd>${when(sd.r1, 3)}</dd><dt>Day 7 reminder</dt><dd>${when(sd.r2, 7)}</dd>${sd.chase_email_at ? `<dt>Consultant chase</dt><dd>Emailed ${fmt41(String(sd.chase_email_at).slice(0, 10), true)} (nothing signed by day 3)</dd>` : ''}<dt>Day 10 call task</dt><dd>${sd.call_task ? 'Added ' + fmt41(String(sd.call_task).slice(0, 10), true) : (o.status === 'complete' || o.status === 'awaiting_countersign' ? 'Not needed' : 'If still outstanding on ' + fmt41(due(10), true) + ', with an email to the consultant')}</dd></dl>
+      <dl class="p41-kv">${(sd.queue || []).map(q => `<dt>${q.key === 'email2' ? 'Agreements email' : 'Welcome pack email'}</dt><dd>${q.status === 'sent' ? 'Sent ' + new Date(q.sent_at).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'}) : (q.status === 'failed' ? '<span style="color:var(--danger)">Not sent: ' + h(q.error || 'failed') + '</span>' : 'Sending at ' + new Date(q.due_at).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'}) + (q.error ? ' (retrying)' : ''))} to ${h(q.to)}</dd>`).join('')}<dt>Day 3 reminder</dt><dd>${when(sd.r1, 3)}</dd><dt>Day 7 reminder</dt><dd>${when(sd.r2, 7)}</dd>${sd.chase_email_at ? `<dt>Consultant chase</dt><dd>Emailed ${fmt41(String(sd.chase_email_at).slice(0, 10), true)} (nothing signed by day 3)</dd>` : ''}<dt>Day 10 call task</dt><dd>${sd.call_task ? 'Added ' + fmt41(String(sd.call_task).slice(0, 10), true) : (o.status === 'complete' || o.status === 'awaiting_countersign' ? 'Not needed' : 'If still outstanding on ' + fmt41(due(10), true) + ', with an email to the consultant')}</dd></dl>
       ${signedOut}
       <div class="p41-bar" style="margin-top:8px"><button class="p41-btn sm" data-onb41="copylink">Copy portal link</button>${o.status === 'complete' ? '' : '<button class="p41-btn sm" data-onb41="resend">Resend</button>'}</div>${linkNote}</div>`;
   }
@@ -17373,7 +17373,7 @@ function buildTagApply(){
         if(what === 'send' && !($('onbConfirm') || {}).checked){ toast41('Tick Recipients confirmed first'); return; }
         el.disabled = true; el.textContent = 'Sending...';
         j = await onbPost('/api/onboarding/' + id + '/send', {confirmed:true, resend: what === 'resend'});
-        toast41(j.preview ? 'Preview: ' + j.sent.length + ' emails prepared (nothing is sent from /dashboard-next)' : j.sent.length + ' emails sent');
+        toast41(j.preview ? 'Preview: ' + j.sent.length + ' emails prepared (nothing is sent from /dashboard-next)' : (j.queued && j.queued.length ? 'Welcome email sent. The agreements follow in 5 minutes and the welcome pack in 10, from clients@' : j.sent.length + ' emails sent'));
       }
       else if(what === 'copylink'){
         const r = await api41('/api/onboarding/' + id + '/link');

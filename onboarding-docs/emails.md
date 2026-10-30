@@ -30,7 +30,7 @@ Speak soon,
 ## Email 2 - Agreements to Sign
 
 **From:** Daniel Brown, clients@live2helprecruitment.co.uk
-**When:** straight after Email 1
+**When:** 5 minutes after Email 1
 
 **Subject:** {{company_name}} - your Live 2 Help agreements to sign
 
@@ -52,7 +52,7 @@ Kind regards,
 ## Email 3 - Welcome Pack and Site Form
 
 **From:** Daniel Brown, clients@live2helprecruitment.co.uk
-**When:** straight after Email 2
+**When:** 10 minutes after Email 1 (never before Email 2)
 
 **Subject:** Your Live 2 Help welcome pack
 
