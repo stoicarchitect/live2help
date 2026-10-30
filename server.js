@@ -1463,6 +1463,11 @@ app.post('/api/candidates', async (req, res) => {
     if (!c.id || !c.role || !c.name) {
       return res.status(400).json({ error: 'id, role and name are required' });
     }
+    // build 49.3: lead client roles stop at Submitted (a candidate already further on is left alone)
+    if (stageRank(c.stage) > stageRank('submitted') && !(__before && stageRank(__before.stage) >= stageRank(c.stage))) {
+      const cap = await onbLeadCap(c.company || (__before && __before.company));
+      if (cap) return res.status(409).json(cap);
+    }
     const sheets = getSheetsClient();
     await syncApplicantRole(c);
 
@@ -6416,6 +6421,15 @@ async function lpxStageNeeds(lead, from, to) {
   if (ti >= 4 && !onbEmailOk(email)) need.push('a valid email address for the contact');
   return need;
 }
+/* build 49.3: roles for lead clients. Ella can source and submit (anonymised) CVs to win the
+   business, but candidates stop at Submitted until the lead has signed both agreements and moved
+   to Clients. Existing clients are never capped. */
+async function onbLeadCap(company) {
+  if (!onbGatesOn() || !String(company || '').trim()) return null;
+  const info = await onbCompanyInfo(company).catch(() => null);
+  if (!info || info.isClient || !info.isLead) return null;
+  return { company, error: `${company} is a lead client, so candidates can go up to Submitted. Interviews, offers and starts unlock once ${company} has signed both agreements and moved to Clients.`, code: 'LEAD_STAGE_CAP' };
+}
 const lpxStageLabel = s => ({ contacted: 'Contacted', interested: 'Interested', meeting: 'Meeting', terms: 'Terms', converted: 'Converted' }[s] || s);
 const lpxNeedsText = (company, to, need) => `To move ${company} to ${lpxStageLabel(to)} it needs ${need.length > 1 ? need.slice(0, -1).join(', ') + ' and ' + need[need.length - 1] : need[0]}.`;
 // Becoming a client: a company already known as a lead needs both agreements signed (Dan can override)
@@ -6727,6 +6741,17 @@ const interviewsTable = makeSimpleTable({
   tab: 'Interviews',
   header: ['id', 'candidate_id', 'candidate_name', 'role', 'company', 'date', 'time', 'type', 'location', 'interviewer', 'status', 'notes', 'created_by', 'duration', 'candidate_email', 'interviewer_email', 'round_no', 'round_label', 'final'],
   path: '/api/interviews',
+  // build 49.3: no interviews for lead client roles until they are onboarded (editing an existing one is fine)
+  guard: async (req, res, next) => {
+    try {
+      if (req.method !== 'POST' || !req.body || !req.body.company) return next();
+      const known = req.body.id ? (await interviewsTable.listAll()).some(o => o.id === req.body.id) : false;
+      if (known) return next();
+      const cap = await onbLeadCap(req.body.company);
+      if (cap) return res.status(409).json({ ...cap, error: `${req.body.company} is a lead client, so interviews cannot be booked yet. They unlock once ${req.body.company} has signed both agreements and moved to Clients.` });
+      next();
+    } catch (e) { next(); }
+  },
   label: 'Interview',
   auditType: 'interview',
   auditName: o => `${o.candidate_name} - ${o.date}`,
@@ -12049,9 +12074,14 @@ app.post('/r/:id', async (req, res) => {
     const label = shortName(link.candidate_name);
     const slots = (Array.isArray(b.slots) ? b.slots : []).slice(0, 2).map(cleanSlot).filter(Boolean);
     const ctx = { label, contact: link.contact, today: todayISO(), slots, extra: oneLine(b.extra, 400), reasonText, detail: oneLine(b.detail, 600), message };
-    const note = buildReplyNote(answer, ctx);
+    let note = buildReplyNote(answer, ctx);
     const ref = { id: link.candidate_id, sourceTab: link.source_tab, formRole: link.form_role, name: link.candidate_name, role: link.role, company: link.company };
-    const newStage = answer === 'interested' ? 'interview_requested' : answer === 'not_interested' ? 'rejected' : '';
+    let newStage = answer === 'interested' ? 'interview_requested' : answer === 'not_interested' ? 'rejected' : '';
+    // build 49.3: a lead client's interest is recorded, but the candidate stays at Submitted until they are onboarded
+    if (newStage === 'interview_requested' && await onbLeadCap(link.company)) {
+      newStage = '';
+      note += ' Kept at Submitted: lead client, onboarding needed before interviews.';
+    }
 
     let summary, thanks;
     if (answer === 'interested') {
@@ -14915,7 +14945,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '30 Oct 2026 - build 49.2 (Add client asks: send the onboarding pack or upload signed agreements)';
+const SERVER_BUILD = '30 Oct 2026 - build 49.3 (roles for lead clients, candidates capped at Submitted until onboarded)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

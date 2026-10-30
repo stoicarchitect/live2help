@@ -1075,6 +1075,14 @@
     #toast,.toast{bottom:calc(72px + env(safe-area-inset-bottom)) !important;}
     .board-scroll-btn{display:none !important;}
   }
+/* build 49.3: lead client roles */
+.lead-cap{display:inline-block;background:#FBF0DC;color:#7A4E0C;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:600;letter-spacing:.2px;white-space:nowrap}
+.stage-col.lead-locked{opacity:.55;background:repeating-linear-gradient(135deg,transparent 0 10px,rgba(201,168,76,.07) 10px 20px)}
+.stage-col.lead-locked .stage-head .c{font-size:10.5px;text-transform:uppercase;letter-spacing:.4px}
+tr.lead-sec td{background:#FBF7EC;border-top:2px solid var(--gold,#C9A84C);padding:10px 12px}
+tr.lead-sec b{display:block;color:var(--navy,#0B0B18);font-size:13.5px}
+tr.lead-sec span{color:#7A6A45;font-size:12.5px}
+.lead-hint{background:#FBF0DC;color:#7A4E0C;border-radius:6px;padding:8px 10px;font-size:12.5px;margin:6px 0 4px}
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -2876,6 +2884,25 @@ async function loadCandidates(){
   }
 }
 
+/* ---------- build 49.3: roles for lead clients stop at Submitted until they are onboarded ---------- */
+const LEAD_ROLES = {names:new Set(), at:0, loading:null};
+const leadNorm = s => String(s || '').toLowerCase().replace(/\b(ltd|limited|plc|llp|uk|group)\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+function loadLeadCompanies(force){
+  if(!force && (LEAD_ROLES.loading || Date.now() - LEAD_ROLES.at < 60000)) return LEAD_ROLES.loading || Promise.resolve();
+  LEAD_ROLES.loading = fetch(`${API_BASE}/api/lead-pipeline`).then(r => r.ok ? r.json() : {data:[]}).then(j => {
+    LEAD_ROLES.names = new Set((j.data || []).filter(l => !l.is_client).map(l => leadNorm(l.company)).filter(Boolean));
+    LEAD_ROLES.list = (j.data || []).filter(l => !l.is_client && !['lost', 'archived'].includes(l.stage)).map(l => l.company);
+    LEAD_ROLES.at = Date.now();
+  }).catch(() => {}).finally(() => { LEAD_ROLES.loading = null; });
+  return LEAD_ROLES.loading;
+}
+function isLeadCompany(company){ return !!company && LEAD_ROLES.names.has(leadNorm(company)); }
+const LEAD_CAP_RANK = 2; // index of Submitted in STAGES order
+function stageLockedForLead(company, stageKey){
+  if(!isLeadCompany(company) || stageKey === 'rejected') return false;
+  return STAGES.findIndex(s => s.key === stageKey) > LEAD_CAP_RANK;
+}
+
 async function saveCandidate(c){
   try{
     const res = await fetch(`${API_BASE}/api/candidates`, {
@@ -2885,6 +2912,8 @@ async function saveCandidate(c){
     });
     if(!res.ok){
       const err = await res.json().catch(()=>({}));
+      // the move was refused (lead client): put the board back as it was
+      if(err.code === 'LEAD_STAGE_CAP'){ showToast(err.error); loadLeadCompanies(true); loadCandidates(); return; }
       throw new Error(err.error || ('Server returned ' + res.status));
     }
   }catch(e){
@@ -3079,13 +3108,17 @@ function renderBoard(){
   tbCompany.textContent = currentCompany.toUpperCase();
   tbRole.textContent = currentRole;
   tbMeta.textContent = candidates.length + (candidates.length === 1 ? ' candidate in pipeline' : ' candidates in pipeline');
+  const leadRole = isLeadCompany(currentCompany);
+  if(leadRole) tbMeta.innerHTML = esc(tbMeta.textContent) + ' · <span class="lead-cap" title="Interviews, offers and starts unlock once they have signed both agreements and moved to Clients">Lead client: CVs up to Submitted until onboarded</span>';
+  if(!LEAD_ROLES.at) loadLeadCompanies().then(() => { if(isLeadCompany(currentCompany)) renderBoard(); });
 
   board.innerHTML = '';
   STAGES.forEach(stage => {
     const col = document.createElement('div');
-    col.className = 'stage-col';
+    const locked = leadRole && stageLockedForLead(currentCompany, stage.key);
+    col.className = 'stage-col' + (locked ? ' lead-locked' : '');
     const inStage = candidates.filter(c => c.stage === stage.key);
-    col.innerHTML = `<div class="stage-head"><span class="t">${stage.label}</span><span class="c">${inStage.length}</span></div>`;
+    col.innerHTML = `<div class="stage-head"><span class="t">${stage.label}</span><span class="c">${locked && !inStage.length ? 'Locked' : inStage.length}</span></div>`;
     const body = document.createElement('div');
     body.className = 'stage-body';
     if(inStage.length === 0){
@@ -3412,6 +3445,8 @@ function buildStageButtons(c){
     const label = !r ? 'Start the submission draft' : (r.status === 'email_built' ? 'Confirm the email was sent' : (r.status === 'approved' ? 'Build the client email' : 'Review the submission draft'));
     html += `<button class="primary" onclick="subOpenFromCard()">${label}</button>`;
     html += `<button onclick="subSkipToSubmitted()">Mark as Submitted (skip automation)</button>`;
+  } else if(nextKey && stageLockedForLead(currentCompany, nextKey)){
+    html += `<button class="primary" disabled title="Unlocks once ${esc(currentCompany)} has signed both agreements and moved to Clients">${esc(stageObj.label)} unlocks once ${esc(currentCompany)} is onboarded</button>`;
   } else if(nextKey){
     html += `<button class="primary" onclick="advanceStage('${nextKey}')">Move to ${stageObj.label}</button>`;
   }
@@ -6467,14 +6502,16 @@ function renderRoles(){
     body.innerHTML = '<tr><td colspan="11" class="empty-row">' + (all.length ? 'No roles match these filters.' : 'No roles yet. Add one to get started.') + '</td></tr>';
     return;
   }
-  body.innerHTML = list.map(r => {
+  if(!LEAD_ROLES.at) loadLeadCompanies().then(() => { if(LEAD_ROLES.names.size) renderRoles(); });
+  const clientRows = list.filter(r => !isLeadCompany(r.company)), leadRows = list.filter(r => isLeadCompany(r.company));
+  const rowsHtml = arr => arr.map(r => {
     const opened = opsDateOnly(r.date_opened);
     const end = opsDateOnly(r.date_closed) || today;
     const days = opened ? opsDaysBetween(opened, end) : '';
     const hasBoard = !!(DATA[r.company] && Object.keys(DATA[r.company]).some(k => k.trim().toLowerCase() === r.role.trim().toLowerCase()));
     return `<tr>
       <td class="strong">${esc(r.role)}${r.stored ? '' : '<span class="status-pill auto" title="Created automatically from the pipeline">Auto</span>'}${r.ref ? `<div style="font-size:10.5px;color:#999;font-weight:400;letter-spacing:.3px;">${esc(r.ref)}</div>` : ''}</td>
-      <td>${esc(r.company)}</td>
+      <td>${esc(r.company)}${isLeadCompany(r.company) ? '<div><span class="lead-cap" title="Candidates go up to Submitted until they are onboarded">Lead client</span></div>' : ''}</td>
       <td>${r.contact ? esc(r.contact) : '<span style="color:#bbb;">Not set</span>'}</td>
       <td>${r.salary_band ? esc(r.salary_band) : '<span style="color:#bbb;">Not set</span>'}</td>
       <td>${roleAutoFee(r.salary_band) ? roleAutoFee(r.salary_band) + '%' : '<span style="color:#bbb;" title="Fills in automatically once a salary is added">Awaiting salary</span>'}</td>
@@ -6493,6 +6530,8 @@ function renderRoles(){
       </div></td>
     </tr>`;
   }).join('');
+  body.innerHTML = (clientRows.length ? rowsHtml(clientRows) : (leadRows.length ? '<tr><td colspan="11" class="empty-row">No client roles match these filters.</td></tr>' : '')) +
+    (leadRows.length ? `<tr class="lead-sec"><td colspan="11"><b>Lead client roles</b><span>Source and submit CVs to win the business. Candidates go up to Submitted. Interviews, offers and starts unlock once the lead has signed both agreements and moved to Clients.</span></td></tr>` + rowsHtml(leadRows) : '');
 }
 
 /* ---------- Role notes ---------- */
@@ -6647,9 +6686,11 @@ function rmRefreshContacts(){
 function openRoleModal(id){
   editingRoleId = id || null;
   const r = id ? mergedRoles().find(x => x.id === id) : null;
+  if(!LEAD_ROLES.at) loadLeadCompanies().then(() => { if(document.getElementById('roleModal').classList.contains('visible')) rmLeadHint(); });
   const companies = [...new Set([].concat(
     (APPLICANT_CLIENT_LIST || []).map(c => c.company),
-    Object.keys(DATA).filter(c => c !== UNASSIGNED_LABEL)
+    Object.keys(DATA).filter(c => c !== UNASSIGNED_LABEL),
+    LEAD_ROLES.list || []
   ).filter(Boolean))].sort();
   document.getElementById('rmCompanyList').innerHTML = companies.map(c => `<option value="${esc(c)}">`).join('');
   document.getElementById('roleModalTitle').textContent = r ? 'Edit role' : 'Add role';
@@ -6673,6 +6714,16 @@ function openRoleModal(id){
   rmRefreshContacts();
   document.getElementById('roleModal').classList.add('visible');
   rmCheckForm();
+  rmLeadHint();
+}
+// Tell the user when the role is for a lead client
+function rmLeadHint(){
+  const inp = document.getElementById('rmCompany'); if(!inp) return;
+  let el = document.getElementById('rmLeadHint');
+  if(!el){ el = document.createElement('div'); el.id = 'rmLeadHint'; el.className = 'lead-hint'; inp.insertAdjacentElement('afterend', el); inp.addEventListener('input', rmLeadHint); }
+  const lead = isLeadCompany(inp.value.trim());
+  el.style.display = lead ? 'block' : 'none';
+  el.textContent = lead ? inp.value.trim() + ' is a lead client. You can source and submit CVs to win the business. Candidates stop at Submitted until they have signed both agreements and moved to Clients.' : '';
 }
 
 async function saveRole(){
