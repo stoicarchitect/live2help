@@ -117,7 +117,7 @@ const TABLE_GROUPS = {
   'Talent Suite Users': 'talentsuite', 'Talent Suite Orders': 'talentsuite', 'Credit Purchases': 'talentsuite',
   'Week Plans': 'planning', 'Roadmap': 'planning', 'Marketing': 'planning', 'Ad Spend': 'planning',
   'Roles': 'records', 'Role Notes': 'records', 'Role Briefs': 'records', 'Placements': 'records',
-  'Interviews': 'records', 'Templates': 'records', 'Activity': 'records',
+  'Interviews': 'records', 'Templates': 'records', 'Activity': 'records', 'Invoice Charges': 'records',
   'Audit Log': 'system', 'Email Log': 'system', 'AI Usage': 'system', 'Settings': 'system', 'Suppression List': 'system',
   'Users': 'auth',
 };
@@ -3112,8 +3112,7 @@ app.get('/api/invoices', async (req, res) => {
   try {
     const rows = await readInvoiceRows();
     const admin = isAdmin(req);
-    const invoices = rows.filter(r => r[0]).map(r => {
-      const inv = rowToInvoice(r);
+    const invoices = (await withLateCharges(rows.filter(r => r[0]).map(rowToInvoice))).map(inv => {
       // the client's Pay by Bank page, only shown to Dan so he can copy it into an email
       if (admin) { inv.payUrl = invoicePayUrl(inv); inv.payByBankEligible = invoicePayByBankEligible(inv); }
       return inv;
@@ -3121,6 +3120,23 @@ app.get('/api/invoices', async (req, res) => {
     res.json({ data: invoices });
   } catch (e) {
     console.error('GET /api/invoices error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// build 49.6: waive (or restore) the late payment charge on one invoice. Dan only.
+app.post('/api/invoices/:number/late-charge', requireDan, async (req, res) => {
+  try {
+    const number = String(req.params.number || '');
+    const found = await findInvoice(number);
+    if (!found) return res.status(404).json({ error: 'Invoice not found' });
+    const waive = !!(req.body && req.body.waive === true);
+    await invoiceChargesTable.upsert({ id: number, waived: waive ? 'Yes' : 'No', note: String((req.body && req.body.note) || '').trim().slice(0, 300), updated_by: actorOf(req), updated_at: new Date().toISOString() });
+    auditLog(auditActorOf(req), waive ? 'waived' : 'restored', 'invoice', number, 'late payment charge');
+    const inv = (await withLateCharges([found.inv]))[0];
+    res.json({ ok: true, invoice: inv });
+  } catch (e) {
+    console.error('POST /api/invoices/:number/late-charge error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -3275,7 +3291,8 @@ app.get('/api/invoices/:number/pdf', async (req, res) => {
     const rows = await readInvoiceRows();
     const row = rows.find(r => r[0] === number);
     if (!row) return res.status(404).json({ error: 'Invoice not found' });
-    const inv = rowToInvoice(row);
+    const inv = (await withLateCharges([rowToInvoice(row)]))[0];
+    const billing = await clientBillingFor(inv.company); // build 49.6: from the onboarding site form
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=${inv.number}.pdf`);
@@ -3300,7 +3317,15 @@ app.get('/api/invoices/:number/pdf', async (req, res) => {
       .text('www.live2helprecruitment.co.uk', 50, colY + 56);
 
     doc.font('Helvetica-Bold').fontSize(9).fillColor(GOLD).text('BILLED TO', 220, colY);
-    doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text(inv.company, 220, colY + 14);
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text((billing && billing.reg_name) || inv.company, 220, colY + 14, { width: 170 });
+    if (billing) {
+      // build 49.6: registered address, billing contact and purchase order from the site form
+      const addr = onbSplitAddress(billing.reg_address);
+      const lines = [[addr.address, addr.postcode].filter(Boolean).join(', '),
+        billing.billing_name ? `FAO ${billing.billing_name}` : '', billing.ap_email || billing.billing_email,
+        billing.po_required === 'Yes' ? `PO number: ${billing.po_number || 'to be confirmed'}` : ''].filter(Boolean);
+      doc.font('Helvetica').fontSize(8).fillColor(GREY).text(lines.join('\n'), 220, doc.y + 2, { width: 170, height: 70, ellipsis: true });
+    }
 
     doc.font('Helvetica-Bold').fontSize(9).fillColor(GOLD).text('INVOICE DATE', 400, colY);
     doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text(formatDateUK(inv.date), 400, colY + 14);
@@ -3334,12 +3359,22 @@ app.get('/api/invoices/:number/pdf', async (req, res) => {
       .text('Subtotal', 400, totalsTop + 10)
       .text(formatCurrency(inv.amount), 480, totalsTop + 10);
 
-    doc.rect(340, totalsTop + 30, 205, 28).fill(GOLD);
+    // build 49.6: late payment charge (Terms clause 6.3), a fixed 1% of the original value per charge
+    let lateH = 0;
+    if (inv.late && inv.late.applies && inv.late.charge > 0) {
+      doc.font('Helvetica').fontSize(9).fillColor(GREY)
+        .text(`Late payment charge (${inv.late.count} x 1%)`, 280, totalsTop + 26, { width: 190 })
+        .text(formatCurrency(inv.late.charge), 480, totalsTop + 26);
+      doc.font('Helvetica').fontSize(7).fillColor(LIGHT_GREY)
+        .text(`1% of the original invoice value, charged from ${formatDateUK(inv.late.from)} under clause 6.3 of our Terms. A fixed charge, not interest.`, 280, totalsTop + 38, { width: 265 });
+      lateH = 34;
+    }
+    doc.rect(340, totalsTop + 30 + lateH, 205, 28).fill(GOLD);
     doc.font('Helvetica-Bold').fontSize(11).fillColor('#FFFFFF')
-      .text('TOTAL DUE', 350, totalsTop + 39)
-      .text(formatCurrency(inv.amount), 480, totalsTop + 39);
+      .text('TOTAL DUE', 350, totalsTop + 39 + lateH)
+      .text(formatCurrency(inv.late ? inv.late.total_due : inv.amount), 480, totalsTop + 39 + lateH);
 
-    const payTop = totalsTop + 90;
+    const payTop = totalsTop + 90 + lateH;
     doc.moveTo(50, payTop).lineTo(545, payTop).strokeColor(BORDER).lineWidth(1).stroke();
     doc.font('Helvetica-Bold').fontSize(9).fillColor(GOLD).text('PAYMENT DETAILS', 50, payTop + 16);
 
@@ -3427,7 +3462,7 @@ async function findInvoice(number) {
 const invOpenSessions = new Map(); // invoice number -> { id, url, expires } so a double click reuses one payment page
 
 function invPayPage(inv, opts = {}) {
-  const amount = formatCurrency(inv.amount);
+  const amount = formatCurrency(inv.amountDue || inv.amount); // build 49.6: includes any late payment charge
   const paid = lc(inv.status) === 'paid';
   const eligible = invoicePayByBankEligible(inv) && !opts.forceBank;
   const t = invoicePayToken(inv.number);
@@ -3515,6 +3550,7 @@ async function invPayLookup(req, res) {
     res.status(404).send(invPaySimplePage('Invoice not found', 'We could not find this invoice.'));
     return null;
   }
+  found.inv = (await withLateCharges([found.inv]))[0]; // build 49.6: the amount due includes any late payment charge
   return found;
 }
 
@@ -3544,7 +3580,7 @@ app.get('/pay/invoice/:number/go', async (req, res) => {
     if (lc(inv.status) === 'paid' || !invoicePayByBankEligible(inv)) return res.redirect(303, back);
 
     const open = invOpenSessions.get(inv.number);
-    if (open && open.amount === inv.amount && open.expires > Date.now() + 60000) return res.redirect(303, open.url);
+    if (open && open.amount === (inv.amountDue || inv.amount) && open.expires > Date.now() + 60000) return res.redirect(303, open.url);
 
     const base = tpPublicBase();
     const p = new URLSearchParams({
@@ -3552,7 +3588,7 @@ app.get('/pay/invoice/:number/go', async (req, res) => {
       'payment_method_types[0]': 'pay_by_bank',
       'line_items[0][quantity]': '1',
       'line_items[0][price_data][currency]': 'gbp',
-      'line_items[0][price_data][unit_amount]': String(Math.round(Number(inv.amount) * 100)),
+      'line_items[0][price_data][unit_amount]': String(Math.round(Number(inv.amountDue || inv.amount) * 100)),
       'line_items[0][price_data][product_data][name]': `Invoice ${inv.number} - permanent placement fee`,
       'line_items[0][price_data][product_data][description]': `${inv.company}${inv.candidateName ? ': ' + inv.candidateName : ''}${inv.role ? ', ' + inv.role : ''}`.slice(0, 300),
       client_reference_id: inv.number,
@@ -3579,7 +3615,7 @@ app.get('/pay/invoice/:number/go', async (req, res) => {
         `A client tried to pay invoice ${inv.number} (${inv.company}, ${formatCurrency(inv.amount)}) by Pay by Bank, but Stripe refused:\n\n${why}\n\nIf it mentions pay_by_bank, switch Pay by Bank on in Stripe Dashboard > Settings > Payment methods. The client was shown your bank transfer details instead.`).catch(() => {});
       return res.redirect(303, `${back}&unavailable=1`);
     }
-    invOpenSessions.set(inv.number, { id: j.id, url: j.url, amount: inv.amount, expires: (Number(j.expires_at) || 0) * 1000 });
+    invOpenSessions.set(inv.number, { id: j.id, url: j.url, amount: inv.amountDue || inv.amount, expires: (Number(j.expires_at) || 0) * 1000 });
     auditLog('client', 'invoice_pay_opened', 'invoice', inv.number, `${inv.company} ${formatCurrency(inv.amount)}`);
     res.redirect(303, j.url);
   } catch (e) {
@@ -3603,7 +3639,8 @@ async function invMarkPaidFromStripe(session) {
       await mailDan(`Pay by Bank: payment for unknown invoice ${number}`, `Stripe received ${formatCurrency(paidGbp)} for invoice ${number}, but it is not in the Invoices sheet (it may have been deleted). Check Stripe payment ${pi}.`);
       return;
     }
-    const { rowIndex, row, inv } = found;
+    const { rowIndex, row } = found;
+    const inv = (await withLateCharges([found.inv]))[0]; // build 49.6
     invOpenSessions.delete(number);
     if (lc(inv.status) === 'paid') {
       if (pi && inv.stripePaymentIntent !== pi) {
@@ -3622,7 +3659,7 @@ async function invMarkPaidFromStripe(session) {
       spreadsheetId: CLIENT_SHEET_ID, range: `${INVOICES_TAB}!A${rowIndex + 2}:Q${rowIndex + 2}`,
       valueInputOption: 'RAW', requestBody: { values: [updated] },
     });
-    const short = Math.abs(paidGbp - inv.amount) > 0.01 ? `\n\nNote: Stripe received ${formatCurrency(paidGbp)} but the invoice is for ${formatCurrency(inv.amount)}.` : '';
+    const short = Math.abs(paidGbp - (inv.amountDue || inv.amount)) > 0.01 ? `\n\nNote: Stripe received ${formatCurrency(paidGbp)} but the invoice is for ${formatCurrency(inv.amountDue || inv.amount)}${inv.amountDue && inv.amountDue !== inv.amount ? ' including the late payment charge' : ''}.` : '';
     const fee = Math.min(5, Math.round((paidGbp * 0.005 + 0.2) * 100) / 100);
     mailDan(`Invoice ${number} paid: ${formatCurrency(paidGbp)} from ${inv.company}`,
       `${inv.company} paid invoice ${number} (${inv.candidateName}${inv.role ? ', ' + inv.role : ''}) by Pay by Bank.\n\nAmount: ${formatCurrency(paidGbp)}\nStripe fee: about ${formatCurrency(fee)}\nStripe payment: ${pi}\n\nThe invoice is now marked Paid on the dashboard and no further chase tasks will be created for it. Stripe pays the money out to your bank on its normal payout schedule.${short}\n\nLive 2 Help dashboard`).catch(() => {});
@@ -6009,6 +6046,266 @@ async function onbSaveSiteForm(pool, row, input, submit, who) {
   });
 }
 
+/* ======================================================================
+   Build 49.6: client onboarding phase 4 - the site form feeds the client record
+
+   When the client (or the consultant) submits the site and account form:
+   - Section 1: billing details go to client_billing (used on invoices), new hiring managers are
+     added as client contacts, and the registered address is set on the client record when it is
+     blank. A different address already on file is never overwritten: it is flagged so Dan or Ella
+     can choose "Use the form address".
+   - Sections 2 to 9: the client's interview site is created (or its blank details filled in) in
+     Client Sites, so the Site Pack sent with every interview invite picks it up automatically.
+   - A branded PDF of the answers is filed in the client's Drive folder under Site Info (never in preview).
+   What happened is stored on the form (applied), so the workspace can show it and "Apply again" can
+   repeat it safely (for example once a lead has moved to Clients).
+   ====================================================================== */
+const onbSiteSchemaReady = new WeakMap();
+function onbSiteSchema(pool) {
+  if (!onbSiteSchemaReady.has(pool)) {
+    const p = pool.query(`
+      alter table onboarding_site_form add column if not exists applied jsonb not null default '{}'::jsonb;
+      create table if not exists client_billing (
+        client_id text primary key,
+        company text not null,
+        reg_name text not null default '',
+        company_number text not null default '',
+        reg_address text not null default '',
+        billing_name text not null default '',
+        billing_email text not null default '',
+        ap_email text not null default '',
+        po_required text not null default '',
+        po_number text not null default '',
+        offer_approver text not null default '',
+        interview_availability text not null default '',
+        contact_method text not null default '',
+        source text not null default '',
+        updated_by text not null default '',
+        updated_at timestamptz not null default now());`);
+    p.catch(() => onbSiteSchemaReady.delete(pool));
+    onbSiteSchemaReady.set(pool, p);
+  }
+  return onbSiteSchemaReady.get(pool);
+}
+
+const ONB_POSTCODE_RE = /\b([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})\b/i;
+// "1 High St\nTelford TF1 2AB" -> { address: '1 High St, Telford', postcode: 'TF1 2AB' }
+function onbSplitAddress(s) {
+  const raw = String(s || '').replace(/\r/g, '').trim();
+  if (!raw) return { address: '', postcode: '' };
+  const m = raw.match(ONB_POSTCODE_RE);
+  const postcode = m ? `${m[1]} ${m[2]}`.toUpperCase() : '';
+  const rest = (m ? raw.replace(m[0], '') : raw).split(/[\n,]+/).map(x => x.trim()).filter(Boolean).join(', ');
+  return { address: rest, postcode };
+}
+const onbAddrKey = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+// The site form answers in the shape the Client Sites record (and so the Site Pack) uses
+function onbSiteLogistics(a) {
+  const yn = (v, yes, no) => (v === 'Yes' ? yes : (v === 'No' ? no : ''));
+  const join = (...xs) => xs.map(x => String(x || '').trim()).filter(Boolean).join('. ');
+  return {
+    parking: a.parking || '',
+    transport: a.transport || '',
+    access_notes: a.access_routes || '',
+    arrival_time: a.arrival_time || '',
+    clearance_allowance: a.clearance_allowance || '',
+    security: a.security_checks || '',
+    pre_registration: yn(a.pre_registration, 'Visitors are pre-registered, so we will give the site your name in advance', 'No pre-registration needed'),
+    reception: a.reception_location || '',
+    reception_contact: a.arrival_contact || '',
+    badges: a.badges || '',
+    building_floor: a.building_floor || '',
+    directions: a.directions || '',
+    layout_notes: a.layout_quirks || '',
+    escort: yn(a.escorted, 'You will be collected from reception and escorted', 'You will make your own way from reception'),
+    dress_code: a.dress_code || '',
+    safety_requirements: join(a.ppe, a.safety_rules),
+    accessibility: a.lifts_toilets || '',
+    refreshments: a.refreshments || '',
+    prayer_room: yn(a.prayer_room, 'A prayer or quiet room is available', 'No prayer or quiet room on site'),
+    induction: a.induction || '',
+    interview_duration: a.interview_length || '',
+    late_contact: a.late_contact || '',
+    other_info: a.notes || '',
+    contact1_name: a.primary_name || '', contact1_phone: a.primary_phone || '', contact1_email: a.primary_email || '',
+    contact2_name: a.secondary_name || '', contact2_phone: a.secondary_phone || '', contact2_email: a.secondary_email || '',
+  };
+}
+
+// Section 1 -> client_billing (Postgres, the same database as onboarding)
+async function onbSaveBilling(pool, row, a, who) {
+  const v = k => onbClean(a[k], k === 'reg_address' || k === 'interview_availability' ? 2000 : 200);
+  await pool.query(
+    `insert into client_billing (client_id, company, reg_name, company_number, reg_address, billing_name, billing_email, ap_email, po_required, po_number,
+       offer_approver, interview_availability, contact_method, source, updated_by, updated_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'site form',$14, now())
+     on conflict (client_id) do update set company = excluded.company, reg_name = excluded.reg_name, company_number = excluded.company_number,
+       reg_address = excluded.reg_address, billing_name = excluded.billing_name, billing_email = excluded.billing_email, ap_email = excluded.ap_email,
+       po_required = excluded.po_required, po_number = excluded.po_number, offer_approver = excluded.offer_approver,
+       interview_availability = excluded.interview_availability, contact_method = excluded.contact_method, source = excluded.source,
+       updated_by = excluded.updated_by, updated_at = now()`,
+    [row.client_id, row.company, v('reg_name'), v('company_number'), v('reg_address'), v('billing_name'), v('billing_email'), v('ap_email'),
+      v('po_required'), v('po_number'), v('offer_approver'), v('interview_availability'), v('contact_method'), onbClean(who, 120)]);
+  return { saved: true, billing_email: v('billing_email'), ap_email: v('ap_email'), po: v('po_required') === 'Yes' ? (v('po_number') || 'required, no number yet') : '' };
+}
+
+// Billing details for a company, for invoices. Never throws: invoices work without them.
+async function clientBillingFor(company) {
+  try {
+    const pool = isPreview() ? pgPreviewPool : pgLivePool;
+    if (!pool || !company) return null;
+    await onbEnsure(pool); await onbSiteSchema(pool);
+    return (await pool.query('select * from client_billing where client_id = $1', [slugifyRole(company)])).rows[0] || null;
+  } catch (e) { return null; }
+}
+
+// Section 1 hiring managers -> client contacts; registered address -> client record (only when blank)
+async function onbApplyToClientSheet(company, a, who) {
+  const out = { contacts: { added: [], already: [], skipped: '' }, address: { status: '' } };
+  const rows = await readClientRows();
+  const mine = rows.map((r, i) => ({ r, i })).filter(x => x.r[1] && rfxNormCompany(x.r[1]) === rfxNormCompany(company));
+  const form = onbSplitAddress(a.reg_address);
+  if (!mine.length) {
+    out.contacts.skipped = 'not_client';
+    out.address = { status: 'not_client', form: [form.address, form.postcode].filter(Boolean).join(', ') };
+    return out;
+  }
+  const sheets = getSheetsClient();
+  const first = rowToClient(mine[0].r);
+  // address
+  const cur = [first.address, first.postcode].filter(Boolean).join(', ');
+  if (!form.address && !form.postcode) out.address = { status: 'none' };
+  else if (!first.address && !first.postcode) {
+    const data = mine.filter(x => !x.r[2] && !x.r[3]).map(x => ({ range: `${CLIENT_TAB}!C${x.i + 2}:D${x.i + 2}`, values: [[form.address, form.postcode]] }));
+    if (data.length) await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: CLIENT_SHEET_ID, requestBody: { valueInputOption: 'RAW', data } });
+    out.address = { status: 'set', form: [form.address, form.postcode].filter(Boolean).join(', ') };
+  } else if (onbAddrKey(cur) === onbAddrKey([form.address, form.postcode].filter(Boolean).join(', ')) || (form.postcode && onbAddrKey(first.postcode) === onbAddrKey(form.postcode) && onbAddrKey(first.address) === onbAddrKey(form.address))) {
+    out.address = { status: 'same' };
+  } else {
+    out.address = { status: 'conflict', form: [form.address, form.postcode].filter(Boolean).join(', '), current: cur };
+  }
+  // hiring managers
+  const known = new Set(mine.map(x => lc(x.r[6])).filter(Boolean));
+  const knownNames = new Set(mine.map(x => onbNameKey(x.r[4])).filter(Boolean));
+  const add = [];
+  (Array.isArray(a.hiring_managers) ? a.hiring_managers : []).forEach(m => {
+    if (!m || (!m.name && !m.email)) return;
+    const dup = (m.email && known.has(lc(m.email))) || (!m.email && m.name && knownNames.has(onbNameKey(m.name)));
+    if (dup) { out.contacts.already.push(m.name || m.email); return; }
+    known.add(lc(m.email)); knownNames.add(onbNameKey(m.name));
+    add.push(clientToRow({ company: first.company, address: first.address || form.address, postcode: first.postcode || form.postcode, contactName: m.name || '',
+      jobTitle: m.title || '', email: m.email || '', phone: m.phone || '', folderCreated: first.folderCreated || 'No',
+      notes: `Authorised hiring manager (from the onboarding site form, ${todayISO()})` }));
+    out.contacts.added.push(m.name || m.email);
+  });
+  if (add.length) {
+    await sheets.spreadsheets.values.append({ spreadsheetId: CLIENT_SHEET_ID, range: CLIENT_RANGE, valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: add } });
+  }
+  return out;
+}
+
+// Sections 2 to 9 -> the client's site in Client Sites (the Site Pack reads it)
+async function onbApplyToSite(row, a, who) {
+  const logistics = onbSiteLogistics(a);
+  const filled = Object.entries(logistics).filter(([, v]) => v);
+  const loc = onbSplitAddress(a.site_address || a.reg_address);
+  if (!filled.length && !loc.address) return { status: 'none' };
+  const sites = (await clientSitesTable.list()).filter(s => rfxNormCompany(s.company) === rfxNormCompany(row.company));
+  const ownId = 'onb-' + row.client_id;
+  const now = new Date().toISOString();
+  const own = sites.find(s => s.id === ownId);
+  // a site added by hand that matches the form's postcode (or the only site there is)
+  const match = own ? null : (sites.find(s => loc.postcode && onbAddrKey(s.postcode) === onbAddrKey(loc.postcode)) || (sites.length === 1 ? sites[0] : null));
+  if (own || !match) {
+    // our own record: the form is the source, so it is refreshed in full
+    const prev = own || {};
+    await clientSitesTable.upsert({ ...prev, id: ownId, company: row.company, site_name: prev.site_name || 'Main site',
+      address: loc.address || prev.address || '', postcode: loc.postcode || prev.postcode || '',
+      pdf_file_id: prev.pdf_file_id || '', pdf_link: prev.pdf_link || '', pdf_name: prev.pdf_name || '',
+      logistics_json: JSON.stringify(logistics), checked: '', updated_by: onbClean(who, 120), updated_at: now });
+    return { status: own ? 'updated' : 'created', site_id: ownId, fields: filled.length, others: sites.filter(s => s.id !== ownId).length };
+  }
+  // a site entered by hand: only blank details are filled, nothing typed in is replaced
+  let cur = {}; try { cur = JSON.parse(match.logistics_json || '{}') || {}; } catch (e) { cur = {}; }
+  const merged = { ...cur }, kept = [];
+  filled.forEach(([k, v]) => { if (!String(cur[k] || '').trim()) merged[k] = v; else if (String(cur[k]).trim() !== v) kept.push(k); });
+  const added = filled.filter(([k]) => !String(cur[k] || '').trim()).length;
+  await clientSitesTable.upsert({ ...match, address: match.address || loc.address, postcode: match.postcode || loc.postcode,
+    logistics_json: JSON.stringify(merged), updated_by: onbClean(who, 120), updated_at: now });
+  return { status: 'filled', site_id: match.id, site_name: match.site_name, fields: added, kept: kept.length };
+}
+
+// A branded PDF of the answers (the same sections the client saw)
+async function onbSiteFormPdf(pool, row) {
+  const sf = (await pool.query('select answers, submitted_at, updated_by from onboarding_site_form where client_id = $1', [row.client_id])).rows[0];
+  const a = (sf && sf.answers) || {};
+  const seg = t => [{ t: String(t == null ? '' : t) }];
+  const blocks = [{ type: 'p', inline: seg(`Completed for ${a.reg_name || row.company}${sf && sf.submitted_at ? ' and submitted on ' + formatDateUK(sf.submitted_at) : ''}${sf && sf.updated_by ? ' (' + sf.updated_by + ')' : ''}. Blank answers are left out.`) }];
+  for (const sec of ONB_SITE_FORM) {
+    const rows = [];
+    sec.fields.forEach(f => {
+      const v = a[f.k];
+      if (f.type === 'rows') {
+        (Array.isArray(v) ? v : []).forEach((r, i) => rows.push([seg(`${f.label} ${i + 1}`), seg(f.cols.map(([ck]) => r[ck]).filter(Boolean).join(' · '))]));
+      } else if (v) rows.push([seg(f.label), seg(v)]);
+    });
+    if (!rows.length) continue;
+    blocks.push({ type: 'h', level: 2, inline: seg(sec.title) });
+    blocks.push({ type: 'table', head: null, rows });
+  }
+  const meta = { title: 'Site and Account Onboarding', subtitle: row.company, version: 'Version 2.0 - November 2026' };
+  return onbDocs.buildDocPdf({ PDFDocument, logo: onbLogo(), meta, blocks, sign: null });
+}
+
+async function onbFileSiteFormPdf(pool, row) {
+  if (isPreview()) return { skipped: 'preview' };
+  const pdf = await onbSiteFormPdf(pool, row);
+  const f = await ensureClientFolders(row.company, { skipSubmissions: true });
+  const up = getUploadDriveClient();
+  const name = `${row.company} - Site and Account Form.pdf`.replace(/[\\/:*?"<>|]/g, '');
+  const cur = (await pool.query('select pdf_drive_id from onboarding_site_form where client_id = $1', [row.client_id])).rows[0];
+  let fileId = (cur && cur.pdf_drive_id) || '';
+  if (fileId) {
+    try { await up.files.update({ fileId, requestBody: { name }, media: { mimeType: 'application/pdf', body: Readable.from(pdf) } }); }
+    catch (e) { fileId = ''; }
+  }
+  if (!fileId) fileId = (await up.files.create({ requestBody: { name, parents: [f.siteInfoId] }, media: { mimeType: 'application/pdf', body: Readable.from(pdf) }, fields: 'id' })).data.id;
+  await pool.query('update onboarding_site_form set pdf_drive_id = $2 where client_id = $1', [row.client_id, fileId]);
+  return { fileId };
+}
+
+// Runs every part separately, so one problem (Drive, say) never stops the others. Never throws.
+async function onbApplySiteForm(pool, clientId, who, opts = {}) {
+  await onbSiteSchema(pool);
+  const row = (await pool.query('select * from onboarding where client_id = $1', [clientId])).rows[0];
+  const sf = (await pool.query('select answers, status from onboarding_site_form where client_id = $1', [clientId])).rows[0];
+  if (!row || !sf || sf.status !== 'submitted') return null;
+  const a = sf.answers || {};
+  const res = { at: new Date().toISOString(), by: onbClean(who, 120), preview: isPreview() };
+  const part = async (k, fn) => { try { res[k] = await fn(); } catch (e) { res[k] = { error: String((e && e.message) || e).slice(0, 300) }; } };
+  await part('billing', () => onbSaveBilling(pool, row, a, who));
+  await part('client', () => onbApplyToClientSheet(row.company, a, who));
+  await part('site', () => onbApplyToSite(row, a, who));
+  if (opts.pdf !== false) await part('pdf', () => onbFileSiteFormPdf(pool, row));
+  else {
+    const prev = (await pool.query('select applied from onboarding_site_form where client_id = $1', [clientId])).rows[0];
+    res.pdf = (prev && prev.applied && prev.applied.pdf) || null;
+  }
+  await pool.query('update onboarding_site_form set applied = $2::jsonb where client_id = $1', [clientId, JSON.stringify(res)]);
+  const added = ((res.client || {}).contacts || {}).added || [];
+  auditLog(onbClean(who, 120) || 'system', 'applied', 'onboarding', row.company,
+    `site form to client record: billing ${res.billing && res.billing.saved ? 'saved' : 'not saved'}, ${added.length} contact(s) added, site ${(res.site || {}).status || 'error'}, pdf ${res.pdf && res.pdf.fileId ? 'filed' : ((res.pdf || {}).skipped || 'not filed')}`);
+  return res;
+}
+
+// What the workspace sees (the form record, plus the billing details)
+async function onbSiteFormView(pool, clientId) {
+  await onbSiteSchema(pool);
+  const r = (await pool.query('select answers, status, submitted_at, updated_by, updated_at, applied, pdf_drive_id from onboarding_site_form where client_id = $1', [clientId])).rows[0];
+  return r || null;
+}
+
 /* ---------- company details from the CRM (client rows, lead rows and the lead pipeline) ---------- */
 async function onbCompanyInfo(company) {
   const n = rfxNormCompany(company);
@@ -6202,7 +6499,11 @@ app.post('/api/portal/:token/site-form', async (req, res) => {
     const submit = b.submit === true;
     const sig = (row.recipients || {}).signatory || {};
     await onbSaveSiteForm(pool, row, b.answers, submit, 'client' + (sig.name ? ': ' + sig.name : ''));
-    if (submit) { await onbEvent(pool, row.client_id, 'Site and account form submitted', req); auditLog('client portal', 'submitted', 'onboarding', row.company, 'site and account form'); }
+    if (submit) {
+      await onbEvent(pool, row.client_id, 'Site and account form submitted', req); auditLog('client portal', 'submitted', 'onboarding', row.company, 'site and account form');
+      // build 49.6: answers go to the client record, the interview site and Drive (never holds up the client)
+      onbApplySiteForm(pool, row.client_id, 'client portal').catch(e => console.error('Site form apply failed:', e.message));
+    }
     res.json({ ok: true, status: submit ? 'complete' : 'in_progress' });
   } catch (e) {
     if (e.status === 400) return res.status(400).json({ error: e.message, problems: e.problems });
@@ -6267,8 +6568,9 @@ app.get('/api/onboarding/:clientId/site-form', async (req, res) => {
   try {
     const id = onbClientIdOf(req, res); if (!id) return;
     const pool = onbPool(); await onbEnsure(pool);
-    const r = (await pool.query('select answers, status, submitted_at, updated_by, updated_at from onboarding_site_form where client_id = $1', [id])).rows[0];
-    res.json({ data: r || null, sections: ONB_SITE_FORM });
+    const r = await onbSiteFormView(pool, id);
+    const billing = (await pool.query('select * from client_billing where client_id = $1', [id])).rows[0] || null;
+    res.json({ data: r, billing, sections: ONB_SITE_FORM, preview: isPreview() });
   } catch (e) { onbErr(res, 'GET onboarding site form', e); }
 });
 app.post('/api/onboarding/:clientId/site-form', async (req, res) => {
@@ -6280,11 +6582,113 @@ app.post('/api/onboarding/:clientId/site-form', async (req, res) => {
     const submit = !!(req.body && req.body.submit === true);
     const saved = await onbSaveSiteForm(pool, row, req.body && req.body.answers, submit, actorOf(req));
     auditLog(auditActorOf(req), submit ? 'submitted' : 'updated', 'onboarding', row.company, 'site and account form');
-    res.json({ ok: true, data: onbOut(saved) });
+    // build 49.6: a submitted form (or an edit to one) updates the client record, the site and Drive
+    const sfNow = (await pool.query('select status from onboarding_site_form where client_id = $1', [id])).rows[0];
+    const applied = sfNow && sfNow.status === 'submitted' ? await onbApplySiteForm(pool, id, auditActorOf(req)) : null;
+    res.json({ ok: true, data: onbOut(saved), applied });
   } catch (e) {
     if (e.status === 400) return res.status(400).json({ error: e.message, problems: e.problems });
     onbErr(res, 'POST onboarding site form', e);
   }
+});
+
+// build 49.6: apply the submitted form again (after a lead moves to Clients, or to retry a part that failed)
+app.post('/api/onboarding/:clientId/site-form/apply', async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const pool = onbPool(); await onbEnsure(pool);
+    const applied = await onbApplySiteForm(pool, id, auditActorOf(req), { pdf: req.body && req.body.pdf === true });
+    if (!applied) return res.status(400).json({ error: 'The site form has not been submitted yet' });
+    res.json({ ok: true, applied });
+  } catch (e) { onbErr(res, 'POST onboarding site form apply', e); }
+});
+// Use the registered address from the form on the client record, replacing what is there
+app.post('/api/onboarding/:clientId/site-form/use-address', async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const pool = onbPool(); await onbEnsure(pool); await onbSiteSchema(pool);
+    const row = (await pool.query('select * from onboarding where client_id = $1', [id])).rows[0];
+    const sf = (await pool.query('select answers, applied from onboarding_site_form where client_id = $1', [id])).rows[0];
+    if (!row || !sf) return res.status(404).json({ error: 'No site form for this client' });
+    const form = onbSplitAddress((sf.answers || {}).reg_address);
+    if (!form.address && !form.postcode) return res.status(400).json({ error: 'The form has no registered address' });
+    const rows = await readClientRows();
+    const data = rows.map((r, i) => ({ r, i })).filter(x => x.r[1] && rfxNormCompany(x.r[1]) === rfxNormCompany(row.company))
+      .map(x => ({ range: `${CLIENT_TAB}!C${x.i + 2}:D${x.i + 2}`, values: [[form.address, form.postcode]] }));
+    if (!data.length) return res.status(409).json({ error: `${row.company} is not on the Clients list yet` });
+    await getSheetsClient().spreadsheets.values.batchUpdate({ spreadsheetId: CLIENT_SHEET_ID, requestBody: { valueInputOption: 'RAW', data } });
+    const applied = { ...(sf.applied || {}) };
+    applied.client = { ...(applied.client || {}), address: { status: 'set', form: [form.address, form.postcode].filter(Boolean).join(', '), replaced: true } };
+    await pool.query('update onboarding_site_form set applied = $2::jsonb where client_id = $1', [id, JSON.stringify(applied)]);
+    auditLog(auditActorOf(req), 'updated', 'client', row.company, 'registered address taken from the onboarding site form');
+    res.json({ ok: true, applied });
+  } catch (e) { onbErr(res, 'POST onboarding use address', e); }
+});
+// The site form as a branded PDF (download or view)
+app.get('/api/onboarding/:clientId/site-form/pdf', async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const pool = onbPool(); await onbEnsure(pool);
+    const row = (await pool.query('select * from onboarding where client_id = $1', [id])).rows[0];
+    if (!row) return res.status(404).json({ error: 'Onboarding has not been started for this client' });
+    const pdf = await onbSiteFormPdf(pool, row);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="${`${row.company} - Site and Account Form.pdf`.replace(/[\\/:*?"<>|]/g, '')}"`);
+    res.send(pdf);
+  } catch (e) { onbErr(res, 'GET onboarding site form pdf', e); }
+});
+// Retry filing the PDF in Drive under Site Info
+app.post('/api/onboarding/:clientId/site-form/file-drive', async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const pool = onbPool(); await onbEnsure(pool); await onbSiteSchema(pool);
+    const row = (await pool.query('select * from onboarding where client_id = $1', [id])).rows[0];
+    if (!row) return res.status(404).json({ error: 'Onboarding has not been started for this client' });
+    if (isPreview()) return res.status(409).json({ error: 'Nothing is filed in Drive from /dashboard-next' });
+    let out;
+    try { out = await onbFileSiteFormPdf(pool, row); } catch (e) { out = { error: friendlyDriveError(e) }; }
+    await pool.query(`update onboarding_site_form set applied = jsonb_set(applied, '{pdf}', $2::jsonb, true) where client_id = $1`, [id, JSON.stringify(out)]);
+    if (out.error) return res.status(502).json({ error: out.error });
+    auditLog(auditActorOf(req), 'filed', 'onboarding', row.company, 'site and account form PDF in Drive');
+    res.json({ ok: true, ...out });
+  } catch (e) { onbErr(res, 'POST onboarding site form drive', e); }
+});
+
+// build 49.6: onboarding report - how long clients take and what is outstanding
+function onbReport(rows) {
+  const st = (o, k) => ((o.steps || {})[k] || {}).status || 'pending';
+  const OUT = [
+    ['terms', 'Terms of Engagement not signed', o => st(o, 'terms') !== 'signed'],
+    ['dsa', 'Data Sharing Agreement not signed', o => st(o, 'dsa') !== 'signed'],
+    ['countersign', 'Waiting for Daniel to countersign', o => st(o, 'terms') === 'signed' && st(o, 'dsa') === 'signed' && st(o, 'countersign') !== 'done'],
+    ['welcome', 'Welcome letter not viewed', o => st(o, 'welcome') !== 'viewed'],
+    ['pricing', 'Pricing not viewed', o => st(o, 'pricing') !== 'viewed'],
+    ['site_form', 'Site and account form not submitted', o => st(o, 'site_form') !== 'complete'],
+  ];
+  const now = Date.now();
+  const startOf = o => Date.parse((o.reminders && o.reminders.sent_at) || o.started_at);
+  const done = rows.filter(o => o.status === 'complete' && o.completed_at);
+  const days = done.map(o => Math.max(0, (Date.parse(o.completed_at) - startOf(o)) / 86400000)).filter(n => isFinite(n));
+  const avg = days.length ? Math.round(days.reduce((x, y) => x + y, 0) / days.length * 10) / 10 : null;
+  const open = rows.filter(o => o.status !== 'complete');
+  const signedDays = rows.map(o => { const t = ((o.steps || {}).terms || {}).at, d = ((o.steps || {}).dsa || {}).at; return st(o, 'terms') === 'signed' && st(o, 'dsa') === 'signed' ? (Math.max(Date.parse(t), Date.parse(d)) - startOf(o)) / 86400000 : NaN; }).filter(n => isFinite(n) && n >= 0);
+  return {
+    total: rows.length, complete: done.length, in_progress: open.length, paused: open.filter(o => o.paused).length,
+    awaiting_countersign: rows.filter(o => o.status === 'awaiting_countersign').length,
+    avg_days_to_onboard: avg, fastest_days: days.length ? Math.round(Math.min(...days) * 10) / 10 : null, slowest_days: days.length ? Math.round(Math.max(...days) * 10) / 10 : null,
+    avg_days_to_sign: signedDays.length ? Math.round(signedDays.reduce((x, y) => x + y, 0) / signedDays.length * 10) / 10 : null,
+    outstanding: OUT.map(([k, label, test]) => ({ step: k, label, count: open.filter(test).length, companies: open.filter(test).map(o => o.company) })),
+    open: open.map(o => ({ client_id: o.client_id, company: o.company, status: o.status, paused: !!o.paused, sent: !!(o.reminders && o.reminders.sent_at),
+      days_open: Math.floor((now - startOf(o)) / 86400000), waiting_on: OUT.filter(([, , test]) => test(o)).map(([k]) => k) }))
+      .sort((x, y) => y.days_open - x.days_open),
+  };
+}
+app.get('/api/onboarding-report', async (req, res) => {
+  try {
+    const pool = onbPool(); await onbEnsure(pool);
+    const rows = (await pool.query('select * from onboarding order by company')).rows;
+    res.json({ data: onbReport(rows) });
+  } catch (e) { onbErr(res, 'GET onboarding report', e); }
 });
 
 // Dan's countersign queue: agreements the client has signed and Dan has not
@@ -6966,6 +7370,16 @@ const clientTermsTable = makeSimpleTable({
   label: 'Client terms',
   auditType: 'client terms',
   auditName: o => `${o.company} - ${o.payment_terms_days} days`,
+});
+// build 49.6: late payment charges Dan has waived (one row per invoice number)
+const invoiceChargesTable = makeSimpleTable({
+  tab: 'Invoice Charges',
+  header: ['id', 'waived', 'note', 'updated_by', 'updated_at'],
+  path: '/api/invoice-charges',
+  label: 'Invoice charge',
+  guard: requireDan,
+  auditType: 'invoice charge',
+  auditName: o => `${o.id} - ${String(o.waived).toLowerCase() === 'yes' ? 'late charge waived' : 'late charge applies'}`,
 });
 function clientTermsKey(company) { return 'terms-' + slugifyRole(company); }
 async function paymentTermsDaysFor(company) {
@@ -9315,6 +9729,7 @@ const SITE_FIELDS = [
   { key: 'safety_requirements', label: 'Site safety requirements', section: 'What to Wear' },
   { key: 'accessibility', label: 'Accessibility (lifts, toilets, access)', section: 'Health, Safety and Accessibility' },
   { key: 'refreshments', label: 'Refreshments', section: 'Health, Safety and Accessibility' },
+  { key: 'prayer_room', label: 'Prayer or quiet room', section: 'Health, Safety and Accessibility' },
   { key: 'dietary', label: 'Dietary needs', section: 'Health, Safety and Accessibility' },
   { key: 'induction', label: 'Health and safety induction', section: 'Health, Safety and Accessibility' },
   { key: 'interview_duration', label: 'Expected length of visit', section: 'Good to Know' },
@@ -11154,6 +11569,68 @@ async function onFeedbackSaved(fb, existing, req) {
     `Client feedback logged: ${[fb.outcome, fb.reason].filter(Boolean).join(' - ') || 'no detail'}`, 'inbound');
 }
 
+/* ---------- Late payment charge (build 49.6, Terms of Engagement 2026 clause 6.3) ----------
+   Unpaid more than 14 days after the invoice date (the day after the due date): 1% of the ORIGINAL
+   invoice value. A further 1% of the original value for each full calendar month it stays unpaid after
+   that. A fixed administration charge, never interest, never compounding.
+   Only invoices dated on or after the day the client signed the 2026 Terms carry it: clients still on
+   older terms never agreed to it. Dan can waive the charge on any invoice (Invoice Charges table).
+   The stored invoice amount never changes; the charge is worked out whenever it is shown. */
+function lateAddMonths(d, n) {
+  const y = d.getUTCFullYear(), m = d.getUTCMonth() + n, day = d.getUTCDate();
+  const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(y, m, Math.min(day, last)));
+}
+const lateAddDays = (d, n) => new Date(d.getTime() + n * 86400000);
+const lateDay = d => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+// inv: rowToInvoice shape. termsFrom: Date the client signed the 2026 Terms (or null). waiver: { note, by } or null.
+function invoiceLateCharge(inv, termsFrom, waiver, asOf = new Date()) {
+  const amount = Number(inv && inv.amount) || 0;
+  const out = { applies: false, count: 0, charge: 0, total_due: Math.round(amount * 100) / 100, reason: '', from: '', next: '' };
+  if (!amount || ['refunded', 'cancelled', 'void'].includes(lc(inv.status))) return { ...out, reason: 'not_applicable' };
+  const d = parseISODate(inv.date);
+  if (!d) return { ...out, reason: 'no_date' };
+  if (!termsFrom) return { ...out, reason: 'no_2026_terms' };
+  if (lateDay(d) < lateDay(termsFrom)) return { ...out, reason: 'older_terms' };
+  const due = parseISODate(inv.dueDate) || lateAddDays(lateDay(d), 14);
+  const start = lateAddDays(lateDay(due), 1);
+  const paid = lc(inv.status) === 'paid';
+  const end = lateDay(paid ? (parseISODate(inv.paymentDate) || asOf) : asOf);
+  if (end < start) return { ...out, reason: paid ? 'paid_in_time' : 'not_overdue', from: toISODate(start) };
+  let months = 0;
+  while (months < 600 && lateAddMonths(start, months + 1) <= end) months++;
+  const count = 1 + months;
+  const charge = Math.round(amount * count) / 100; // 1% of the original value per charge
+  const res = { applies: true, count, charge, total_due: Math.round((amount + charge) * 100) / 100, reason: '', from: toISODate(start), next: paid ? '' : toISODate(lateAddMonths(start, count)) };
+  if (waiver) return { ...res, waived: true, waived_by: waiver.by || '', waived_note: waiver.note || '', would_be: charge, charge: 0, total_due: Math.round(amount * 100) / 100 };
+  return res;
+}
+// company key -> Date the 2026 Terms were signed (typed, drawn or uploaded), from the onboarding database
+async function lateTermsMap() {
+  const map = new Map();
+  try {
+    const pool = isPreview() ? pgPreviewPool : pgLivePool;
+    if (!pool) return map;
+    await onbEnsure(pool);
+    const r = await pool.query(`select o.company, s.signed_at from onboarding_signatures s join onboarding o using (client_id) where s.doc = 'terms' and s.signed_at is not null`);
+    r.rows.forEach(x => map.set(rfxNormCompany(x.company), new Date(x.signed_at)));
+  } catch (e) { /* no onboarding data: no charges */ }
+  return map;
+}
+async function lateWaiverMap() {
+  const map = new Map();
+  try { (await invoiceChargesTable.list()).forEach(w => { if (String(w.waived).toLowerCase() === 'yes') map.set(w.id, { note: w.note, by: w.updated_by }); }); } catch (e) { /* none */ }
+  return map;
+}
+// Adds .late to each invoice (and .amountDue) in one pass
+async function withLateCharges(invs, asOf = new Date()) {
+  const [terms, waivers] = await Promise.all([lateTermsMap(), lateWaiverMap()]);
+  return invs.map(inv => {
+    const late = invoiceLateCharge(inv, terms.get(rfxNormCompany(inv.company)) || null, waivers.get(inv.number) || null, asOf);
+    return { ...inv, late, amountDue: late.total_due };
+  });
+}
+
 /* ---------- Invoice chasing ---------- */
 // Terms on an invoice are read from its own dates, so older 30 day invoices keep saying 30 days
 function invoiceTermsDays(inv) {
@@ -11164,16 +11641,21 @@ function invoiceTermsDays(inv) {
 }
 function chaseDraft(inv, level) {
   const fee = `£${Number(inv.amount).toLocaleString('en-GB')}`;
+  // build 49.6: the late payment charge under clause 6.3, when the client is on the 2026 Terms
+  const lt = inv.late && inv.late.applies && inv.late.charge > 0
+    ? `\n\nUnder clause 6.3 of our Terms a late payment charge of ${formatCurrency(inv.late.charge)} (${inv.late.count} x 1% of the original invoice value) now applies, so the balance due is ${formatCurrency(inv.late.total_due)}.${inv.late.next ? ` A further 1% is added on ${formatDateUK(inv.late.next)} if it is still unpaid.` : ''}`
+    : '';
   const url = invoicePayByBankEligible(inv) ? invoicePayUrl(inv) : '';
   const pay = url ? `\n\nYou can pay it in a few taps from your banking app here: ${url}` : '';
   const sign = `${pay}\n\nKind regards,\nDan`;
-  if (level === 1) return `Hi,\n\nA quick reminder that invoice ${inv.number} for ${fee} (${inv.candidateName}, ${inv.role}) was due on ${formatDateUK(inv.dueDate)} and we have not yet seen payment. If it has already gone out, please ignore this and let me know the date. If anything is holding it up, tell me and I will sort it.${sign}`;
-  if (level === 2) return `Hi,\n\nInvoice ${inv.number} for ${fee} is now a week overdue. Our terms are payment within ${invoiceTermsDays(inv)} days, so I need a payment date from you today please. Could you confirm when this will be cleared?${sign}`;
+  if (level === 1) return `Hi,\n\nA quick reminder that invoice ${inv.number} for ${fee} (${inv.candidateName}, ${inv.role}) was due on ${formatDateUK(inv.dueDate)} and we have not yet seen payment. If it has already gone out, please ignore this and let me know the date. If anything is holding it up, tell me and I will sort it.${lt}${sign}`;
+  if (level === 2) return `Hi,\n\nInvoice ${inv.number} for ${fee} is now a week overdue. Our terms are payment within ${invoiceTermsDays(inv)} days, so I need a payment date from you today please. Could you confirm when this will be cleared?${lt}${sign}`;
+  if (lt) return `Hi,\n\nInvoice ${inv.number} for ${fee} remains unpaid more than two weeks after the due date. Please arrange payment immediately.${lt}\n\nUnder clause 6.4 we may also pause active searches until the account is brought up to date.${sign}`;
   return `Hi,\n\nInvoice ${inv.number} for ${fee} remains unpaid more than two weeks after the due date. Please arrange payment immediately. Unless we receive payment or a firm payment date within 3 working days we will have to apply the late payment provisions in our terms and in the Late Payment of Commercial Debts legislation.${sign}`;
 }
 
 async function checkOverdueInvoices() {
-  const invs = (await readInvoiceRows()).filter(r => r && r[0]).map(rowToInvoice).filter(i => !['paid', 'refunded'].includes(lc(i.status)));
+  const invs = (await withLateCharges((await readInvoiceRows()).filter(r => r && r[0]).map(rowToInvoice))).filter(i => !['paid', 'refunded'].includes(lc(i.status)));
   const now = new Date();
   const list = [];
   invs.forEach(inv => {
@@ -11181,7 +11663,7 @@ async function checkOverdueInvoices() {
     const due = parseISODate(inv.dueDate) || (d ? new Date(d.getTime() + 14 * 86400000) : null);
     if (!due) return;
     const over = daysBetween(due, now);
-    const mk = (lvl, title, prio) => list.push({ key: `inv-${slugKey(inv.number)}-c${lvl}`, user: 'dan', priority: prio, dueDate: todayISO(), title, context: `${inv.company}, ${inv.candidateName}, £${inv.amount}. Draft:\n\n${chaseDraft({ ...inv, dueDate: toISODate(due) }, lvl)}` });
+    const mk = (lvl, title, prio) => list.push({ key: `inv-${slugKey(inv.number)}-c${lvl}`, user: 'dan', priority: prio, dueDate: todayISO(), title, context: `${inv.company}, ${inv.candidateName}, £${inv.amount}${inv.late && inv.late.charge ? ` (balance £${inv.late.total_due} with the late payment charge)` : ''}. Draft:\n\n${chaseDraft({ ...inv, dueDate: toISODate(due) }, lvl)}` });
     if (over >= 1) mk(1, `Chase ${inv.company}: invoice ${inv.number} is overdue`, 'High');
     if (over >= 8) mk(2, `Second chase ${inv.company}: invoice ${inv.number} is a week overdue`, 'High');
     if (over >= 15) mk(3, `Final notice ${inv.company}: invoice ${inv.number} is two weeks overdue`, 'High');
@@ -15276,7 +15758,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '30 Oct 2026 - build 49.5 (onboarding: consultant chase email on day 3, call email on day 10)';
+const SERVER_BUILD = '30 Oct 2026 - build 49.6 (onboarding phase 4: site form to client record, site pack, Drive PDF, report, late payment charge)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

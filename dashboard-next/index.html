@@ -4093,6 +4093,27 @@ async function loadInvoices(){
   }
 }
 
+// build 49.6: late payment charge under Terms clause 6.3 (1% of the original value, plus 1% per further full month)
+function invLateLine(inv){
+  const lt = inv.late; if(!lt) return '';
+  const gbp = n => '£' + Number(n).toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2});
+  if(lt.waived) return `<div class="invoice-dates" style="color:#8a8f9e">Late charge of ${gbp(lt.would_be)} waived${lt.waived_note ? ': ' + escHtml49(lt.waived_note) : ''} <a href="#" onclick="invLateWaive('${inv.number}', false);return false;">Restore</a></div>`;
+  if(lt.applies && lt.charge > 0) return `<div class="invoice-dates" style="color:#B54708" title="1% of the original invoice value from ${fmtDateShort(lt.from)}, then 1% for each further full month. Fixed, never compounds.">Late charge ${gbp(lt.charge)} (${lt.count} x 1%) · balance ${gbp(lt.total_due)}${inv.status !== 'paid' && lt.next ? ' · next 1% on ' + fmtDateShort(lt.next) : ''} <a href="#" onclick="invLateWaive('${inv.number}', true);return false;">Waive</a></div>`;
+  if(lt.reason === 'older_terms' || lt.reason === 'no_2026_terms') return inv.status !== 'paid' && inv.dueDate && inv.dueDate < new Date().toISOString().slice(0, 10) ? `<div class="invoice-dates" style="color:#8a8f9e" title="Late charges apply only to invoices dated after the client signed the 2026 Terms">No late charge: client not on the 2026 Terms</div>` : '';
+  return '';
+}
+function escHtml49(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+async function invLateWaive(number, waive){
+  let note = '';
+  if(waive){ note = prompt('Waive the late payment charge on ' + number + '? Add a short reason (optional):', ''); if(note === null) return; }
+  else if(!confirm('Restore the late payment charge on ' + number + '?')) return;
+  try{
+    const r = await fetch(API_BASE + '/api/invoices/' + encodeURIComponent(number) + '/late-charge', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({waive, note})});
+    const j = await r.json().catch(() => ({}));
+    if(!r.ok) throw new Error(j.error || 'Could not save');
+    if(typeof loadInvoices === 'function') loadInvoices();
+  }catch(e){ alert(e.message); }
+}
 function renderInvoiceCard(inv){
   const statusClass = inv.status === 'paid' ? 'status-paid' : inv.status === 'sent' ? 'status-sent' : '';
   const methodLabel = inv.status === 'paid' && inv.paymentMethod
@@ -4115,7 +4136,7 @@ function renderInvoiceCard(inv){
       <div class="invoice-candidate">${inv.candidateName}${inv.role ? ' &middot; ' + inv.role : ''}</div>
       <div class="invoice-amount">£${Number(inv.amount).toLocaleString('en-GB', {minimumFractionDigits:2})}</div>
       <div class="invoice-dates">${fmtDateShort(inv.date)} &rarr; ${fmtDateShort(inv.dueDate)}</div>
-      ${methodLabel}${payNote}
+      ${methodLabel}${payNote}${invLateLine(inv)}
       <div class="invoice-card-actions">
         <button onclick="downloadInvoicePDF('${inv.number}')">Download PDF</button>
         ${canPay ? `<button onclick="copyInvoicePayLink('${inv.number}')" title="Copy the client's Pay by Bank link to paste into your email">Copy pay link</button>` : ''}
@@ -11451,6 +11472,7 @@ const SITE_FIELD_DEFS = [
   {key:'safety_requirements', label:'Site safety requirements', section:'What to Wear'},
   {key:'accessibility', label:'Accessibility (lifts, toilets, access)', section:'Health, Safety and Accessibility'},
   {key:'refreshments', label:'Refreshments', section:'Health, Safety and Accessibility'},
+  {key:'prayer_room', label:'Prayer or quiet room', section:'Health, Safety and Accessibility'},
   {key:'dietary', label:'Dietary needs', section:'Health, Safety and Accessibility'},
   {key:'induction', label:'Health and safety induction', section:'Health, Safety and Accessibility'},
   {key:'interview_duration', label:'Expected length of visit', section:'Good to Know'},
@@ -16935,7 +16957,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '26 Oct 2026 - build 47.4 preview';
+var PAGE_BUILD = '30 Oct 2026 - build 49.6 preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -17277,9 +17299,40 @@ function buildTagApply(){
     return `<div class="d41-sec"><span class="d41-eyebrow">Onboarding</span>
       <div class="p41-row"><div class="m"><div><span class="p41-pill ${oc}">${ol}</span></div><div class="s">Started ${fmt41(String(o.started_at).slice(0, 10), true)}${o.started_by ? ' by ' + h(typeof userLabel === 'function' ? userLabel(o.started_by) : o.started_by) : ''}${o.completed_at ? ' · completed ' + fmt41(String(o.completed_at).slice(0, 10), true) : ''}</div></div></div>
       ${who}${link}
-      <div style="margin-top:6px">${rows}</div>${drive}
+      <div style="margin-top:6px">${rows}</div>${drive}${onbAppliedBlock(a, o, x)}
       <label class="p41-row" style="cursor:pointer"><div class="m"><div><b>Pause automatic reminders</b></div><div class="s">Stops the day 3 and day 7 reminders for this client once they are switched on.</div></div><input type="checkbox" data-onb41="pause" ${o.paused ? 'checked' : ''}></label>
       ${admin ? '' : '<div class="p41-note" style="margin-top:8px">Signed documents are visible to Dan only.</div>'}</div>`;
+  }
+  // build 49.6: where the submitted site form went (client record, interview site, Drive)
+  function onbAppliedBlock(a, o, x){
+    if(((o.steps || {}).site_form || {}).status !== 'complete') return '';
+    const sf = x.sf; if(!sf) return '<div class="p41-empty" style="margin-top:6px">Loading the site form...</div>';
+    if(sf.error || !sf.data) return '';
+    const ap = sf.data.applied || {}, bl = sf.billing, cl = ap.client || {}, st = ap.site || {}, pdf = ap.pdf || {};
+    const row = (t, s2, pill, cls, act) => `<div class="p41-row"><div class="m"><div><b>${t}</b></div>${s2 ? `<div class="s">${s2}</div>` : ''}</div>${act || ''}<span class="p41-pill ${cls}">${pill}</span></div>`;
+    const err = p => p && p.error ? `<div class="s" style="color:var(--danger)">${h(p.error)}</div>` : '';
+    if(!ap.at) return `<div class="p41-panel" style="padding:12px;margin-top:8px"><b style="display:block;color:var(--navy)">Site form to the client record</b><div class="p41-bar" style="margin-top:6px"><button class="p41-btn pri sm" data-onb41="sfapply">Apply to client record</button></div></div>`;
+    const billing = bl ? [bl.billing_name && bl.billing_email ? `${h(bl.billing_name)} (${h(bl.billing_email)})` : h(bl.billing_email || ''), bl.ap_email ? 'accounts ' + h(bl.ap_email) : '', bl.po_required === 'Yes' ? 'PO ' + h(bl.po_number || 'required') : ''].filter(Boolean).join(' · ') : '';
+    const added = ((cl.contacts || {}).added || []), already = ((cl.contacts || {}).already || []);
+    const addr = cl.address || {};
+    const addrRow = addr.status === 'conflict'
+      ? row('Registered address', `On file: ${h(addr.current)}<br>Form: ${h(addr.form)}`, 'Different', 'warn', '<button class="p41-btn sm" data-onb41="sfaddr">Use the form address</button>')
+      : addr.status === 'set' ? row('Registered address', h(addr.form) + (addr.replaced ? ' · replaced the old address' : ' · added to the client record'), 'Saved', 'ok')
+      : addr.status === 'same' ? row('Registered address', 'Matches the client record', 'Same', 'ok')
+      : addr.status === 'not_client' ? row('Registered address and hiring managers', `Saved once ${h(a.name)} is on the Clients list. Press Apply again after moving them.`, 'Waiting', 'gold')
+      : (cl.error ? row('Client record', err(cl), 'Problem', 'bad') : '');
+    const contactsRow = cl.error || addr.status === 'not_client' ? '' : row('Hiring managers', added.length ? 'Added as contacts: ' + h(added.join(', ')) : (already.length ? 'Already contacts: ' + h(already.join(', ')) : 'None on the form'), added.length ? added.length + ' added' : 'No change', added.length ? 'ok' : '');
+    const siteRow = st.error ? row('Interview site', err(st), 'Problem', 'bad')
+      : st.status === 'none' ? row('Interview site', 'The form has no site details', 'None', '')
+      : row('Interview site', st.status === 'filled' ? `Blank details filled on ${h(st.site_name || 'the existing site')}${st.kept ? ' · ' + st.kept + ' details you typed were kept' : ''}` : 'Saved to Sites. Every Site Pack sent with an interview invite uses it.', st.status === 'filled' ? st.fields + ' filled' : 'Saved', 'ok');
+    const pdfRow = pdf.fileId ? row('PDF in Drive', 'Client folder > Site Info', 'Filed', 'ok', '<button class="p41-btn sm" data-onb41="sfpdf">Open PDF</button>')
+      : pdf.skipped === 'preview' || sf.preview ? row('PDF in Drive', 'Not filed from /dashboard-next (test data)', 'Preview', '', '<button class="p41-btn sm" data-onb41="sfpdf">Open PDF</button>')
+      : row('PDF in Drive', pdf.error ? err(pdf) : 'Not filed yet', 'Not filed', 'warn', '<button class="p41-btn sm" data-onb41="sfpdf">Open PDF</button><button class="p41-btn sm" data-onb41="sfdrive">File in Drive</button>');
+    return `<div class="p41-panel" style="padding:12px;margin-top:8px"><b style="display:block;color:var(--navy);margin-bottom:2px">Site form to the client record</b>
+      <div class="s" style="color:var(--muted);font-size:12.5px;margin-bottom:4px">Applied ${fmt41(String(ap.at).slice(0, 10), true)}${ap.by ? ' by ' + h(ap.by) : ''}. Nothing typed into the record is overwritten without asking.</div>
+      ${bl ? row('Billing details', billing || 'Saved', 'On invoices', 'ok') : (ap.billing && ap.billing.error ? row('Billing details', err(ap.billing), 'Problem', 'bad') : '')}
+      ${addrRow}${contactsRow}${siteRow}${pdfRow}
+      <div class="p41-bar" style="margin-top:8px"><button class="p41-btn sm" data-onb41="sfapply">Apply again</button></div></div>`;
   }
   // build 49.4: recipient check, send, reminders and signed copies
   const addDays41 = (iso, n) => { const d = new Date(iso); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
@@ -17326,6 +17379,7 @@ function buildTagApply(){
     if(!x.contacts) jobs.push(api41('/api/onboarding/' + id + '/contacts?company=' + encodeURIComponent(a.name)).then(j => { x.contacts = j.contacts || []; }).catch(() => { x.contacts = []; }));
     if(isAdmin41() && !x.sigs) jobs.push(api41('/api/onboarding/' + id + '/signatures').then(j => { x.sigs = j.data || []; }).catch(() => {}));
     if(!x.check && (o.recipients || {}).signatory && !(o.sending || {}).sent_at) jobs.push(api41('/api/onboarding/' + id + '/send-check').then(j => { x.check = j; }).catch(() => {}));
+    if(!x.sf && ((o.steps || {}).site_form || {}).status === 'complete') jobs.push(api41('/api/onboarding/' + id + '/site-form').then(j => { x.sf = j; }).catch(() => { x.sf = {error:true}; }));
     if(!jobs.length) return;
     await Promise.all(jobs);
     if(CRM.sel === a.key) crmOpen(a.key, true);
@@ -17373,6 +17427,10 @@ function buildTagApply(){
       else if(what === 'pdf'){ onbOpenPdf(a, el.dataset.sig, el.dataset.name); return; }
       else if(what === 'countersign'){ onbCountersign(a); return; }
       else if(what === 'form'){ onbForm(a); return; }
+      else if(what === 'sfapply'){ el.disabled = true; await onbPost('/api/onboarding/' + id + '/site-form/apply', {}); x.sf = null; toast41('Site form applied to the client record'); await crmLoad(true); return; }
+      else if(what === 'sfaddr'){ if(!confirm('Replace the address on the client record with the registered address from the form?')) return; await onbPost('/api/onboarding/' + id + '/site-form/use-address', {}); x.sf = null; toast41('Address updated'); await crmLoad(true); return; }
+      else if(what === 'sfdrive'){ el.disabled = true; await onbPost('/api/onboarding/' + id + '/site-form/file-drive', {}); x.sf = null; toast41('Filed in Drive under Site Info'); }
+      else if(what === 'sfpdf'){ onbSiteFormPdf(a); return; }
       if(j && j.data) ONB.byId.set(id, j.data);
     }catch(e){
       if(what === 'savewho'){ const er = $('onbWhoErr'); if(er){ er.textContent = e.message; return; } }
@@ -17404,6 +17462,17 @@ function buildTagApply(){
       const url = await onbFetchPdf(a, sigId);
       $('vw41Body').innerHTML = `<iframe title="${h(name || 'Signed copy')}" src="${url}"></iframe>`;
       $('vw41Dl').onclick = () => { const l = document.createElement('a'); l.href = url; l.download = `${a.name} - ${name || 'Signed'}.pdf`.replace(/[\\/:*?"<>|]/g, ''); document.body.appendChild(l); l.click(); l.remove(); };
+    }catch(e){ $('vw41Body').innerHTML = `<div style="padding:24px"><div class="p41-err">${h(e.message)}</div></div>`; }
+  }
+  async function onbSiteFormPdf(a){
+    onbViewer('Site and account form · ' + a.name);
+    $('vw41Body').innerHTML = '<div class="p41-empty" style="padding:24px">Opening...</div>';
+    try{
+      const r = await fetch(API_BASE + '/api/onboarding/' + onbId(a.name) + '/site-form/pdf');
+      if(!r.ok){ const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Could not open the PDF'); }
+      const url = URL.createObjectURL(await r.blob());
+      $('vw41Body').innerHTML = `<iframe title="Site and account form" src="${url}"></iframe>`;
+      $('vw41Dl').onclick = () => { const l = document.createElement('a'); l.href = url; l.download = `${a.name} - Site and Account Form.pdf`.replace(/[\\/:*?"<>|]/g, ''); document.body.appendChild(l); l.click(); l.remove(); };
     }catch(e){ $('vw41Body').innerHTML = `<div style="padding:24px"><div class="p41-err">${h(e.message)}</div></div>`; }
   }
   // Countersign every agreement this client has signed, with one signature
@@ -17479,7 +17548,7 @@ function buildTagApply(){
       $('vw41Body').querySelectorAll('[data-onbrow]').forEach(el => { const k = el.dataset.onbrow, i = +el.dataset.i; out[k] = out[k] || []; out[k][i] = out[k][i] || {}; out[k][i][el.dataset.c] = el.value.trim(); });
       Object.keys(out).forEach(k => { if(Array.isArray(out[k])) out[k] = out[k].filter(r => r && Object.values(r).some(Boolean)); });
       b.disabled = true;
-      try{ const r = await onbPost('/api/onboarding/' + id + '/site-form', {answers: out, submit: b.dataset.onbsave === '1'}); if(r.data) ONB.byId.set(id, r.data); $('viewer41').classList.remove('open'); $('vw41Body').onclick = null; toast41(b.dataset.onbsave === '1' ? 'Site form submitted' : 'Draft saved'); crmOpen(CRM.sel); crmRender(); }
+      try{ const r = await onbPost('/api/onboarding/' + id + '/site-form', {answers: out, submit: b.dataset.onbsave === '1'}); if(r.data) ONB.byId.set(id, r.data); if(ONB.x[id]) ONB.x[id].sf = null; if(r.applied) CRM.loaded = 0; $('viewer41').classList.remove('open'); $('vw41Body').onclick = null; toast41(b.dataset.onbsave === '1' ? 'Site form submitted' : 'Draft saved'); crmOpen(CRM.sel); crmRender(); }
       catch(e){ $('onbFormErr').textContent = e.message; b.disabled = false; }
     };
   }
@@ -17551,7 +17620,7 @@ function buildTagApply(){
   function crmRender(){
     const toSign = CRM.accounts.filter(a => (ONB.byId.get(onbId(a.name)) || {}).status === 'awaiting_countersign').length;
     const notOnb = ONB.error ? 0 : CRM.accounts.filter(a => a.type === 'client' && !ONB.byId.has(onbId(a.name))).length;
-    const F = [['all','All'],['client','Clients'],['lead','Leads'],['risk','Needs attention']].concat(isAdmin41() && toSign ? [['sign','To countersign (' + toSign + ')']] : []).concat(notOnb ? [['noonb','Not onboarded (' + notOnb + ')']] : []);
+    const F = [['all','All'],['client','Clients'],['lead','Leads'],['risk','Needs attention']].concat(isAdmin41() && toSign ? [['sign','To countersign (' + toSign + ')']] : []).concat(notOnb ? [['noonb','Not onboarded (' + notOnb + ')']] : []).concat(ONB.error ? [] : [['onbrep','Onboarding report']]);
     $('crm41F').innerHTML = F.map(([k,l]) => `<button class="p41-chip" data-crmf="${k}" aria-pressed="${CRM.filter === k}">${l}</button>`).join('');
     const q = CRM.q.toLowerCase();
     let list = CRM.accounts.filter(a => !q || [a.name, a.address, a.postcode, ...a.contacts.flatMap(c => [c.name, c.email, c.title, c.notes])].join(' ').toLowerCase().includes(q));
@@ -17567,14 +17636,31 @@ function buildTagApply(){
       ['Contacts', all.reduce((n, a) => n + a.contacts.length, 0), 'Across every account'],
       ['Need attention', all.filter(a => a.health && a.health.band !== 'Healthy').length, 'From client health']
     ].map(([k,v,n]) => `<div class="p41-stat"><span class="k">${k}</span><span class="v">${v}</span><span class="n">${n}</span></div>`).join('');
+    if(CRM.filter === 'onbrep'){ onbReportRender(); return; }
     if(!list.length){ $('crm41List').innerHTML = `<div class="p41-panel"><div class="p41-empty">${CRM.accounts.length ? 'No accounts match that search.' : 'No accounts yet. Add a client or a lead to get started.'}</div></div>`; return; }
     $('crm41List').innerHTML = (CRM.filter === 'noonb' && isAdmin41() ? `<div class="p41-note" style="margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:220px">These clients have no signed Terms or Data Sharing Agreement on file. Start onboarding for all of them, then open each one to confirm who signs and press Send. If a client already signed paper copies, use Add client's upload instead.</span><button class="p41-btn pri sm" data-onbbulk="1">Start onboarding for all ${list.length}</button></div>` : '') + accTable(list);
+  }
+  // build 49.6: onboarding report - average days to onboard and what is outstanding, by step
+  async function onbReportRender(){
+    const host = $('crm41List');
+    host.innerHTML = '<div class="p41-panel"><div class="p41-empty">Loading the onboarding report...</div></div>';
+    let r; try{ r = (await api41('/api/onboarding-report')).data; }catch(e){ host.innerHTML = `<div class="p41-panel"><div class="p41-err">${h(e.message)}</div></div>`; return; }
+    if(CRM.filter !== 'onbrep') return;
+    const d = v => v == null ? '-' : (v + (v === 1 ? ' day' : ' days'));
+    const stat = (k, v, n) => `<div class="p41-stat"><span class="k">${k}</span><span class="v">${v}</span><span class="n">${n}</span></div>`;
+    const STEP = {terms:'Terms', dsa:'DSA', countersign:'Countersign', welcome:'Welcome letter', pricing:'Pricing', site_form:'Site form'};
+    const keyOf = co => norm41(co);
+    host.innerHTML = `<div class="p41-grid g4" style="margin-bottom:12px">${stat('Onboarded', r.complete + ' of ' + r.total, 'Clients fully onboarded')}${stat('Average time', d(r.avg_days_to_onboard), r.complete ? 'Pack sent to fully onboarded' : 'None complete yet')}${stat('Time to sign', d(r.avg_days_to_sign), 'Pack sent to both agreements signed')}${stat('In progress', r.in_progress, (r.awaiting_countersign ? r.awaiting_countersign + ' waiting for your countersignature' : 'Nothing waiting on Daniel') + (r.paused ? ' · ' + r.paused + ' paused' : ''))}</div>
+      <div class="p41-panel" style="margin-bottom:12px;padding:12px"><b style="display:block;color:var(--navy);margin-bottom:6px">Outstanding by step</b>
+        ${r.outstanding.map(o => `<div class="p41-row"><div class="m"><div><b>${h(o.label)}</b></div>${o.count ? `<div class="s">${h(o.companies.slice(0, 8).join(', '))}${o.companies.length > 8 ? ' and ' + (o.companies.length - 8) + ' more' : ''}</div>` : ''}</div><span class="p41-pill ${o.count ? 'warn' : 'ok'}">${o.count}</span></div>`).join('')}
+        ${r.fastest_days != null ? `<div class="s" style="color:var(--muted);font-size:12.5px;margin-top:6px">Fastest ${d(r.fastest_days)}, slowest ${d(r.slowest_days)}.</div>` : ''}</div>
+      ${r.open.length ? `<div class="p41-tw"><table><thead><tr><th>Company</th><th>Status</th><th>Open for</th><th>Waiting on</th></tr></thead><tbody>${r.open.map(o => `<tr class="click" tabindex="0" data-acc="${h(keyOf(o.company))}"><td class="co"><b>${h(o.company)}</b><span>${o.sent ? 'Pack sent' : 'Pack not sent yet'}${o.paused ? ' · reminders paused' : ''}</span></td><td>${(() => { const [l, c] = onbOverall({status:o.status}); return `<span class="p41-pill ${c}">${l}</span>`; })()}</td><td>${d(o.days_open)}</td><td>${o.waiting_on.map(k => `<span class="p41-pill">${h(STEP[k] || k)}</span>`).join(' ')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="p41-panel"><div class="p41-empty">Every client that has started onboarding is fully onboarded.</div></div>'}`;
   }
   function accTable(list){
     return `<div class="p41-tw"><table><thead><tr><th>Company</th><th>Contacts</th><th>Type and stage</th><th>Health</th><th>Live roles</th><th>Last contact</th></tr></thead><tbody>
       ${list.map(a => `<tr class="click" tabindex="0" data-acc="${h(a.key)}"><td class="co"><b>${h(a.name)}</b><span>${h([a.address, a.postcode].filter(Boolean).join(', ') || 'No address yet')}</span></td>
         <td>${a.contacts.length} · ${h((a.contacts[0] || {}).name || 'None')}</td>
-        <td>${a.type === 'client' ? '<span class="p41-pill ok">Client</span>' : '<span class="p41-pill">Lead</span>'} ${a.stage ? `<span class="p41-pill gold">${h(stageLbl(a.stage))}</span>` : ''}${(a.type === 'client' || ONB.byId.has(onbId(a.name))) && !ONB.error ? (() => { const [l, c] = onbOverall(ONB.byId.get(onbId(a.name))); return ` <span class="p41-pill ${c}" title="Onboarding">Onboarding: ${l}</span>`; })() : ''}</td>
+        <td>${a.type === 'client' ? '<span class="p41-pill ok">Client</span>' : '<span class="p41-pill">Lead</span>'} ${a.stage ? `<span class="p41-pill gold">${h(stageLbl(a.stage))}</span>` : ''}${(a.type === 'client' || ONB.byId.has(onbId(a.name))) && !ONB.error ? (() => { const ob = ONB.byId.get(onbId(a.name)); if(ob && ob.status === 'complete') return ` <span class="p41-pill ok" title="Agreements signed and countersigned, welcome pack viewed, site form in">Onboarded</span>`; const [l, c] = onbOverall(ob); return ` <span class="p41-pill ${c}" title="Onboarding">Onboarding: ${l}</span>`; })() : ''}</td>
         <td>${hp41(a.health) || '<span class="p41-pill">Not scored</span>'}</td><td>${a.roles.length}</td><td>${a.last ? fmt41(a.last, true) : '<span class="p41-pill warn">Never</span>'}</td></tr>`).join('')}
       </tbody></table></div>`;
   }
@@ -17604,7 +17690,7 @@ function buildTagApply(){
     const commsSorted = a.comms.slice().sort((x, y) => String(y.timestamp).localeCompare(String(x.timestamp))).slice(0, 15);
     const hist = lead ? String(lead.history || '').split('\n').filter(Boolean).reverse().map(x => { const [d, s, who] = x.split('|'); return {d, s, who}; }) : [];
     $('drawer41Body').innerHTML = `
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${a.type === 'client' ? '<span class="p41-pill ok">Client</span>' : '<span class="p41-pill">Lead</span>'}${a.stage ? `<span class="p41-pill gold">${h(stageLbl(a.stage))}</span>` : ''}${hp41(a.health)}<button class="p41-btn sm" data-x41="close" style="margin-left:auto">Close</button></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${a.type === 'client' ? '<span class="p41-pill ok">Client</span>' : '<span class="p41-pill">Lead</span>'}${(ONB.byId.get(onbId(a.name)) || {}).status === 'complete' ? '<span class="p41-pill ok">Onboarded</span>' : ''}${a.stage ? `<span class="p41-pill gold">${h(stageLbl(a.stage))}</span>` : ''}${hp41(a.health)}<button class="p41-btn sm" data-x41="close" style="margin-left:auto">Close</button></div>
       <div><h2>${h(a.name)}</h2><div style="color:var(--muted)">${h([a.address, a.postcode].filter(Boolean).join(', ') || 'No address recorded')}</div></div>
       <div class="p41-bar">${(() => { const me = a.contacts.find(x => x.email), mp = a.contacts.find(x => x.phone); const at = x => `data-c47-type="${h(a.type)}" data-c47-name="${h(x.name || '')}" data-c47-company="${h(a.name)}"`; return (me ? `<a class="p41-btn sm" href="mailto:${h(me.email)}" ${at(me)} title="Email ${h(me.name || '')}">Email</a>` : '') + (mp ? `<a class="p41-btn sm" href="tel:${h(String(mp.phone).replace(/\s+/g, ''))}" ${at(mp)} title="Call ${h(mp.name || '')}">Call</a>` : ''); })()}<button class="p41-btn pri sm" data-x41="log">Log contact</button>${a.type === 'client' ? '<button class="p41-btn sm" data-x41="edit" title="Company address and payment terms">Edit company</button>' : ''}<button class="p41-btn sm" data-x41="addc">+ Contact</button>${lead ? '<button class="p41-btn sm" data-x41="lead">Open in pipeline</button>' : ''}<button class="p41-btn sm" data-x41="task">+ Task</button></div>
       ${a.health && a.health.why.length ? `<div class="p41-note"><b>Health:</b> ${h(a.health.why.join(', '))}</div>` : ''}
