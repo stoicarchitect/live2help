@@ -6422,13 +6422,102 @@ const lpxNeedsText = (company, to, need) => `To move ${company} to ${lpxStageLab
 async function onbClientGate(req, company) {
   if (!onbGatesOn()) return null;
   const info = await onbCompanyInfo(company);
-  if (info.isClient || !info.isLead) return null;
+  if (info.isClient) return null;
   let signed = false;
   try { signed = await onbAgreementsSigned(company); } catch (e) { signed = false; }
   if (signed) return null;
   if (onbOverride(req)) { auditLog(auditActorOf(req), 'override', 'onboarding', company, 'made a client before both agreements were signed'); return null; }
-  return { error: `${company} cannot become a client until both agreements are signed. Start onboarding from the lead once it reaches Terms.`, code: 'NEEDS_ONBOARDING', can_override: isAdmin(req) && !(req.user && req.user.va) };
+  const can_override = isAdmin(req) && !(req.user && req.user.va);
+  // build 49.2: a brand new company added through Add client: send the onboarding, or upload signed copies
+  if (!info.isLead) return { error: `${company} needs signed agreements before it becomes a client. Send the onboarding pack, or upload the signed copies.`, code: 'NEEDS_ONBOARDING_CHOICE', can_override };
+  return { error: `${company} cannot become a client until both agreements are signed. Start onboarding from the lead once it reaches Terms.`, code: 'NEEDS_ONBOARDING', can_override };
 }
+
+/* ---------- build 49.2: Add client for a new company ----------
+   "Yes, send the onboarding": the company is added as a lead client at Terms with a note not to work
+   for them yet, and onboarding starts. "No, already signed": the signed Terms and DSA are uploaded
+   (PDF), which counts as signed and countersigned, and then the company can be added as a client. */
+const ONB_DO_NOT_WORK = 'Onboarding needed: do not start work for this company until the Terms of Engagement and Data Sharing Agreement are signed.';
+app.post('/api/onboarding/new-client-lead', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const company = onbClean(b.company, 200);
+    const email = onbClean(b.email, 160);
+    if (!company || !onbEmailOk(email)) return res.status(400).json({ error: 'Company and a valid contact email are required' });
+    const info = await onbCompanyInfo(company);
+    if (info.isClient) return res.status(409).json({ error: `${company} is already a client` });
+    const id = slugifyRole(company);
+    if (!id) return res.status(400).json({ error: 'Company name is not valid' });
+    const actor = actorOf(req), now = new Date().toISOString();
+    const contact = { contactName: onbClean(b.contactName, 120), jobTitle: onbClean(b.jobTitle, 120), phone: onbClean(b.phone, 60) };
+    const notes = [ONB_DO_NOT_WORK, onbClean(b.notes, 1500)].filter(Boolean).join('\n');
+    if (!info.isLead) {
+      await getSheetsClient().spreadsheets.values.append({
+        spreadsheetId: CLIENT_SHEET_ID, range: LEAD_CLIENT_RANGE, valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS',
+        requestBody: { values: [clientToRow({ timestamp: now, company, address: onbClean(b.address, 300), postcode: onbClean(b.postcode, 20), ...contact, email, folderCreated: 'No', notes })] },
+      });
+    }
+    // straight to Terms in the pipeline (they have already agreed to work with us)
+    const n = rfxNormCompany(company);
+    const ex = (await lpxTable.list()).find(l => rfxNormCompany(l.company) === n);
+    const lead = { ...(ex || { id: rfxId('lp'), company, created_at: now, source: 'Add client', owner: actor }),
+      stage: 'terms', contact_name: (ex && ex.contact_name) || contact.contactName, job_title: (ex && ex.job_title) || contact.jobTitle, email: (ex && ex.email) || email,
+      phone: (ex && ex.phone) || contact.phone, address: (ex && ex.address) || [b.address, b.postcode].filter(Boolean).join(', '),
+      notes: [ONB_DO_NOT_WORK, ex && ex.notes && !String(ex.notes).includes(ONB_DO_NOT_WORK) ? ex.notes : (ex ? '' : onbClean(b.notes, 1500))].filter(Boolean).join('\n'),
+      updated_at: now, history: lpxHistory(ex ? ex.history : '', 'terms', actor) };
+    await lpxTable.upsert(lead);
+    const pool = onbPool(); await onbEnsure(pool);
+    await pool.query(`insert into onboarding (client_id, company, status, steps, started_by) values ($1, $2, 'started', $3::jsonb, $4) on conflict (client_id) do nothing`,
+      [id, company, JSON.stringify(onbDefaultSteps()), auditActorOf(req)]);
+    // the contact is suggested as the signatory when their details are complete (it can be changed before sending)
+    let row = (await pool.query('select * from onboarding where client_id = $1', [id])).rows[0];
+    if (!(row.recipients || {}).signatory && contact.contactName.split(/\s+/).length >= 2 && contact.jobTitle) {
+      row = await onbUpdate(pool, id, c => ({ ...c, recipients: { ...(c.recipients || {}), signatory: { name: contact.contactName, title: contact.jobTitle, email: email.toLowerCase() }, confirmed_by: actor, confirmed_at: now } }));
+    }
+    auditLog(auditActorOf(req), 'created', 'onboarding', company, 'added through Add client as a lead client at Terms; onboarding started');
+    res.json({ ok: true, client_id: id, note: ONB_DO_NOT_WORK, data: onbOut(row) });
+  } catch (e) { onbErr(res, 'POST onboarding new client lead', e); }
+});
+
+app.post('/api/onboarding/:clientId/upload', async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const b = req.body || {};
+    const company = onbClean(b.company, 200);
+    if (!company || slugifyRole(company) !== id) return res.status(400).json({ error: 'company is required' });
+    const doc = String(b.doc || '');
+    if (!ONB_DOCS[doc] || !ONB_DOCS[doc].sign) return res.status(400).json({ error: 'Upload the Terms of Engagement or the Data Sharing Agreement' });
+    const m = String(b.file || '').match(/^(?:data:application\/pdf;base64,)?([A-Za-z0-9+/=\s]+)$/);
+    const buf = m ? Buffer.from(m[1].replace(/\s+/g, ''), 'base64') : null;
+    if (!buf || buf.length < 200 || buf.slice(0, 5).toString() !== '%PDF-') return res.status(400).json({ error: `The ${ONB_DOCS[doc].name} must be a PDF` });
+    if (buf.length > 10 * 1024 * 1024) return res.status(400).json({ error: 'Each file must be 10 MB or smaller' });
+    const signer = onbClean(b.signer_name, 120);
+    if (signer.split(/\s+/).length < 2) return res.status(400).json({ error: 'Enter the full name of the person who signed for the client' });
+    const day = String(b.signed_date || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(Date.parse(day)) || day > new Date().toISOString().slice(0, 10)) return res.status(400).json({ error: 'Enter the date it was signed (not in the future)' });
+    const signedAt = new Date(day + 'T12:00:00Z').toISOString(), now = new Date().toISOString(), actor = actorOf(req);
+    const pool = onbPool(); await onbEnsure(pool);
+    await pool.query(`insert into onboarding (client_id, company, status, steps, started_by) values ($1, $2, 'started', $3::jsonb, $4) on conflict (client_id) do nothing`,
+      [id, company, JSON.stringify(onbDefaultSteps()), auditActorOf(req)]);
+    const record = { method: 'uploaded', uploadedBy: actor, uploadedAt: now, fileName: onbClean(b.file_name, 200), ip: onbIp(req), events: [{ at: now, what: `Signed copy uploaded by ${profileOf(actor).fullName}`, ip: onbIp(req) }] };
+    const ins = await pool.query(
+      `insert into onboarding_signatures (client_id, doc, version, signer_name, method, consented, ip, signed_at, countersigned_by, countersigned_at, audit, doc_hash, record, pdf)
+       values ($1, $2, 'Uploaded signed copy', $3, 'uploaded', true, $4, $5, $6, $5, $7::jsonb, $8, $9::jsonb, $10) on conflict (client_id, doc) do nothing returning *`,
+      [id, doc, signer, onbIp(req), signedAt, 'Uploaded by ' + profileOf(actor).fullName, JSON.stringify(record.events),
+        crypto.createHash('sha256').update(buf).digest('hex'), JSON.stringify(record), buf]);
+    if (!ins.rows[0]) return res.status(409).json({ error: `The ${ONB_DOCS[doc].name} is already signed for ${company}` });
+    const docs = (await pool.query('select doc from onboarding_signatures where client_id = $1 and countersigned_at is not null', [id])).rows.map(x => x.doc);
+    const row = await onbUpdate(pool, id, c => {
+      c.steps[doc] = { status: 'signed', at: signedAt, by: actor, uploaded: true };
+      if (docs.includes('terms') && docs.includes('dsa')) c.steps.countersign = { status: 'done', at: now, by: actor, uploaded: true };
+      return c;
+    });
+    auditLog(auditActorOf(req), 'uploaded', 'onboarding', company, `signed ${ONB_DOCS[doc].name} (${signer}, ${day})`);
+    let filed = null;
+    try { filed = await onbFileToDrive(pool, company, ins.rows[0]); } catch (e) { filed = { error: friendlyDriveError(e) }; }
+    res.json({ ok: true, filed, data: onbOut(row) });
+  } catch (e) { onbErr(res, 'POST onboarding upload', e); }
+});
 
 // Nightly backup: the live onboarding tables, as extra tabs in the database backup sheet
 async function onbBackupTabs(pool) {
@@ -14826,7 +14915,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '30 Oct 2026 - build 49.1 (client onboarding phase 2: portal, e-signature, countersign, lead gates)';
+const SERVER_BUILD = '30 Oct 2026 - build 49.2 (Add client asks: send the onboarding pack or upload signed agreements)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

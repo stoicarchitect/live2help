@@ -4619,33 +4619,34 @@ async function submitAddClient(){
     return;
   }
   
+  const payload = {
+    company,
+    address: document.getElementById('clientAddressInput').value.trim(),
+    postcode: document.getElementById('clientPostcodeInput').value.trim(),
+    contactName,
+    jobTitle: document.getElementById('clientJobTitleInput').value.trim(),
+    email,
+    phone: document.getElementById('clientPhoneInput').value.trim(),
+    notes: document.getElementById('clientNotesInput').value.trim()
+  };
   try{
-    const res = await fetch(`${API_BASE}/api/clients`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        company,
-        address: document.getElementById('clientAddressInput').value.trim(),
-        postcode: document.getElementById('clientPostcodeInput').value.trim(),
-        contactName,
-        jobTitle: document.getElementById('clientJobTitleInput').value.trim(),
-        email,
-        phone: document.getElementById('clientPhoneInput').value.trim(),
-        notes: document.getElementById('clientNotesInput').value.trim()
-      })
-    });
-    
-    if(!res.ok) throw new Error('Server returned ' + res.status);
+    let addJson;
+    try{ addJson = await l2hClientPost(payload); }
+    catch(e){
+      // build 49.2: a new company needs the onboarding pack sent, or signed copies uploaded
+      if(e.code === 'NEEDS_ONBOARDING_CHOICE'){ closeModal('addClientOverlay'); onbChoiceOpen(payload, e.can_override); return; }
+      throw e;
+    }
     const termsEl = document.getElementById('clientTermsInput');
     if(termsEl && String(clientTermsDays(company)) !== termsEl.value || (termsEl && !CLIENT_TERMS.some(t => t.id === clientTermsKey(company)))){
       await saveClientTerms(company, termsEl.value, true);
     }
-    const addJson = await res.json().catch(() => ({}));
     showToast(addJson.folders && addJson.folders.ok ? 'Client added and their Drive folders are ready'
       : 'Client added. The Drive folders could not be created' + (addJson.folders && addJson.folders.error ? ' (' + addJson.folders.error + ')' : '') + ' - use Create missing folders to try again');
     closeModal('addClientOverlay');
     loadClients();
   }catch(e){
+    if(e.cancelled) return;
     showToast('Could not add client: ' + e.message);
   }
 }
@@ -15744,6 +15745,7 @@ function lpxOnbLine(l){
 async function l2hClientPost(body){
   const send = async b => { const r = await fetch(`${API_BASE}/api/clients`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(b)}); const j = await r.json().catch(() => ({})); return {r, j}; };
   let {r, j} = await send(body);
+  if(r.status === 409 && j.code === 'NEEDS_ONBOARDING_CHOICE' && !body.override){ const e = new Error(j.error); e.code = j.code; e.can_override = j.can_override; throw e; }
   if(r.status === 409 && j.code === 'NEEDS_ONBOARDING'){
     if(!j.can_override) throw new Error(j.error);
     if(!confirm(j.error + '\n\nOverride and make them a client anyway? This is recorded in the audit log.')) { const e = new Error('cancelled'); e.cancelled = true; throw e; }
@@ -15752,6 +15754,95 @@ async function l2hClientPost(body){
   }
   if(!r.ok) throw new Error(j.error || ('Server returned ' + r.status));
   return j;
+}
+
+/* ---------- build 49.2: Add client for a new company asks how the agreements will be signed ---------- */
+function onbChoiceEl(){
+  let el = document.getElementById('onbChoice');
+  if(!el){
+    el = document.createElement('div'); el.id = 'onbChoice';
+    el.innerHTML = '<style>#onbChoice{position:fixed;inset:0;z-index:1200;display:none;align-items:center;justify-content:center;padding:16px}#onbChoice.visible{display:flex}#onbChoice .bk{position:absolute;inset:0;background:rgba(8,14,28,.55)}#onbChoice .bx{position:relative;background:#fff;border-radius:12px;max-width:560px;width:100%;max-height:calc(100vh - 32px);overflow:auto;padding:22px;box-shadow:0 20px 50px rgba(0,0,0,.3)}#onbChoice h2{font-family:var(--f-display,inherit);color:var(--navy,#0B0B18);font-size:20px;margin:0 0 6px}#onbChoice .sub{color:#666;font-size:13.5px;margin:0 0 14px}#onbChoice .opt{display:block;width:100%;text-align:left;border:1px solid var(--border,#ddd);background:#fff;border-radius:10px;padding:14px 16px;margin-bottom:10px;cursor:pointer;font:inherit}#onbChoice .opt:hover{border-color:var(--gold,#C9A84C)}#onbChoice .opt b{display:block;color:var(--navy,#0B0B18);font-size:15px;margin-bottom:3px}#onbChoice .opt span{color:#666;font-size:13px}#onbChoice label{display:block;font-size:13px;color:#555;margin:10px 0 4px}#onbChoice input{width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid var(--border,#ddd);border-radius:8px;font:inherit}#onbChoice .warn{background:#FBF0DC;color:#7A4E0C;border-left:3px solid #C9A84C;border-radius:8px;padding:12px 14px;font-size:14px;margin:4px 0 14px}#onbChoice .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}#onbChoice .btn{border:1px solid var(--border,#ddd);background:#fff;border-radius:8px;padding:9px 16px;cursor:pointer;font:inherit;font-weight:500}#onbChoice .btn.pri{background:var(--navy,#0B0B18);color:#fff;border-color:var(--navy,#0B0B18)}#onbChoice .err{color:var(--danger,#B4382B);font-size:13px;margin-top:8px}#onbChoice .lnk{background:none;border:none;color:#888;font-size:12.5px;text-decoration:underline;cursor:pointer;padding:6px 0}</style><div class="bk" data-onbc="close"></div><div class="bx" role="dialog" aria-modal="true" aria-labelledby="onbChoiceH"></div>';
+    document.body.appendChild(el);
+    el.addEventListener('click', e => { const t = e.target.closest('[data-onbc]'); if(t) onbChoiceAct(t.dataset.onbc, t); });
+  }
+  return el;
+}
+let ONB_CHOICE = null;
+function onbChoiceOpen(payload, canOverride){
+  const te = document.getElementById('clientTermsInput');
+  ONB_CHOICE = {payload, canOverride, terms: (ONB_CHOICE && ONB_CHOICE.payload === payload && ONB_CHOICE.terms) || (te && te.value) || '14'};
+  const co = esc(payload.company);
+  onbChoiceEl().querySelector('.bx').innerHTML = `<h2 id="onbChoiceH">Does ${co} need the onboarding pack?</h2>
+    <p class="sub">Every client needs a signed Terms of Engagement and Data Sharing Agreement before we work for them.</p>
+    <button class="opt" data-onbc="send"><b>Yes, send them the onboarding</b><span>${co} is added as a lead client at Terms and onboarding starts. You then choose who signs and send the link. They become a client once both agreements are signed.</span></button>
+    <button class="opt" data-onbc="upload"><b>No, they have already signed our agreements</b><span>Upload the signed Terms of Engagement and Data Sharing Agreement (PDF). ${co} is then added as a client.</span></button>
+    <div class="row"><button class="btn" data-onbc="close">Cancel</button></div>
+    ${canOverride ? '<button class="lnk" data-onbc="override">Add as a client without signed agreements (Dan only, recorded in the audit log)</button>' : ''}`;
+  onbChoiceEl().classList.add('visible');
+}
+function onbChoiceUploadForm(){
+  const p = ONB_CHOICE.payload, today = new Date().toISOString().slice(0, 10);
+  onbChoiceEl().querySelector('.bx').innerHTML = `<h2 id="onbChoiceH">Upload the signed agreements</h2>
+    <p class="sub">${esc(p.company)} is added as a client once both are uploaded. Signed copies are filed in their Drive folder under Agreements and only Dan can open them.</p>
+    <label for="onbUpTerms">Signed Terms of Engagement (PDF)</label><input type="file" id="onbUpTerms" accept="application/pdf,.pdf">
+    <label for="onbUpDsa">Signed Data Sharing Agreement (PDF)</label><input type="file" id="onbUpDsa" accept="application/pdf,.pdf">
+    <label for="onbUpName">Signed for ${esc(p.company)} by</label><input id="onbUpName" value="${esc(p.contactName || '')}" placeholder="Full name">
+    <label for="onbUpDate">Date signed</label><input type="date" id="onbUpDate" value="${today}" max="${today}">
+    <div class="err" id="onbUpErr" role="alert"></div>
+    <div class="row"><button class="btn pri" data-onbc="doupload">Upload and add client</button><button class="btn" data-onbc="back">Back</button></div>`;
+}
+function onbReadPdf(input){
+  return new Promise((resolve, reject) => {
+    const f = input.files && input.files[0];
+    if(!f) return reject(new Error('Choose both PDF files'));
+    if(!/\.pdf$/i.test(f.name) && f.type !== 'application/pdf') return reject(new Error(f.name + ' is not a PDF'));
+    if(f.size > 10 * 1024 * 1024) return reject(new Error(f.name + ' is larger than 10 MB'));
+    const r = new FileReader(); r.onload = () => resolve({name: f.name, data: String(r.result)}); r.onerror = () => reject(new Error('Could not read ' + f.name)); r.readAsDataURL(f);
+  });
+}
+async function onbChoiceAct(what, btn){
+  const c = ONB_CHOICE; if(!c && what !== 'close') return;
+  const el = onbChoiceEl(), id = c ? c.payload.company.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') : '';
+  if(what === 'close'){ el.classList.remove('visible'); ONB_CHOICE = null; return; }
+  if(what === 'back'){ onbChoiceOpen(c.payload, c.canOverride); return; }
+  if(what === 'upload'){ onbChoiceUploadForm(); return; }
+  if(what === 'open'){ el.classList.remove('visible'); ONB_CHOICE = null; if(typeof onbOpenCompany41 === 'function') onbOpenCompany41(c.payload.company); return; }
+  btn.disabled = true;
+  try{
+    if(what === 'send'){
+      const j = await b2Post('/api/onboarding/new-client-lead', c.payload);
+      el.querySelector('.bx').innerHTML = `<h2 id="onbChoiceH">${esc(c.payload.company)} is a lead client for now</h2>
+        <div class="warn"><b>Do not start any work for ${esc(c.payload.company)} yet.</b><br>They have been added as a lead client at the Terms stage, not as a client. They move to Clients once both agreements are signed. This note is saved on their lead record.</div>
+        <p class="sub">Onboarding has started. Next: confirm who signs for them and send the link.${j.data && j.data.recipients && j.data.recipients.signatory ? ' ' + esc(j.data.recipients.signatory.name) + ' has been suggested as the signatory.' : ''}</p>
+        <div class="row"><button class="btn pri" data-onbc="open">Open their onboarding</button><button class="btn" data-onbc="close">Close</button></div>`;
+      if(typeof loadLeadClients === 'function') loadLeadClients();
+      return;
+    }
+    if(what === 'doupload'){
+      const err = document.getElementById('onbUpErr'); err.textContent = '';
+      const name = document.getElementById('onbUpName').value.trim(), date = document.getElementById('onbUpDate').value;
+      let terms, dsa;
+      try{ terms = await onbReadPdf(document.getElementById('onbUpTerms')); dsa = await onbReadPdf(document.getElementById('onbUpDsa')); }
+      catch(e){ err.textContent = e.message; btn.disabled = false; return; }
+      btn.textContent = 'Uploading...';
+      for(const [doc, f] of [['terms', terms], ['dsa', dsa]]){
+        try{ await b2Post('/api/onboarding/' + id + '/upload', {company: c.payload.company, doc, file: f.data, file_name: f.name, signer_name: name, signed_date: date}); }
+        catch(e){ if(!/already signed/i.test(e.message)){ err.textContent = e.message; btn.disabled = false; btn.textContent = 'Upload and add client'; return; } }
+      }
+      await l2hClientPost(c.payload);
+      await saveClientTerms(c.payload.company, c.terms, true);
+      el.classList.remove('visible'); ONB_CHOICE = null;
+      showToast(c.payload.company + ' added as a client with their signed agreements on file');
+      loadClients();
+      return;
+    }
+    if(what === 'override'){
+      if(!confirm('Add ' + c.payload.company + ' as a client without signed agreements? This is recorded in the audit log.')){ btn.disabled = false; return; }
+      await l2hClientPost({...c.payload, override:true});
+      await saveClientTerms(c.payload.company, c.terms, true);
+      el.classList.remove('visible'); ONB_CHOICE = null; showToast(c.payload.company + ' added as a client (override recorded)'); loadClients();
+    }
+  }catch(e){ btn.disabled = false; showToast(e.message); }
 }
 
 function LPX_STAGES_FOR_SELECT(){ return ['identified','contacted','interested','meeting','terms','lost','archived']; }
