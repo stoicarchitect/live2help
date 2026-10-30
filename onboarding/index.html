@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#0B0B18">
+<meta name="color-scheme" content="light">
+<title>Your Onboarding · Live 2 Help</title>
+<link rel="icon" href="/assets/logo.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&family=Poppins:wght@400;500;600;700&family=Caveat:wght@600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#0B0B18; --navy-2:#16162C; --gold:#C9A84C; --gold-soft:#F3EAD2; --paper:#FFFFFF; --bg:#F5F3EE;
+  --ink:#1F2130; --grey:#4A4D5C; --muted:#6B6F80; --rule:#E3E1DA; --ok:#2F8F5B; --ok-bg:#E6F4EC; --warn:#A86B12; --warn-bg:#FBF0DC; --bad:#B4382B; --bad-bg:#FBE9E6;
+  --f-display:'Poppins',system-ui,sans-serif; --f-body:'DM Sans',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 var(--f-body);-webkit-text-size-adjust:100%}
+a{color:#1A56A0}
+button,input,select,textarea{font:inherit;color:inherit}
+.top{background:var(--navy);border-bottom:3px solid var(--gold);color:#fff;padding:18px 16px calc(18px)}
+.top-in{max-width:880px;margin:0 auto;display:flex;align-items:center;gap:14px}
+.top img{height:44px;width:auto;display:block}
+.top .who{margin-left:auto;text-align:right;font-size:13px;color:#C9CBD6;line-height:1.35}
+.top .who b{display:block;color:#fff;font-family:var(--f-display);font-weight:500;font-size:14px}
+main{max-width:880px;margin:0 auto;padding:22px 16px 80px}
+h1{font-family:var(--f-display);font-weight:600;font-size:clamp(24px,5vw,32px);line-height:1.2;margin:4px 0 6px;color:var(--navy);letter-spacing:-.01em}
+.lead{color:var(--grey);margin:0 0 20px;max-width:62ch}
+.eyebrow{font-family:var(--f-display);font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--gold)}
+.preview{background:var(--warn-bg);color:var(--warn);border:1px solid #EBCF9D;border-radius:10px;padding:10px 14px;font-size:14px;margin-bottom:16px}
+/* progress */
+.prog{background:var(--paper);border:1px solid var(--rule);border-radius:14px;padding:16px 18px;margin-bottom:18px;display:flex;align-items:center;gap:16px}
+.ring{--p:0;width:58px;height:58px;border-radius:50%;flex:none;display:grid;place-items:center;background:conic-gradient(var(--gold) calc(var(--p)*1%),#ECE8DD 0)}
+.ring span{width:46px;height:46px;border-radius:50%;background:var(--paper);display:grid;place-items:center;font-family:var(--f-display);font-weight:600;font-size:14px;color:var(--navy)}
+.prog b{font-family:var(--f-display);font-weight:600;color:var(--navy);display:block}
+.prog small{color:var(--muted);font-size:14px}
+/* task cards */
+.tasks{display:grid;gap:10px}
+.group-h{font-family:var(--f-display);font-weight:600;font-size:13px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin:18px 2px 8px}
+.task{display:flex;align-items:center;gap:14px;width:100%;text-align:left;background:var(--paper);border:1px solid var(--rule);border-radius:14px;padding:16px 16px;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.task:hover{border-color:var(--gold);box-shadow:0 4px 14px rgba(11,11,24,.06)}
+.task:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.task .ic{width:40px;height:40px;border-radius:10px;background:var(--gold-soft);color:var(--navy);display:grid;place-items:center;flex:none}
+.task.done .ic{background:var(--ok-bg);color:var(--ok)}
+.task .t{flex:1;min-width:0}
+.task .t b{display:block;font-family:var(--f-display);font-weight:500;color:var(--navy);font-size:16px}
+.task .t span{display:block;color:var(--muted);font-size:14px}
+.chip{flex:none;font-size:12.5px;font-weight:500;padding:4px 10px;border-radius:999px;background:#EFEDE6;color:var(--grey);white-space:nowrap}
+.chip.ok{background:var(--ok-bg);color:var(--ok)} .chip.go{background:var(--navy);color:#fff} .chip.warn{background:var(--warn-bg);color:var(--warn)}
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--rule);background:var(--paper);border-radius:10px;padding:11px 18px;font-weight:500;cursor:pointer;min-height:44px}
+.btn:hover{border-color:var(--navy)}
+.btn.pri{background:var(--navy);color:#fff;border-color:var(--navy)}
+.btn.pri:hover{background:#22223F}
+.btn.gold{background:var(--gold);border-color:var(--gold);color:var(--navy)}
+.btn[disabled]{opacity:.55;cursor:not-allowed}
+.btn.link{border:none;background:none;padding:8px 0;color:var(--navy);min-height:auto}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.back{margin-bottom:10px}
+/* document */
+.paper{background:var(--paper);border:1px solid var(--rule);border-radius:14px;overflow:hidden}
+.paper-h{background:var(--navy);color:#fff;padding:22px 22px 18px;border-bottom:3px solid var(--gold)}
+.paper-h h2{font-family:var(--f-display);font-weight:600;font-size:clamp(20px,4.4vw,26px);margin:0 0 4px;line-height:1.25}
+.paper-h .sub{color:var(--gold);font-weight:500;font-size:15px}
+.paper-h .ver{color:#B4B8C4;font-size:13px;margin-top:4px}
+.doc{padding:8px 22px 26px;font-size:15.5px;color:var(--grey)}
+.doc h2{font-family:var(--f-display);font-weight:600;font-size:18px;color:var(--navy);margin:26px 0 8px;padding-bottom:6px;border-bottom:1.5px solid var(--gold)}
+.doc h3{font-family:var(--f-display);font-weight:600;font-size:16px;color:var(--navy);margin:18px 0 6px}
+.doc p{margin:0 0 12px}
+.doc strong{color:var(--navy);font-weight:700}
+.doc ul,.doc ol{padding-left:22px;margin:0 0 14px} .doc li{margin-bottom:6px}
+.tw{overflow-x:auto;margin:6px 0 16px;border:1px solid var(--rule);border-radius:8px}
+.doc table{border-collapse:collapse;width:100%;font-size:14px;min-width:420px}
+.doc th{background:var(--navy);color:#fff;text-align:left;font-weight:500;padding:9px 12px}
+.doc td{padding:9px 12px;border-top:1px solid var(--rule);vertical-align:top}
+.doc tr:nth-child(even) td{background:#FAF9F6}
+.doc td:first-child{color:var(--navy)}
+.doc-tools{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 22px;border-top:1px solid var(--rule);background:#FBFAF7}
+/* signing */
+.sign{margin-top:16px;background:var(--paper);border:1px solid var(--gold);border-radius:14px;padding:20px}
+.sign h3{font-family:var(--f-display);font-weight:600;color:var(--navy);margin:0 0 4px;font-size:19px}
+.sign .as{color:var(--grey);margin:0 0 14px}
+.tabs{display:inline-flex;background:#F0EDE4;border-radius:10px;padding:4px;margin-bottom:12px}
+.tabs button{border:none;background:none;padding:8px 16px;border-radius:7px;cursor:pointer;font-weight:500;color:var(--grey);min-height:40px}
+.tabs button[aria-selected="true"]{background:var(--paper);color:var(--navy);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+label.f{display:block;font-size:14px;color:var(--grey);margin-bottom:12px}
+label.f > span{display:block;margin-bottom:5px;font-weight:500;color:var(--ink)}
+label.f .req{color:var(--bad)}
+.in{width:100%;border:1px solid #D6D3C9;border-radius:10px;padding:11px 12px;background:#fff;min-height:44px}
+.in:focus{outline:none;border-color:var(--navy);box-shadow:0 0 0 3px rgba(201,168,76,.35)}
+textarea.in{min-height:84px;resize:vertical}
+.typed-prev{font-family:'Caveat',cursive;font-size:38px;color:var(--navy);min-height:58px;border-bottom:1px solid var(--muted);margin:2px 0 14px;padding:0 4px;line-height:1.4;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.pad{width:100%;height:150px;border:1.5px dashed var(--gold);border-radius:10px;background:#FCFBF7;touch-action:none;display:block;cursor:crosshair}
+.pad-bar{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--muted);margin:6px 0 12px}
+.consent{display:flex;gap:10px;align-items:flex-start;background:#FAF8F2;border-radius:10px;padding:12px;margin:6px 0 14px;font-size:14.5px;color:var(--grey);cursor:pointer}
+.consent input{width:20px;height:20px;margin-top:2px;flex:none;accent-color:var(--navy)}
+.err{color:var(--bad);background:var(--bad-bg);border-radius:10px;padding:10px 12px;font-size:14px;margin:0 0 12px}
+.err:empty{display:none}
+.ok-box{background:var(--ok-bg);color:#1F5E3D;border-radius:12px;padding:14px 16px;margin-top:16px}
+.ok-box b{font-family:var(--f-display);font-weight:600}
+/* form */
+.sec{background:var(--paper);border:1px solid var(--rule);border-radius:14px;margin-bottom:10px;overflow:hidden}
+.sec > button{width:100%;display:flex;align-items:center;gap:12px;border:none;background:none;padding:16px 18px;cursor:pointer;text-align:left}
+.sec > button b{font-family:var(--f-display);font-weight:500;color:var(--navy);flex:1}
+.sec > button .n{width:28px;height:28px;border-radius:50%;background:var(--gold-soft);display:grid;place-items:center;font-size:13px;font-weight:600;color:var(--navy);flex:none}
+.sec > button .n.ok{background:var(--ok-bg);color:var(--ok)}
+.sec .body{padding:2px 18px 16px;display:none}
+.sec.open .body{display:block}
+.sec .intro{color:var(--muted);font-size:14px;margin:0 0 12px}
+.grid2{display:grid;grid-template-columns:1fr;gap:0 14px}
+@media(min-width:640px){.grid2{grid-template-columns:1fr 1fr}.grid2 .wide{grid-column:1/-1}}
+.yn{display:flex;gap:8px}
+.yn button{flex:1;max-width:120px;border:1px solid #D6D3C9;background:#fff;border-radius:10px;padding:10px;cursor:pointer;min-height:44px}
+.yn button[aria-pressed="true"]{background:var(--navy);color:#fff;border-color:var(--navy)}
+.rows .row{display:grid;grid-template-columns:1fr;gap:8px;padding:12px;border:1px solid var(--rule);border-radius:10px;margin-bottom:8px;background:#FCFBF8}
+@media(min-width:640px){.rows .row{grid-template-columns:1fr 1fr 1fr 1fr auto;align-items:center}}
+.rows .row .in{min-height:40px;padding:8px 10px}
+.sticky{position:sticky;bottom:0;background:linear-gradient(rgba(245,243,238,0),var(--bg) 30%);padding:18px 0 calc(10px + env(safe-area-inset-bottom,0px));margin-top:8px}
+.center{text-align:center;padding:48px 8px}
+.center .big{font-family:var(--f-display);font-weight:600;color:var(--navy);font-size:22px;margin:12px 0 6px}
+.spin{width:28px;height:28px;border:3px solid #E5E1D6;border-top-color:var(--gold);border-radius:50%;animation:sp 0.9s linear infinite;margin:0 auto}
+@keyframes sp{to{transform:rotate(360deg)}}
+.foot{color:var(--muted);font-size:13px;text-align:center;margin-top:30px;line-height:1.7}
+.foot i{color:var(--gold);font-style:italic}
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--navy);color:#fff;padding:12px 18px;border-radius:10px;font-size:14.5px;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:9;max-width:calc(100% - 32px)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+@media print{.top,.doc-tools,.sign,.back,.foot{display:none!important}body{background:#fff}.paper{border:none}}
+</style>
+</head>
+<body>
+<header class="top"><div class="top-in"><img src="/assets/logo3-transparent.png" alt="Live 2 Help Recruitment"><div class="who" id="who"></div></div></header>
+<main id="app" aria-live="polite"><div class="center"><div class="spin"></div></div></main>
+<script>
+(function(){
+  'use strict';
+  var API = 'https://l2h-api.onrender.com';
+  var hash = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+  var TOKEN = hash.get('t') || '';
+  var PREVIEW = hash.get('p') === '1';
+  var S = { data: null, doc: null, view: 'home', answers: {}, openSec: 's1', method: 'typed' };
+  var $ = function(id){ return document.getElementById(id); };
+  var app = $('app');
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function fmt(iso){ try{ return new Date(iso).toLocaleString('en-GB', {day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit'}); }catch(e){ return iso; } }
+  function headers(json){ var h = {}; if(json) h['Content-Type'] = 'application/json'; if(PREVIEW) h['x-l2h-preview'] = '1'; return h; }
+  function call(path, opts){
+    opts = opts || {};
+    return fetch(API + '/api/portal/' + encodeURIComponent(TOKEN) + path, {method: opts.method || 'GET', headers: headers(!!opts.body), body: opts.body ? JSON.stringify(opts.body) : undefined, cache: 'no-store'})
+      .then(function(r){
+        if(opts.raw){ if(!r.ok) return r.json().catch(function(){ return {}; }).then(function(j){ var e = new Error(j.error || 'Could not download'); throw e; }); return r; }
+        return r.json().catch(function(){ return {}; }).then(function(j){ if(!r.ok){ var e = new Error(j.error || 'Something went wrong. Please try again.'); e.code = j.code; e.status = r.status; e.problems = j.problems; throw e; } return j; });
+      });
+  }
+  function toast(msg){ var t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); t.textContent = msg; document.body.appendChild(t); setTimeout(function(){ t.remove(); }, 3600); }
+  var ICON = {
+    sign: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21c3-1 5-4 7-7s4-6 6-6 1 3-1 5-5 4-5 6 3 0 5-2"/><path d="M14 21h7"/></svg>',
+    read: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h10l6 6v10H4z"/><path d="M14 4v6h6M8 14h8M8 18h5"/></svg>',
+    form: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>',
+    done: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>'
+  };
+  function footer(){ return '<p class="foot">Questions? Reply to our email, or call <a href="tel:01902945444">01902 945444</a><br>Live 2 Help Recruitment Ltd · Company No. 11731080 · <i>Anyone · Anywhere · Anytime</i></p>'; }
+  function fatal(title, msg){
+    app.innerHTML = '<div class="center">' + ICON.read + '<div class="big">' + esc(title) + '</div><p class="lead" style="margin:0 auto">' + esc(msg) + '</p></div>' + footer();
+  }
+
+  /* ---------- load ---------- */
+  function load(then){
+    return call('').then(function(j){
+      S.data = j; S.answers = JSON.parse(JSON.stringify(j.site_form.answers || {}));
+      $('who').innerHTML = '<b>' + esc(j.company) + '</b>' + (j.signatory && j.signatory.name ? esc(j.signatory.name) : '');
+      document.title = j.company + ' onboarding · Live 2 Help';
+      (then || renderHome)();
+    }).catch(function(e){
+      if(e.code === 'EXPIRED') return fatal('This link has expired', e.message);
+      if(e.code === 'BAD_LINK' || e.status === 404) return fatal('This link is not valid', 'Please open the most recent link we emailed you. If it still does not work, call us on 01902 945444.');
+      fatal('We could not load your onboarding', e.message + ' If this keeps happening, call us on 01902 945444.');
+    });
+  }
+  if(!TOKEN){ fatal('This link is not complete', 'Please open the full link from our email. If it still does not work, call us on 01902 945444.'); return; }
+
+  /* ---------- home ---------- */
+  function docOf(k){ return (S.data.documents || []).filter(function(d){ return d.key === k; })[0] || {}; }
+  function isDone(d){ return d.sign ? d.status === 'signed' : d.status === 'viewed'; }
+  function renderHome(){
+    S.view = 'home';
+    var d = S.data, docs = d.documents || [];
+    var formDone = d.site_form.status === 'complete';
+    var total = docs.length + 1, done = docs.filter(isDone).length + (formDone ? 1 : 0);
+    var pct = Math.round(done / total * 100);
+    var card = function(key, icon, title, sub, chip, chipCls, isOk){
+      return '<button class="task' + (isOk ? ' done' : '') + '" data-go="' + key + '"><span class="ic">' + (isOk ? ICON.done : icon) + '</span><span class="t"><b>' + esc(title) + '</b><span>' + esc(sub) + '</span></span><span class="chip ' + chipCls + '">' + esc(chip) + '</span></button>';
+    };
+    var signCard = function(k){
+      var x = docOf(k), ok = x.status === 'signed';
+      return card(k, ICON.sign, x.name, ok ? 'Signed ' + fmt(x.signed_at) + (x.countersigned_at ? ' · countersigned' : ' · awaiting our countersignature') : 'Read and sign online. About two minutes.', ok ? 'Signed' : 'Sign', ok ? 'ok' : 'go', ok);
+    };
+    var readCard = function(k, sub){ var x = docOf(k), ok = x.status === 'viewed'; return card(k, ICON.read, x.name, sub, ok ? 'Read' : 'Open', ok ? 'ok' : '', ok); };
+    var allDone = done === total;
+    app.innerHTML =
+      (PREVIEW ? '<div class="preview">Preview link. This uses test data, so nothing here is real.</div>' : '') +
+      '<div class="eyebrow">Welcome to Live 2 Help</div>' +
+      '<h1>' + (allDone ? 'You are all set' : 'Let’s get ' + esc(d.company) + ' set up') + '</h1>' +
+      '<p class="lead">' + (allDone ? 'Thank you. Everything is complete. We will be in touch to agree your first brief.' : 'Everything is online and you can finish it on your phone. Your progress is saved as you go, so you can come back to this link any time.') + '</p>' +
+      '<div class="prog"><div class="ring" style="--p:' + pct + '"><span>' + done + '/' + total + '</span></div><div><b>' + (allDone ? 'Onboarding complete' : (total - done) + ' thing' + (total - done === 1 ? '' : 's') + ' left to do') + '</b><small>' + (d.signatory && d.signatory.name ? 'Signing for ' + esc(d.company) + ': ' + esc(d.signatory.name) + (d.signatory.title ? ', ' + esc(d.signatory.title) : '') : '') + '</small></div></div>' +
+      '<div class="group-h">1. Sign your agreements</div><div class="tasks">' + signCard('terms') + signCard('dsa') + '</div>' +
+      '<div class="group-h">2. Tell us about your site</div><div class="tasks">' +
+        card('form', ICON.form, 'Site and account form', formDone ? 'Submitted. You can still update it.' : (d.site_form.status === 'in_progress' ? 'Started. Pick up where you left off.' : 'Invoicing details, parking, reception and key contacts. About five minutes.'), formDone ? 'Done' : (d.site_form.status === 'in_progress' ? 'Continue' : 'Start'), formDone ? 'ok' : 'go', formDone) + '</div>' +
+      '<div class="group-h">3. For your records</div><div class="tasks">' + readCard('welcome', 'A short note on how we will work with you.') + readCard('pricing', 'Our 2026 fees, at a glance.') + '</div>' +
+      footer();
+    window.scrollTo(0, 0);
+  }
+
+  /* ---------- documents ---------- */
+  function openDoc(key){
+    app.innerHTML = '<button class="btn link back" data-home="1">← Back</button><div class="center"><div class="spin"></div></div>';
+    return call('/doc/' + key).then(function(j){
+      S.doc = j; S.view = 'doc';
+      var x = docOf(key); if(x.status === 'pending' || x.status === 'sent' || !x.status) x.status = j.sign ? (x.status === 'signed' ? 'signed' : 'viewed') : 'viewed';
+      renderDoc();
+    }).catch(function(e){ app.innerHTML = '<button class="btn link back" data-home="1">← Back</button><div class="err">' + esc(e.message) + '</div>'; });
+  }
+  function renderDoc(){
+    var j = S.doc, x = docOf(j.key), signed = !!(j.signed && j.signed.signed_at) || x.status === 'signed';
+    var m = j.meta || {};
+    var signHtml = '';
+    if(j.sign && !signed){
+      var who = S.data.signatory || {};
+      signHtml = '<section class="sign" id="signBox" aria-labelledby="signH"><h3 id="signH">Sign this agreement</h3>' +
+        '<p class="as">Signing as <b>' + esc(who.name) + '</b>' + (who.title ? ', ' + esc(who.title) : '') + ' for ' + esc(S.data.company) + '. Not you? Call us on 01902 945444.</p>' +
+        '<div class="tabs" role="tablist"><button role="tab" data-m="typed" aria-selected="' + (S.method === 'typed') + '">Type my name</button><button role="tab" data-m="drawn" aria-selected="' + (S.method === 'drawn') + '">Draw my signature</button></div>' +
+        '<div id="mTyped"' + (S.method === 'typed' ? '' : ' hidden') + '><label class="f"><span>Type your full name</span><input class="in" id="typed" autocomplete="name" placeholder="' + esc(who.name) + '"></label><div class="typed-prev" id="typedPrev" aria-hidden="true"></div></div>' +
+        '<div id="mDrawn"' + (S.method === 'drawn' ? '' : ' hidden') + '><canvas class="pad" id="pad" aria-label="Draw your signature with your finger or mouse"></canvas><div class="pad-bar"><span>Use your finger or mouse</span><button class="btn link" type="button" id="padClear">Clear</button></div></div>' +
+        '<label class="consent"><input type="checkbox" id="agree"><span>' + esc(S.data.consent) + '</span></label>' +
+        '<div class="err" id="signErr" role="alert"></div>' +
+        '<button class="btn pri" id="signGo" style="width:100%">Sign ' + esc(j.name) + '</button></section>';
+    } else if(j.sign && signed){
+      signHtml = '<div class="ok-box"><b>Signed</b><br>Signed ' + fmt((j.signed && j.signed.signed_at) || x.signed_at) + ' by ' + esc((j.signed && j.signed.signer_name) || (S.data.signatory || {}).name) + '. Daniel Brown will countersign and you will receive a copy of the fully signed agreement.</div>';
+    }
+    app.innerHTML = '<button class="btn link back" data-home="1">← Back to your onboarding</button>' +
+      '<article class="paper"><div class="paper-h"><h2>' + esc(m.title) + '</h2>' + (m.subtitle ? '<div class="sub">' + esc(m.subtitle) + '</div>' : '') + (m.version ? '<div class="ver">' + esc(m.version) + '</div>' : '') + '</div>' +
+      '<div class="doc">' + j.html + '</div>' +
+      '<div class="doc-tools"><span style="font-size:14px;color:var(--muted)">' + (j.sign ? (signed ? 'Your signed copy is ready to download.' : 'Please read the whole agreement before signing.') : 'Keep a copy for your records.') + '</span><button class="btn" data-pdf="' + esc(j.key) + '">Download PDF</button></div></article>' +
+      signHtml + (j.sign ? '' : '<div class="bar" style="margin-top:16px"><button class="btn pri" data-home="1">Done</button></div>') + footer();
+    window.scrollTo(0, 0);
+    if(j.sign && !signed) wireSign();
+  }
+  var pad = null;
+  function wireSign(){
+    var typed = $('typed'), prev = $('typedPrev');
+    if(typed) typed.addEventListener('input', function(){ prev.textContent = typed.value; });
+    var c = $('pad'); if(!c) return;
+    var ctx = c.getContext('2d'), drawing = false, last = null; pad = { strokes: 0, c: c };
+    function size(){ var r = c.getBoundingClientRect(); if(!r.width) return; var dpr = window.devicePixelRatio || 1; c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.lineWidth = 2.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#0B0B18'; pad.strokes = 0; }
+    pad.size = size; size();
+    function pt(e){ var r = c.getBoundingClientRect(); return {x: e.clientX - r.left, y: e.clientY - r.top}; }
+    c.onpointerdown = function(e){ e.preventDefault(); c.setPointerCapture(e.pointerId); drawing = true; last = pt(e); ctx.beginPath(); ctx.arc(last.x, last.y, 1.2, 0, Math.PI * 2); ctx.fillStyle = '#0B0B18'; ctx.fill(); pad.strokes++; };
+    c.onpointermove = function(e){ if(!drawing) return; var p = pt(e); ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; };
+    c.onpointerup = c.onpointercancel = function(){ drawing = false; };
+    $('padClear').onclick = function(){ ctx.clearRect(0, 0, c.width, c.height); pad.strokes = 0; };
+  }
+  function sign(){
+    var j = S.doc, err = $('signErr'); err.textContent = '';
+    var body = {method: S.method, agree: !!$('agree').checked, hash: j.hash};
+    if(S.method === 'typed'){ body.typed = $('typed').value.trim(); if(!body.typed){ err.textContent = 'Please type your full name'; return; } }
+    else { if(!pad || !pad.strokes){ err.textContent = 'Please draw your signature in the box'; return; } body.signature = pad.c.toDataURL('image/png'); }
+    if(!body.agree){ err.textContent = 'Please tick the box to confirm you agree'; return; }
+    var btn = $('signGo'); btn.disabled = true; btn.textContent = 'Signing…';
+    call('/sign/' + j.key, {method: 'POST', body: body}).then(function(r){
+      var x = docOf(j.key); x.status = 'signed'; x.signed_at = r.signed_at;
+      S.doc.signed = {signed_at: r.signed_at, signer_name: (S.data.signatory || {}).name};
+      toast('Signed. Thank you.');
+      var next = ['terms', 'dsa'].filter(function(k){ return docOf(k).status !== 'signed'; })[0];
+      renderDoc();
+      if(next){ var b = document.createElement('div'); b.className = 'bar'; b.style.marginTop = '12px'; b.innerHTML = '<button class="btn gold" data-go="' + next + '">Next: ' + esc(docOf(next).name) + '</button><button class="btn" data-home="1">Back to your onboarding</button>'; app.insertBefore(b, app.querySelector('.foot')); }
+      else { var b2 = document.createElement('div'); b2.className = 'bar'; b2.style.marginTop = '12px'; b2.innerHTML = '<button class="btn gold" data-home="1">Continue</button>'; app.insertBefore(b2, app.querySelector('.foot')); }
+    }).catch(function(e){
+      if(e.code === 'CHANGED'){ toast(e.message); openDoc(j.key); return; }
+      if(e.code === 'ALREADY_SIGNED'){ load(function(){ openDoc(j.key); }); return; }
+      err.textContent = e.message; btn.disabled = false; btn.textContent = 'Sign ' + j.name;
+    });
+  }
+  function downloadPdf(key, btn){
+    var old = btn.textContent; btn.disabled = true; btn.textContent = 'Preparing…';
+    call('/doc/' + key + '/pdf', {raw: true}).then(function(r){
+      var cd = r.headers.get('Content-Disposition') || ''; var m = cd.match(/filename="([^"]+)"/);
+      return r.blob().then(function(b){ var u = URL.createObjectURL(b); var a = document.createElement('a'); a.href = u; a.download = m ? m[1] : 'Live 2 Help document.pdf'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(u); }, 4000); });
+    }).catch(function(e){ toast(e.message); }).then(function(){ btn.disabled = false; btn.textContent = old; });
+  }
+
+  /* ---------- site and account form ---------- */
+  function secDone(sec){
+    var a = S.answers;
+    var req = sec.fields.filter(function(f){ return f.req; });
+    if(req.length) return req.every(function(f){ return a[f.k]; });
+    return sec.fields.some(function(f){ var v = a[f.k]; return Array.isArray(v) ? v.length : !!v; });
+  }
+  function fieldHtml(f){
+    var v = S.answers[f.k], id = 'f_' + f.k, wide = f.type === 'textarea' || f.type === 'rows' ? ' wide' : '';
+    var lab = '<span>' + esc(f.label) + (f.req ? ' <span class="req" aria-hidden="true">*</span>' : '') + '</span>';
+    if(f.type === 'yesno') return '<div class="f' + wide + '" style="margin-bottom:12px"><div style="font-size:14px;font-weight:500;margin-bottom:5px">' + esc(f.label) + '</div><div class="yn" role="group" aria-label="' + esc(f.label) + '">' + ['Yes', 'No'].map(function(o){ return '<button type="button" data-yn="' + f.k + '" data-v="' + o + '" aria-pressed="' + (v === o) + '">' + o + '</button>'; }).join('') + '</div></div>';
+    if(f.type === 'select') return '<label class="f' + wide + '">' + lab + '<select class="in" data-k="' + f.k + '" id="' + id + '"><option value="">Choose…</option>' + f.options.map(function(o){ return '<option' + (v === o ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select></label>';
+    if(f.type === 'textarea') return '<label class="f' + wide + '">' + lab + '<textarea class="in" data-k="' + f.k + '" id="' + id + '"' + (f.req ? ' required' : '') + '>' + esc(v || '') + '</textarea></label>';
+    if(f.type === 'rows'){
+      var rows = Array.isArray(v) && v.length ? v : [{}];
+      return '<div class="f wide" style="margin-bottom:12px"><div style="font-size:14px;font-weight:500;margin-bottom:6px">' + esc(f.label) + '</div><div class="rows" data-rows="' + f.k + '">' +
+        rows.map(function(r, i){ return '<div class="row">' + f.cols.map(function(c){ return '<input class="in" aria-label="' + esc(c[1]) + '" placeholder="' + esc(c[1]) + '" data-row="' + f.k + '" data-i="' + i + '" data-c="' + c[0] + '" value="' + esc(r[c[0]] || '') + '"' + (c[0] === 'email' ? ' type="email" inputmode="email"' : c[0] === 'phone' ? ' type="tel" inputmode="tel"' : '') + '>'; }).join('') + '<button type="button" class="btn link" data-delrow="' + f.k + '" data-i="' + i + '" aria-label="Remove this person">Remove</button></div>'; }).join('') +
+        '</div><button type="button" class="btn" data-addrow="' + f.k + '">+ Add another person</button></div>';
+    }
+    var t = f.type === 'email' ? 'email" inputmode="email' : f.type === 'tel' ? 'tel" inputmode="tel' : 'text';
+    return '<label class="f' + wide + '">' + lab + '<input class="in" type="' + t + '" data-k="' + f.k + '" id="' + id + '" value="' + esc(v || '') + '"' + (f.req ? ' required' : '') + '></label>';
+  }
+  function renderForm(){
+    S.view = 'form';
+    var secs = S.data.site_form.sections || [];
+    var done = S.data.site_form.status === 'complete';
+    app.innerHTML = '<button class="btn link back" data-home="1">← Back to your onboarding</button>' +
+      '<div class="eyebrow">Site and account form</div><h1>Tell us about ' + esc(S.data.company) + '</h1>' +
+      '<p class="lead">Only the account set-up details marked * are needed to submit. Everything else helps candidates arrive on time and prepared. You can save and come back later.</p>' +
+      secs.map(function(sec, i){ var ok = secDone(sec); return '<section class="sec' + (S.openSec === sec.key ? ' open' : '') + '" id="sec_' + sec.key + '"><button type="button" data-sec="' + sec.key + '" aria-expanded="' + (S.openSec === sec.key) + '"><span class="n' + (ok ? ' ok' : '') + '">' + (ok ? '✓' : (i + 1)) + '</span><b>' + esc(sec.title) + '</b><span aria-hidden="true">' + (S.openSec === sec.key ? '−' : '+') + '</span></button><div class="body">' + (sec.intro ? '<p class="intro">' + esc(sec.intro) + '</p>' : '') + '<div class="grid2">' + sec.fields.map(fieldHtml).join('') + '</div></div></section>'; }).join('') +
+      '<div class="sticky"><div class="err" id="formErr" role="alert"></div><div class="bar"><button class="btn pri" id="formSubmit">' + (done ? 'Save changes' : 'Submit form') + '</button><button class="btn" id="formSave">Save and finish later</button></div></div>' + footer();
+  }
+  function collectRows(k){
+    var out = [];
+    document.querySelectorAll('[data-row="' + k + '"]').forEach(function(el){ var i = +el.dataset.i; out[i] = out[i] || {}; out[i][el.dataset.c] = el.value; });
+    return out.filter(Boolean);
+  }
+  function saveForm(submit){
+    var err = $('formErr'); err.textContent = '';
+    (S.data.site_form.sections || []).forEach(function(sec){ sec.fields.forEach(function(f){ if(f.type === 'rows') S.answers[f.k] = collectRows(f.k); }); });
+    var btn = $(submit ? 'formSubmit' : 'formSave'), old = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
+    call('/site-form', {method: 'POST', body: {answers: S.answers, submit: submit}}).then(function(r){
+      S.data.site_form.status = r.status; S.data.site_form.answers = JSON.parse(JSON.stringify(S.answers));
+      toast(submit ? 'Thank you. Your form has been submitted.' : 'Saved. You can come back to this link any time.');
+      renderHome();
+    }).catch(function(e){
+      err.innerHTML = esc(e.message).replace(/\. /g, '.<br>');
+      var m = String(e.message).match(/^(Registered company name|Registered address|Billing contact name|Billing contact email)/);
+      if(m && S.openSec !== 's1'){ S.openSec = 's1'; renderForm(); $('formErr').innerHTML = esc(e.message).replace(/\. /g, '.<br>'); }
+      btn.disabled = false; btn.textContent = old;
+    });
+  }
+
+  /* ---------- events ---------- */
+  document.addEventListener('click', function(e){
+    var t = e.target.closest('[data-go],[data-home],[data-pdf],[data-m],[data-sec],[data-yn],[data-addrow],[data-delrow],#signGo,#formSubmit,#formSave');
+    if(!t) return;
+    if(t.dataset.home){ renderHome(); return; }
+    if(t.dataset.go){ if(t.dataset.go === 'form') renderForm(); else openDoc(t.dataset.go); return; }
+    if(t.dataset.pdf){ downloadPdf(t.dataset.pdf, t); return; }
+    if(t.dataset.m){ S.method = t.dataset.m; document.querySelectorAll('[data-m]').forEach(function(b){ b.setAttribute('aria-selected', String(b.dataset.m === S.method)); }); $('mTyped').hidden = S.method !== 'typed'; $('mDrawn').hidden = S.method !== 'drawn'; if(S.method === 'drawn' && pad && pad.size) pad.size(); return; }
+    if(t.id === 'signGo'){ sign(); return; }
+    if(t.dataset.sec){ (S.data.site_form.sections || []).forEach(function(sec){ sec.fields.forEach(function(f){ if(f.type === 'rows') S.answers[f.k] = collectRows(f.k); }); }); S.openSec = S.openSec === t.dataset.sec ? '' : t.dataset.sec; renderForm(); var el = $('sec_' + t.dataset.sec); if(el) el.scrollIntoView({block: 'start', behavior: 'smooth'}); return; }
+    if(t.dataset.yn){ S.answers[t.dataset.yn] = S.answers[t.dataset.yn] === t.dataset.v ? '' : t.dataset.v; t.parentNode.querySelectorAll('button').forEach(function(b){ b.setAttribute('aria-pressed', String(S.answers[t.dataset.yn] === b.dataset.v)); }); return; }
+    if(t.dataset.addrow){ var k = t.dataset.addrow; S.answers[k] = collectRows(k).concat([{}]); renderForm(); return; }
+    if(t.dataset.delrow){ var k2 = t.dataset.delrow, rows = collectRows(k2); rows.splice(+t.dataset.i, 1); S.answers[k2] = rows; renderForm(); return; }
+    if(t.id === 'formSubmit'){ saveForm(true); return; }
+    if(t.id === 'formSave'){ saveForm(false); return; }
+  });
+  document.addEventListener('input', function(e){ var k = e.target && e.target.dataset && e.target.dataset.k; if(k) S.answers[k] = e.target.value; });
+  document.addEventListener('change', function(e){ var k = e.target && e.target.dataset && e.target.dataset.k; if(k) S.answers[k] = e.target.value; });
+  window.addEventListener('resize', function(){ if(S.view === 'doc' && pad && pad.size && !pad.strokes) pad.size(); });
+  load();
+})();
+</script>
+</body>
+</html>

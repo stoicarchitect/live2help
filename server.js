@@ -14,6 +14,7 @@ import https from 'https';
 import zlib from 'zlib';
 import dns from 'dns';
 import { fileURLToPath } from 'url';
+import * as onbDocs from './onboarding-docs.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -693,7 +694,7 @@ function auditActorOf(req) {
 
 /* ---------- Team contact details (used on submission documents) ---------- */
 const TEAM_DEFAULTS = {
-  dan: { fullName: 'Dan Brown', title: 'Director', email: 'dan.brown@live2helprecruitment.co.uk', phone: '07424 087576' },
+  dan: { fullName: 'Daniel Brown', title: 'Director', email: 'dan.brown@live2helprecruitment.co.uk', phone: '07424 087576' },
   ella: { fullName: 'Ella Pietrzak', title: 'Talent Acquisition and Business Development Consultant', email: 'ella@live2helprecruitment.co.uk', phone: '07434 351996' },
 };
 
@@ -811,6 +812,9 @@ const PUBLIC_API = [
   { method: 'GET', re: /^\/api\/public\/roles(\/[a-z0-9-]+)?$/ },
   { method: 'GET', re: /^\/api\/public\/forms\/[a-z0-9-]+$/ },
   { method: 'GET', re: /^\/api\/health$/ },
+  // build 49.1: the client onboarding portal (a secure link, checked on every call)
+  { method: 'GET', re: /^\/api\/portal\/[A-Za-z0-9_-]+(\/doc\/[a-z]+(\/pdf)?)?$/ },
+  { method: 'POST', re: /^\/api\/portal\/[A-Za-z0-9_-]+\/(sign\/[a-z]+|site-form)$/ },
 ];
 let cronWarned = false;
 // The automation sends its secret in the x-cron-key header (the ?key= form still works)
@@ -2668,6 +2672,9 @@ app.post('/api/clients', async (req, res) => {
     if (!company || !email) {
       return res.status(400).json({ error: 'company and email are required' });
     }
+    // build 49.1: a lead only becomes a client once both agreements are signed (Dan can override)
+    const gate = await onbClientGate(req, company);
+    if (gate) return res.status(409).json(gate);
 
     const sheets = getSheetsClient();
     const newClient = {
@@ -5703,7 +5710,14 @@ function onbEnsure(pool) {
         submitted_at timestamptz,
         pdf_drive_id text not null default '',
         updated_by text not null default '',
-        updated_at timestamptz not null default now());`);
+        updated_at timestamptz not null default now());
+      -- build 49.1: portal events, the exact signed text and the signed PDF
+      alter table onboarding add column if not exists events jsonb not null default '[]'::jsonb;
+      alter table onboarding_signatures add column if not exists doc_hash text not null default '';
+      alter table onboarding_signatures add column if not exists doc_source text not null default '';
+      alter table onboarding_signatures add column if not exists record jsonb not null default '{}'::jsonb;
+      alter table onboarding_signatures add column if not exists pdf bytea;
+      create unique index if not exists onboarding_signatures_one on onboarding_signatures (client_id, doc);`);
     p.catch(() => onbSchemaReady.delete(pool)); // a failed attempt is tried again next time
     onbSchemaReady.set(pool, p);
   }
@@ -5751,9 +5765,9 @@ async function onbUpdate(pool, clientId, mutate) {
     const done = status === 'complete';
     const r = await c.query(
       `update onboarding set steps = $2::jsonb, paused = $3, recipients = $4::jsonb, status = $5,
-         completed_at = case when $6::boolean then coalesce(completed_at, now()) else null end, updated_at = now()
+         completed_at = case when $6::boolean then coalesce(completed_at, now()) else null end, tokens = $7::jsonb, updated_at = now()
        where client_id = $1 returning *`,
-      [clientId, JSON.stringify(next.steps), !!next.paused, JSON.stringify(next.recipients || {}), status, done]);
+      [clientId, JSON.stringify(next.steps), !!next.paused, JSON.stringify(next.recipients || {}), status, done, JSON.stringify(next.tokens || cur.tokens || {})]);
     await c.query('commit');
     return r.rows[0];
   } catch (e) { await c.query('rollback').catch(() => {}); throw e; }
@@ -5786,6 +5800,12 @@ app.post('/api/onboarding/:clientId/start', async (req, res) => {
     if (!company) return res.status(400).json({ error: 'company is required' });
     if (slugifyRole(company) !== id) return res.status(400).json({ error: 'The client reference does not match the company name' });
     const pool = onbPool(); await onbEnsure(pool);
+    // build 49.1: a lead can be onboarded once it reaches Terms in the pipeline
+    const info = await onbCompanyInfo(company);
+    if (!info.isClient) {
+      if (!info.isLead) return res.status(400).json({ error: `Add ${company} as a lead or a client first` });
+      if (!['terms', 'converted'].includes(info.stage)) return res.status(409).json({ error: `Move ${company} to the Terms stage in the pipeline before starting onboarding`, code: 'NOT_AT_TERMS' });
+    }
     const ins = await pool.query(
       `insert into onboarding (client_id, company, status, steps, started_by) values ($1, $2, 'started', $3::jsonb, $4)
        on conflict (client_id) do nothing returning *`,
@@ -5833,10 +5853,582 @@ app.get('/api/onboarding/:clientId/signatures', requireAdmin, async (req, res) =
     const pool = onbPool(); await onbEnsure(pool);
     const r = await pool.query(
       `select id, client_id, doc, version, signer_name, signer_email, signer_title, method, consented, ip, signed_at,
-              countersigned_by, countersigned_at, pdf_drive_id from onboarding_signatures where client_id = $1 order by id`, [id]);
+              countersigned_by, countersigned_at, pdf_drive_id, doc_hash, (pdf is not null) as has_pdf from onboarding_signatures where client_id = $1 order by id`, [id]);
     res.json({ data: r.rows });
   } catch (e) { console.error('GET /api/onboarding/:id/signatures error:', e.message); res.status(500).json({ error: e.message }); }
 });
+
+/* ======================================================================
+   Build 49.1: client portal and e-signature (onboarding phase 2)
+
+   - One secure link per client (#t=token on the careers site /onboarding/ page). Only a hash of
+     the token is stored. Links last 30 days and making a new link replaces the old one.
+   - Documents come from /onboarding-docs (the same markdown the PDFs are made from), filled in
+     from the CRM. The client signs exactly what they read: the page sends back a fingerprint of
+     the text and signing is refused if it no longer matches.
+   - Signing stores the filled text, the signature, the consent wording, time, IP and browser, and
+     a signed PDF with a signature page and an audit trail page. Dan countersigns in the workspace,
+     which rebuilds the PDF and files it in the client's Drive folder under Agreements.
+   - Preview links (made in /dashboard-next) use the test database and never touch Drive.
+   - Nothing here sends email. Emails 1 to 3 and reminders arrive in phase 3.
+   ====================================================================== */
+const ONB_DOCS = {
+  terms: { file: 'terms.md', sign: true, step: 'terms', name: 'Terms of Engagement 2026' },
+  dsa: { file: 'dsa.md', sign: true, step: 'dsa', name: 'Data Sharing Agreement' },
+  welcome: { file: 'welcome.md', sign: false, step: 'welcome', name: 'Welcome Letter' },
+  pricing: { file: 'pricing.md', sign: false, step: 'pricing', name: 'Recruitment Pricing 2026' },
+};
+const ONB_DOC_RAW = {};
+for (const [k, d] of Object.entries(ONB_DOCS)) {
+  try { ONB_DOC_RAW[k] = fs.readFileSync(path.join(__dirname, 'onboarding-docs', d.file), 'utf8'); }
+  catch (e) { console.error(`Onboarding document ${d.file} is missing:`, e.message); ONB_DOC_RAW[k] = ''; }
+}
+const ONB_CONSENT = 'I have read this document and agree to be bound by it. I understand that this is my electronic signature and has the same effect as a handwritten one.';
+const ONB_LINK_DAYS = 30;
+const ONB_PORTAL_URL = (process.env.ONBOARDING_PORTAL_URL || 'https://careers.live2helprecruitment.co.uk/onboarding/').replace(/\/?$/, '/');
+const ONB_VAR_LABELS = { company_name: 'company name', company_address: 'registered address', signatory_name: 'signatory name', signatory_title: 'signatory job title',
+  contact_first_name: 'welcome pack contact', consultant_name: 'consultant name', consultant_title: 'consultant job title', consultant_email: 'consultant email', consultant_phone: 'consultant phone', date: 'date' };
+const onbEmailOk = e => /^[^\s@<>()",;:]+@[^\s@<>()",;:]+\.[a-z]{2,}$/i.test(String(e || '').trim());
+const onbClean = (v, n = 200) => String(v == null ? '' : v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim().slice(0, n);
+const onbNameKey = s => String(s || '').toLowerCase().replace(/[^a-z]+/g, ' ').trim();
+const onbHashToken = t => crypto.createHash('sha256').update(String(t)).digest('hex');
+const onbIp = req => String((req && req.ip) || '').replace(/^::ffff:/, '').slice(0, 64);
+function onbErr(res, where, e) {
+  console.error(`${where} error:`, e.message);
+  if (e.previewBlocked) return res.status(403).json({ error: e.message });
+  res.status(500).json({ error: /database is not connected|test database/i.test(e.message) ? e.message : 'Something went wrong. Please try again in a minute.' });
+}
+let onbLogoBuf;
+function onbLogo() {
+  if (onbLogoBuf === undefined) { try { onbLogoBuf = Buffer.from(EMBEDDED_LOGO_B64, 'base64'); } catch (e) { onbLogoBuf = null; } }
+  return onbLogoBuf;
+}
+
+/* ---------- site and account form (the fields follow claude/Onboarding/Site and Account Onboarding Form.md) ---------- */
+const ONB_SITE_FORM = [
+  { key: 's1', title: 'Account set-up', intro: 'So we can set up invoicing and know who to work with.', fields: [
+    { k: 'reg_name', label: 'Registered company name', req: true },
+    { k: 'company_number', label: 'Company number' },
+    { k: 'reg_address', label: 'Registered address', type: 'textarea', req: true },
+    { k: 'billing_name', label: 'Billing contact name', req: true },
+    { k: 'billing_email', label: 'Billing contact email', type: 'email', req: true },
+    { k: 'ap_email', label: 'Purchase ledger or accounts payable email', type: 'email' },
+    { k: 'po_required', label: 'Do invoices need a purchase order number?', type: 'yesno' },
+    { k: 'po_number', label: 'Purchase order number (if you have one already)' },
+    { k: 'hiring_managers', label: 'Authorised hiring managers', type: 'rows', cols: [['name', 'Name'], ['title', 'Job title'], ['email', 'Email'], ['phone', 'Phone']] },
+    { k: 'offer_approver', label: 'Who can approve offers and salaries?' },
+    { k: 'interview_availability', label: 'Usual interview availability (days and times)', type: 'textarea' },
+    { k: 'contact_method', label: 'Preferred contact method for updates', type: 'select', options: ['Email', 'Phone', 'Teams', 'WhatsApp'] },
+  ] },
+  { key: 's2', title: 'Access and parking', fields: [
+    { k: 'site_address', label: 'Interview site address, if different from the registered address', type: 'textarea' },
+    { k: 'parking', label: 'Parking type and allocation', type: 'textarea' },
+    { k: 'transport', label: 'Nearest public transport and journey time', type: 'textarea' },
+    { k: 'access_routes', label: 'Any unusual access routes', type: 'textarea' },
+  ] },
+  { key: 's3', title: 'Security and reception', fields: [
+    { k: 'security_checks', label: 'Gates or security checks', type: 'textarea' },
+    { k: 'pre_registration', label: 'Do visitors need to be pre-registered?', type: 'yesno' },
+    { k: 'reception_location', label: 'Where is reception?' },
+    { k: 'arrival_contact', label: 'Who should candidates ask for on arrival?' },
+    { k: 'badges', label: 'Visitor badges or passes', type: 'textarea' },
+  ] },
+  { key: 's4', title: 'Building navigation', fields: [
+    { k: 'building_floor', label: 'Building and floor' },
+    { k: 'directions', label: 'Directions from reception', type: 'textarea' },
+    { k: 'layout_quirks', label: 'Anything confusing about the layout?', type: 'textarea' },
+    { k: 'escorted', label: 'Are candidates escorted?', type: 'yesno' },
+  ] },
+  { key: 's5', title: 'Dress code and safety', fields: [
+    { k: 'dress_code', label: 'Dress code for interviews', type: 'select', options: ['Business formal', 'Smart casual', 'Casual', 'Site wear'] },
+    { k: 'ppe', label: 'Required PPE or hi-vis', type: 'textarea' },
+    { k: 'safety_rules', label: 'Site safety rules visitors must follow', type: 'textarea' },
+  ] },
+  { key: 's6', title: 'Timing and arrival', fields: [
+    { k: 'arrival_time', label: 'How early should candidates arrive?' },
+    { k: 'clearance_allowance', label: 'Time to allow for security clearance' },
+    { k: 'interview_length', label: 'Typical interview length' },
+    { k: 'late_contact', label: 'Who to call if running late (name and number)' },
+  ] },
+  { key: 's7', title: 'Accessibility and wellbeing', fields: [
+    { k: 'lifts_toilets', label: 'Lifts and accessible toilets', type: 'textarea' },
+    { k: 'refreshments', label: 'Refreshments available' },
+    { k: 'prayer_room', label: 'Prayer or quiet room available?', type: 'yesno' },
+    { k: 'induction', label: 'Health and safety induction for visitors', type: 'textarea' },
+  ] },
+  { key: 's8', title: 'Anything else candidates should know', fields: [
+    { k: 'notes', label: 'Anything else', type: 'textarea' },
+  ] },
+  { key: 's9', title: 'Key contacts for interview day', fields: [
+    { k: 'primary_name', label: 'Primary contact name' }, { k: 'primary_phone', label: 'Primary contact phone', type: 'tel' }, { k: 'primary_email', label: 'Primary contact email', type: 'email' },
+    { k: 'secondary_name', label: 'Secondary contact name' }, { k: 'secondary_phone', label: 'Secondary contact phone', type: 'tel' }, { k: 'secondary_email', label: 'Secondary contact email', type: 'email' },
+  ] },
+];
+// Keep only known fields, trimmed to sensible sizes. Returns { answers, problems }.
+function onbCleanSiteForm(input, submit) {
+  const src = input && typeof input === 'object' ? input : {};
+  const answers = {}, problems = [];
+  for (const sec of ONB_SITE_FORM) for (const f of sec.fields) {
+    const v = src[f.k];
+    if (f.type === 'rows') {
+      const rows = (Array.isArray(v) ? v : []).slice(0, 20).map(r => Object.fromEntries(f.cols.map(([ck]) => [ck, onbClean(r && r[ck], 160)])))
+        .filter(r => Object.values(r).some(Boolean));
+      if (rows.length) answers[f.k] = rows;
+      rows.forEach((r, i) => { if (r.email && !onbEmailOk(r.email)) problems.push(`${f.label}, row ${i + 1}: the email address does not look right`); });
+      continue;
+    }
+    let val = onbClean(v, f.type === 'textarea' ? 2000 : 200);
+    if (f.type === 'yesno' && val && !['Yes', 'No'].includes(val)) val = '';
+    if (f.type === 'select' && val && !f.options.includes(val)) val = '';
+    if (val) answers[f.k] = val;
+    if (val && f.type === 'email' && !onbEmailOk(val)) problems.push(`${f.label}: the email address does not look right`);
+    if (submit && f.req && !val) problems.push(`${f.label} is required`);
+  }
+  return { answers, problems };
+}
+async function onbSaveSiteForm(pool, row, input, submit, who) {
+  const { answers, problems } = onbCleanSiteForm(input, submit);
+  if (problems.length) { const e = new Error(problems.join('. ')); e.status = 400; e.problems = problems; throw e; }
+  await pool.query(
+    `insert into onboarding_site_form (client_id, answers, status, submitted_at, updated_by, updated_at) values ($1, $2::jsonb, $3, case when $4::boolean then now() else null end, $5, now())
+     on conflict (client_id) do update set answers = excluded.answers, status = case when $4::boolean then 'submitted' else (case when onboarding_site_form.status = 'submitted' then 'submitted' else 'draft' end) end,
+       submitted_at = case when $4::boolean then coalesce(onboarding_site_form.submitted_at, now()) else onboarding_site_form.submitted_at end, updated_by = excluded.updated_by, updated_at = now()`,
+    [row.client_id, JSON.stringify(answers), submit ? 'submitted' : 'draft', !!submit, onbClean(who, 120)]);
+  return onbUpdate(pool, row.client_id, c => {
+    const s = c.steps.site_form || {};
+    if (submit) c.steps.site_form = { status: 'complete', at: new Date().toISOString(), by: who };
+    else if (s.status !== 'complete') c.steps.site_form = { status: 'in_progress', at: new Date().toISOString(), by: who };
+    return c;
+  });
+}
+
+/* ---------- company details from the CRM (client rows, lead rows and the lead pipeline) ---------- */
+async function onbCompanyInfo(company) {
+  const n = rfxNormCompany(company);
+  const [clientRows, leadRows, pipe] = await Promise.all([
+    readClientRows().catch(() => []), readLeadClientRows().catch(() => []), lpxTable.list().catch(() => [])]);
+  const cl = clientRows.filter(r => r[1] && rfxNormCompany(r[1]) === n).map(rowToClient);
+  const lc = leadRows.filter(r => r[1] && rfxNormCompany(r[1]) === n).map(rowToClient);
+  const lead = pipe.find(l => rfxNormCompany(l.company) === n) || null;
+  const first = cl[0] || lc[0] || null;
+  const address = first && (first.address || first.postcode) ? [first.address, first.postcode].filter(Boolean).join(', ') : ((lead && lead.address) || '');
+  const contacts = [];
+  [...cl, ...lc].forEach(c => { if ((c.contactName || c.email) && !contacts.some(x => x.email && x.email === c.email && onbNameKey(x.name) === onbNameKey(c.contactName))) contacts.push({ name: c.contactName, title: c.jobTitle, email: c.email, phone: c.phone }); });
+  if (lead && lead.contact_name && !contacts.some(c => onbNameKey(c.name) === onbNameKey(lead.contact_name))) contacts.push({ name: lead.contact_name, title: lead.job_title, email: lead.email, phone: lead.phone });
+  const isClient = cl.length > 0;
+  return { isClient, isLead: !isClient && (lc.length > 0 || !!lead), lead, stage: isClient ? 'client' : (lead ? lead.stage : (lc.length ? 'identified' : '')), address, contacts };
+}
+
+async function onbVars(pool, row) {
+  const rec = row.recipients || {}, sig = rec.signatory || {};
+  const wel = rec.welcome && rec.welcome.name ? rec.welcome : sig;
+  const sf = (await pool.query('select answers from onboarding_site_form where client_id = $1', [row.client_id])).rows[0];
+  const a = (sf && sf.answers) || {};
+  const info = await onbCompanyInfo(row.company);
+  const cons = profileOf(String(row.started_by || 'ella').split(' ')[0] || 'ella');
+  return {
+    company_name: a.reg_name || row.company,
+    company_address: a.reg_address || info.address,
+    signatory_name: sig.name || '', signatory_title: sig.title || '',
+    contact_first_name: String(wel.name || '').trim().split(/\s+/)[0] || '',
+    consultant_name: cons.fullName, consultant_title: cons.title, consultant_email: cons.email, consultant_phone: cons.phone,
+    date: onbDocs.ukDate(row.started_at || new Date().toISOString()),
+  };
+}
+async function onbRenderDoc(pool, row, key) {
+  const vars = await onbVars(pool, row);
+  const source = onbDocs.fillPlaceholders(ONB_DOC_RAW[key], vars);
+  const { meta, blocks } = onbDocs.parseDoc(source);
+  const hash = onbDocs.docHash(`${meta.title}\n${meta.version}\n${onbDocs.docToText(blocks)}`);
+  return { meta, blocks, source, hash, vars, missing: onbDocs.unfilledPlaceholders(ONB_DOC_RAW[key], vars) };
+}
+
+// Portal events (opened, viewed, signed). The newest 300 are kept.
+async function onbEvent(pool, clientId, what, req) {
+  const e = { at: new Date().toISOString(), what, ip: onbIp(req) };
+  await pool.query(
+    `update onboarding set events = (select coalesce(jsonb_agg(x order by i), '[]'::jsonb) from
+       (select x, i from jsonb_array_elements(coalesce(events, '[]'::jsonb) || $2::jsonb) with ordinality t(x, i) order by i desc limit 300) s)
+     where client_id = $1`, [clientId, JSON.stringify([e])]);
+}
+const onbSeenRecently = (row, what, ms) => (row.events || []).some(e => e.what === what && Date.now() - Date.parse(e.at) < ms);
+
+/* ---------- secure link ---------- */
+const onbBadTokens = new Map();
+function onbTokenMiss(req) {
+  const ip = onbIp(req), now = Date.now();
+  const r = onbBadTokens.get(ip);
+  if (!r || r.reset < now) onbBadTokens.set(ip, { n: 1, reset: now + 15 * 60 * 1000 }); else r.n++;
+  if (onbBadTokens.size > 5000) for (const [k, v] of onbBadTokens) if (v.reset < now) onbBadTokens.delete(k);
+}
+async function onbByToken(req, res) {
+  const r = onbBadTokens.get(onbIp(req));
+  if (r && r.reset > Date.now() && r.n >= 30) { res.status(429).json({ error: 'Too many attempts. Please try again later.' }); return null; }
+  const tok = String(req.params.token || '');
+  const bad = () => { onbTokenMiss(req); res.status(404).json({ error: 'This link is not valid. Please use the most recent link we emailed you.', code: 'BAD_LINK' }); return null; };
+  if (!/^[A-Za-z0-9_-]{30,80}$/.test(tok)) return bad();
+  const pool = onbPool(); await onbEnsure(pool);
+  const row = (await pool.query(`select * from onboarding where tokens->'portal'->>'hash' = $1`, [onbHashToken(tok)])).rows[0];
+  const t = row && row.tokens && row.tokens.portal;
+  if (!row || !t || t.revoked) return bad();
+  if (t.expires_at && Date.parse(t.expires_at) < Date.now()) { res.status(410).json({ error: 'This link has expired. Reply to our email or call 01902 945444 and we will send you a new one.', code: 'EXPIRED' }); return null; }
+  return { pool, row };
+}
+app.use('/api/portal', (req, res, next) => { res.set('Cache-Control', 'no-store'); res.set('Referrer-Policy', 'no-referrer'); res.set('X-Robots-Tag', 'noindex'); next(); });
+
+app.get('/api/portal/:token', async (req, res) => {
+  try {
+    const got = await onbByToken(req, res); if (!got) return;
+    const { pool, row } = got;
+    const [sigs, sf] = await Promise.all([
+      pool.query('select doc, signer_name, signed_at, countersigned_at from onboarding_signatures where client_id = $1', [row.client_id]).then(r => r.rows),
+      pool.query('select answers, status, submitted_at, updated_at from onboarding_site_form where client_id = $1', [row.client_id]).then(r => r.rows[0]),
+    ]);
+    if (!onbSeenRecently(row, 'Portal opened', 3600 * 1000)) await onbEvent(pool, row.client_id, 'Portal opened', req);
+    const steps = { ...onbDefaultSteps(), ...(row.steps || {}) };
+    const sig = (row.recipients || {}).signatory || {};
+    res.json({
+      company: row.company, status: row.status,
+      signatory: { name: sig.name || '', title: sig.title || '' },
+      documents: Object.entries(ONB_DOCS).map(([k, d]) => {
+        const s = sigs.find(x => x.doc === k);
+        return { key: k, name: d.name, sign: d.sign, status: steps[d.step].status, signed_at: s ? s.signed_at : null, countersigned_at: s ? s.countersigned_at : null };
+      }),
+      site_form: { status: steps.site_form.status, answers: (sf && sf.answers) || {}, submitted_at: sf ? sf.submitted_at : null, sections: ONB_SITE_FORM },
+      consent: ONB_CONSENT,
+      expires_at: row.tokens.portal.expires_at,
+    });
+  } catch (e) { onbErr(res, 'GET portal', e); }
+});
+
+app.get('/api/portal/:token/doc/:doc', async (req, res) => {
+  try {
+    const got = await onbByToken(req, res); if (!got) return;
+    const { pool, row } = got;
+    const key = String(req.params.doc);
+    if (!ONB_DOCS[key]) return res.status(404).json({ error: 'Document not found' });
+    const d = await onbRenderDoc(pool, row, key);
+    const step = ONB_DOCS[key].step;
+    await onbUpdate(pool, row.client_id, c => {
+      const s = c.steps[step] || {};
+      if (['pending', 'sent'].includes(s.status || 'pending')) c.steps[step] = { status: 'viewed', at: new Date().toISOString() };
+      return c;
+    });
+    const what = 'Viewed: ' + ONB_DOCS[key].name;
+    if (!onbSeenRecently(row, what, 3600 * 1000)) await onbEvent(pool, row.client_id, what, req);
+    const signed = (await pool.query('select signed_at, signer_name from onboarding_signatures where client_id = $1 and doc = $2', [row.client_id, key])).rows[0] || null;
+    res.json({ key, name: ONB_DOCS[key].name, sign: ONB_DOCS[key].sign, meta: d.meta, html: onbDocs.docToHtml(d.blocks), hash: d.hash, signed });
+  } catch (e) { onbErr(res, 'GET portal doc', e); }
+});
+
+app.get('/api/portal/:token/doc/:doc/pdf', async (req, res) => {
+  try {
+    const got = await onbByToken(req, res); if (!got) return;
+    const { pool, row } = got;
+    const key = String(req.params.doc);
+    if (!ONB_DOCS[key]) return res.status(404).json({ error: 'Document not found' });
+    const s = (await pool.query('select pdf, countersigned_at from onboarding_signatures where client_id = $1 and doc = $2', [row.client_id, key])).rows[0];
+    let buf, label;
+    if (s && s.pdf) { buf = s.pdf; label = s.countersigned_at ? 'Signed' : 'Signed by you'; }
+    else { const d = await onbRenderDoc(pool, row, key); buf = await onbDocs.buildDocPdf({ PDFDocument, logo: onbLogo(), meta: d.meta, blocks: d.blocks, sign: null }); label = ''; }
+    const name = `${row.company} - ${ONB_DOCS[key].name}${label ? ' - ' + label : ''}.pdf`.replace(/[\\/:*?"<>|]/g, '');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+    res.send(buf);
+  } catch (e) { onbErr(res, 'GET portal pdf', e); }
+});
+
+app.post('/api/portal/:token/sign/:doc', async (req, res) => {
+  try {
+    const got = await onbByToken(req, res); if (!got) return;
+    const { pool, row } = got;
+    const key = String(req.params.doc);
+    if (!ONB_DOCS[key] || !ONB_DOCS[key].sign) return res.status(404).json({ error: 'Document not found' });
+    const b = req.body || {};
+    const sig = (row.recipients || {}).signatory || {};
+    if (!sig.name || !sig.email) return res.status(409).json({ error: 'We have not confirmed who signs for your company yet. Please call us on 01902 945444.' });
+    if (b.agree !== true) return res.status(400).json({ error: 'Please tick the box to confirm you agree' });
+    const method = b.method === 'drawn' ? 'drawn' : 'typed';
+    let png = null;
+    if (method === 'drawn') {
+      png = hrPngFromDataUrl(b.signature);
+      if (!png) return res.status(400).json({ error: 'Please draw your signature in the box' });
+    } else if (onbNameKey(b.typed) !== onbNameKey(sig.name)) {
+      return res.status(400).json({ error: `Please type your full name exactly as shown: ${sig.name}` });
+    }
+    const d = await onbRenderDoc(pool, row, key);
+    if (d.missing.length) return res.status(409).json({ error: 'This document is missing some of your details. Please call us on 01902 945444 and we will fix it straight away.' });
+    if (String(b.hash || '') !== d.hash) return res.status(409).json({ error: 'This document was updated while you had it open. Please read it again before signing.', code: 'CHANGED' });
+    const now = new Date().toISOString(), ip = onbIp(req), ua = onbClean(req.get('user-agent'), 300);
+    const events = (row.events || []).filter(e => e.what === 'Portal opened' || e.what === 'Viewed: ' + ONB_DOCS[key].name).slice(-10)
+      .concat([{ at: now, what: `Signed by ${sig.name} (${method === 'drawn' ? 'drawn signature' : 'typed name'})`, ip }]);
+    const record = { docHash: d.hash, reference: `ONB-${row.client_id}-${key}`.toUpperCase(), company: d.vars.company_name, signerEmail: sig.email,
+      method, consentText: ONB_CONSENT, ip, userAgent: ua, events };
+    const pdf = await onbDocs.buildDocPdf({ PDFDocument, logo: onbLogo(), meta: d.meta, blocks: d.blocks,
+      sign: { client: { name: sig.name, title: sig.title, png, at: now }, agency: null, record } });
+    const ins = await pool.query(
+      `insert into onboarding_signatures (client_id, doc, version, signer_name, signer_email, signer_title, method, signature_image, consented, ip, user_agent, signed_at, audit, doc_hash, doc_source, record, pdf)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, $10, $11, $12::jsonb, $13, $14, $15::jsonb, $16) on conflict (client_id, doc) do nothing returning id`,
+      [row.client_id, key, d.meta.version || '', sig.name, sig.email, sig.title || '', method, png ? png.toString('base64') : '', ip, ua, now,
+        JSON.stringify(events), d.hash, d.source, JSON.stringify(record), pdf]);
+    if (!ins.rows[0]) return res.status(409).json({ error: 'This document has already been signed', code: 'ALREADY_SIGNED' });
+    await onbUpdate(pool, row.client_id, c => { c.steps[ONB_DOCS[key].step] = { status: 'signed', at: now }; return c; });
+    await onbEvent(pool, row.client_id, `Signed: ${ONB_DOCS[key].name}`, req);
+    auditLog('client portal', 'signed', 'onboarding', row.company, `${ONB_DOCS[key].name} signed by ${sig.name}`);
+    res.json({ ok: true, signed_at: now });
+  } catch (e) { onbErr(res, 'POST portal sign', e); }
+});
+
+app.post('/api/portal/:token/site-form', async (req, res) => {
+  try {
+    const got = await onbByToken(req, res); if (!got) return;
+    const { pool, row } = got;
+    const b = req.body || {};
+    const submit = b.submit === true;
+    const sig = (row.recipients || {}).signatory || {};
+    await onbSaveSiteForm(pool, row, b.answers, submit, 'client' + (sig.name ? ': ' + sig.name : ''));
+    if (submit) { await onbEvent(pool, row.client_id, 'Site and account form submitted', req); auditLog('client portal', 'submitted', 'onboarding', row.company, 'site and account form'); }
+    res.json({ ok: true, status: submit ? 'complete' : 'in_progress' });
+  } catch (e) {
+    if (e.status === 400) return res.status(400).json({ error: e.message, problems: e.problems });
+    onbErr(res, 'POST portal site form', e);
+  }
+});
+
+/* ---------- workspace side ---------- */
+// The company's contacts, so the signatory can be picked from the client record
+app.get('/api/onboarding/:clientId/contacts', async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const company = String(req.query.company || '').trim();
+    if (!company || slugifyRole(company) !== id) return res.status(400).json({ error: 'company is required' });
+    const info = await onbCompanyInfo(company);
+    res.json({ contacts: info.contacts.filter(c => c.name || c.email), address: info.address, stage: info.stage, is_client: info.isClient });
+  } catch (e) { onbErr(res, 'GET onboarding contacts', e); }
+});
+
+// Who signs and who gets the welcome pack. Locked once anything has been signed.
+app.post('/api/onboarding/:clientId/recipients', async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const b = req.body || {};
+    const s = b.signatory || {}, w = b.welcome || {};
+    const signatory = { name: onbClean(s.name, 120), title: onbClean(s.title, 120), email: onbClean(s.email, 160).toLowerCase() };
+    if (signatory.name.split(/\s+/).length < 2) return res.status(400).json({ error: 'Enter the signatory\'s full name (first and last name)' });
+    if (!signatory.title) return res.status(400).json({ error: 'Enter the signatory\'s job title' });
+    if (!onbEmailOk(signatory.email)) return res.status(400).json({ error: 'The signatory\'s email address does not look right' });
+    const welcome = { name: onbClean(w.name, 120), email: onbClean(w.email, 160).toLowerCase() };
+    if ((welcome.name || welcome.email) && !onbEmailOk(welcome.email)) return res.status(400).json({ error: 'The welcome pack email address does not look right' });
+    const pool = onbPool(); await onbEnsure(pool);
+    const signedCount = (await pool.query('select count(*)::int as n from onboarding_signatures where client_id = $1', [id])).rows[0].n;
+    if (signedCount) return res.status(409).json({ error: 'An agreement has already been signed, so the signatory cannot change' });
+    const row = await onbUpdate(pool, id, c => ({ ...c, recipients: { ...(c.recipients || {}), signatory, welcome: welcome.email ? welcome : null, confirmed_by: actorOf(req), confirmed_at: new Date().toISOString() } }));
+    if (!row) return res.status(404).json({ error: 'Onboarding has not been started for this client' });
+    auditLog(auditActorOf(req), 'updated', 'onboarding', row.company, `signatory: ${signatory.name}`);
+    res.json({ ok: true, data: onbOut(row) });
+  } catch (e) { onbErr(res, 'POST onboarding recipients', e); }
+});
+
+// A new secure portal link (replaces any earlier one). The link is shown once and never stored.
+app.post('/api/onboarding/:clientId/link', async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const pool = onbPool(); await onbEnsure(pool);
+    const cur = (await pool.query('select * from onboarding where client_id = $1', [id])).rows[0];
+    if (!cur) return res.status(404).json({ error: 'Onboarding has not been started for this client' });
+    const sig = (cur.recipients || {}).signatory || {};
+    if (!sig.name || !sig.email) return res.status(400).json({ error: 'Choose who signs for the client first' });
+    const missing = new Set();
+    for (const k of Object.keys(ONB_DOCS)) (await onbRenderDoc(pool, cur, k)).missing.forEach(m => missing.add(m));
+    if (missing.size) return res.status(400).json({ error: `Add the ${[...missing].map(m => ONB_VAR_LABELS[m] || m).join(', ')} to the client record first`, missing: [...missing] });
+    const token = crypto.randomBytes(24).toString('base64url');
+    const now = new Date(), expires = new Date(now.getTime() + ONB_LINK_DAYS * 86400000);
+    const row = await onbUpdate(pool, id, c => {
+      ['terms', 'dsa', 'welcome', 'pricing', 'site_form'].forEach(k => { if ((c.steps[k] || {}).status === 'pending') c.steps[k] = { status: 'sent', at: now.toISOString() }; });
+      return { ...c, tokens: { ...(c.tokens || {}), portal: { hash: onbHashToken(token), created_at: now.toISOString(), expires_at: expires.toISOString(), created_by: actorOf(req) } } };
+    });
+    auditLog(auditActorOf(req), 'created', 'onboarding', row.company, 'portal link created');
+    res.json({ ok: true, url: `${ONB_PORTAL_URL}#t=${token}${isPreview() ? '&p=1' : ''}`, expires_at: expires.toISOString(), preview: isPreview(), data: onbOut(row) });
+  } catch (e) { onbErr(res, 'POST onboarding link', e); }
+});
+
+// The site form can also be filled in by the consultant during a call
+app.get('/api/onboarding/:clientId/site-form', async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const pool = onbPool(); await onbEnsure(pool);
+    const r = (await pool.query('select answers, status, submitted_at, updated_by, updated_at from onboarding_site_form where client_id = $1', [id])).rows[0];
+    res.json({ data: r || null, sections: ONB_SITE_FORM });
+  } catch (e) { onbErr(res, 'GET onboarding site form', e); }
+});
+app.post('/api/onboarding/:clientId/site-form', async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const pool = onbPool(); await onbEnsure(pool);
+    const row = (await pool.query('select * from onboarding where client_id = $1', [id])).rows[0];
+    if (!row) return res.status(404).json({ error: 'Onboarding has not been started for this client' });
+    const submit = !!(req.body && req.body.submit === true);
+    const saved = await onbSaveSiteForm(pool, row, req.body && req.body.answers, submit, actorOf(req));
+    auditLog(auditActorOf(req), submit ? 'submitted' : 'updated', 'onboarding', row.company, 'site and account form');
+    res.json({ ok: true, data: onbOut(saved) });
+  } catch (e) {
+    if (e.status === 400) return res.status(400).json({ error: e.message, problems: e.problems });
+    onbErr(res, 'POST onboarding site form', e);
+  }
+});
+
+// Dan's countersign queue: agreements the client has signed and Dan has not
+app.get('/api/onboarding-queue', requireAdmin, async (req, res) => {
+  try {
+    const pool = onbPool(); await onbEnsure(pool);
+    const r = await pool.query(`select s.client_id, o.company, s.doc, s.signer_name, s.signer_title, s.signed_at from onboarding_signatures s
+      join onboarding o using (client_id) where s.signed_at is not null and s.countersigned_at is null order by s.signed_at`);
+    res.json({ data: r.rows.map(x => ({ ...x, name: (ONB_DOCS[x.doc] || {}).name || x.doc })), me: profileOf(actorOf(req)).fullName });
+  } catch (e) { onbErr(res, 'GET onboarding queue', e); }
+});
+
+app.get('/api/onboarding/:clientId/signatures/:sigId/pdf', requireAdmin, async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const pool = onbPool(); await onbEnsure(pool);
+    const s = (await pool.query('select s.doc, s.pdf, s.countersigned_at, o.company from onboarding_signatures s join onboarding o using (client_id) where s.client_id = $1 and s.id = $2', [id, String(req.params.sigId).replace(/\D/g, '') || '0'])).rows[0];
+    if (!s || !s.pdf) return res.status(404).json({ error: 'No signed copy yet' });
+    const name = `${s.company} - ${(ONB_DOCS[s.doc] || {}).name || s.doc} - ${s.countersigned_at ? 'Signed' : 'Client signed'}.pdf`.replace(/[\\/:*?"<>|]/g, '');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="${name}"`);
+    res.send(s.pdf);
+  } catch (e) { onbErr(res, 'GET onboarding signed pdf', e); }
+});
+
+// Files the fully signed PDF in the client's Drive folder, under Agreements. Never in preview.
+async function onbFileToDrive(pool, company, s) {
+  if (isPreview()) return { skipped: 'preview' };
+  const f = await ensureClientFolders(company, { skipSubmissions: true });
+  const folder = await findOrCreateDriveFolder(f.clientFolderId, 'Agreements');
+  const up = getUploadDriveClient();
+  const name = `${company} - ${(ONB_DOCS[s.doc] || {}).name || s.doc} - Signed.pdf`.replace(/[\\/:*?"<>|]/g, '');
+  let fileId = s.pdf_drive_id;
+  if (fileId) {
+    try { await up.files.update({ fileId, requestBody: { name }, media: { mimeType: 'application/pdf', body: Readable.from(s.pdf) } }); }
+    catch (e) { fileId = ''; }
+  }
+  if (!fileId) fileId = (await up.files.create({ requestBody: { name, parents: [folder.id] }, media: { mimeType: 'application/pdf', body: Readable.from(s.pdf) }, fields: 'id' })).data.id;
+  await pool.query('update onboarding_signatures set pdf_drive_id = $2 where id = $1', [s.id, fileId]);
+  return { fileId };
+}
+
+app.post('/api/onboarding/:clientId/countersign', requireAdmin, async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    if (req.user && req.user.va) return res.status(403).json({ error: 'Signatures cannot be given while using View as. Exit View as and sign as yourself.' });
+    const b = req.body || {};
+    if (b.agree !== true) return res.status(400).json({ error: 'Please tick to confirm you are countersigning for Live 2 Help Recruitment Ltd' });
+    const me = profileOf(actorOf(req));
+    const method = b.method === 'drawn' ? 'drawn' : 'typed';
+    let png = null;
+    if (method === 'drawn') { png = hrPngFromDataUrl(b.signature); if (!png) return res.status(400).json({ error: 'Please draw your signature in the box' }); }
+    else if (onbNameKey(b.typed) !== onbNameKey(me.fullName)) return res.status(400).json({ error: `Type your name exactly as ${me.fullName}` });
+    const pool = onbPool(); await onbEnsure(pool);
+    const o = (await pool.query('select company from onboarding where client_id = $1', [id])).rows[0];
+    if (!o) return res.status(404).json({ error: 'Onboarding has not been started for this client' });
+    const now = new Date().toISOString();
+    const c = await pool.connect();
+    let done = [];
+    try {
+      await c.query('begin');
+      const rows = (await c.query('select * from onboarding_signatures where client_id = $1 and signed_at is not null and countersigned_at is null order by id for update', [id])).rows;
+      for (const s of rows) {
+        const { meta, blocks } = onbDocs.parseDoc(s.doc_source);
+        const record = { ...(s.record || {}), events: [...((s.record || {}).events || []), { at: now, what: `Countersigned by ${me.fullName} for Live 2 Help Recruitment Ltd`, ip: onbIp(req) }] };
+        const pdf = await onbDocs.buildDocPdf({ PDFDocument, logo: onbLogo(), meta, blocks, sign: {
+          client: { name: s.signer_name, title: s.signer_title, png: s.signature_image ? Buffer.from(s.signature_image, 'base64') : null, at: new Date(s.signed_at).toISOString() },
+          agency: { name: me.fullName, title: me.title, png, at: now }, record } });
+        const u = await c.query(`update onboarding_signatures set countersigned_by = $2, countersigned_at = $3, pdf = $4, record = $5::jsonb, audit = $6::jsonb where id = $1 returning *`,
+          [s.id, me.fullName, now, pdf, JSON.stringify(record), JSON.stringify(record.events)]);
+        done.push(u.rows[0]);
+      }
+      await c.query('commit');
+    } catch (e) { await c.query('rollback').catch(() => {}); throw e; }
+    finally { c.release(); }
+    if (!done.length) return res.status(400).json({ error: 'There is nothing waiting for your countersignature' });
+    const all = (await pool.query('select doc from onboarding_signatures where client_id = $1 and countersigned_at is not null', [id])).rows.map(x => x.doc);
+    let row = null;
+    if (all.includes('terms') && all.includes('dsa')) row = await onbUpdate(pool, id, cur => { cur.steps.countersign = { status: 'done', at: now, by: actorOf(req) }; return cur; });
+    auditLog(auditActorOf(req), 'countersigned', 'onboarding', o.company, done.map(s => (ONB_DOCS[s.doc] || {}).name || s.doc).join(', '));
+    const filed = [];
+    for (const s of done) {
+      try { const r = await onbFileToDrive(pool, o.company, s); filed.push({ doc: s.doc, ...r }); }
+      catch (e) { console.error('Onboarding Drive filing failed:', e.message); filed.push({ doc: s.doc, error: friendlyDriveError(e) }); }
+    }
+    if (!row) row = (await pool.query('select * from onboarding where client_id = $1', [id])).rows[0];
+    res.json({ ok: true, countersigned: done.map(s => s.doc), filed, data: onbOut(row) });
+  } catch (e) { onbErr(res, 'POST onboarding countersign', e); }
+});
+
+// Try Drive again for any fully signed copy that did not file
+app.post('/api/onboarding/:clientId/file-drive', requireAdmin, async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const pool = onbPool(); await onbEnsure(pool);
+    const o = (await pool.query('select company from onboarding where client_id = $1', [id])).rows[0];
+    if (!o) return res.status(404).json({ error: 'Onboarding has not been started for this client' });
+    const rows = (await pool.query(`select * from onboarding_signatures where client_id = $1 and countersigned_at is not null and pdf is not null and pdf_drive_id = ''`, [id])).rows;
+    const filed = [];
+    for (const s of rows) {
+      try { filed.push({ doc: s.doc, ...(await onbFileToDrive(pool, o.company, s)) }); }
+      catch (e) { filed.push({ doc: s.doc, error: friendlyDriveError(e) }); }
+    }
+    res.json({ ok: true, filed });
+  } catch (e) { onbErr(res, 'POST onboarding file drive', e); }
+});
+
+/* ---------- gatekeeping: lead pipeline stages and becoming a client ----------
+   On for /dashboard-next now. On the live dashboard only once ONBOARDING_GATES=live is set on
+   Render, which happens when the dashboard-next screens move across (Dan approves). */
+const LPX_GATE_ORDER = ['identified', 'contacted', 'interested', 'meeting', 'terms', 'converted'];
+const onbGatesOn = () => isPreview() || String(process.env.ONBOARDING_GATES || '').toLowerCase() === 'live';
+const onbOverride = req => !!(req.body && req.body.override === true && isAdmin(req) && !(req.user && req.user.va));
+async function onbAgreementsSigned(company) {
+  const pool = onbPool(); await onbEnsure(pool);
+  const docs = (await pool.query('select doc from onboarding_signatures where client_id = $1 and signed_at is not null', [slugifyRole(company)])).rows.map(x => x.doc);
+  return docs.includes('terms') && docs.includes('dsa');
+}
+async function lpxHasLoggedContact(company) {
+  const n = rfxNormCompany(company);
+  const [comms, calls] = await Promise.all([commsTable.list().catch(() => []), getColdCallsSheet().catch(() => [])]);
+  return comms.some(c => c.entity_type !== 'candidate' && (rfxNormCompany(c.company) === n || rfxNormCompany(c.entity_name) === n))
+    || calls.some(c => rfxNormCompany(c.company) === n);
+}
+// What a lead still needs before it can move forward to this stage ([] means it can move)
+async function lpxStageNeeds(lead, from, to) {
+  const fi = Math.max(0, LPX_GATE_ORDER.indexOf(from)), ti = LPX_GATE_ORDER.indexOf(to);
+  if (ti < 1 || ti <= fi) return []; // back, sideways, Lost and Archived are always free
+  if (to === 'converted') {
+    let signed = false;
+    try { signed = await onbAgreementsSigned(lead.company); } catch (e) { signed = false; }
+    return signed ? [] : ['both agreements signed through onboarding'];
+  }
+  const need = [];
+  const email = String(lead.email || '').trim(), phone = String(lead.phone || '').trim();
+  if (ti >= 1 && !email && !phone) need.push('an email address or phone number');
+  if (ti >= 2 && !String(lead.contact_name || '').trim()) need.push('a named contact');
+  if (ti >= 3 && !(await lpxHasLoggedContact(lead.company))) need.push('at least one logged call or contact');
+  if (ti >= 4 && !onbEmailOk(email)) need.push('a valid email address for the contact');
+  return need;
+}
+const lpxStageLabel = s => ({ contacted: 'Contacted', interested: 'Interested', meeting: 'Meeting', terms: 'Terms', converted: 'Converted' }[s] || s);
+const lpxNeedsText = (company, to, need) => `To move ${company} to ${lpxStageLabel(to)} it needs ${need.length > 1 ? need.slice(0, -1).join(', ') + ' and ' + need[need.length - 1] : need[0]}.`;
+// Becoming a client: a company already known as a lead needs both agreements signed (Dan can override)
+async function onbClientGate(req, company) {
+  if (!onbGatesOn()) return null;
+  const info = await onbCompanyInfo(company);
+  if (info.isClient || !info.isLead) return null;
+  let signed = false;
+  try { signed = await onbAgreementsSigned(company); } catch (e) { signed = false; }
+  if (signed) return null;
+  if (onbOverride(req)) { auditLog(auditActorOf(req), 'override', 'onboarding', company, 'made a client before both agreements were signed'); return null; }
+  return { error: `${company} cannot become a client until both agreements are signed. Start onboarding from the lead once it reaches Terms.`, code: 'NEEDS_ONBOARDING', can_override: isAdmin(req) && !(req.user && req.user.va) };
+}
 
 // Nightly backup: the live onboarding tables, as extra tabs in the database backup sheet
 async function onbBackupTabs(pool) {
@@ -13499,6 +14091,14 @@ app.post('/api/lead-pipeline', async (req, res) => {
     ['stage', 'contact_name', 'job_title', 'email', 'email_status', 'phone', 'website', 'address', 'source', 'role_seen', 'notes', 'lost_reason', 'owner'].forEach(k => { if (b[k] !== undefined) fields[k] = String(b[k]); });
     const n = rfxNormCompany(company);
     const existing = (await lpxTable.list()).find(l => rfxNormCompany(l.company) === n);
+    // build 49.1: moving forward needs the right details for that stage
+    if (fields.stage && onbGatesOn()) {
+      const from = existing ? existing.stage : 'identified';
+      const need = await lpxStageNeeds({ company, ...(existing || {}), ...fields }, from, fields.stage);
+      const overridden = need.length > 0 && fields.stage === 'converted' && onbOverride(req);
+      if (overridden) auditLog(auditActorOf(req), 'override', 'onboarding', company, 'converted before both agreements were signed');
+      if (need.length && !overridden) return res.status(409).json({ error: lpxNeedsText(company, fields.stage, need), code: 'STAGE_GATE', missing: need, can_override: fields.stage === 'converted' && isAdmin(req) });
+    }
     let saved;
     if (existing) {
       const next = { ...existing, ...fields, updated_at: rfxNow() };
@@ -14226,7 +14826,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '30 Oct 2026 - build 49.0 (client onboarding phase 1: Postgres tables and checklist endpoints)';
+const SERVER_BUILD = '30 Oct 2026 - build 49.1 (client onboarding phase 2: portal, e-signature, countersign, lead gates)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
