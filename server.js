@@ -6451,12 +6451,28 @@ app.get('/api/portal/:token', async (req, res) => {
       pool.query('select answers, status, submitted_at, updated_at from onboarding_site_form where client_id = $1', [row.client_id]).then(r => r.rows[0]),
     ]);
     if (!onbSeenRecently(row, 'Portal opened', 3600 * 1000)) await onbEvent(pool, row.client_id, 'Portal opened', req);
+    // build 52.4: a savings calculator link for this client, tracked like the one in the rates email
+    let calcUrl = TRACKED_TARGETS.partnership.page + (isPreview() ? '?t=preview' : '');
+    if (!isPreview()) {
+      let tok = onbPartner(row).calc_token;
+      if (!tok) {
+        try {
+          const tp = await trackedPool();
+          tok = crypto.randomBytes(9).toString('base64url');
+          const sg = (row.recipients || {}).signatory || {};
+          await tp.query('insert into tracked_links (token, kind, company, contact_name, contact_email, sent_by) values ($1, $2, $3, $4, $5, $6)',
+            [tok, 'partnership', row.company, sg.name || '', sg.email || '', 'onboarding portal']);
+          await onbUpdate(pool, row.client_id, c => { c.steps.partnership = { ...(c.steps.partnership || {}), calc_token: tok }; return c; });
+        } catch (e) { tok = ''; }
+      }
+      if (tok) calcUrl += '?t=' + tok;
+    }
     const steps = { ...onbDefaultSteps(), ...(row.steps || {}) };
     const sig = (row.recipients || {}).signatory || {};
     res.json({
       company: row.company, status: row.status,
       signatory: { name: sig.name || '', title: sig.title || '' },
-      partnership: { status: onbPartner(row).status || 'not_offered', plan: (onbPartner(row).plan || {}).name || '' },
+      partnership: { status: onbPartner(row).status || 'not_offered', plan: (onbPartner(row).plan || {}).name || '', calc_url: calcUrl },
       documents: Object.entries(ONB_DOCS).filter(([k]) => onbDocOn(row, k)).map(([k, d]) => {
         const s = sigs.find(x => x.doc === k);
         return { key: k, name: d.name, sign: d.sign, optional: !!d.optional, status: (steps[d.step] || {}).status || 'offered', signed_at: s ? s.signed_at : null, countersigned_at: s ? s.countersigned_at : null };
@@ -16149,7 +16165,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '3 Nov 2026 - build 52.3 (Talent Partnership Schedule in onboarding)';
+const SERVER_BUILD = '3 Nov 2026 - build 52.4 (Talent Partnership explainer and calculator in the portal)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

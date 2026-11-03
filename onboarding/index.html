@@ -195,8 +195,22 @@ textarea.in{min-height:84px;resize:vertical}
       return h + '<div class="tasks"><button class="task' + (ok ? ' done' : '') + '" data-go="partnership"><span class="ic">' + (ok ? ICON.done : ICON.sign) + '</span><span class="t"><b>' + esc(x.name) + '</b><span>' + (ok ? 'Signed ' + fmt(x.signed_at) : 'Your ' + esc(p.plan || '') + ' plan. Read and sign online.') + '</span></span><span class="chip ' + (ok ? 'ok' : 'go') + '">' + (ok ? 'Signed' : 'Sign') + '</span></button></div>';
     }
     var on = p.status === 'interested';
-    return h + '<div class="tasks"><label class="task" style="cursor:pointer;align-items:flex-start;"><span class="ic"><input type="checkbox" id="partnerTick"' + (on ? ' checked' : '') + ' style="width:20px;height:20px;margin:0;accent-color:#C9A84C;"></span><span class="t"><b>I am interested in the Talent Partnership</b><span>' +
-      (on ? 'Thank you. Daniel will be in touch to agree the right plan, and the Schedule will then appear here to sign.' : 'One fixed monthly fee covering a set number of hires, instead of a fee per placement. Tick to let us know and we will talk you through the plans. This does not commit you to anything.') +
+    var calc = p.calc_url || 'https://careers.live2helprecruitment.co.uk/partnership/';
+    var li = function(t){ return '<li style="margin:4px 0;">' + t + '</li>'; };
+    return h +
+      '<div class="task" style="display:block;cursor:default;text-align:left;">' +
+        '<b style="display:block;margin-bottom:6px;">Hiring more than a few people this year?</b>' +
+        '<span style="display:block;line-height:1.55;">The Talent Partnership replaces a fee per placement with one fixed monthly fee that covers a set number of hires a year. For businesses hiring regularly, it usually brings the cost per hire down significantly and makes recruitment spend easy to budget.</span>' +
+        '<ul style="margin:10px 0 12px;padding-left:18px;line-height:1.5;">' +
+          li('Plans for different hiring levels, from a few hires a year upwards') +
+          li('Every role screened and submitted the same way as now, with our 3-month replacement guarantee') +
+          li('A 90-day break clause, so you can try it with confidence') +
+        '</ul>' +
+        '<a class="btn gold" href="' + esc(calc) + '" target="_blank" rel="noopener" style="display:inline-block;text-decoration:none;">See what it could save you</a>' +
+        '<span style="display:block;margin-top:8px;font-size:13px;opacity:.8;">A short calculator, about two minutes. Nothing is shared or signed.</span>' +
+      '</div>' +
+      '<div class="tasks" style="margin-top:10px;"><label class="task" style="cursor:pointer;align-items:flex-start;"><span class="ic"><input type="checkbox" id="partnerTick"' + (on ? ' checked' : '') + ' style="width:20px;height:20px;margin:0;accent-color:#C9A84C;"></span><span class="t"><b>I am interested in the Talent Partnership</b><span>' +
+      (on ? 'Thank you. Daniel will be in touch to agree the right plan, and the Schedule will then appear here to sign.' : 'Tick to let us know and Daniel will talk you through the plans. This does not commit you to anything, and your standard terms stay as they are.') +
       '</span></span></label></div>';
   }
   document.addEventListener('change', function(e){
