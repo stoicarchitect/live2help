@@ -15887,7 +15887,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '30 Oct 2026 - build 49.9 (Delete lead on lead accounts)';
+const SERVER_BUILD = '3 Nov 2026 - build 51.0 (Talent Suite LinkedIn campaign in Marketing)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -16655,10 +16655,35 @@ const roadmapTable = makeSimpleTable({
 });
 const marketingTable = makeSimpleTable({
   tab: 'Marketing', path: '/api/marketing', label: 'Marketing item', auditType: 'marketing', auditName: o => `${o.type} ${o.title}`,
-  header: ['id', 'type', 'title', 'date', 'status', 'owner', 'channel', 'audience', 'location', 'cost', 'link', 'next_step', 'notes', 'updated_by', 'updated_at'],
+  // build 51: body (copy-ready post or message), image (repo path of the visual), campaign and post_time
+  header: ['id', 'type', 'title', 'date', 'status', 'owner', 'channel', 'audience', 'location', 'cost', 'link', 'next_step', 'notes', 'updated_by', 'updated_at', 'body', 'image', 'campaign', 'post_time'],
   seed: [{ id: 'mk-hiring-toolkit', type: 'magnet', title: 'Hiring Toolkit', status: 'Live', owner: 'ella', channel: 'LinkedIn website button',
     link: 'https://careers.live2helprecruitment.co.uk/hire/', notes: 'Vacancy cost, process score and offer rating. Leads land in CRM > Funnel leads.', updated_by: 'system' }],
 });
+
+/* ---------- build 51: Talent Suite LinkedIn campaign (posts and Open to Work outreach) ----------
+   Loaded once into the Marketing tab from scripts/talent-suite-campaign.json. A hidden marker row
+   stops it ever re-adding anything Dan or Ella later edit or delete. */
+const MK_SEED_MARKER = '__seed-ts-linkedin-v1';
+async function seedTalentSuiteCampaign() {
+  try {
+    const all = await marketingTable.listAll();
+    if (all.some(o => o.id === MK_SEED_MARKER)) return;
+    const c = require('./scripts/talent-suite-campaign.json');
+    const linkFor = it => it.type === 'outreach' ? c.link_outreach : (it.channel === 'Ella' ? c.link_ella : c.link_company);
+    const have = new Set(all.map(o => o.id));
+    let n = 0;
+    for (const it of c.items) {
+      if (have.has(it.id)) continue;
+      const body = String(it.body || '').split('{link}').join(linkFor(it));
+      await marketingTable.upsert({ campaign: c.campaign, ...it, body, link: it.link || '', updated_by: 'system', updated_at: new Date().toISOString() });
+      n++;
+    }
+    await marketingTable.upsert({ id: MK_SEED_MARKER, type: 'system', title: 'Talent Suite LinkedIn campaign loaded', updated_by: 'system', updated_at: new Date().toISOString() });
+    console.log(`Marketing: Talent Suite LinkedIn campaign loaded (${n} items)`);
+  } catch (e) { console.error('Talent Suite campaign seed:', e.message); }
+}
+setTimeout(seedTalentSuiteCampaign, 20000);
 
 /* ======================================================================
    LIVE 2 HELP TALENT SUITE - CAREER TOOLKIT (candidate side)

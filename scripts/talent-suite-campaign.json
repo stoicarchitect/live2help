@@ -1,0 +1,218 @@
+{
+  "campaign": "Talent Suite launch - Open to Work",
+  "link_company": "https://careers.live2helprecruitment.co.uk/talent-suite/career/?src=li-company",
+  "link_ella": "https://careers.live2helprecruitment.co.uk/talent-suite/career/?src=li-ella",
+  "link_outreach": "https://careers.live2helprecruitment.co.uk/talent-suite/career/?src=li-outreach",
+  "items": [
+    {
+      "id": "ts-lnk-magnet",
+      "type": "magnet",
+      "title": "Career Toolkit (Talent Suite)",
+      "status": "Live",
+      "owner": "ella",
+      "channel": "LinkedIn - company page, Ella's profile and Open to Work outreach",
+      "link": "https://careers.live2helprecruitment.co.uk/talent-suite/career/",
+      "notes": "Free Career Toolkit for job seekers: CV Health Check, Job Match Score, Tailored CV Rewrite, Interview Prep Pack and the free screening-safe CV checklist.\n\nGoal: grow the talent pool with people who are actively looking, and let the paid recruiter services sell themselves once people see the value. No prices in any LinkedIn content.\n\nTracking: every link in this campaign carries a source tag (li-company, li-ella, li-outreach) so sign-ups show by channel on this row and in CRM > Talent Suite users.\n\nBoost plan: run the posts organically for 2 weeks. Pick the 1 or 2 posts with the best engagement rate (reactions + comments + clicks divided by impressions), then boost the winner with a small daily budget for 7 days, objective Website visits, audience UK job seekers in our sectors. Compare cost per sign-up against organic before spending more.",
+      "campaign": "Talent Suite launch - Open to Work"
+    },
+
+    {
+      "id": "ts-lnk-post-c01", "type": "post", "channel": "Company page", "owner": "ella", "status": "Drafted",
+      "date": "2026-11-05", "post_time": "08:00", "image": "assets/linkedin/ts-launch.png",
+      "title": "Launch: most CVs are rejected before a person reads them",
+      "next_step": "Open your free Career Toolkit",
+      "body": "Most CVs are rejected before a person ever reads them.\n\nNot because the candidate is wrong for the job. Because the CV never made it past the screening software, or it didn't show the evidence the hiring manager was scanning for.\n\nWe see it every week from the other side of the desk. So we built something about it.\n\nThe Live 2 Help Career Toolkit is now open, and it's free to use:\n\n✔ CV Health Check - an honest score and the fixes that matter most\n✔ Job Match Score - see which requirements you evidence and which you're missing\n✔ Tailored CV Rewrite - a screening-safe rewrite aimed at the job you want\n✔ Interview Prep Pack - likely questions with answer plans built on your real experience\n\nBuilt by recruiters who screen and place candidates every week, so you see your CV the way employers do.\n\nIf you're job hunting right now, or you know someone who is, this is for you.\n\n👉 {link}\n\n#OpenToWork #JobSearch #CVTips #UKJobs #CareerAdvice"
+    },
+    {
+      "id": "ts-lnk-post-c02", "type": "post", "channel": "Company page", "owner": "ella", "status": "Drafted",
+      "date": "2026-11-12", "post_time": "08:00", "image": "assets/linkedin/ts-screening.png",
+      "title": "How screening software reads your CV",
+      "next_step": "Run a free CV Health Check",
+      "body": "Your CV has about 6 seconds with a person. But first it has to get past a machine.\n\nHere's what screening software struggles with:\n\n▪ Tables, columns and text boxes that scramble when the file is read\n▪ Job titles that don't match the words in the advert\n▪ Skills buried in paragraphs instead of shown with evidence\n▪ Headers and footers holding your contact details\n▪ Creative layouts that look great to you and blank to the system\n\nNone of that says anything about how good you are at the job. It just stops you getting the chance to prove it.\n\nOur free CV Health Check scores your CV the way screening software and hiring managers see it, then tells you exactly what to fix first.\n\nTwo minutes. No cost. Honest answers.\n\n👉 {link}\n\n#JobSearch #CV #OpenToWork #Recruitment #UKJobs"
+    },
+    {
+      "id": "ts-lnk-post-c03", "type": "post", "channel": "Company page", "owner": "ella", "status": "Drafted",
+      "date": "2026-11-19", "post_time": "17:00", "image": "assets/linkedin/ts-match.png",
+      "title": "Stop applying blind - Job Match Score",
+      "next_step": "Score your match before you apply",
+      "body": "Applying for 50 jobs and hearing nothing back?\n\nIt's rarely a numbers problem. It's usually a match problem.\n\nBefore you hit apply on the next one, check three things:\n\n1. Does your CV show evidence of the top 3 requirements in the advert?\n2. Does your most recent job title make sense next to the role you're applying for?\n3. Would a hiring manager know in one glance why you fit?\n\nOur free Job Match Score does this for you. Paste the advert, add your CV, and it shows which requirements you evidence, which you're missing, and whether it's worth applying at all.\n\nFewer applications. Better ones. More replies.\n\n👉 {link}\n\n#JobHunting #OpenToWork #CareerAdvice #UKJobs #Hiring"
+    },
+    {
+      "id": "ts-lnk-post-c04", "type": "post", "channel": "Company page", "owner": "ella", "status": "Drafted",
+      "date": "2026-11-26", "post_time": "08:00", "image": "assets/linkedin/ts-interview.png",
+      "title": "Interview Prep Pack - walk in prepared",
+      "next_step": "Get your free Interview Prep Pack",
+      "body": "Got an interview coming up?\n\nMost people prepare by reading the company website and hoping for the best. The candidates who get offers prepare for the questions they'll actually be asked.\n\nOur free Interview Prep Pack takes the job advert and your CV and gives you:\n\n▪ The questions you're most likely to face for that role\n▪ Answer plans built on your own experience, not generic scripts\n▪ Smart questions to ask them at the end\n\nIt's the same preparation we give the candidates we place, now open to everyone.\n\n👉 {link}\n\nGood luck. You've got this.\n\n#InterviewTips #JobSearch #OpenToWork #CareerAdvice #UKJobs"
+    },
+    {
+      "id": "ts-lnk-post-c05", "type": "post", "channel": "Company page", "owner": "ella", "status": "Drafted",
+      "date": "2026-12-03", "post_time": "17:00", "image": "assets/linkedin/ts-opentowork.png",
+      "title": "To everyone with the Open to Work banner",
+      "next_step": "Open your free Career Toolkit",
+      "body": "To everyone with the green Open to Work banner on their profile right now.\n\nJob hunting is hard work. Silence after applications. Feedback that never comes. Adverts that ask for everything.\n\nYou don't need another motivational quote. You need to know what's stopping your CV getting through.\n\nThat's why our Career Toolkit is free:\n\n▪ See your CV the way employers do\n▪ Fix what's getting you filtered out\n▪ Target the roles you're a real match for\n▪ Walk into interviews prepared\n\nAnd when you sign up, you can join our talent pool, so when a role comes in that fits you, we already know who you are.\n\n👉 {link}\n\nPlease share this with anyone in your network who's looking. One repost might be the reason someone gets their next interview.\n\n#OpenToWork #JobSearch #UKJobs #Hiring #Recruitment"
+    },
+    {
+      "id": "ts-lnk-post-c06", "type": "post", "channel": "Company page", "owner": "ella", "status": "Drafted",
+      "date": "2026-12-10", "post_time": "08:00", "image": "assets/linkedin/ts-checklist.png",
+      "title": "Free screening-safe CV checklist",
+      "next_step": "Use the free checklist",
+      "body": "A quick checklist before you send your CV anywhere:\n\n☐ Saved as a Word file or simple PDF\n☐ No tables, text boxes or columns\n☐ Contact details in the main body, not the header\n☐ Job titles that make sense to an outsider\n☐ A short profile aimed at the role you want\n☐ Achievements with numbers, not just duties\n☐ Skills from the advert shown with evidence\n☐ 2 pages, clean font, consistent dates\n\nWe've put the full screening-safe checklist inside our Career Toolkit. It needs no credits, it's just there to use.\n\nSave this post for your next application 📌\n\n👉 {link}\n\n#CVTips #JobSearch #OpenToWork #CareerAdvice"
+    },
+    {
+      "id": "ts-lnk-post-c07", "type": "post", "channel": "Company page", "owner": "ella", "status": "Drafted",
+      "date": "2026-12-17", "post_time": "17:00", "image": "assets/linkedin/ts-launch.png",
+      "title": "What a recruiter checks in the first 30 seconds",
+      "next_step": "Check your CV for free",
+      "body": "What does a recruiter look at in the first 30 seconds of your CV?\n\nFrom our side of the desk, it's usually this:\n\n1. Your current or last job title and company\n2. How long you've stayed in your recent roles\n3. Your location and whether the commute works\n4. One or two achievements that prove you can do the job\n5. Whether the CV is easy to read on a phone\n\nIf any of those are hard to find, the CV often doesn't get the full read it deserves.\n\nOur free Career Toolkit checks your CV against what recruiters and screening software look for, then tells you what to fix first.\n\n👉 {link}\n\n#Recruitment #JobSearch #CV #OpenToWork #UKJobs"
+    },
+    {
+      "id": "ts-lnk-post-c08", "type": "post", "channel": "Company page", "owner": "ella", "status": "Drafted",
+      "date": "2027-01-05", "post_time": "08:00", "image": "assets/linkedin/ts-newyear.png",
+      "title": "New year, new role - start with your CV",
+      "next_step": "Start the year with a CV that works",
+      "body": "January is the busiest month of the year for job searching.\n\nIf a new role is on your list for 2027, start with the one document every hiring manager will judge you on first.\n\nIn 10 minutes our free Career Toolkit will:\n\n▪ Score your CV honestly\n▪ Show you how well you match the jobs you want\n▪ Rewrite it to a screening-safe standard, aimed at the role\n▪ Prepare you for the interview when it comes\n\nBuilt by recruiters. Free to use. Credits refresh every month.\n\n👉 {link}\n\n#NewYearNewJob #JobSearch #OpenToWork #CareerGoals #UKJobs"
+    },
+
+    {
+      "id": "ts-lnk-post-e01", "type": "post", "channel": "Ella", "owner": "ella", "status": "Drafted",
+      "date": "2026-11-10", "post_time": "08:00", "image": "assets/linkedin/ts-launch.png",
+      "title": "Ella: I read a lot of CVs every week",
+      "next_step": "Try the toolkit and tell me what you think",
+      "body": "I read a lot of CVs every week.\n\nAnd the thing that frustrates me most? Brilliant people getting overlooked because their CV doesn't show what they can actually do.\n\nWrong job titles. Duties instead of results. Layouts the screening software can't read. Skills hidden in the third paragraph.\n\nSo at Live 2 Help we've opened up the tools we use behind the scenes. Our Career Toolkit is free for anyone job hunting:\n\n✔ CV Health Check\n✔ Job Match Score\n✔ Tailored CV Rewrite\n✔ Interview Prep Pack\n\nIf you're looking for your next role, give it a go and let me know what you think. And if you'd like a recruiter's view on your results, message me.\n\n👉 {link}\n\n#OpenToWork #JobSearch #Recruitment #CVTips"
+    },
+    {
+      "id": "ts-lnk-post-e02", "type": "post", "channel": "Ella", "owner": "ella", "status": "Drafted",
+      "date": "2026-11-17", "post_time": "17:00", "image": "",
+      "title": "Ella poll: hardest part of job hunting",
+      "next_step": "Add as a LinkedIn poll, then comment the toolkit link",
+      "body": "Job seekers, I'd love your honest answer 👇\n\nWhat's the hardest part of looking for a new role right now?\n\nI'll share what helps with each one in the comments, including a free tool we've built for exactly this.\n\n#OpenToWork #JobSearch #UKJobs\n\n--- POLL SET-UP (add with the Poll option, not in the text) ---\nQuestion: What's the hardest part of job hunting right now?\nOption 1: Hearing nothing back\nOption 2: Knowing if my CV is good\nOption 3: Finding the right roles\nOption 4: Interviews\nDuration: 1 week\n\nFIRST COMMENT (post straight after):\nWhichever you picked, our free Career Toolkit covers it - CV Health Check, Job Match Score, CV Rewrite and Interview Prep. {link}"
+    },
+    {
+      "id": "ts-lnk-post-e03", "type": "post", "channel": "Ella", "owner": "ella", "status": "Drafted",
+      "date": "2026-11-24", "post_time": "08:00", "image": "assets/linkedin/ts-checklist.png",
+      "title": "Ella: 3 fixes I make on almost every CV",
+      "next_step": "Check your CV for free",
+      "body": "3 fixes I suggest on almost every CV I see:\n\n1️⃣ Swap duties for results.\n\"Responsible for the warehouse\" tells me nothing. \"Ran a 40 person warehouse and cut picking errors by 30%\" tells me everything.\n\n2️⃣ Match the job title to the job you want.\nIf your internal title is unusual, add what it means in plain English. The screening software won't guess.\n\n3️⃣ Move your best evidence to the top.\nYour strongest achievement shouldn't be on page 2.\n\nWant to see what your CV needs? Our free CV Health Check gives you an honest score and the fixes that matter most.\n\n👉 {link}\n\n#CVTips #JobSearch #OpenToWork #CareerAdvice"
+    },
+    {
+      "id": "ts-lnk-post-e04", "type": "post", "channel": "Ella", "owner": "ella", "status": "Drafted",
+      "date": "2026-12-01", "post_time": "17:00", "image": "assets/linkedin/ts-opentowork.png",
+      "title": "Ella: Open to Work? What I'd do this week",
+      "next_step": "Start with the free toolkit",
+      "body": "If you've turned on Open to Work, here's what I'd do this week:\n\n▪ Update your LinkedIn headline to the role you want, not just the one you had\n▪ Ask 2 former managers for a short recommendation\n▪ Check your CV against 3 adverts you'd genuinely love\n▪ Fix the gaps before applying anywhere else\n▪ Tell recruiters in your sector what you're looking for (hello 👋)\n\nFor step 3, our free Job Match Score does the heavy lifting. Paste the advert, add your CV, and see exactly where you stand.\n\n👉 {link}\n\nAnd if you work in engineering, technical, sales, operations, supply chain or office roles, connect with me. We're always speaking to people for new roles.\n\n#OpenToWork #JobSearch #UKJobs #Recruitment"
+    },
+    {
+      "id": "ts-lnk-post-e05", "type": "post", "channel": "Ella", "owner": "ella", "status": "Drafted",
+      "date": "2026-12-08", "post_time": "08:00", "image": "assets/linkedin/ts-interview.png",
+      "title": "Ella: the interview question people get wrong",
+      "next_step": "Get your free Interview Prep Pack",
+      "body": "\"Tell me about yourself.\"\n\nIt's the first question in almost every interview, and it's the one people prepare for least.\n\nWhat hiring managers actually want is a 60 second answer to: why are you right for this role?\n\nTry this shape:\n▪ Where you are now and what you do best\n▪ One achievement that proves it\n▪ Why this role is the logical next step\n\nOur free Interview Prep Pack builds answer plans like this from your own CV and the job advert, plus the other questions you're likely to face.\n\n👉 {link}\n\n#InterviewTips #JobSearch #OpenToWork #CareerAdvice"
+    },
+    {
+      "id": "ts-lnk-post-e06", "type": "post", "channel": "Ella", "owner": "ella", "status": "Drafted",
+      "date": "2026-12-15", "post_time": "17:00", "image": "assets/linkedin/ts-match.png",
+      "title": "Ella: quality over quantity",
+      "next_step": "Score your match before applying",
+      "body": "\"100 applications and 2 replies.\"\n\nI hear versions of this from job seekers all the time, and it's rarely about ability. It's that the same CV goes to every job.\n\nTen applications that clearly match will beat a hundred that don't.\n\nBefore you apply, check:\n✔ Do I evidence the top requirements?\n✔ Is my CV aimed at this role, or at every role?\n✔ Would someone see why I fit in 10 seconds?\n\nOur free Job Match Score answers all three for any advert you paste in.\n\n👉 {link}\n\n#JobSearch #OpenToWork #UKJobs #CareerAdvice"
+    },
+    {
+      "id": "ts-lnk-post-e07", "type": "post", "channel": "Ella", "owner": "ella", "status": "Drafted",
+      "date": "2027-01-07", "post_time": "08:00", "image": "assets/linkedin/ts-newyear.png",
+      "title": "Ella: looking for a new role in 2027?",
+      "next_step": "Comment or message me",
+      "body": "Looking for a new role in 2027? 👋\n\nI'm a recruiter at Live 2 Help and we work with employers across engineering, technical, sales, operations, supply chain, office and finance roles across the UK.\n\nTwo things I'd love you to do:\n\n1. Run your CV through our free Career Toolkit, so it's ready the moment the right role comes up\n2. Join our talent pool when you sign up, so we can match you as roles come in\n\n👉 {link}\n\nComment \"CV\" below and I'll make sure you've got the link, or drop me a message about what you're looking for.\n\n#OpenToWork #NewJob #JobSearch #UKJobs #Hiring"
+    },
+
+    {
+      "id": "ts-lnk-out-guide", "type": "outreach", "status": "Live", "owner": "ella", "audience": "All sectors", "channel": "How to",
+      "title": "How to run the Open to Work outreach",
+      "body": "WHO TO FIND\n▪ People with the green Open to Work frame or #OpenToWork in their headline\n▪ In our sectors: engineering and technical, CAD, sales and business development, operations and logistics, purchasing and supply chain, accountancy, finance and office, IT, construction, industrial and manufacturing, driving, health and social care, catering and hospitality, corporate and HR\n▪ UK based\n\nHOW TO SEARCH\n▪ People search: job title + \"open to work\" (for example: \"maintenance engineer\" \"open to work\"), filter Locations to the UK region\n▪ Posts search: #OpenToWork + job title, sort by Latest - people posting are the most active\n▪ Sales Navigator or Premium: save searches by sector so new people appear each day\n\nDAILY RHYTHM\n▪ 20 to 25 connection requests a day (LinkedIn limits weekly invites, so stay well under)\n▪ Send the connection note for their sector, then the first message once they accept\n▪ One polite follow-up after 5 days, then stop\n▪ Log anyone promising in the Candidate Pool\n\nRULES\n▪ Always use their first name and change one line so it's personal\n▪ No prices in messages. The toolkit sells the expert services on its own\n▪ Use the outreach link (it tags sign-ups as li-outreach so we can see what works)"
+    },
+    {
+      "id": "ts-lnk-out-conn", "type": "outreach", "status": "Live", "owner": "ella", "audience": "All sectors", "channel": "Connection note",
+      "title": "Connection request note (general)",
+      "body": "Hi [First name], I saw you're open to new roles. I'm a recruiter at Live 2 Help, working with UK employers in your field. Happy to connect and share anything relevant as it comes up."
+    },
+    {
+      "id": "ts-lnk-out-first", "type": "outreach", "status": "Live", "owner": "ella", "audience": "All sectors", "channel": "First message",
+      "title": "First message after they accept (general)",
+      "body": "Thanks for connecting, [First name].\n\nWhile you're looking, this might help. We've opened up the CV tools we use behind the scenes as a free Career Toolkit:\n\n▪ CV Health Check - an honest score and the top fixes\n▪ Job Match Score - how well you match a specific advert\n▪ Tailored CV Rewrite - screening-safe and aimed at the role\n▪ Interview Prep Pack - likely questions with answer plans\n\n{link}\n\nIf you sign up you can also join our talent pool, so I can match you when the right role comes in. What kind of role are you hoping for next?"
+    },
+    {
+      "id": "ts-lnk-out-follow", "type": "outreach", "status": "Live", "owner": "ella", "audience": "All sectors", "channel": "Follow-up",
+      "title": "Follow-up after 5 days (no reply)",
+      "body": "Hi [First name], just a quick one in case my last message got buried. If a CV check or interview prep would help with your search, the toolkit is free to use: {link}\n\nEither way, good luck with the search. I'm here if you want a recruiter's view on anything."
+    },
+    {
+      "id": "ts-lnk-out-signed", "type": "outreach", "status": "Live", "owner": "ella", "audience": "All sectors", "channel": "After sign-up",
+      "title": "After they've used the toolkit",
+      "body": "Hi [First name], I noticed you've been using the Career Toolkit, great to see.\n\nHow did your results look? If anything in there was unclear, or you'd like a recruiter to go through it with you and give the human view on your CV and next steps, we offer a one to one call for exactly that. The details are on the toolkit page under Expert services.\n\nAnd tell me the kind of role you're after, I'll keep you in mind as roles come in."
+    },
+    {
+      "id": "ts-lnk-out-reply", "type": "outreach", "status": "Live", "owner": "ella", "audience": "All sectors", "channel": "Reply",
+      "title": "Reply when they tell you what role they want",
+      "body": "Thanks [First name], that's really helpful. I'll add you to our talent pool for [role type] roles around [location].\n\nTo get you ready, I'd run your CV through the Job Match Score against an advert you'd love to land, it'll show exactly where you stand: {link}\n\nI'll be in touch as soon as something fits."
+    },
+
+    {
+      "id": "ts-lnk-out-s-eng", "type": "outreach", "status": "Live", "owner": "ella", "audience": "Engineering and technical", "channel": "Sector message",
+      "title": "Engineering, technical and CAD",
+      "body": "Connection note:\nHi [First name], I saw you're open to new roles. I recruit engineering and technical people for UK manufacturers and would be glad to connect.\n\nFirst message:\nThanks for connecting, [First name]. Engineering CVs are often packed with skills but light on proof, and that's what screening software and hiring managers filter on. Our free Career Toolkit scores your CV, shows how you match a specific advert and rewrites it to a screening-safe standard: {link}\n\nWhat kind of engineering role are you after next?"
+    },
+    {
+      "id": "ts-lnk-out-s-sales", "type": "outreach", "status": "Live", "owner": "ella", "audience": "Sales and business development", "channel": "Sector message",
+      "title": "Sales and business development",
+      "body": "Connection note:\nHi [First name], I saw you're open to new roles. I recruit sales and business development people for UK employers and would be glad to connect.\n\nFirst message:\nThanks for connecting, [First name]. In sales, hiring managers want numbers fast: targets, growth, accounts won. If those aren't on page one, great salespeople get missed. Our free Career Toolkit shows you how your CV reads to employers and how well you match an advert: {link}\n\nWhat sector or product would you most like to sell next?"
+    },
+    {
+      "id": "ts-lnk-out-s-ops", "type": "outreach", "status": "Live", "owner": "ella", "audience": "Operations and logistics", "channel": "Sector message",
+      "title": "Operations and logistics",
+      "body": "Connection note:\nHi [First name], I saw you're open to new roles. I recruit operations and logistics people across the UK and would be glad to connect.\n\nFirst message:\nThanks for connecting, [First name]. Operations CVs often list responsibilities, but what gets interviews is results: headcount, KPIs, cost or error reductions. Our free Career Toolkit scores your CV and shows how you match a specific role: {link}\n\nAre you looking for a similar role or a step up?"
+    },
+    {
+      "id": "ts-lnk-out-s-supply", "type": "outreach", "status": "Live", "owner": "ella", "audience": "Purchasing and supply chain", "channel": "Sector message",
+      "title": "Purchasing and supply chain",
+      "body": "Connection note:\nHi [First name], I saw you're open to new roles. I recruit buyers and supply chain people for UK manufacturers and would be glad to connect.\n\nFirst message:\nThanks for connecting, [First name]. For buying and supply chain roles, hiring managers look for negotiation wins, savings and supplier results with real numbers. Our free Career Toolkit checks whether your CV shows that, and how you match an advert: {link}\n\nWhat kind of buying or supply chain role are you after?"
+    },
+    {
+      "id": "ts-lnk-out-s-finance", "type": "outreach", "status": "Live", "owner": "ella", "audience": "Accountancy, finance and office", "channel": "Sector message",
+      "title": "Accountancy, finance and office",
+      "body": "Connection note:\nHi [First name], I saw you're open to new roles. I recruit finance, admin and office professionals across the UK and would be glad to connect.\n\nFirst message:\nThanks for connecting, [First name]. Finance and office roles get a lot of applicants, so a clear, screening-safe CV makes a real difference. Our free Career Toolkit gives you an honest CV score and shows how you match a specific advert: {link}\n\nWhat kind of role are you looking for next?"
+    },
+    {
+      "id": "ts-lnk-out-s-it", "type": "outreach", "status": "Live", "owner": "ella", "audience": "IT and technology", "channel": "Sector message",
+      "title": "IT and technology",
+      "body": "Connection note:\nHi [First name], I saw you're open to new roles. I recruit IT and technology people for UK employers and would be glad to connect.\n\nFirst message:\nThanks for connecting, [First name]. Tech CVs often turn into a list of tools. Hiring managers want to see what you built, fixed or improved with them. Our free Career Toolkit scores your CV and shows how you match a specific advert: {link}\n\nWhat kind of tech role are you aiming for?"
+    },
+    {
+      "id": "ts-lnk-out-s-construction", "type": "outreach", "status": "Live", "owner": "ella", "audience": "Construction", "channel": "Sector message",
+      "title": "Construction",
+      "body": "Connection note:\nHi [First name], I saw you're open to new roles. I recruit construction professionals across the UK and would be glad to connect.\n\nFirst message:\nThanks for connecting, [First name]. In construction, employers look for project values, the type of work and your tickets and qualifications up front. Our free Career Toolkit checks your CV and shows how you match a specific role: {link}\n\nWhat kind of projects would you like to work on next?"
+    },
+    {
+      "id": "ts-lnk-out-s-industrial", "type": "outreach", "status": "Live", "owner": "ella", "audience": "Industrial and manufacturing", "channel": "Sector message",
+      "title": "Industrial and manufacturing",
+      "body": "Connection note:\nHi [First name], I saw you're open to new roles. I recruit for UK manufacturing and industrial employers and would be glad to connect.\n\nFirst message:\nThanks for connecting, [First name]. Manufacturing employers want to see machines, processes, quality and safety on your CV in plain words. Our free Career Toolkit gives your CV an honest score and helps you aim it at the right roles: {link}\n\nWhat kind of role are you looking for?"
+    },
+    {
+      "id": "ts-lnk-out-s-driving", "type": "outreach", "status": "Live", "owner": "ella", "audience": "Driving", "channel": "Sector message",
+      "title": "Driving",
+      "body": "Connection note:\nHi [First name], I saw you're open to new roles. I recruit drivers for UK employers and would be glad to connect.\n\nFirst message:\nThanks for connecting, [First name]. For driving roles, employers look for your licence categories, CPC, tachograph experience and a clean record straight away. Our free Career Toolkit makes sure your CV shows it clearly: {link}\n\nWhat kind of driving work are you after?"
+    },
+    {
+      "id": "ts-lnk-out-s-health", "type": "outreach", "status": "Live", "owner": "ella", "audience": "Health and social care", "channel": "Sector message",
+      "title": "Health and social care",
+      "body": "Connection note:\nHi [First name], I saw you're open to new roles. I recruit health and social care professionals across the UK and would be glad to connect.\n\nFirst message:\nThanks for connecting, [First name]. Care employers want to see your qualifications, settings you've worked in and the difference you make. Our free Career Toolkit checks your CV and helps you prepare for interviews: {link}\n\nWhat kind of setting would you like to work in next?"
+    },
+    {
+      "id": "ts-lnk-out-s-hosp", "type": "outreach", "status": "Live", "owner": "ella", "audience": "Catering and hospitality", "channel": "Sector message",
+      "title": "Catering and hospitality",
+      "body": "Connection note:\nHi [First name], I saw you're open to new roles. I recruit catering and hospitality people across the UK and would be glad to connect.\n\nFirst message:\nThanks for connecting, [First name]. Hospitality employers want covers, team sizes, standards and results on your CV, not just duties. Our free Career Toolkit gives your CV an honest score and the fixes that matter: {link}\n\nWhat kind of role are you looking for next?"
+    },
+    {
+      "id": "ts-lnk-out-s-corp", "type": "outreach", "status": "Live", "owner": "ella", "audience": "Corporate and HR", "channel": "Sector message",
+      "title": "Corporate, HR and commercial",
+      "body": "Connection note:\nHi [First name], I saw you're open to new roles. I recruit corporate, HR and commercial professionals across the UK and would be glad to connect.\n\nFirst message:\nThanks for connecting, [First name]. Corporate roles attract big applicant numbers, so the CVs that win show clear impact early. Our free Career Toolkit scores your CV and shows how you match a specific advert: {link}\n\nWhat kind of role are you aiming for next?"
+    }
+  ]
+}

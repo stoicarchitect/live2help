@@ -16937,7 +16937,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '30 Oct 2026 - build 49.9';
+var PAGE_BUILD = '3 Nov 2026 - build 51.0';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -18224,7 +18224,13 @@ function buildTagApply(){
     post: {api: '/api/marketing', type:'post', title: 'LinkedIn post', fields: [
       {k:'date', l:'Post date', type:'date'}, {k:'title', l:'Hook or topic', req:1}, {k:'channel', l:'Where', opts:['Company page','Dan','Ella']},
       {k:'owner', l:'Owner', opts:['dan','ella']}, {k:'status', l:'Status', opts:['Idea','Drafted','Scheduled','Posted']},
-      {k:'next_step', l:'Call to action'}, {k:'link', l:'Link to post or draft'}, {k:'notes', l:'Draft or notes', type:'area'}], after: mktLoad},
+      {k:'post_time', l:'Post time', opts:['','08:00','10:00','12:00','17:00']}, {k:'next_step', l:'Call to action'}, {k:'image', l:'Image (file path)'},
+      {k:'body', l:'Post text (copied to LinkedIn)', type:'area', rows:14}, {k:'link', l:'Link to the live post'}, {k:'notes', l:'Notes', type:'area'}], after: mktLoad},
+    outreach: {api: '/api/marketing', type:'outreach', title: 'LinkedIn message', fields: [
+      {k:'title', l:'Name', req:1}, {k:'channel', l:'Message type', opts:['Connection note','First message','Follow-up','After sign-up','Reply','Sector message','InMail','How to']},
+      {k:'audience', l:'Sector', opts:['All sectors','Engineering and technical','Sales and business development','Operations and logistics','Purchasing and supply chain','Accountancy, finance and office','IT and technology','Construction','Industrial and manufacturing','Driving','Health and social care','Catering and hospitality','Corporate and HR']},
+      {k:'status', l:'Status', opts:['Live','Draft','Retired']}, {k:'owner', l:'Owner', opts:['ella','dan']},
+      {k:'body', l:'Message (use [First name] and edit one line to make it personal)', type:'area', rows:14}, {k:'notes', l:'Notes', type:'area'}], after: mktLoad},
     brevo: {api: '/api/marketing', type:'brevo', title: 'Brevo workflow', fields: [
       {k:'title', l:'Workflow name', req:1}, {k:'audience', l:'Audience'}, {k:'status', l:'Status', opts:['Planning','Building','Live','Paused']},
       {k:'owner', l:'Owner', opts:['dan','ella']}, {k:'next_step', l:'Next step'}, {k:'link', l:'Brevo link'}, {k:'notes', l:'Emails in the sequence', type:'area'}], after: mktLoad},
@@ -18242,7 +18248,7 @@ function buildTagApply(){
     const v = k => row ? (row[k] || '') : (k === 'owner' ? me41().key : (k === 'status' ? (c.fields.find(f => f.k === 'status') || {opts:['']}).opts[0] : ''));
     $('rec41Body').innerHTML = `<div class="p41-ph"><h3>${row ? 'Edit' : 'New'} ${h(c.title.toLowerCase())}</h3><button class="p41-btn sm" data-rec41="close">Close</button></div>
       <form class="p41-form" id="rec41Form">${c.fields.map(f => `<label>${h(f.l)}${f.opts ? `<select class="p41-in" name="${f.k}">${f.opts.map(o => `<option value="${h(o)}"${v(f.k) === o ? ' selected' : ''}>${h(f.k === 'owner' ? who41(o) : o)}</option>`).join('')}</select>`
-        : f.type === 'area' ? `<textarea class="p41-in" rows="4" name="${f.k}">${h(v(f.k))}</textarea>` : `<input class="p41-in" name="${f.k}" type="${f.type || 'text'}" value="${h(v(f.k))}"${f.req ? ' required' : ''}>`}</label>`).join('')}
+        : f.type === 'area' ? `<textarea class="p41-in" rows="${f.rows || 4}" name="${f.k}">${h(v(f.k))}</textarea>` : `<input class="p41-in" name="${f.k}" type="${f.type || 'text'}" value="${h(v(f.k))}"${f.req ? ' required' : ''}>`}</label>`).join('')}
       <div class="p41-bar"><button class="p41-btn pri" type="submit">Save</button>${row ? '<button class="p41-btn" type="button" data-rec41="del" style="color:var(--danger)">Delete</button>' : ''}</div></form>`;
     $('rec41').classList.add('open');
     $('rec41Form').onsubmit = async e => { e.preventDefault(); const body = Object.assign({}, REC.row || {}, {id: (REC.row && REC.row.id) || ('rec-' + Date.now().toString(36)), updated_by: me41().key, updated_at: new Date().toISOString()});
@@ -18252,7 +18258,7 @@ function buildTagApply(){
   document.addEventListener('click', async e => {
     const t = e.target.closest('[data-rec41],[data-rec-new],[data-rec-edit]'); if(!t) return;
     if(t.dataset.recNew){ recOpen(t.dataset.recNew); return; }
-    if(t.dataset.recEdit){ const [kind, id] = t.dataset.recEdit.split('|'); const list = kind === 'road' ? ROAD.rows : MKT.rows; recOpen(kind, list.find(r => r.id === id)); return; }
+    if(t.dataset.recEdit){ if(e.target.closest('[data-mkx]')) return; const [kind, id] = t.dataset.recEdit.split('|'); const list = kind === 'road' ? ROAD.rows : MKT.rows; recOpen(kind, list.find(r => r.id === id)); return; }
     if(t.dataset.rec41 === 'close'){ $('rec41').classList.remove('open'); return; }
     if(t.dataset.rec41 === 'del' && REC.row){ const c = REC_CFG[REC.cfg]; try{ await b2Del(c.api, REC.row.id); $('rec41').classList.remove('open'); toast41('Deleted'); c.after(); }catch(err){ toast41(err.message); } }
   });
@@ -18316,32 +18322,96 @@ function buildTagApply(){
   });
 
   /* ---------- Marketing ---------- */
-  const MKT = { tab: 'post', rows: [], funnel: 0 };
-  const MKT_TABS = [['post','LinkedIn posts'],['brevo','Brevo workflows'],['magnet','Lead magnets'],['event','Events']];
+  /* build 51: LinkedIn outreach tab, copy and post-to-LinkedIn buttons, post images, campaign filter */
+  const MKT = { tab: 'post', rows: [], funnel: 0, tsLinkedIn: 0, tsTotal: 0, q: '', sector: '', where: '' };
+  const MKT_TABS = [['post','LinkedIn posts'],['outreach','LinkedIn outreach'],['brevo','Brevo workflows'],['magnet','Lead magnets'],['event','Events']];
   async function mktLoad(){
     try{
       MKT.rows = b2List(await api41('/api/marketing'));
       MKT.funnel = b2List(await api41('/api/funnel-leads').catch(() => ({data:[]}))).length;
+      const ts = b2List(await api41('/api/talent-suite-users').catch(() => ({data:[]})));
+      MKT.tsTotal = ts.length; MKT.tsLinkedIn = ts.filter(u => /^li-/i.test(String(u.source || ''))).length;
+      MKT.tsBy = ts.reduce((m, u) => { const k = String(u.source || ''); if(/^li-/i.test(k)) m[k] = (m[k] || 0) + 1; return m; }, {});
     }catch(e){ $('mk41Body').innerHTML = `<div class="p41-panel"><div class="p41-err">${h(e.message)}</div></div>`; return; }
     mktRender();
   }
+  const mkText = r => String(r.body || r.notes || '');
+  // a sector message holds a connection note and a first message; split them so each copies on its own
+  function mkParts(r){
+    const t = mkText(r); const m = t.match(/^Connection note:\s*([\s\S]*?)\n\s*\nFirst message:\s*([\s\S]*)$/);
+    return m ? [['Copy note', m[1].trim()], ['Copy message', m[2].trim()]] : [['Copy', t.trim()]];
+  }
+  async function mkCopy(text){
+    try{ await navigator.clipboard.writeText(text); return true; }
+    catch(e){ const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select();
+      let ok = false; try{ ok = document.execCommand('copy'); }catch(_){ } ta.remove(); return ok; }
+  }
+  const mkImg = r => r.image ? '/' + String(r.image).replace(/^\/+/, '') : '';
+  function mkCss(){
+    if(document.getElementById('mk51css')) return;
+    const st = document.createElement('style'); st.id = 'mk51css';
+    st.textContent = `.mk51-acts{display:flex;gap:6px;flex-wrap:wrap}.mk51-acts .p41-btn{white-space:nowrap}
+      .mk51-li{background:#0A66C2;border-color:#0A66C2;color:#fff}.mk51-th{width:44px;height:55px;object-fit:cover;border:1px solid var(--border);display:block}
+      .mk51-prev{white-space:pre-wrap;font-size:12.5px;line-height:1.45;color:var(--grey);max-height:3.1em;overflow:hidden;margin-top:3px}
+      .mk51-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 10px}.mk51-bar .p41-in{max-width:260px}
+      .mk51-tip{font-size:12.5px;color:var(--grey);background:var(--gold-soft,#F4EAD3);border-left:3px solid var(--gold);padding:8px 12px;margin:0 0 10px;line-height:1.45}`;
+    document.head.appendChild(st);
+  }
   function mktRender(){
+    mkCss();
     $('mk41Tabs').innerHTML = MKT_TABS.map(([k, l]) => `<button class="p41-chip" data-mkt="${k}" aria-pressed="${MKT.tab === k}">${l} · ${MKT.rows.filter(r => r.type === k).length}</button>`).join('');
     $('mk41Add').innerHTML = `<button class="gold-btn" data-rec-new="${MKT.tab}">+ Add ${REC_CFG[MKT.tab].title.toLowerCase()}</button>`;
-    const rows = MKT.rows.filter(r => r.type === MKT.tab).sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')));
+    let rows = MKT.rows.filter(r => r.type === MKT.tab);
+    if(MKT.tab === 'outreach'){
+      const order = ['How to','Connection note','First message','Follow-up','After sign-up','Reply','InMail','Sector message'];
+      rows.sort((a, b) => (order.indexOf(a.channel) - order.indexOf(b.channel)) || String(a.audience).localeCompare(String(b.audience)) || String(a.title).localeCompare(String(b.title)));
+      if(MKT.sector) rows = rows.filter(r => r.audience === MKT.sector || r.audience === 'All sectors');
+    } else rows.sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')));
+    if(MKT.tab === 'post' && MKT.where) rows = rows.filter(r => r.channel === MKT.where);
+    if(MKT.q){ const q = MKT.q.toLowerCase(); rows = rows.filter(r => (r.title + ' ' + mkText(r) + ' ' + (r.audience || '')).toLowerCase().includes(q)); }
     const pill = s => `<span class="p41-pill ${['Posted','Live','Attended'].includes(s) ? 'ok' : ['Scheduled','Booked','Building','Drafted'].includes(s) ? 'gold' : ['Paused','Skipped','Retired'].includes(s) ? 'bad' : ''}">${h(s || 'Idea')}</span>`;
-    const link = r => r.link ? `<a href="${h(r.link)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Open</a>` : '';
-    const heads = {post:['Date','Post','Where','Status','Call to action',''], brevo:['Workflow','Audience','Status','Next step','Owner',''], magnet:['Lead magnet','Promoted','Status','Leads','Owner',''], event:['Date','Event','Location','Cost','Status','']}[MKT.tab];
+    const link = r => r.link ? `<a href="${h(r.link)}" target="_blank" rel="noopener" data-mkx="1">Open</a>` : '';
+    const prev = r => mkText(r) ? `<div class="mk51-prev">${h(mkText(r).slice(0, 160))}</div>` : '';
+    const postActs = r => `<div class="mk51-acts" data-mkx="1">${mkText(r) ? `<button class="p41-btn sm" data-mkcopy="${h(r.id)}|0">Copy</button><button class="p41-btn sm mk51-li" data-mkli="${h(r.id)}">Post on LinkedIn</button>` : ''}${r.image ? `<a class="p41-btn sm" href="${h(mkImg(r))}" download>Image</a>` : ''}${r.status !== 'Posted' ? `<button class="p41-btn sm" data-mkposted="${h(r.id)}">Mark posted</button>` : link(r)}</div>`;
+    const outActs = r => `<div class="mk51-acts" data-mkx="1">${mkParts(r).map(([l], i) => `<button class="p41-btn sm" data-mkcopy="${h(r.id)}|${i}">${l}</button>`).join('')}</div>`;
+    const lic = k => (MKT.tsBy && MKT.tsBy[k]) || 0;
+    const heads = {post:['Date','Image','Post','Where','Status','Actions'], outreach:['Type','Message','Sector','Actions'], brevo:['Workflow','Audience','Status','Next step','Owner',''], magnet:['Lead magnet','Promoted','Status','Leads','Owner',''], event:['Date','Event','Location','Cost','Status','']}[MKT.tab];
     const cells = r => ({
-      post: [r.date ? fmt41(r.date, true) : 'No date', `<b>${h(r.title)}</b>`, h(r.channel), pill(r.status), h(r.next_step), link(r)],
+      post: [r.date ? fmt41(r.date, true) + (r.post_time ? ' · ' + h(r.post_time) : '') : 'No date', r.image ? `<img class="mk51-th" src="${h(mkImg(r))}" alt="" loading="lazy">` : '', `<b>${h(r.title)}</b>${prev(r)}`, h(r.channel), pill(r.status), postActs(r)],
+      outreach: [h(r.channel), `<b>${h(r.title)}</b>${prev(r)}`, h(r.audience), outActs(r)],
       brevo: [`<b>${h(r.title)}</b>`, h(r.audience), pill(r.status), h(r.next_step), h(who41(r.owner)), link(r)],
-      magnet: [`<b>${h(r.title)}</b>`, h(r.channel), pill(r.status), /toolkit/i.test(r.title) ? `${MKT.funnel} <a onclick="event.stopPropagation();switchTab('funnelLeads')" style="cursor:pointer;color:var(--gold)">view</a>` : '', h(who41(r.owner)), link(r)],
+      magnet: [`<b>${h(r.title)}</b>`, h(r.channel), pill(r.status),
+        /hiring toolkit/i.test(r.title) ? `${MKT.funnel} <a data-mkx="1" onclick="switchTab('funnelLeads')" style="cursor:pointer;color:var(--gold)">view</a>`
+        : /career toolkit/i.test(r.title) ? `${MKT.tsTotal} sign-ups<br><span style="font-size:12px;color:var(--grey)">LinkedIn ${MKT.tsLinkedIn}: company ${lic('li-company')}, Ella ${lic('li-ella')}, outreach ${lic('li-outreach')}</span>` : '',
+        h(who41(r.owner)), link(r)],
       event: [r.date ? fmt41(r.date, true) : 'No date', `<b>${h(r.title)}</b>`, h(r.location), h(r.cost), pill(r.status), link(r)],
     })[MKT.tab];
-    $('mk41Body').innerHTML = rows.length ? `<div class="p41-tw"><table><thead><tr>${heads.map(x => `<th>${x}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr class="click" data-rec-edit="${MKT.tab}|${h(r.id)}">${cells(r).map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
-      : `<div class="p41-panel"><div class="p41-empty">Nothing here yet. Use the add button to start.</div></div>`;
+    const sectors = REC_CFG.outreach.fields.find(f => f.k === 'audience').opts.filter(x => x !== 'All sectors');
+    const bar = MKT.tab === 'post' ? `<div class="mk51-tip">Post on LinkedIn copies the text and opens LinkedIn with it filled in. Add the image (use the Image button to download it) before posting. For the company page, choose to post as Live 2 Help in the LinkedIn box. Candidate posts go out Tuesdays and Thursdays at 8am or 5pm.</div>
+        <div class="mk51-bar"><select class="p41-in" id="mk51Where"><option value="">All pages</option>${['Company page','Ella','Dan'].map(w => `<option${MKT.where === w ? ' selected' : ''}>${w}</option>`).join('')}</select><input class="p41-in" id="mk51Q" placeholder="Search posts" value="${h(MKT.q)}"></div>`
+      : MKT.tab === 'outreach' ? `<div class="mk51-tip">Pick the sector, copy the connection note, then the first message once they accept. Swap [First name] and change one line so it reads personally. Keep to 20 to 25 requests a day. No prices in messages.</div>
+        <div class="mk51-bar"><select class="p41-in" id="mk51Sector"><option value="">All sectors</option>${sectors.map(x => `<option${MKT.sector === x ? ' selected' : ''}>${h(x)}</option>`).join('')}</select><input class="p41-in" id="mk51Q" placeholder="Search messages" value="${h(MKT.q)}"></div>` : '';
+    $('mk41Body').innerHTML = bar + (rows.length ? `<div class="p41-tw"><table><thead><tr>${heads.map(x => `<th>${x}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr class="click" data-rec-edit="${MKT.tab}|${h(r.id)}">${cells(r).map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
+      : `<div class="p41-panel"><div class="p41-empty">Nothing here yet. Use the add button to start.</div></div>`);
+    const q = $('mk51Q'); if(q) q.oninput = () => { MKT.q = q.value; const pos = q.selectionStart; mktRender(); const n = $('mk51Q'); if(n){ n.focus(); n.setSelectionRange(pos, pos); } };
+    const sel = $('mk51Sector'); if(sel) sel.onchange = () => { MKT.sector = sel.value; mktRender(); };
+    const wh = $('mk51Where'); if(wh) wh.onchange = () => { MKT.where = wh.value; mktRender(); };
   }
-  document.addEventListener('click', e => { const t = e.target.closest('[data-mkt]'); if(t){ MKT.tab = t.dataset.mkt; mktRender(); } });
+  document.addEventListener('click', async e => {
+    const t = e.target.closest('[data-mkt],[data-mkcopy],[data-mkli],[data-mkposted]'); if(!t) return;
+    if(t.dataset.mkt){ MKT.tab = t.dataset.mkt; MKT.q = ''; mktRender(); return; }
+    e.stopPropagation();
+    if(t.dataset.mkcopy){ const [id, i] = t.dataset.mkcopy.split('|'); const r = MKT.rows.find(x => x.id === id); if(!r) return;
+      const part = mkParts(r)[Number(i) || 0]; toast41(await mkCopy(part[1]) ? 'Copied - paste it into LinkedIn' : 'Could not copy, open the item and copy the text'); return; }
+    if(t.dataset.mkli){ const r = MKT.rows.find(x => x.id === t.dataset.mkli); if(!r) return;
+      const text = mkText(r); await mkCopy(text);
+      window.open('https://www.linkedin.com/feed/?shareActive=true&text=' + encodeURIComponent(text), '_blank', 'noopener');
+      toast41(r.channel === 'Company page' ? 'Text copied and LinkedIn opened. Post as Live 2 Help and add the image.' : 'Text copied and LinkedIn opened. Add the image, then post.'); return; }
+    if(t.dataset.mkposted){ const r = MKT.rows.find(x => x.id === t.dataset.mkposted); if(!r) return;
+      const url = prompt('Marked as posted. Paste the link to the live post if you have it (optional):', r.link || '');
+      if(url === null) return;
+      try{ await post41('/api/marketing', {...r, status: 'Posted', link: url.trim() || r.link || '', date: r.date || todayISO41(), updated_by: me41().key, updated_at: new Date().toISOString()}); toast41('Marked as posted'); mktLoad(); }catch(err){ toast41(err.message); } }
+  });
 
   // land on the new layout straight after sign in (the splash buttons still work)
   if(typeof signedInUser !== 'undefined' && signedInUser){ renderRail(); }
