@@ -7819,6 +7819,17 @@ const DEFAULT_TEMPLATES = [
     "body": "Hi {{contact_first_name}},\n\nThank you for your time on the phone today.\n\nAs promised, here is a short summary of how we work:\n- A screened shortlist, usually within 5 to 7 working days\n- Every candidate checked against your brief before you see them\n- You only pay if you hire\n\n[ADD ANYTHING SPECIFIC YOU DISCUSSED]\n\nIf you send over the job description, I will get started straight away.\n\n{{signature}}",
     "updated_by": "system"
   },
+  /* Build 52: after a call or meeting where the lead asks for our rates. Links come from the dashboard
+     ({{prospectus_link}}, {{pricing_link}}); {{call_point_line}} asks for one line on the call when a call
+     is logged in the last 14 days, and {{role_line}} names the role when one is picked. */
+  {
+    "id": "tpl-lead-rates-prospectus",
+    "name": "Rates and prospectus after a call",
+    "category": "Lead",
+    "subject": "Our rates and prospectus - {{company}}",
+    "body": "Hi {{contact_first_name}},\n\nThank you for taking the time to speak with us.{{call_point_line}}\n\nAs promised, here are our prospectus and pricing brochure:\n\nProspectus: {{prospectus_link}}\nPricing: {{pricing_link}}\n\nThe prospectus shows how we work and the sectors we cover, and the pricing brochure sets out our fees clearly so there are no surprises later.{{role_line}}\n\nTake a look when convenient. If you are happy with everything, just reply to this email and Daniel will send over our onboarding pack so we can get started straight away.\n\n{{signature}}",
+    "updated_by": "system"
+  },
   {
     "id": "tpl-lead-spec",
     "name": "Spec candidate introduction",
@@ -7881,7 +7892,7 @@ let tplMigrated = false;
 async function migrateTemplates() {
   if (tplMigrated) return;
   const all = await templatesTable.listAll();
-  if (all.some(t => t.id === '__templates_v6')) { tplMigrated = true; return; }
+  if (all.some(t => t.id === '__templates_v7')) { tplMigrated = true; return; }
   for (const d of DEFAULT_TEMPLATES) {
     const ex = all.find(t => t.id === d.id);
     if (!ex || ex.updated_by === 'system') await templatesTable.upsert(d);
@@ -7890,7 +7901,7 @@ async function migrateTemplates() {
     const ex = all.find(t => t.id === oldId);
     if (ex && ex.updated_by === 'system') await templatesTable.remove(oldId);
   }
-  await templatesTable.upsert({ id: '__templates_v6', name: 'migration marker', category: '', subject: '', body: '', updated_by: 'system' });
+  await templatesTable.upsert({ id: '__templates_v7', name: 'migration marker', category: '', subject: '', body: '', updated_by: 'system' });
   tplMigrated = true;
 }
 

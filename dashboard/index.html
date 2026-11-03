@@ -8218,7 +8218,7 @@ function openFeedbackModal(id, preset){
    Email templates (round 2): merge fields, pickers, Outlook
    ============================================================ */
 
-const TPL_FIELDS = ['first_name','candidate_name','role','company','company_address','contact_name','contact_first_name','interviewer','salary','start_date','interview_date','interview_time','interview_location','interview_format','invoice_ref','fee_amount','signature'];
+const TPL_FIELDS = ['first_name','candidate_name','role','company','company_address','contact_name','contact_first_name','interviewer','salary','start_date','interview_date','interview_time','interview_location','interview_format','invoice_ref','fee_amount','prospectus_link','pricing_link','call_point_line','role_line','signature'];
 
 function senderProfile(){
   const u = signedInUser || {};
@@ -19465,18 +19465,35 @@ function c47AfterLog(){
 const C47_CAT = {lead:'Lead', client:'Client', candidate:'Candidate'};
 // Which templates show first for each kind of contact
 const C47_ORDER = {
-  lead: ['tpl-lead-live-advert', 'tpl-lead-intro', 'tpl-lead-after-call', 'tpl-lead-chase', 'tpl-lead-spec', 'tpl-lead-talent-suite'],
-  client: ['tpl-client-new-role', 'tpl-client-follow-up', 'tpl-client-feedback-chase', 'tpl-client-placement', 'tpl-client-rejection', 'tpl-client-invoice-chase'],
+  lead: ['tpl-lead-live-advert', 'tpl-lead-intro', 'tpl-lead-after-call', 'tpl-lead-rates-prospectus', 'tpl-lead-chase', 'tpl-lead-spec', 'tpl-lead-talent-suite'],
+  client: ['tpl-client-new-role', 'tpl-lead-rates-prospectus', 'tpl-client-follow-up', 'tpl-client-feedback-chase', 'tpl-client-placement', 'tpl-client-rejection', 'tpl-client-invoice-chase'],
   candidate: ['tpl-candidate-availability', 'tpl-interview-confirmation', 'tpl-offer-cover', 'tpl-information-request', 'tpl-references-request', 'tpl-start-reminder', 'tpl-day-one', 'tpl-week-one', 'tpl-month-one', 'tpl-candidate-rejection'],
 };
 // Templates that only make sense when the dashboard builds them with attachments elsewhere
 const C47_SKIP = ['tpl-client-submission'];
+// Build 52: templates that also show for another kind of contact
+const C47_ALSO = {client: ['tpl-lead-rates-prospectus']};
+// Build 52: rates and prospectus email - the links it sends and its 3 working day follow-up
+const C47_RATES_TPL = 'tpl-lead-rates-prospectus';
+const L2H_DOC_LINKS = {
+  prospectus: 'https://drive.google.com/file/d/1fCvWaKYjE_HZDK8-6l2hmWfT0smsUsMg/view',
+  pricing: 'https://careers.live2helprecruitment.co.uk/docs/live2help-pricing-2026.pdf',
+};
+function c47WorkingDays(n){ const d = new Date(); let left = n; while(left > 0){ d.setDate(d.getDate() + 1); if(d.getDay() !== 0 && d.getDay() !== 6) left--; } return d.toISOString().slice(0, 10); }
+// The newest call logged with this company in the last 14 days (shown on the review screen for the rates email)
+function c47RecentCall(ctx){
+  const co = c47n(ctx.company); if(!co) return null;
+  const cutoff = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);
+  const hit = c47History(ctx).find(i => i.ch === 'call' && String(i.d).slice(0, 10) >= cutoff && i.x && !/^call attempt/i.test(i.x));
+  return hit || null;
+}
 
 function c47Templates(type){
   const cat = c47n(C47_CAT[type] || 'General');
   const all = (B2.templates || []).filter(t => t && t.id && t.id.indexOf('__') !== 0 && !C47_SKIP.includes(t.id));
-  const mine = all.filter(t => c47n(t.category) === cat);
-  const general = all.filter(t => c47n(t.category) === 'general' || !t.category);
+  const also = C47_ALSO[type] || [];
+  const mine = all.filter(t => c47n(t.category) === cat || also.includes(t.id));
+  const general = all.filter(t => (c47n(t.category) === 'general' || !t.category) && !also.includes(t.id));
   const order = C47_ORDER[type] || [];
   mine.sort((a, b) => { const ia = order.indexOf(a.id), ib = order.indexOf(b.id); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || String(a.name).localeCompare(String(b.name)); });
   return {mine, general};
@@ -19520,6 +19537,8 @@ function c47EmailDefaults(m){
 function c47EmailRender(err){
   const m = C47.mail; if(!m) return;
   const ctx = m.ctx, t = ctx.type || 'lead';
+  // Build 52: the rates email books its own 3 working day follow-up (Dan can still change or untick it)
+  if(m.tpl === C47_RATES_TPL && !m.ratesSet){ m.ratesSet = true; if(!m.fu) m.fu = c47WorkingDays(3); m.task = true; }
   const box = b46Shell('c47MailOv');
   const tp = c47Templates(t);
   const opt = x => '<option value="' + c47Attr(x.id) + '"' + (m.tpl === x.id ? ' selected' : '') + '>' + esc(x.name) + '</option>';
@@ -19559,7 +19578,7 @@ function c47EmailRender(err){
   const typeSel = document.getElementById('c47mType');
   if(typeSel) typeSel.onchange = () => { c47EmailCollect(); m.ctx.type = typeSel.value; m.tpl = undefined; c47EmailRender(); };
   const tplSel = document.getElementById('c47mTpl');
-  if(tplSel) tplSel.addEventListener('change', () => { m.tplUser = true; });
+  if(tplSel) tplSel.addEventListener('change', () => { m.tplUser = true; c47EmailCollect(); if(m.tpl === C47_RATES_TPL) c47EmailRender(); });
 }
 
 function c47EmailCollect(){
@@ -19632,6 +19651,13 @@ function c47Vars(ctx, m){
       if(!v.role) v.role = a.role || '';
     }
   }
+  // Build 52: rates and prospectus email
+  v.prospectus_link = L2H_DOC_LINKS.prospectus;
+  v.pricing_link = L2H_DOC_LINKS.pricing;
+  if(ctx.type !== 'candidate'){
+    if(c47RecentCall(ctx)) v.call_point_line = ' [ONE LINE ON WHAT YOU DISCUSSED]';
+    if(m.role) v.role_line = ' We already have your ' + m.role + ' role in mind and can start sourcing as soon as onboarding is complete.';
+  }
   return v;
 }
 
@@ -19656,6 +19682,11 @@ function c47Compose(ctx, m){
   const warn = c47WarnText(ctx.email, m.emailStatus);
   if(warn) notes.push('<strong>' + esc(warn) + '</strong>');
   if(missing.length) notes.push('Fill in the highlighted [BRACKETS] before sending: ' + esc([...new Set(missing)].join(', ')));
+  if(tpl && tpl.id === C47_RATES_TPL){
+    const rc = c47RecentCall(ctx);
+    if(rc) notes.push('Your call note (' + esc(c47Fmt(rc.d)) + '): ' + esc(rc.x));
+    if(fu) notes.push('Follow-up booked for ' + esc(c47Fmt(fu)) + (task ? ', with a task to send the Gentle follow-up (no reply) email if they have not come back.' : '.'));
+  }
   return {
     to: ctx.email, subject, body, kind,
     meta: {entityType: ctx.type === 'candidate' ? 'candidate' : 'client', contactName: ctx.name || ctx.company, entity: ctx.type === 'candidate' ? ctx.name : '', company: ctx.company || vars.company || '', role, purpose, followUp: fu, ref: rfxId, c47type: ctx.type},
@@ -19663,11 +19694,25 @@ function c47Compose(ctx, m){
     onSent: async (j) => {
       if(j && j.comm) B2.comms.push(j.comm);
       await c47AfterEmailHooks(snapshot, rfxId, purpose + ': ' + (MAIL.d && MAIL.d.subject || subject), fu);
-      if(task) await c47Task(snapshot, purpose, purpose + ': ' + subject, fu);
+      if(task) await c47Task(snapshot, purpose, purpose + ': ' + subject + (tpl && tpl.id === C47_RATES_TPL ? '. No reply yet? Send the Gentle follow-up (no reply) email.' : ''), fu);
+      if(tpl && tpl.id === C47_RATES_TPL) await c47RatesSent(snapshot);
       logActivity('contact_logged', {candidate: snapshot.type === 'candidate' ? snapshot.name : '', role, company: snapshot.company, detail: 'email'});
       c47AfterLog();
     },
   };
+}
+
+// Build 52: a lead who asked for our rates is at least Interested on the Lead Pipeline (never moved back, never to Terms)
+async function c47RatesSent(ctx){
+  if(ctx.type !== 'lead' || !ctx.company) return;
+  const cur = (C47.pipe || []).find(l => c47n(l.company) === c47n(ctx.company));
+  const stage = cur ? cur.stage : 'identified';
+  if(!['identified', 'contacted'].includes(stage)) return;
+  try{
+    const j = await b2Post('/api/lead-pipeline', {company: ctx.company, stage: 'interested'});
+    if(cur) cur.stage = 'interested';
+    if(j && j.ok) showToast(ctx.company + ' moved to Interested on the Lead Pipeline');
+  }catch(e){ /* a stage gate (for example no named contact) leaves the stage as it is */ }
 }
 
 // After an email to a lead: adverts found through Role Finder move on (with a follow-up in the Cold Call Tracker); other leads get a tracker entry
