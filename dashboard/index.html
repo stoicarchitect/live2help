@@ -8246,6 +8246,7 @@ function renderTplPane(){
         <button class="ghost-btn" onclick="tplDuplicate()">Duplicate</button>
         <button class="ghost-btn" style="color:var(--danger);border-color:var(--danger);" onclick="tplDelete()">Delete</button>
       </div>
+      ${/prospectus_link|pricing_link/.test(t.body) ? '<div id="pdocBox" style="margin-top:22px;"></div>' : ''}
       <div class="section-title" style="margin-top:26px;">Fill in and send</div>
       <label>Candidate</label>
       <select id="tplCand" onchange="tplPickCandidate()"><option value="">Choose a candidate...</option>
@@ -9800,6 +9801,7 @@ renderTplPane = function(){
         <button class="ghost-btn" onclick="tplDuplicate()">Duplicate</button>
         <button class="ghost-btn" style="color:var(--danger);border-color:var(--danger);" onclick="tplDelete()">Delete</button>
       </div>
+      ${/prospectus_link|pricing_link/.test(t.body) ? '<div id="pdocBox" style="margin-top:22px;"></div>' : ''}
       <div class="section-title" style="margin-top:26px;">Fill in and send</div>
       <label>Candidate</label>
       <select id="tplCand" onchange="tplPickCandidate()"><option value="">Choose a candidate...</option>
@@ -19476,9 +19478,40 @@ const C47_ALSO = {client: ['tpl-lead-rates-prospectus']};
 // Build 52: rates and prospectus email - the links it sends and its 3 working day follow-up
 const C47_RATES_TPL = 'tpl-lead-rates-prospectus';
 const L2H_DOC_LINKS = {
-  prospectus: 'https://drive.google.com/file/d/1fCvWaKYjE_HZDK8-6l2hmWfT0smsUsMg/view',
+  prospectus: 'https://careers.live2helprecruitment.co.uk/prospectus/',
   pricing: 'https://careers.live2helprecruitment.co.uk/docs/live2help-pricing-2026.pdf',
 };
+/* Build 52.1: the documents linked from emails, hosted by the workspace. Dan replaces the prospectus on the Email templates page. */
+{ const _tplPane = renderTplPane; renderTplPane = function(){ _tplPane.apply(this, arguments); if(document.getElementById('pdocBox')) pdocRender(); }; }
+async function pdocRender(msg){
+  const box = document.getElementById('pdocBox'); if(!box) return;
+  let docs = [];
+  try{ docs = b2List(await b2Api('/api/public-docs')); }catch(e){ box.innerHTML = '<div class="b46-err">Could not load the linked documents: ' + esc(e.message) + '</div>'; return; }
+  const admin = !!(signedInUser && signedInUser.admin);
+  const row = (name, link, info, act) => '<div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--border);border-radius:6px;margin-top:8px;background:var(--white);">' +
+    '<div><strong>' + esc(name) + '</strong><div style="font-size:12px;color:#777;margin-top:2px;">' + info + '</div></div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;">' + (link ? '<a class="ghost-btn" href="' + esc(link) + '" target="_blank" rel="noopener">Open</a>' : '') + (act || '') + '</div></div>';
+  box.innerHTML = '<div class="section-title">Documents linked in this email</div>' +
+    docs.map(d => row(d.name, d.missing ? '' : (L2H_DOC_LINKS[d.key] || d.url),
+      d.missing ? '<span style="color:var(--danger);">Not uploaded yet - the link will not work until it is</span>' : esc(d.filename) + ' · ' + Math.round(d.size / 1024) + ' KB · updated ' + esc(c47Fmt(d.updated_at)) + (d.updated_by ? ' by ' + esc(userLabel(d.updated_by)) : ''),
+      admin ? '<label class="ghost-btn" style="cursor:pointer;margin:0;">' + (d.missing ? 'Upload PDF' : 'Replace PDF') + '<input type="file" accept="application/pdf,.pdf" style="display:none;" onchange="pdocUpload(\'' + esc(d.key) + '\', this)"></label>' : '')).join('') +
+    row('Recruitment Pricing 2026', L2H_DOC_LINKS.pricing, 'Built from the onboarding pricing document, so it always matches what clients sign') +
+    '<div style="font-size:12px;color:#777;margin-top:8px;">Clients open these on careers.live2helprecruitment.co.uk. Replacing a PDF keeps the same link, so emails already sent open the new version.</div>' +
+    (msg ? '<div style="margin-top:8px;font-size:13px;">' + esc(msg) + '</div>' : '');
+}
+async function pdocUpload(key, input){
+  const f = input.files && input.files[0]; if(!f) return;
+  if(!/\.pdf$/i.test(f.name)){ pdocRender('Only PDF files can be used.'); return; }
+  if(f.size > 12 * 1024 * 1024){ pdocRender('That file is over 12 MB.'); return; }
+  pdocRender('Uploading ' + f.name + '...');
+  try{
+    const base64 = await new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = () => bad(new Error('Could not read the file')); r.readAsDataURL(f); });
+    await b2Post('/api/public-docs/' + encodeURIComponent(key), {filename: f.name, base64});
+    showToast('Uploaded - the link now opens the new version');
+    pdocRender();
+  }catch(e){ pdocRender('Upload failed: ' + e.message); }
+}
+
 function c47WorkingDays(n){ const d = new Date(); let left = n; while(left > 0){ d.setDate(d.getDate() + 1); if(d.getDay() !== 0 && d.getDay() !== 6) left--; } return d.toISOString().slice(0, 10); }
 // The newest call logged with this company in the last 14 days (shown on the review screen for the rates email)
 function c47RecentCall(ctx){

@@ -13480,6 +13480,114 @@ function tpPage(inner) {
 <style>body{margin:0;font-family:'Gill Sans MT','Gill Sans',Calibri,sans-serif;background:#F7F6F3;color:#1A1A1A}.top{background:#0B1226;border-bottom:3px solid #C9A84C;padding:22px;text-align:center;color:#C9A84C;letter-spacing:.14em;font-weight:bold}.card{max-width:520px;margin:30px auto;background:#fff;border:1px solid #DDD;border-radius:10px;padding:28px 24px}h1{font-size:22px;margin:0 0 10px}p{color:#444;line-height:1.55}button{display:block;width:100%;padding:14px;margin-top:12px;border-radius:6px;font-size:16px;font-weight:bold;cursor:pointer;border:1px solid #0B1226}.keep{background:#0B1226;color:#fff}.remove{background:#fff;color:#0B1226}.msg{margin-top:16px;font-weight:bold}</style></head><body><div class="top">LIVE 2 HELP RECRUITMENT</div><div class="card">${inner}</div></body></html>`;
 }
 
+/* ======================================================================
+   Build 52.1: client documents hosted by the workspace (the prospectus first)
+
+   - The PDF is uploaded in the workspace (Email templates page) or imported once from Drive,
+     and kept in Postgres (live database only, so a preview can never replace what clients see).
+   - Clients open it at /docs/<key> on this server; careers.live2helprecruitment.co.uk/prospectus/
+     forwards there so the link in emails stays on our own domain.
+   ====================================================================== */
+const PUBLIC_DOCS = {
+  prospectus: { name: 'Live 2 Help Recruitment Prospectus', file: 'Live 2 Help Recruitment Prospectus.pdf' },
+};
+const PUBLIC_DOC_MAX = 12 * 1024 * 1024;
+const publicDocCache = new Map();
+let publicDocsReady = null;
+function publicDocsPool() {
+  if (!pgLivePool) throw new Error('The database is not connected, so documents cannot be stored yet.');
+  if (!publicDocsReady) publicDocsReady = pgLivePool.query(`create table if not exists public_docs (
+      key text primary key, filename text not null, mime text not null default 'application/pdf',
+      size integer not null default 0, data bytea not null, updated_at timestamptz not null default now(), updated_by text not null default '')`)
+    .catch(e => { publicDocsReady = null; throw e; });
+  return publicDocsReady.then(() => pgLivePool);
+}
+async function publicDocSave(key, buf, filename, actor) {
+  if (!PUBLIC_DOCS[key]) throw Object.assign(new Error('Unknown document'), { status: 404 });
+  if (isPreview()) throw Object.assign(new Error('Documents can only be replaced from the live workspace, not the preview.'), { status: 403 });
+  if (!buf || !buf.length) throw Object.assign(new Error('The file is empty'), { status: 400 });
+  if (buf.length > PUBLIC_DOC_MAX) throw Object.assign(new Error('The file is over 12 MB'), { status: 400 });
+  if (buf.slice(0, 5).toString('latin1') !== '%PDF-') throw Object.assign(new Error('Only PDF files can be used'), { status: 400 });
+  const pool = await publicDocsPool();
+  const name = String(filename || PUBLIC_DOCS[key].file).replace(/[\\/:*?"<>|\u0000-\u001F]+/g, ' ').trim().slice(0, 120) || PUBLIC_DOCS[key].file;
+  const r = await pool.query(`insert into public_docs (key, filename, mime, size, data, updated_at, updated_by) values ($1, $2, 'application/pdf', $3, $4, now(), $5)
+    on conflict (key) do update set filename = excluded.filename, size = excluded.size, data = excluded.data, updated_at = now(), updated_by = excluded.updated_by
+    returning key, filename, size, updated_at, updated_by`, [key, name, buf.length, buf, actor || '']);
+  publicDocCache.delete(key);
+  return r.rows[0];
+}
+const publicDocUrl = key => `${(process.env.PUBLIC_API_URL || 'https://l2h-api.onrender.com').replace(/\/+$/, '')}/docs/${key}`;
+
+app.get('/docs/:key', async (req, res) => {
+  const key = String(req.params.key || '').toLowerCase().replace(/\.pdf$/, '');
+  if (!PUBLIC_DOCS[key]) return res.status(404).send('Document not found');
+  try {
+    let d = publicDocCache.get(key);
+    if (!d || Date.now() - d.at > 10 * 60 * 1000) {
+      const pool = await publicDocsPool();
+      const row = (await pool.query('select filename, data, updated_at from public_docs where key = $1', [key])).rows[0];
+      if (!row) return res.status(404).send('This document is being updated. Please try again shortly or email office@live2helprecruitment.co.uk.');
+      d = { at: Date.now(), filename: row.filename, data: row.data, etag: '"' + crypto.createHash('sha1').update(row.data).digest('hex').slice(0, 16) + '"' };
+      publicDocCache.set(key, d);
+    }
+    if (req.get('if-none-match') === d.etag) return res.status(304).end();
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Length': d.data.length, ETag: d.etag, 'Cache-Control': 'public, max-age=300',
+      'Content-Disposition': `inline; filename="${d.filename.replace(/"/g, '')}"`, 'X-Robots-Tag': 'noindex' });
+    res.send(d.data);
+  } catch (e) {
+    console.error('GET /docs error:', e.message);
+    res.status(500).send('This document could not be opened just now. Please try again in a minute.');
+  }
+});
+
+app.get('/api/public-docs', async (req, res) => {
+  try {
+    const pool = await publicDocsPool();
+    const rows = (await pool.query('select key, filename, size, updated_at, updated_by from public_docs')).rows;
+    res.json({ data: Object.entries(PUBLIC_DOCS).map(([key, d]) => ({ key, name: d.name, url: publicDocUrl(key), ...(rows.find(r => r.key === key) || { missing: true }) })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/public-docs/:key', requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const buf = Buffer.from(String(b.base64 || '').replace(/^data:[^,]*,/, ''), 'base64');
+    const row = await publicDocSave(String(req.params.key), buf, b.filename, actorOf(req));
+    auditLog(auditActorOf(req), 'uploaded', 'document', PUBLIC_DOCS[req.params.key].name, `${row.filename} (${Math.round(row.size / 1024)} KB)`);
+    res.json({ ok: true, data: { ...row, url: publicDocUrl(row.key) } });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+
+// First start after build 52.1: bring the current prospectus (23 Oct 2026, with the Talent Suite pages)
+// across from Dan's Google Drive if nothing has been uploaded yet. Uploads in the workspace replace it.
+const PROSPECTUS_SEED_DRIVE_ID = process.env.PROSPECTUS_DRIVE_ID || '1fCvWaKYjE_HZDK8-6l2hmWfT0smsUsMg';
+setTimeout(async () => {
+  try {
+    if (!pgLivePool) return;
+    const pool = await publicDocsPool();
+    if ((await pool.query("select 1 from public_docs where key = 'prospectus'")).rows.length) return;
+    const drive = getUploadDriveClient();
+    const meta = await drive.files.get({ fileId: PROSPECTUS_SEED_DRIVE_ID, fields: 'name' });
+    const r = await drive.files.get({ fileId: PROSPECTUS_SEED_DRIVE_ID, alt: 'media' }, { responseType: 'arraybuffer' });
+    const row = await publicDocSave('prospectus', Buffer.from(r.data), meta.data.name, 'system');
+    console.log(`Prospectus imported from Google Drive (${row.size} bytes)`);
+  } catch (e) { console.error('Prospectus import from Drive failed:', friendlyDriveError(e)); }
+}, 15000);
+
+// One-off import of a file already in Dan's Google Drive
+app.post('/api/public-docs/:key/from-drive', requireAdmin, async (req, res) => {
+  try {
+    const fileId = String((req.body || {}).fileId || '').trim();
+    if (!/^[A-Za-z0-9_-]{10,}$/.test(fileId)) return res.status(400).json({ error: 'A Drive file id is required' });
+    const drive = getUploadDriveClient();
+    const meta = await drive.files.get({ fileId, fields: 'name,mimeType,size' });
+    const r = await drive.files.get({ fileId, alt: 'media' }, { responseType: 'arraybuffer' });
+    const row = await publicDocSave(String(req.params.key), Buffer.from(r.data), meta.data.name, actorOf(req));
+    auditLog(auditActorOf(req), 'uploaded', 'document', PUBLIC_DOCS[req.params.key].name, `${row.filename} from Google Drive`);
+    res.json({ ok: true, data: { ...row, url: publicDocUrl(row.key) } });
+  } catch (e) { res.status(e.status || 500).json({ error: friendlyDriveError(e) }); }
+});
+
 app.get('/t/:token', async (req, res) => {
   try {
     res.set('Cache-Control', 'no-store');
