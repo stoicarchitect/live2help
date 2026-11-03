@@ -185,6 +185,29 @@ textarea.in{min-height:84px;resize:vertical}
   /* ---------- home ---------- */
   function docOf(k){ return (S.data.documents || []).filter(function(d){ return d.key === k; })[0] || {}; }
   function isDone(d){ return d.sign ? d.status === 'signed' : d.status === 'viewed'; }
+  /* build 52.3: optional Talent Partnership. The client can raise their hand; the Schedule appears to sign once we set the plan. */
+  function partnerHtml(){
+    var p = S.data.partnership || {status: 'not_offered'};
+    var offered = ['offered', 'viewed', 'signed'].indexOf(p.status) >= 0 && docOf('partnership').key;
+    var h = '<div class="group-h">4. Talent Partnership (optional)</div>';
+    if(offered){
+      var x = docOf('partnership'), ok = x.status === 'signed';
+      return h + '<div class="tasks"><button class="task' + (ok ? ' done' : '') + '" data-go="partnership"><span class="ic">' + (ok ? ICON.done : ICON.sign) + '</span><span class="t"><b>' + esc(x.name) + '</b><span>' + (ok ? 'Signed ' + fmt(x.signed_at) : 'Your ' + esc(p.plan || '') + ' plan. Read and sign online.') + '</span></span><span class="chip ' + (ok ? 'ok' : 'go') + '">' + (ok ? 'Signed' : 'Sign') + '</span></button></div>';
+    }
+    var on = p.status === 'interested';
+    return h + '<div class="tasks"><label class="task" style="cursor:pointer;align-items:flex-start;"><span class="ic"><input type="checkbox" id="partnerTick"' + (on ? ' checked' : '') + ' style="width:20px;height:20px;margin:0;accent-color:#C9A84C;"></span><span class="t"><b>I am interested in the Talent Partnership</b><span>' +
+      (on ? 'Thank you. Daniel will be in touch to agree the right plan, and the Schedule will then appear here to sign.' : 'One fixed monthly fee covering a set number of hires, instead of a fee per placement. Tick to let us know and we will talk you through the plans. This does not commit you to anything.') +
+      '</span></span></label></div>';
+  }
+  document.addEventListener('change', function(e){
+    if(!e.target || e.target.id !== 'partnerTick') return;
+    var want = e.target.checked; e.target.disabled = true;
+    call('/partnership-interest', {method: 'POST', body: {interested: want}}).then(function(r){
+      S.data.partnership = S.data.partnership || {}; S.data.partnership.status = r.status;
+      toast(want ? 'Thank you. We will be in touch about the Talent Partnership.' : 'No problem, we have noted that.');
+      renderHome();
+    }).catch(function(err){ e.target.checked = !want; e.target.disabled = false; toast(err.message || 'Something went wrong. Please try again.'); });
+  });
   function renderHome(){
     S.view = 'home';
     var d = S.data, docs = d.documents || [];
@@ -210,6 +233,7 @@ textarea.in{min-height:84px;resize:vertical}
       '<div class="group-h">2. Tell us about your site</div><div class="tasks">' +
         card('form', ICON.form, 'Site and account form', formDone ? 'Submitted. You can still update it.' : (d.site_form.status === 'in_progress' ? 'Started. Pick up where you left off.' : 'Invoicing details, parking, reception and key contacts. About five minutes.'), formDone ? 'Done' : (d.site_form.status === 'in_progress' ? 'Continue' : 'Start'), formDone ? 'ok' : 'go', formDone) + '</div>' +
       '<div class="group-h">3. For your records</div><div class="tasks">' + readCard('welcome', 'A short note on how we will work with you.') + readCard('pricing', 'Our 2026 fees, at a glance.') + '</div>' +
+      partnerHtml() +
       footer();
     window.scrollTo(0, 0);
   }
@@ -273,7 +297,7 @@ textarea.in{min-height:84px;resize:vertical}
       var x = docOf(j.key); x.status = 'signed'; x.signed_at = r.signed_at;
       S.doc.signed = {signed_at: r.signed_at, signer_name: (S.data.signatory || {}).name};
       toast('Signed. Thank you.');
-      var next = ['terms', 'dsa'].filter(function(k){ return docOf(k).status !== 'signed'; })[0];
+      var next = ['terms', 'dsa', 'partnership'].filter(function(k){ return docOf(k).key && docOf(k).status !== 'signed'; })[0];
       renderDoc();
       if(next){ var b = document.createElement('div'); b.className = 'bar'; b.style.marginTop = '12px'; b.innerHTML = '<button class="btn gold" data-go="' + next + '">Next: ' + esc(docOf(next).name) + '</button><button class="btn" data-home="1">Back to your onboarding</button>'; app.insertBefore(b, app.querySelector('.foot')); }
       else { var b2 = document.createElement('div'); b2.className = 'bar'; b2.style.marginTop = '12px'; b2.innerHTML = '<button class="btn gold" data-home="1">Continue</button>'; app.insertBefore(b2, app.querySelector('.foot')); }

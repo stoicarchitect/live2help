@@ -817,7 +817,7 @@ const PUBLIC_API = [
   { method: 'POST', re: /^\/api\/public\/track\/[A-Za-z0-9_-]+$/ },
   // build 49.1: the client onboarding portal (a secure link, checked on every call)
   { method: 'GET', re: /^\/api\/portal\/[A-Za-z0-9_-]+(\/doc\/[a-z]+(\/pdf)?)?$/ },
-  { method: 'POST', re: /^\/api\/portal\/[A-Za-z0-9_-]+\/(sign\/[a-z]+|site-form)$/ },
+  { method: 'POST', re: /^\/api\/portal\/[A-Za-z0-9_-]+\/(sign\/[a-z]+|site-form|partnership-interest)$/ },
 ];
 let cronWarned = false;
 // The automation sends its secret in the x-cron-key header (the ?key= form still works)
@@ -5969,7 +5969,13 @@ const ONB_DOCS = {
   dsa: { file: 'dsa.md', sign: true, step: 'dsa', name: 'Data Sharing Agreement' },
   welcome: { file: 'welcome.md', sign: false, step: 'welcome', name: 'Welcome Letter' },
   pricing: { file: 'pricing.md', sign: false, step: 'pricing', name: 'Recruitment Pricing 2026' },
+  // build 52.3: optional, only for clients taking a Talent Partnership plan (shown once Dan sets the Plan Order)
+  partnership: { file: 'partnership.md', sign: true, step: 'partnership', name: 'Talent Partnership Schedule', optional: true },
 };
+const ONB_PLANS = ['Partner', 'Core', 'Growth', 'Scale', 'Enterprise'];
+const onbPartner = row => ((row && row.steps) || {}).partnership || {};
+// an optional document is part of this client's onboarding only once it has been offered
+const onbDocOn = (row, k) => !ONB_DOCS[k].optional || ['offered', 'viewed', 'signed'].includes(onbPartner(row).status);
 const ONB_DOC_RAW = {};
 for (const [k, d] of Object.entries(ONB_DOCS)) {
   try { ONB_DOC_RAW[k] = fs.readFileSync(path.join(__dirname, 'onboarding-docs', d.file), 'utf8'); }
@@ -6385,6 +6391,14 @@ async function onbVars(pool, row) {
     contact_first_name: String(wel.name || '').trim().split(/\s+/)[0] || '',
     consultant_name: cons.fullName, consultant_title: cons.title, consultant_email: cons.email, consultant_phone: cons.phone,
     date: onbDocs.ukDate(row.started_at || new Date().toISOString()),
+    ...(() => {
+      const pl = onbPartner(row).plan || {};
+      if (!pl.name) return {};
+      return { plan_name: pl.name, plan_start: pl.start ? onbDocs.ukDate(pl.start + 'T12:00:00Z') : '', plan_scope: pl.scope || '',
+        plan_billing: pl.billing === 'annual' ? 'Full Term in advance (5% discount)' : 'Monthly in advance',
+        plan_hiring_contact: pl.hiring_contact || '', plan_accounts_contact: pl.accounts_contact || '',
+        plan_enterprise: pl.name === 'Enterprise' ? (pl.enterprise || '') : 'Not applicable' };
+    })(),
   };
 }
 async function onbRenderDoc(pool, row, key) {
@@ -6442,9 +6456,10 @@ app.get('/api/portal/:token', async (req, res) => {
     res.json({
       company: row.company, status: row.status,
       signatory: { name: sig.name || '', title: sig.title || '' },
-      documents: Object.entries(ONB_DOCS).map(([k, d]) => {
+      partnership: { status: onbPartner(row).status || 'not_offered', plan: (onbPartner(row).plan || {}).name || '' },
+      documents: Object.entries(ONB_DOCS).filter(([k]) => onbDocOn(row, k)).map(([k, d]) => {
         const s = sigs.find(x => x.doc === k);
-        return { key: k, name: d.name, sign: d.sign, status: steps[d.step].status, signed_at: s ? s.signed_at : null, countersigned_at: s ? s.countersigned_at : null };
+        return { key: k, name: d.name, sign: d.sign, optional: !!d.optional, status: (steps[d.step] || {}).status || 'offered', signed_at: s ? s.signed_at : null, countersigned_at: s ? s.countersigned_at : null };
       }),
       site_form: { status: steps.site_form.status, answers: (sf && sf.answers) || {}, submitted_at: sf ? sf.submitted_at : null, sections: ONB_SITE_FORM },
       consent: ONB_CONSENT,
@@ -6453,17 +6468,73 @@ app.get('/api/portal/:token', async (req, res) => {
   } catch (e) { onbErr(res, 'GET portal', e); }
 });
 
+/* ---------- build 52.3: Talent Partnership in onboarding ----------
+   The client can tick "interested" in their portal (Dan is alerted), or Dan can include it directly.
+   Either way Dan sets the Plan Order, and only then does the Schedule appear for signing.
+   Conversion still only needs the Terms and the Data Sharing Agreement. */
+app.post('/api/portal/:token/partnership-interest', async (req, res) => {
+  try {
+    const got = await onbByToken(req, res); if (!got) return;
+    const { pool, row } = got;
+    const cur = onbPartner(row);
+    if (['offered', 'viewed', 'signed'].includes(cur.status)) return res.json({ ok: true, status: cur.status });
+    const interested = !!(req.body || {}).interested;
+    const now = new Date().toISOString();
+    await onbUpdate(pool, row.client_id, c => { c.steps.partnership = { ...(c.steps.partnership || {}), status: interested ? 'interested' : 'not_offered', at: now, by: 'client' }; return c; });
+    await onbEvent(pool, row.client_id, interested ? 'Interested in the Talent Partnership' : 'No longer interested in the Talent Partnership', req);
+    auditLog('client portal', 'updated', 'onboarding', row.company, interested ? 'Interested in the Talent Partnership' : 'Talent Partnership interest withdrawn');
+    if (interested && !isPreview()) {
+      mailDan(`${row.company} is interested in the Talent Partnership`,
+        `${row.company} ticked "interested in the Talent Partnership" in their onboarding portal.\n\nNext step: agree the plan with them, then open their onboarding in the workspace and set the Plan Order. The Schedule then appears in their portal to sign.`).catch(() => {});
+    }
+    res.json({ ok: true, status: interested ? 'interested' : 'not_offered' });
+  } catch (e) { onbErr(res, 'POST portal partnership interest', e); }
+});
+
+// Dan sets (or clears) the Plan Order. Setting it offers the Schedule in the client's portal.
+app.post('/api/onboarding/:clientId/partnership', requireAdmin, async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const b = req.body || {};
+    const pool = onbPool(); await onbEnsure(pool);
+    const row = (await pool.query('select * from onboarding where client_id = $1', [id])).rows[0];
+    if (!row) return res.status(404).json({ error: 'Onboarding has not been started for this client' });
+    const cur = onbPartner(row);
+    if (cur.status === 'signed') return res.status(409).json({ error: 'The Talent Partnership Schedule is already signed, so the Plan Order cannot change. Agree any change in writing.' });
+    const now = new Date().toISOString();
+    let next;
+    if (b.remove) {
+      next = { status: 'not_offered', at: now, by: actorOf(req) };
+    } else {
+      const plan = {
+        name: onbClean(b.name, 20), start: onbClean(b.start, 10), scope: onbClean(b.scope, 600), billing: b.billing === 'annual' ? 'annual' : 'monthly',
+        hiring_contact: onbClean(b.hiring_contact, 200), accounts_contact: onbClean(b.accounts_contact, 200), enterprise: onbClean(b.enterprise, 1200),
+      };
+      const need = [];
+      if (!ONB_PLANS.includes(plan.name)) need.push('a plan');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(plan.start)) need.push('a commencement date');
+      if (!plan.scope) need.push('the agreed scope');
+      if (plan.name === 'Enterprise' && !plan.enterprise) need.push('the Enterprise terms');
+      if (need.length) return res.status(400).json({ error: 'The Plan Order needs ' + need.join(', ') });
+      next = { status: 'offered', at: now, by: actorOf(req), plan, interest: cur.status === 'interested' ? 'client' : (cur.interest || 'dan') };
+    }
+    const updated = await onbUpdate(pool, id, c => { c.steps.partnership = next; return c; });
+    auditLog(auditActorOf(req), 'updated', 'onboarding', row.company, b.remove ? 'Talent Partnership Schedule withdrawn' : `Talent Partnership Schedule offered (${next.plan.name} plan from ${next.plan.start})`);
+    res.json({ ok: true, partnership: next, data: onbOut(updated) });
+  } catch (e) { onbErr(res, 'POST onboarding partnership', e); }
+});
+
 app.get('/api/portal/:token/doc/:doc', async (req, res) => {
   try {
     const got = await onbByToken(req, res); if (!got) return;
     const { pool, row } = got;
     const key = String(req.params.doc);
-    if (!ONB_DOCS[key]) return res.status(404).json({ error: 'Document not found' });
+    if (!ONB_DOCS[key] || !onbDocOn(row, key)) return res.status(404).json({ error: 'Document not found' });
     const d = await onbRenderDoc(pool, row, key);
     const step = ONB_DOCS[key].step;
     await onbUpdate(pool, row.client_id, c => {
       const s = c.steps[step] || {};
-      if (['pending', 'sent'].includes(s.status || 'pending')) c.steps[step] = { status: 'viewed', at: new Date().toISOString() };
+      if (['pending', 'sent', 'offered'].includes(s.status || 'pending')) c.steps[step] = { ...s, status: 'viewed', at: new Date().toISOString() };
       return c;
     });
     const what = 'Viewed: ' + ONB_DOCS[key].name;
@@ -6495,7 +6566,7 @@ app.post('/api/portal/:token/sign/:doc', async (req, res) => {
     const got = await onbByToken(req, res); if (!got) return;
     const { pool, row } = got;
     const key = String(req.params.doc);
-    if (!ONB_DOCS[key] || !ONB_DOCS[key].sign) return res.status(404).json({ error: 'Document not found' });
+    if (!ONB_DOCS[key] || !ONB_DOCS[key].sign || !onbDocOn(row, key)) return res.status(404).json({ error: 'Document not found' });
     const b = req.body || {};
     const sig = (row.recipients || {}).signatory || {};
     if (!sig.name || !sig.email) return res.status(409).json({ error: 'We have not confirmed who signs for your company yet. Please call us on 01902 945444.' });
@@ -6524,7 +6595,7 @@ app.post('/api/portal/:token/sign/:doc', async (req, res) => {
       [row.client_id, key, d.meta.version || '', sig.name, sig.email, sig.title || '', method, png ? png.toString('base64') : '', ip, ua, now,
         JSON.stringify(events), d.hash, d.source, JSON.stringify(record), pdf]);
     if (!ins.rows[0]) return res.status(409).json({ error: 'This document has already been signed', code: 'ALREADY_SIGNED' });
-    await onbUpdate(pool, row.client_id, c => { c.steps[ONB_DOCS[key].step] = { status: 'signed', at: now }; return c; });
+    await onbUpdate(pool, row.client_id, c => { c.steps[ONB_DOCS[key].step] = { ...(c.steps[ONB_DOCS[key].step] || {}), status: 'signed', at: now }; return c; });
     await onbEvent(pool, row.client_id, `Signed: ${ONB_DOCS[key].name}`, req);
     auditLog('client portal', 'signed', 'onboarding', row.company, `${ONB_DOCS[key].name} signed by ${sig.name}`);
     // build 49.4: tell Dan once both agreements are signed, so he can countersign
@@ -6603,7 +6674,7 @@ app.post('/api/onboarding/:clientId/link', async (req, res) => {
     const sig = (cur.recipients || {}).signatory || {};
     if (!sig.name || !sig.email) return res.status(400).json({ error: 'Choose who signs for the client first' });
     const missing = new Set();
-    for (const k of Object.keys(ONB_DOCS)) (await onbRenderDoc(pool, cur, k)).missing.forEach(m => missing.add(m));
+    for (const k of Object.keys(ONB_DOCS).filter(k => onbDocOn(cur, k))) (await onbRenderDoc(pool, cur, k)).missing.forEach(m => missing.add(m));
     if (missing.size) return res.status(400).json({ error: `Add the ${[...missing].map(m => ONB_VAR_LABELS[m] || m).join(', ')} to the client record first`, missing: [...missing] });
     const { url, expires_at, row } = await onbMakeLink(pool, id, actorOf(req));
     auditLog(auditActorOf(req), 'created', 'onboarding', row.company, 'portal link created');
@@ -16078,7 +16149,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '3 Nov 2026 - build 52.2 (tracked Talent Partnership link in the rates email)';
+const SERVER_BUILD = '3 Nov 2026 - build 52.3 (Talent Partnership Schedule in onboarding)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

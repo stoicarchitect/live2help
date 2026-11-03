@@ -16939,7 +16939,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '3 Nov 2026 - build 52.2 (tracked Talent Partnership link in the rates email)';
+var PAGE_BUILD = '3 Nov 2026 - build 52.3 (Talent Partnership Schedule in onboarding)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -17281,9 +17281,42 @@ function buildTagApply(){
     return `<div class="d41-sec"><span class="d41-eyebrow">Onboarding</span>
       <div class="p41-row"><div class="m"><div><span class="p41-pill ${oc}">${ol}</span></div><div class="s">Started ${fmt41(String(o.started_at).slice(0, 10), true)}${o.started_by ? ' by ' + h(typeof userLabel === 'function' ? userLabel(o.started_by) : o.started_by) : ''}${o.completed_at ? ' · completed ' + fmt41(String(o.completed_at).slice(0, 10), true) : ''}</div></div></div>
       ${who}${link}
-      <div style="margin-top:6px">${rows}</div>${drive}${onbAppliedBlock(a, o, x)}
+      <div style="margin-top:6px">${rows}</div>${drive}${onbPartnerBlock(a, o, x)}${onbAppliedBlock(a, o, x)}
       <label class="p41-row" style="cursor:pointer"><div class="m"><div><b>Pause automatic reminders</b></div><div class="s">Stops the day 3 and day 7 reminders for this client once they are switched on.</div></div><input type="checkbox" data-onb41="pause" ${o.paused ? 'checked' : ''}></label>
       ${admin ? '' : '<div class="p41-note" style="margin-top:8px">Signed documents are visible to Dan only.</div>'}</div>`;
+  }
+  // build 52.3: Talent Partnership Schedule (optional). Client ticks interest in the portal, or Dan includes it; Dan sets the Plan Order.
+  function onbPartnerBlock(a, o, x){
+    const p = (o.steps || {}).partnership || {}, st = p.status || 'not_offered', admin = isAdmin41();
+    const pl = p.plan || {};
+    const sg = (x.sigs || []).find(z => z.doc === 'partnership');
+    const pill = ({not_offered:['Not offered',''], interested:['Client interested','gold'], offered:['Sent to sign','warn'], viewed:['Viewed','warn'], signed:['Signed','ok']})[st] || [st, ''];
+    const sub = st === 'interested' ? 'Ticked in their portal' + (p.at ? ' on ' + fmt41(String(p.at).slice(0, 10), true) : '') + '. Agree the plan, then set the Plan Order below.'
+      : ['offered', 'viewed', 'signed'].includes(st) ? h(pl.name) + ' plan from ' + fmt41(pl.start, true) + ' · ' + (pl.billing === 'annual' ? 'paid annually (5% off)' : 'monthly') + (sg && sg.signed_at ? ' · signed by ' + h(sg.signer_name) + (sg.countersigned_at ? ', countersigned' : ', awaiting countersignature') : '')
+      : 'Optional. The client can tick interest in their portal, or include it here if they have already agreed.';
+    let act = '';
+    if(admin && st === 'signed' && sg && sg.has_pdf) act = `<button class="p41-btn sm" data-onb41="pdf" data-sig="${h(sg.id)}" data-name="Talent Partnership Schedule">Open signed copy</button>`;
+    else if(admin && !x.partnerEdit && st !== 'signed') act = `<button class="p41-btn ${st === 'interested' ? 'pri ' : ''}sm" data-onb41="partneredit">${['offered', 'viewed'].includes(st) ? 'Change plan' : 'Set Plan Order'}</button>`;
+    let form = '';
+    if(admin && x.partnerEdit){
+      const opt = v => ['Partner', 'Core', 'Growth', 'Scale', 'Enterprise'].map(n => `<option${v === n ? ' selected' : ''}>${n}</option>`).join('');
+      form = `<div class="p41-note" style="margin-top:6px;display:grid;gap:8px;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;">
+          <label>Plan<select id="onbPName">${opt(pl.name || 'Core')}</select></label>
+          <label>Commencement date<input type="date" id="onbPStart" value="${h(pl.start || '')}"></label>
+          <label>Billing<select id="onbPBill"><option value="monthly"${pl.billing !== 'annual' ? ' selected' : ''}>Monthly in advance</option><option value="annual"${pl.billing === 'annual' ? ' selected' : ''}>Full Term in advance (5% off)</option></select></label>
+        </div>
+        <label>Agreed scope (role categories, departments and sites)<textarea id="onbPScope" rows="2">${h(pl.scope || '')}</textarea></label>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;">
+          <label>Client hiring contact<input id="onbPHire" value="${h(pl.hiring_contact || ((o.recipients || {}).signatory || {}).name || '')}"></label>
+          <label>Client accounts contact<input id="onbPAcc" value="${h(pl.accounts_contact || '')}"></label>
+        </div>
+        <label>Enterprise terms (Enterprise plan only)<textarea id="onbPEnt" rows="2">${h(pl.enterprise || '')}</textarea></label>
+        <div id="onbPErr" class="s" style="color:var(--danger)"></div>
+        <div class="p41-bar"><button class="p41-btn pri sm" data-onb41="partnersave">Save and send to sign</button><button class="p41-btn sm" data-onb41="partnercancel">Cancel</button>${['offered', 'viewed'].includes(st) ? '<button class="p41-btn sm" data-onb41="partnerremove">Withdraw Schedule</button>' : ''}</div>
+        <div class="s">The Schedule appears in their onboarding portal straight away. Their Terms and Data Sharing Agreement are not affected, and they can become a client without it.</div></div>`;
+    }
+    return `<div class="p41-row" style="margin-top:6px"><div class="m"><div><b>Talent Partnership Schedule</b></div><div class="s">${sub}</div></div>${act}<span class="p41-pill ${pill[1]}">${pill[0]}</span></div>${form}`;
   }
   // build 49.6: where the submitted site form went (client record, interview site, Drive)
   function onbAppliedBlock(a, o, x){
@@ -17406,6 +17439,15 @@ function buildTagApply(){
         j = await onbPost('/api/onboarding/' + id + '/link', {}); x.link = {url:j.url, expires_at:j.expires_at, preview:j.preview}; x.preview = j.preview; toast41('Portal link ready to copy');
       }
       else if(what === 'drive'){ const r = await onbPost('/api/onboarding/' + id + '/file-drive', {}); const bad = (r.filed || []).filter(f => f.error); toast41(bad.length ? 'Drive: ' + bad[0].error : 'Filed in Drive under Agreements'); x.sigs = null; }
+      else if(what === 'partneredit'){ x.partnerEdit = true; crmOpen(CRM.sel, true); return; }
+      else if(what === 'partnercancel'){ x.partnerEdit = false; crmOpen(CRM.sel, true); return; }
+      else if(what === 'partnersave' || what === 'partnerremove'){
+        if(what === 'partnerremove' && !confirm('Withdraw the Talent Partnership Schedule from their portal?')) return;
+        const body = what === 'partnerremove' ? {remove:true} : {name:$('onbPName').value, start:$('onbPStart').value, billing:$('onbPBill').value, scope:$('onbPScope').value, hiring_contact:$('onbPHire').value, accounts_contact:$('onbPAcc').value, enterprise:$('onbPEnt').value};
+        try{ j = await onbPost('/api/onboarding/' + id + '/partnership', body); }
+        catch(e3){ const er = $('onbPErr'); if(er){ er.textContent = e3.message; return; } throw e3; }
+        x.partnerEdit = false; toast41(what === 'partnerremove' ? 'Schedule withdrawn' : 'Talent Partnership Schedule is in their portal to sign');
+      }
       else if(what === 'pdf'){ onbOpenPdf(a, el.dataset.sig, el.dataset.name); return; }
       else if(what === 'countersign'){ onbCountersign(a); return; }
       else if(what === 'form'){ onbForm(a); return; }
