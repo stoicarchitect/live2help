@@ -1493,15 +1493,20 @@ app.post('/api/candidates', async (req, res) => {
 
     if (c.sourceTab === 'application') {
       const tabName = `Applications - ${c.formRole || c.role}`;
+      const tabRef = `'${tabName.replace(/'/g, "''")}'`; // build 55.1: role names with an apostrophe
       const allRows = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: `'${tabName}'!A2:T`,
+        range: `${tabRef}!A2:T`,
       });
       const rows = allRows.data.values || [];
-      const rowIndex = rows.findIndex(r => (r[2] || '').trim().toLowerCase() === c.name.trim().toLowerCase());
+      // build 55.1: match the exact application by its ID first, so a second application
+      // from the same person is never the one left behind; fall back to the name
+      const sameName = r => (r[2] || '').trim().toLowerCase() === c.name.trim().toLowerCase();
+      let rowIndex = c.id ? rows.findIndex(r => (r[0] || '') === c.id) : -1;
+      if (rowIndex === -1) rowIndex = rows.findIndex(sameName);
 
       if (rowIndex === -1) {
-        return res.status(404).json({ error: `Candidate not found in ${tabName}` });
+        return res.status(404).json({ error: `Could not find ${c.name}'s application in ${tabName}, so nothing was saved. Refresh the board and try again.` });
       }
 
       const sheetRowNumber = rowIndex + 2;
@@ -1518,11 +1523,30 @@ app.post('/api/candidates', async (req, res) => {
 
       await sheets.spreadsheets.values.update({
         spreadsheetId: SHEET_ID,
-        range: `'${tabName}'!A${sheetRowNumber}:U${sheetRowNumber}`,
+        range: `${tabRef}!A${sheetRowNumber}:U${sheetRowNumber}`,
         valueInputOption: 'RAW',
         requestBody: { values: [appRow] },
       });
-      return res.json({ ok: true });
+
+      // build 55.1: a rejection also closes any duplicate application from the same person
+      // on this role that is still at Applied, so they do not reappear on the board
+      let duplicatesClosed = 0;
+      if (String(c.stage || '').toLowerCase().startsWith('rejected')) {
+        for (let i = 0; i < rows.length; i++) {
+          if (i === rowIndex || !sameName(rows[i])) continue;
+          const st = String(rows[i][19] || 'applied').trim().toLowerCase();
+          if (st !== 'applied' && st !== 'ready_to_submit') continue;
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: SHEET_ID,
+            range: `${tabRef}!T${i + 2}`,
+            valueInputOption: 'RAW',
+            requestBody: { values: [[c.stage]] },
+          });
+          duplicatesClosed++;
+        }
+        if (duplicatesClosed) console.log(`Rejected ${duplicatesClosed} duplicate application(s) for ${c.name} in ${tabName}`);
+      }
+      return res.json({ ok: true, duplicatesClosed });
     }
 
     if (!c.company) {
@@ -16241,7 +16265,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '3 Nov 2026 - build 55 (every email reviewed before sending)';
+const SERVER_BUILD = '3 Nov 2026 - build 55.1 (rejecting applicants sticks)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

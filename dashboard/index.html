@@ -2877,11 +2877,13 @@ async function saveCandidate(c){
     if(!res.ok){
       const err = await res.json().catch(()=>({}));
       // the move was refused (lead client): put the board back as it was
-      if(err.code === 'LEAD_STAGE_CAP'){ showToast(err.error); loadLeadCompanies(true); loadCandidates(); return; }
+      if(err.code === 'LEAD_STAGE_CAP'){ showToast(err.error); loadLeadCompanies(true); loadCandidates(); return false; }
       throw new Error(err.error || ('Server returned ' + res.status));
     }
+    return true;
   }catch(e){
     showToast('Could not save to backend: ' + e.message);
+    return false;
   }
 }
 
@@ -3476,12 +3478,13 @@ async function advanceStage(newStage){
   const prevCompany = currentCompany, prevRole = currentRole;
   captureFieldsFromModal(c);
 
-  if(c.stage === 'applied' && !c.company){
+  // build 55.1: rejecting an applicant never needs a company or role assigned first
+  if(c.stage === 'applied' && !c.company && newStage !== 'rejected'){
     showToast('Assign a company before moving this candidate forward');
     openCandidateModal(c.id);
     return;
   }
-  if(c.stage === 'applied' && roleChoiceMissing(c)){
+  if(c.stage === 'applied' && newStage !== 'rejected' && roleChoiceMissing(c)){
     showToast('Choose which role this candidate is for before moving them forward');
     openCandidateModal(c.id);
     return;
@@ -3498,7 +3501,9 @@ async function advanceStage(newStage){
 
   renderBoard();
   closeModal('candModalOverlay');
-  await saveCandidate(c);
+  const saved = await saveCandidate(c);
+  // build 55.1: if the save did not go through, show the board as it really is, not a move that never happened
+  if(saved === false){ await loadCandidates(); return; }
   await reloadIfMoved(c, prevCompany, prevRole);
 
   if(newStage === 'submitted'){
@@ -16940,7 +16945,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '3 Nov 2026 - build 55 (every email reviewed before sending)';
+var PAGE_BUILD = '3 Nov 2026 - build 55.1 (rejecting applicants sticks)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
