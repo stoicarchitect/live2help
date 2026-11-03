@@ -813,6 +813,8 @@ const PUBLIC_API = [
   { method: 'GET', re: /^\/api\/public\/roles(\/[a-z0-9-]+)?$/ },
   { method: 'GET', re: /^\/api\/public\/forms\/[a-z0-9-]+$/ },
   { method: 'GET', re: /^\/api\/health$/ },
+  // build 52.2: tracked links in client emails (careers-site pages call this, then forward)
+  { method: 'POST', re: /^\/api\/public\/track\/[A-Za-z0-9_-]+$/ },
   // build 49.1: the client onboarding portal (a secure link, checked on every call)
   { method: 'GET', re: /^\/api\/portal\/[A-Za-z0-9_-]+(\/doc\/[a-z]+(\/pdf)?)?$/ },
   { method: 'POST', re: /^\/api\/portal\/[A-Za-z0-9_-]+\/(sign\/[a-z]+|site-form)$/ },
@@ -7827,7 +7829,17 @@ const DEFAULT_TEMPLATES = [
     "name": "Rates and prospectus after a call",
     "category": "Lead",
     "subject": "Our rates and prospectus - {{company}}",
-    "body": "Hi {{contact_first_name}},\n\nThank you for taking the time to speak with us.{{call_point_line}}\n\nAs promised, here are our prospectus and pricing brochure:\n\nProspectus: {{prospectus_link}}\nPricing: {{pricing_link}}\n\nThe prospectus shows how we work and the sectors we cover, and the pricing brochure sets out our fees clearly so there are no surprises later.{{role_line}}\n\nTake a look when convenient. If you are happy with everything, just reply to this email and Daniel will send over our onboarding pack so we can get started straight away.\n\n{{signature}}",
+    "body": "Hi {{contact_first_name}},\n\nThank you for taking the time to speak with us.{{call_point_line}}\n\nAs promised, here are our prospectus and pricing brochure:\n\nProspectus: {{prospectus_link}}\nPricing: {{pricing_link}}\n\nThe prospectus shows how we work and the sectors we cover, and the pricing brochure sets out our fees clearly so there are no surprises later.{{role_line}}{{partnership_line}}\n\nTake a look when convenient. If you are happy with everything, just reply to this email and Daniel will send over our onboarding pack so we can get started straight away.\n\n{{signature}}",
+    "updated_by": "system"
+  },
+  /* Build 52.2: the optional Talent Partnership paragraph, added to the rates email with a tick box.
+     {{partnership_link}} is a tracked link made fresh for each email. Category Snippet keeps it out of the template lists. */
+  {
+    "id": "tpl-snippet-partnership",
+    "name": "Talent Partnership paragraph (rates email)",
+    "category": "Snippet",
+    "subject": "",
+    "body": "If you expect to hire regularly this year, we also offer the Live 2 Help Talent Partnership: one fixed monthly fee covering a set number of hires, instead of a fee per placement. With budgets tight for many businesses right now, it can bring your cost per hire down significantly. You can see what it would save {{company}} here: {{partnership_link}}",
     "updated_by": "system"
   },
   {
@@ -7892,7 +7904,7 @@ let tplMigrated = false;
 async function migrateTemplates() {
   if (tplMigrated) return;
   const all = await templatesTable.listAll();
-  if (all.some(t => t.id === '__templates_v7')) { tplMigrated = true; return; }
+  if (all.some(t => t.id === '__templates_v8')) { tplMigrated = true; return; }
   for (const d of DEFAULT_TEMPLATES) {
     const ex = all.find(t => t.id === d.id);
     if (!ex || ex.updated_by === 'system') await templatesTable.upsert(d);
@@ -7901,7 +7913,7 @@ async function migrateTemplates() {
     const ex = all.find(t => t.id === oldId);
     if (ex && ex.updated_by === 'system') await templatesTable.remove(oldId);
   }
-  await templatesTable.upsert({ id: '__templates_v7', name: 'migration marker', category: '', subject: '', body: '', updated_by: 'system' });
+  await templatesTable.upsert({ id: '__templates_v8', name: 'migration marker', category: '', subject: '', body: '', updated_by: 'system' });
   tplMigrated = true;
 }
 
@@ -13558,6 +13570,66 @@ app.post('/api/public-docs/:key', requireAdmin, async (req, res) => {
   } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
 });
 
+/* ---------- build 52.2: tracked links (one per email, per company) ----------
+   The Talent Partnership savings calculator link in the rates email is unique to each send, so we
+   can see which company opened it. careers.live2helprecruitment.co.uk/partnership/?t=<token>
+   records the open and forwards to the calculator on the main website. */
+const TRACKED_TARGETS = {
+  partnership: { label: 'Talent Partnership savings calculator', page: 'https://careers.live2helprecruitment.co.uk/partnership/', to: process.env.PARTNERSHIP_CALC_URL || 'https://live2helprecruitment.co.uk/savings-k7m2x9/' },
+};
+let trackedReady = null;
+function trackedPool() {
+  if (!pgLivePool) throw new Error('The database is not connected, so tracked links are not available.');
+  if (!trackedReady) trackedReady = pgLivePool.query(`create table if not exists tracked_links (
+      token text primary key, kind text not null, company text not null default '', contact_name text not null default '',
+      contact_email text not null default '', sent_by text not null default '', created_at timestamptz not null default now(),
+      opens integer not null default 0, first_open timestamptz, last_open timestamptz)`).catch(e => { trackedReady = null; throw e; });
+  return trackedReady.then(() => pgLivePool);
+}
+app.post('/api/tracked-links', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const kind = String(b.kind || '');
+    if (!TRACKED_TARGETS[kind]) return res.status(400).json({ error: 'Unknown link type' });
+    const t = TRACKED_TARGETS[kind];
+    if (isPreview()) return res.json({ token: 'preview', url: t.page + '?t=preview' });
+    const pool = await trackedPool();
+    const token = crypto.randomBytes(9).toString('base64url');
+    await pool.query('insert into tracked_links (token, kind, company, contact_name, contact_email, sent_by) values ($1, $2, $3, $4, $5, $6)',
+      [token, kind, onbClean(b.company, 160), onbClean(b.contactName, 120), onbClean(b.contactEmail, 200), actorOf(req)]);
+    res.json({ token, url: t.page + '?t=' + token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/tracked-links', async (req, res) => {
+  try {
+    const pool = await trackedPool();
+    const company = String(req.query.company || '').trim();
+    const rows = (await pool.query(`select token, kind, company, contact_name, sent_by, created_at, opens, first_open, last_open from tracked_links
+      where ($1 = '' or lower(company) = lower($1)) order by created_at desc limit 200`, [company])).rows;
+    res.json({ data: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/public/track/:token', async (req, res) => {
+  const fallback = TRACKED_TARGETS.partnership.to;
+  try {
+    const token = String(req.params.token);
+    if (token === 'preview') return res.json({ to: fallback });
+    const pool = await trackedPool();
+    const row = (await pool.query(`update tracked_links set opens = opens + 1, first_open = coalesce(first_open, now()), last_open = now()
+      where token = $1 returning *`, [token])).rows[0];
+    if (!row) return res.json({ to: fallback });
+    const t = TRACKED_TARGETS[row.kind] || TRACKED_TARGETS.partnership;
+    // the first open goes on the company timeline, so whoever sent it sees it next time they look
+    if (row.opens === 1) {
+      await commsTable.append({ id: 'cm-' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), timestamp: new Date().toISOString(),
+        user: row.sent_by || 'system', entity_type: 'client', entity_name: row.contact_name || row.company, company: row.company, role: '',
+        channel: 'note', direction: 'inbound', summary: `Opened the ${t.label} (link sent ${String(row.created_at.toISOString()).slice(0, 10)})`, follow_up_date: '', follow_up_done: '' }).catch(() => {});
+      auditLog('system', 'opened', 'tracked link', row.company, t.label);
+    }
+    res.json({ to: t.to });
+  } catch (e) { console.error('track link error:', e.message); res.json({ to: fallback }); }
+});
+
 // First start after build 52.1: bring the current prospectus (23 Oct 2026, with the Talent Suite pages)
 // across from Dan's Google Drive if nothing has been uploaded yet. Uploads in the workspace replace it.
 const PROSPECTUS_SEED_DRIVE_ID = process.env.PROSPECTUS_DRIVE_ID || '1fCvWaKYjE_HZDK8-6l2hmWfT0smsUsMg';
@@ -16006,7 +16078,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '3 Nov 2026 - build 52.1 (rates and prospectus email, hosted prospectus)';
+const SERVER_BUILD = '3 Nov 2026 - build 52.2 (tracked Talent Partnership link in the rates email)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

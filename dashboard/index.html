@@ -8218,7 +8218,7 @@ function openFeedbackModal(id, preset){
    Email templates (round 2): merge fields, pickers, Outlook
    ============================================================ */
 
-const TPL_FIELDS = ['first_name','candidate_name','role','company','company_address','contact_name','contact_first_name','interviewer','salary','start_date','interview_date','interview_time','interview_location','interview_format','invoice_ref','fee_amount','prospectus_link','pricing_link','call_point_line','role_line','signature'];
+const TPL_FIELDS = ['first_name','candidate_name','role','company','company_address','contact_name','contact_first_name','interviewer','salary','start_date','interview_date','interview_time','interview_location','interview_format','invoice_ref','fee_amount','prospectus_link','pricing_link','call_point_line','role_line','partnership_line','partnership_link','signature'];
 
 function senderProfile(){
   const u = signedInUser || {};
@@ -16939,7 +16939,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '3 Nov 2026 - build 52.1 (rates and prospectus email, hosted prospectus)';
+var PAGE_BUILD = '3 Nov 2026 - build 52.2 (tracked Talent Partnership link in the rates email)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -19472,7 +19472,7 @@ const C47_ORDER = {
   candidate: ['tpl-candidate-availability', 'tpl-interview-confirmation', 'tpl-offer-cover', 'tpl-information-request', 'tpl-references-request', 'tpl-start-reminder', 'tpl-day-one', 'tpl-week-one', 'tpl-month-one', 'tpl-candidate-rejection'],
 };
 // Templates that only make sense when the dashboard builds them with attachments elsewhere
-const C47_SKIP = ['tpl-client-submission'];
+const C47_SKIP = ['tpl-client-submission', 'tpl-snippet-partnership'];
 // Build 52: templates that also show for another kind of contact
 const C47_ALSO = {client: ['tpl-lead-rates-prospectus']};
 // Build 52: rates and prospectus email - the links it sends and its 3 working day follow-up
@@ -19601,6 +19601,7 @@ function c47EmailRender(err){
       (tp.general.length ? '<optgroup label="General">' + tp.general.map(opt).join('') + '</optgroup>' : '') +
       '<option value=""' + (m.tpl === '' ? ' selected' : '') + '>Blank email</option></select>' +
     extra +
+    (m.tpl === C47_RATES_TPL ? '<label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;margin:12px 0 0;"><input type="checkbox" id="c47mPartner"' + (m.partner ? ' checked' : '') + ' style="margin-top:3px;"> <span>Include the Talent Partnership option<br><span class="b46-sub">Adds a short paragraph with a savings calculator link made just for ' + esc(ctx.company || 'this company') + ', so you can see when they open it. Private offer: only for leads who asked for our rates.</span></span></label>' : '') +
     '<div class="c47-grid"><div><label>Follow-up date (optional)</label><input type="date" id="c47mFu" value="' + c47Attr(m.fu || '') + '"></div>' +
     '<div><label>&nbsp;</label><label style="display:flex;gap:8px;align-items:center;font-weight:400;margin:6px 0 0;"><input type="checkbox" id="c47mTask"' + (m.task ? ' checked' : '') + '> Add a follow-up task</label></div></div>' +
     (t === 'lead' ? '<div class="b46-sub" style="margin-top:8px;">Emails to leads go out as first-contact emails: the branded Talent Suite footer and opt-out are added, and they count towards your daily first-contact limit.</div>' : '') +
@@ -19623,6 +19624,7 @@ function c47EmailCollect(){
   if(g('c47mCand') !== undefined) m.candId = g('c47mCand');
   m.fu = (g('c47mFu') || '').trim();
   const tk = document.getElementById('c47mTask'); m.task = !!(tk && tk.checked);
+  const pt = document.getElementById('c47mPartner'); if(pt) m.partner = !!pt.checked;
 }
 function c47EmailClose(){ C47.mail = null; b46Close('c47MailOv'); }
 
@@ -19690,6 +19692,11 @@ function c47Vars(ctx, m){
   if(ctx.type !== 'candidate'){
     if(c47RecentCall(ctx)) v.call_point_line = ' [ONE LINE ON WHAT YOU DISCUSSED]';
     if(m.role) v.role_line = ' We already have your ' + m.role + ' role in mind and can start sourcing as soon as onboarding is complete.';
+    if(m.partner && m.partnerUrl){
+      const sn = (B2.templates || []).find(x => x.id === 'tpl-snippet-partnership');
+      v.partnership_link = m.partnerUrl;
+      if(sn && sn.body) v.partnership_line = '\n\n' + tplMerge(sn.body, v).text;
+    }
   }
   return v;
 }
@@ -19706,7 +19713,7 @@ function c47Compose(ctx, m){
   const vars = c47Vars(ctx, m);
   const subject = tpl ? c47Fill(tpl.subject, vars) : '';
   const body = tpl ? c47Fill(tpl.body, vars) : ('Hi ' + (ctx.type === 'candidate' ? (vars.first_name || '') : (vars.contact_first_name || '')) + ',\n\n\n\n' + vars.signature);
-  const purpose = tpl ? tpl.name : 'Email';
+  const purpose = tpl ? tpl.name + (tpl.id === C47_RATES_TPL && m.partner && m.partnerUrl ? ' + Talent Partnership' : '') : 'Email';
   const kind = ctx.type === 'lead' ? 'outreach' : (ctx.type === 'candidate' ? 'candidate' : 'email');
   const fu = m.fu || '', task = !!m.task, snapshot = Object.assign({}, ctx), rfxId = m.rfxId || '';
   const role = vars.role || ctx.role || '';
@@ -19759,12 +19766,20 @@ async function c47AfterEmailHooks(ctx, rfxId, summary, fu){
   }
 }
 
-function c47EmailNext(){
+async function c47EmailNext(){
   c47EmailCollect();
   const m = C47.mail; if(!m) return;
   const ctx = m.ctx;
   if(!ctx.type) ctx.type = 'lead';
   if(m.fu && !/^\d{4}-\d{2}-\d{2}$/.test(m.fu)){ c47EmailRender('Enter the follow-up date as YYYY-MM-DD, or pick it from the calendar.'); return; }
+  // build 52.2: a fresh tracked calculator link for this company and this email
+  if(m.tpl === C47_RATES_TPL && m.partner && !m.partnerUrl){
+    try{
+      const j = await b2Post('/api/tracked-links', {kind:'partnership', company: ctx.company || '', contactName: ctx.name || '', contactEmail: ctx.email || ''});
+      m.partnerUrl = j.url;
+    }catch(e){ c47EmailRender('Could not make the Talent Partnership link: ' + e.message + '. Untick it to send without.'); return; }
+    if(C47.mail !== m) return;
+  }
   const data = c47Compose(ctx, m);
   C47.mail = null; b46Close('c47MailOv');
   mailOpen(data);
