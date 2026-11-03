@@ -807,7 +807,8 @@ const PUBLIC_API = [
   { method: 'POST', re: /^\/api\/website-enquiry$/ },
   { method: 'POST', re: /^\/api\/claude$/ },
   { method: 'POST', re: /^\/api\/brevo\/webhook$/ },
-  { method: 'POST', re: /^\/api\/talent-suite\/(start|verify|me|tool|cv-docx|review-request|orders|checkout|credits\/checkout)$/ },
+  { method: 'POST', re: /^\/api\/talent-suite\/(start|verify|me|tool|cv-docx|review-request|orders|checkout|credits\/checkout|booking)$/ },
+  { method: 'GET', re: /^\/api\/talent-suite\/booking$/ },
   { method: 'POST', re: /^\/api\/stripe\/webhook$/ },
   { method: 'GET', re: /^\/api\/public\/roles(\/[a-z0-9-]+)?$/ },
   { method: 'GET', re: /^\/api\/public\/forms\/[a-z0-9-]+$/ },
@@ -17085,16 +17086,23 @@ app.post('/api/talent-suite/review-request', async (req, res) => {
    Sections 3 to 6: intake form -> POST /api/talent-suite/orders -> POST /api/talent-suite/checkout
    -> Stripe Checkout -> POST /api/stripe/webhook. Fulfilment happens from the webhook only.
    Render environment variables:
-     STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_CV_REVIEW, STRIPE_PRICE_CV_COACHING,
+     STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_RECRUITER_CALL, STRIPE_PRICE_ACCELERATOR,
      APP_BASE_URL (default https://careers.live2helprecruitment.co.uk)
-     TS_COACHING_BOOKING_URL (optional: booking link sent to coaching customers once paid)
+     TS_CALL_HOURS (optional: bookable hours in UK time, default "10:00-12:00,13:00-16:00", Monday to Friday)
+     TS_CALL_MEETING_URL (optional: Ella's video link, sent in the call confirmation)
+   Build 50 (Nov 2026): the two paid tiers are the Recruiter Review Call (£24.99) and the Career Accelerator (£49.99).
+   The old Expert CV Review and CV Review + Interview Coaching tiers are retired but kept below as legacy so existing
+   orders still display. Calls are booked inside the CRM (see "Call booking") and delivered by Ella.
    Stripe webhook destination must be subscribed to exactly:
      checkout.session.completed, checkout.session.expired, charge.refunded
    ====================================================================== */
 
 const TS_TIERS = {
-  cv_review: { name: 'Expert CV Review', priceEnv: 'STRIPE_PRICE_CV_REVIEW' },
-  cv_review_coaching: { name: 'CV Review + Interview Coaching', priceEnv: 'STRIPE_PRICE_CV_COACHING' },
+  recruiter_call: { name: 'Recruiter Review Call', priceEnv: 'STRIPE_PRICE_RECRUITER_CALL', days: 5, callMinutes: 30 },
+  career_accelerator: { name: 'Career Accelerator', priceEnv: 'STRIPE_PRICE_ACCELERATOR', days: 3, callMinutes: 45, accelerator: true },
+  // retired in build 50: kept so orders already in the sheet still show a name
+  cv_review: { name: 'Expert CV Review', priceEnv: 'STRIPE_PRICE_CV_REVIEW', legacy: true },
+  cv_review_coaching: { name: 'CV Review + Interview Coaching', priceEnv: 'STRIPE_PRICE_CV_COACHING', legacy: true },
 };
 const TS_TURNAROUND_DAYS = 3;
 const STRIPE_API_VERSION = '2026-09-30.endive'; // pinned: must match the webhook destination's API version in Stripe
@@ -17108,7 +17116,7 @@ const tsOrdersSheet = makeSimpleTable({
   tab: 'Talent Suite Orders',
   header: ['order_id', 'created_at', 'tier', 'amount_gbp', 'candidate_name', 'candidate_email', 'candidate_phone',
     'target_role', 'cv_file_link', 'candidate_notes', 'coaching_availability', 'status', 'stripe_session_id',
-    'stripe_payment_intent', 'paid_at', 'due_date', 'assigned_to', 'delivered_at'],
+    'stripe_payment_intent', 'paid_at', 'due_date', 'assigned_to', 'delivered_at', 'call_slot', 'call_booked_at'],
 });
 const tsOrders = {
   async list() { return (await tsOrdersSheet.list()).map(o => ({ ...o, id: o.order_id })); },
@@ -17320,7 +17328,7 @@ app.post('/api/talent-suite/orders', async (req, res) => {
     s = tsNow();
     if (tpClean(f.website, 200)) return res.json({ order_id: 'TS-000000-0000' }); // hidden field filled in: a bot
     const tier = String(f.tier || '');
-    if (!TS_TIERS[tier]) return res.status(400).json({ error: 'Please choose a service.' });
+    if (!TS_TIERS[tier] || TS_TIERS[tier].legacy) return res.status(400).json({ error: 'Please choose a service.' });
     const name = tpClean(f.candidate_name, 80), email = tpClean(f.candidate_email, 120).toLowerCase();
     if (name.length < 2) return res.status(400).json({ error: 'Please add your full name.' });
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(email)) return res.status(400).json({ error: 'Please check your email address.' });
@@ -17334,13 +17342,21 @@ app.post('/api/talent-suite/orders', async (req, res) => {
     if (!(await tpVerifyTurnstile(f.turnstileToken, ip))) return res.status(400).json({ error: 'We could not confirm you are human. Please refresh and try again.' });
     t.checks = tsMs(s);
 
+    // the Career Accelerator rewrites the LinkedIn profile, so it needs the link; it is stored at the front of the notes
+    let linkedin = tpClean(f.linkedin_url, 200);
+    if (linkedin && !/^https?:\/\//i.test(linkedin)) linkedin = 'https://' + linkedin;
+    if (TS_TIERS[tier].accelerator && !/^https?:\/\/([a-z0-9-]+\.)?linkedin\.com\/.+/i.test(linkedin)) return res.status(400).json({ error: 'Please add the link to your LinkedIn profile so we can improve it.' });
+    if (linkedin && !/^https?:\/\/([a-z0-9-]+\.)?linkedin\.com\/.+/i.test(linkedin)) linkedin = '';
+
     orderId = tsOrderId();
     const order = {
       order_id: orderId, created_at: new Date().toISOString(), tier, amount_gbp: '',
       candidate_name: name, candidate_email: email, candidate_phone: tpClean(f.candidate_phone, 30),
-      target_role: targetRole, cv_file_link: '', candidate_notes: tpClean(f.candidate_notes, 1000),
-      coaching_availability: tier === 'cv_review_coaching' ? tpClean(f.coaching_availability, 300) : '',
+      target_role: targetRole, cv_file_link: '',
+      candidate_notes: ((linkedin ? `LinkedIn: ${linkedin}` : '') + (linkedin && f.candidate_notes ? ' | ' : '') + tpClean(f.candidate_notes, 800)).slice(0, 1000),
+      coaching_availability: tpClean(f.coaching_availability, 300), // both tiers include a call
       status: 'pending_payment', stripe_session_id: '', stripe_payment_intent: '', paid_at: '', due_date: '', assigned_to: '', delivered_at: '',
+      call_slot: '', call_booked_at: '',
     };
 
     s = tsNow();
@@ -17398,6 +17414,7 @@ async function tsOrderForSession(orderId, s) {
     candidate_phone: m.candidate_phone || '', target_role: m.target_role || '', cv_file_link: tsSavedCvLinks.get(orderId) || 'Not saved: check your inbox for the CV, or ask the customer to resend it',
     candidate_notes: 'Order rebuilt from Stripe because the original save failed', coaching_availability: m.coaching_availability || '',
     status: 'pending_payment', stripe_session_id: s.id || '', stripe_payment_intent: '', paid_at: '', due_date: '', assigned_to: '', delivered_at: '',
+    call_slot: '', call_booked_at: '',
   };
   await tsRetry(() => tsOrders.save(rebuilt));
   mailDan(`Talent Suite: order ${orderId} rebuilt from Stripe`, `The order row was missing when payment arrived, so it was rebuilt from the Stripe session. Check whether the CV reached Drive or your inbox; if not, ask ${rebuilt.candidate_email} to resend it.`);
@@ -17505,24 +17522,261 @@ function tsStripeSignatureOk(raw, header, secret) {
 
 const tsWebhookBusy = new Set();
 
+/* ---------- Call booking (built into the CRM, build 50) ----------
+   Every paid order includes a call with Ella: 30 minutes for the Recruiter Review Call, 45 minutes for the Career
+   Accelerator (recruiter review plus interview coaching). The customer books from a secure link in their
+   confirmation email (tokened like the invoice pay links). Slots come from TS_CALL_HOURS (UK time, Monday to
+   Friday, bank holidays skipped, 24 hours notice, next 14 days). A slot is held by the order row (call_slot), so
+   two customers can never book the same time. Ella gets a task and a calendar invite, Dan gets an email. */
+function tsCallToken(orderId) {
+  const secret = invoiceLinkSecret();
+  if (!secret || !orderId) return '';
+  return crypto.createHmac('sha256', secret).update(`ts-call:${orderId}`).digest('hex').slice(0, 20);
+}
+function tsCallTokenOk(orderId, t) {
+  const want = tsCallToken(orderId), got = String(t || '');
+  return !!want && got.length === want.length && crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want));
+}
+function tsCallUrl(o) {
+  const t = tsCallToken(o && o.order_id);
+  return t ? `${tsBaseUrl()}/talent-suite/book/?o=${encodeURIComponent(o.order_id)}&t=${t}` : '';
+}
+function tsCallMinutesFor(o) { return (TS_TIERS[o && o.tier] && TS_TIERS[o.tier].callMinutes) || 30; }
+function tsCallRanges() {
+  const raw = String(process.env.TS_CALL_HOURS || '10:00-12:00,13:00-16:00');
+  const out = [];
+  for (const part of raw.split(',')) {
+    const m = part.trim().match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
+    if (m) out.push([Number(m[1]) * 60 + Number(m[2]), Number(m[3]) * 60 + Number(m[4])]);
+  }
+  return out.length ? out : [[600, 720], [780, 960]];
+}
+function tsLondonOffsetMin(utcMs) {
+  const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(utcMs));
+  const g = t => Number(p.find(x => x.type === t).value);
+  return (Date.UTC(g('year'), g('month') - 1, g('day'), g('hour'), g('minute')) - Math.floor(utcMs / 60000) * 60000) / 60000;
+}
+function tsLondonToUtcIso(ymd, minutes) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const guess = Date.UTC(y, m - 1, d, Math.floor(minutes / 60), minutes % 60);
+  let ms = guess - tsLondonOffsetMin(guess) * 60000;
+  ms = guess - tsLondonOffsetMin(ms) * 60000; // settles across the clocks changing
+  return new Date(ms).toISOString();
+}
+function tsCallWhen(iso) {
+  return new Date(iso).toLocaleString('en-GB', { timeZone: 'Europe/London', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+}
+// every 15 minute cell an order's call occupies (a 45 minute call takes three), as ISO strings
+function tsCellsOf(startIso, minutes) {
+  const out = []; const t0 = Date.parse(startIso);
+  for (let i = 0; i < Math.ceil(minutes / 15); i++) out.push(new Date(t0 + i * 15 * 60000).toISOString());
+  return out;
+}
+function tsTakenCells(orders, exceptOrderId) {
+  const taken = new Set();
+  for (const o of orders) {
+    if (!o.call_slot || o.order_id === exceptOrderId || ['refunded', 'abandoned'].includes(o.status)) continue;
+    tsCellsOf(o.call_slot, tsCallMinutesFor(o)).forEach(c => taken.add(c));
+  }
+  return taken;
+}
+/* Ella's Outlook calendar (Microsoft 365). Set TS_CALENDAR_ICS_URL on Render to her published calendar link
+   (Outlook on the web > Settings > Calendar > Shared calendars > Publish a calendar > "Can view when I'm busy",
+   then copy the ICS link). Busy times, recurring meetings and all-day busy events are read from it and hidden
+   from the booking page. Cached for 2 minutes. If the feed cannot be read, the last good copy is used for up to
+   6 hours, then booking carries on without it and Dan is alerted once an hour. */
+let tsBusyCache = { at: 0, ranges: [], ok: false };
+async function tsCalendarBusy() {
+  const url = String(process.env.TS_CALENDAR_ICS_URL || '').trim();
+  if (!url) return [];
+  if (Date.now() - tsBusyCache.at < 120000 && tsBusyCache.ok) return tsBusyCache.ranges;
+  try {
+    const ical = (await import('node-ical')).default;
+    const r = await fetch(url.replace(/^webcal:/i, 'https:'), { signal: AbortSignal.timeout(10000) });
+    if (!r.ok) throw new Error('calendar feed answered ' + r.status);
+    const data = ical.parseICS(await r.text());
+    const from = new Date(Date.now() - 24 * 3600000), to = new Date(Date.now() + 18 * 86400000);
+    const ranges = [];
+    const add = (s, e, allDay) => {
+      let a = new Date(s).getTime(), b = new Date(e).getTime();
+      if (!(b > a)) b = a + 30 * 60000;
+      if (allDay) { // an all-day event blocks that whole UK day
+        a = Date.parse(tsLondonToUtcIso(tsLondonDate(new Date(a).toISOString()), 0));
+        b = Math.max(b, a + 86400000);
+      }
+      if (b > from.getTime() && a < to.getTime()) ranges.push([a, b]);
+    };
+    for (const ev of Object.values(data)) {
+      if (!ev || ev.type !== 'VEVENT' || ev.start == null) continue;
+      if (String(ev.transparency || '').toUpperCase() === 'TRANSPARENT') continue; // shown as Free
+      if (String(ev.status || '').toUpperCase() === 'CANCELLED') continue;
+      const allDay = ev.datetype === 'date';
+      if (ev.rrule) {
+        let inst = [];
+        try { inst = ical.expandRecurringEvent(ev, { from, to, includeOverrides: true, excludeExdates: true, expandOngoing: true }); } catch (e) { inst = []; }
+        if (!inst.length && ev.rrule) { try { inst = ev.rrule.between(from, to, true).map(d => ({ start: d, end: new Date(d.getTime() + (new Date(ev.end) - new Date(ev.start))) })); } catch (e) { /* skip */ } }
+        inst.forEach(i => add(i.start, i.end, allDay));
+      } else add(ev.start, ev.end || ev.start, allDay);
+    }
+    tsBusyCache = { at: Date.now(), ranges, ok: true };
+    return ranges;
+  } catch (e) {
+    console.error('[talent-suite] Ella calendar feed could not be read:', e.message);
+    alertDan('ts-calendar-feed', 'Talent Suite: Ella\'s calendar feed could not be read', `Booking slots are not checking her Outlook calendar right now (${e.message}). Check TS_CALENDAR_ICS_URL on Render and that the calendar is still published.`).catch(() => {});
+    if (tsBusyCache.at && Date.now() - tsBusyCache.at < 6 * 3600000) return tsBusyCache.ranges;
+    return [];
+  }
+}
+
+async function tsCallSlots(order, orders) {
+  const hol = await tsLoadBankHolidays();
+  const taken = tsTakenCells(orders, order.order_id);
+  const busy = await tsCalendarBusy();
+  const mins = tsCallMinutesFor(order);
+  const earliest = Date.now() + 24 * 3600000;
+  const out = [];
+  const d = new Date(tsLondonDate(new Date().toISOString()) + 'T12:00:00Z');
+  for (let i = 0; i < 15; i++, d.setUTCDate(d.getUTCDate() + 1)) {
+    const ymd = d.toISOString().slice(0, 10), dow = d.getUTCDay();
+    if (dow === 0 || dow === 6 || hol.has(ymd)) continue;
+    for (const [from, to] of tsCallRanges()) {
+      for (let m = from; m + mins <= to; m += 30) {
+        const iso = tsLondonToUtcIso(ymd, m);
+        if (Date.parse(iso) < earliest) continue;
+        if (tsCellsOf(iso, mins).some(c => taken.has(c))) continue;
+        const a = Date.parse(iso), b = a + mins * 60000;
+        if (busy.some(([s, e]) => a < e && b > s)) continue; // Ella is busy in Outlook
+        out.push(iso);
+      }
+    }
+  }
+  return out;
+}
+function tsIcsText(s) { return String(s || '').replace(/[\\;,]/g, '\\$&').replace(/\r?\n/g, '\\n'); }
+function tsIcs(order, startIso, mins, summary, description, location) {
+  const f = iso => new Date(iso).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Live 2 Help//Talent Suite//EN', 'METHOD:PUBLISH', 'BEGIN:VEVENT',
+    `UID:${order.order_id}-${f(startIso)}@live2helprecruitment.co.uk`, `DTSTAMP:${f(new Date().toISOString())}`,
+    `DTSTART:${f(startIso)}`, `DTEND:${f(new Date(Date.parse(startIso) + mins * 60000).toISOString())}`,
+    `SUMMARY:${tsIcsText(summary)}`, `DESCRIPTION:${tsIcsText(description)}`, location ? `LOCATION:${tsIcsText(location)}` : '', 'END:VEVENT', 'END:VCALENDAR'].filter(Boolean).join('\r\n');
+}
+
+let tsBookingChain = Promise.resolve();
+function tsBookingLock(fn) { const run = tsBookingChain.then(fn); tsBookingChain = run.catch(() => {}); return run; }
+const TS_BOOKABLE = ['paid', 'in_review'];
+
+app.get('/api/talent-suite/booking', async (req, res) => {
+  try {
+    if (!tpAllow('tsb:ip:' + tpClientIp(req), 90, 3600000)) return res.status(429).json({ error: 'Please try again shortly.' });
+    const orderId = tpClean(req.query.o, 40);
+    if (!tsCallTokenOk(orderId, req.query.t)) return res.status(404).json({ error: 'This booking link is not recognised. Please use the link in your confirmation email.' });
+    const orders = await tsOrders.list();
+    const order = orders.find(o => o.order_id === orderId);
+    if (!order || !TS_BOOKABLE.includes(order.status)) return res.status(404).json({ error: 'We could not find a paid order for this link. Please reply to your confirmation email and we will help.' });
+    res.json({
+      order: { order_id: order.order_id, first_name: String(order.candidate_name).split(' ')[0], service: TS_TIERS[order.tier] ? TS_TIERS[order.tier].name : order.tier,
+        minutes: tsCallMinutesFor(order), call_slot: order.call_slot || '', call_when: order.call_slot ? tsCallWhen(order.call_slot) : '' },
+      slots: await tsCallSlots(order, orders),
+    });
+  } catch (e) {
+    console.error('GET /api/talent-suite/booking error:', e.message);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
+  }
+});
+
+app.post('/api/talent-suite/booking', async (req, res) => {
+  try {
+    if (!tpAllow('tsb:post:' + tpClientIp(req), 30, 3600000)) return res.status(429).json({ error: 'Please try again shortly.' });
+    const b = req.body || {};
+    const orderId = tpClean(b.o, 40), slot = tpClean(b.slot, 40);
+    if (!tsCallTokenOk(orderId, b.t)) return res.status(404).json({ error: 'This booking link is not recognised. Please use the link in your confirmation email.' });
+    const result = await tsBookingLock(async () => {
+      const orders = await tsOrders.list();
+      const order = orders.find(o => o.order_id === orderId);
+      if (!order || !TS_BOOKABLE.includes(order.status)) return { status: 404, error: 'We could not find a paid order for this link.' };
+      if (order.call_slot && Date.parse(order.call_slot) - Date.now() < 24 * 3600000) return { status: 409, error: 'Your call is less than 24 hours away. Please reply to your confirmation email to change it.' };
+      const valid = await tsCallSlots(order, orders);
+      if (!valid.includes(slot)) return { status: 409, error: 'Sorry, that time has just been taken. Please choose another.' };
+      await tsOrders.update(orderId, o => {
+        o.call_slot = slot; o.call_booked_at = new Date().toISOString();
+        if (!TS_TIERS[o.tier].accelerator) o.due_date = tsLondonDate(slot); // for the call service, the call is the delivery
+        return o;
+      });
+      return { order: await tsOrders.get(orderId), rescheduled: !!order.call_slot };
+    });
+    if (result.error) return res.status(result.status).json({ error: result.error });
+    const o = result.order, mins = tsCallMinutesFor(o), when = tsCallWhen(o.call_slot), tier = TS_TIERS[o.tier];
+    res.json({ ok: true, call_when: when, minutes: mins });
+    tsAfterBooking(o, mins, when, tier, result.rescheduled).catch(e => console.error('Talent Suite booking follow-up failed:', e.message));
+  } catch (e) {
+    console.error('POST /api/talent-suite/booking error:', e.message);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
+  }
+});
+
+async function tsAfterBooking(o, mins, when, tier, rescheduled) {
+  const meeting = process.env.TS_CALL_MEETING_URL || '';
+  const first = flEsc(String(o.candidate_name).split(' ')[0]);
+  const what = tier.accelerator ? '45 minute Career Accelerator session (recruiter review plus interview coaching)' : '30 minute Recruiter Review Call';
+  const ics = tsIcs(o, o.call_slot, mins, `Live 2 Help: ${tier.name}`, `Order ${o.order_id}. Your session with Ella from Live 2 Help.${meeting ? ' Join: ' + meeting : ''}`, meeting);
+  const bring = tier.accelerator
+    ? 'Please have your target roles, the job adverts you are aiming for and any interviews you have coming up to hand.'
+    : 'Please have your results from the free Career Toolkit open (CV health check, match scores, anything you want to ask about), plus any questions you want a recruiter to answer.';
+  const html = `<div style="background:#0B0B18;padding:32px 24px;font-family:'Gill Sans MT','Gill Sans',Calibri,sans-serif;color:#fff;"><div style="max-width:560px;margin:0 auto;">
+    <p style="color:#C9A84C;letter-spacing:2px;font-size:12px;margin:0 0 6px;">LIVE 2 HELP TALENT SUITE</p>
+    <h1 style="font-size:22px;margin:0 0 14px;color:#fff;">${rescheduled ? 'Your call has been moved' : 'Your call is booked'}</h1>
+    <p style="color:#C9CCD6;margin:0 0 14px;">Hi ${first}, your ${flEsc(what)} with Ella is confirmed for:</p>
+    <p style="color:#C9A84C;font-size:20px;margin:0 0 16px;"><b>${flEsc(when)} (UK time)</b></p>
+    <p style="color:#C9CCD6;margin:0 0 14px;">${meeting ? `Join by video: <a href="${flEsc(meeting)}" style="color:#C9A84C;">${flEsc(meeting)}</a>.` : 'Ella will send you the video link before the call, or phone you on the number you gave us.'} A calendar invite is attached.</p>
+    <p style="color:#C9CCD6;margin:0 0 14px;">${flEsc(bring)}</p>
+    <p style="color:#C9CCD6;margin:0 0 14px;">Need a different time? Use your booking link again up to 24 hours before, or just reply to this email.</p>
+    <p style="color:#B4B8C4;font-size:12px;margin:0;">Live 2 Help Recruitment Ltd, Company No. 11731080. Order ${flEsc(o.order_id)}.</p></div></div>`;
+  const attachments = [{ filename: 'Live 2 Help call.ics', content: ics, contentType: 'text/calendar; charset=utf-8; method=PUBLISH' }];
+  try {
+    await emailTransporter.sendMail({ from: process.env.BREVO_SENDER_EMAIL, to: o.candidate_email, replyTo: 'office@live2helprecruitment.co.uk',
+      subject: `${rescheduled ? 'Call moved' : 'Call booked'}: ${when} (${o.order_id})`, html, attachments,
+      text: `Your ${what} with Ella is confirmed for ${when} (UK time).${meeting ? ' Join: ' + meeting : ''} Order ${o.order_id}.` });
+  } catch (e) { console.error('Talent Suite call confirmation email failed:', e.message); }
+  const ella = process.env.REPLY_EMAIL_ELLA;
+  if (ella) {
+    emailTransporter.sendMail({ from: process.env.BREVO_SENDER_EMAIL, to: ella, subject: `Talent Suite call: ${o.candidate_name}, ${when}`, attachments,
+      text: `${o.candidate_name} (${o.candidate_email}${o.candidate_phone ? ', ' + o.candidate_phone : ''}) booked a ${what}.\nWhen: ${when} (UK time)\nTarget: ${o.target_role}\nCV: ${o.cv_file_link}\n${o.candidate_notes ? 'Notes: ' + o.candidate_notes + '\n' : ''}Order ${o.order_id}.` })
+      .catch(e => console.error('Talent Suite call invite to Ella failed:', e.message));
+  }
+  try {
+    const task = { id: `task-ts-call-${Date.now()}-${crypto.randomBytes(2).toString('hex')}`, user: 'ella',
+      title: `${rescheduled ? 'MOVED: ' : ''}Talent Suite call: ${o.candidate_name}, ${when}`, priority: 'High', dueDate: tsLondonDate(o.call_slot),
+      context: `${what}. ${o.candidate_name} (${o.candidate_email}${o.candidate_phone ? ', ' + o.candidate_phone : ''}) targeting ${o.target_role}. CV: ${o.cv_file_link}${o.candidate_notes ? '. Notes: ' + o.candidate_notes : ''}. Order ${o.order_id}.${tier.accelerator ? ' Also due: CV rewrite and LinkedIn profile rewrite by ' + o.due_date + '.' : ''}`,
+      status: 'Open', recurring: 'none', archived: false };
+    await getSheetsClient().spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: TASKS_RANGE, valueInputOption: 'RAW', requestBody: { values: [taskToRow(task)] } });
+  } catch (e) { console.error('Talent Suite call task failed:', e.message); }
+  mailDan(`Talent Suite call ${rescheduled ? 'moved' : 'booked'}: ${o.candidate_name}`, `${tier.name}: ${when} (UK time). ${o.candidate_email}. Order ${o.order_id}. Ella has a task${ella ? ' and an invite' : ''}.`);
+  auditLog('website', 'talent_suite_call_booked', 'talent_suite', o.candidate_name, `${o.order_id} ${o.call_slot}`);
+}
+
 function tsConfirmationEmail(o) {
-  const coaching = o.tier === 'cv_review_coaching';
-  const booking = process.env.TS_COACHING_BOOKING_URL;
+  const tier = TS_TIERS[o.tier] || { name: o.tier };
+  const accel = !!tier.accelerator;
+  const link = tsCallUrl(o);
   const ukDate = new Date(o.due_date + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+  const intro = accel
+    ? `Hi ${flEsc(String(o.candidate_name).split(' ')[0])}, we have your payment and your CV. Ella from Live 2 Help will rewrite your CV and improve your LinkedIn profile for ${flEsc(o.target_role || 'your target roles')}, then take you through interview coaching in a 45 minute session.`
+    : `Hi ${flEsc(String(o.candidate_name).split(' ')[0])}, we have your payment and your CV. Next step: book your 30 minute call with Ella, a working recruiter, who will go through what you found in the free Career Toolkit and answer your questions about ${flEsc(o.target_role || 'your target roles')}.`;
+  const dueLabel = accel ? 'Your CV and LinkedIn rewrite by' : 'Please have your call by';
   return `<div style="background:#0B0B18;padding:32px 24px;font-family:'Gill Sans MT','Gill Sans',Calibri,sans-serif;color:#fff;">
   <div style="max-width:560px;margin:0 auto;">
     <p style="color:#C9A84C;letter-spacing:2px;font-size:12px;margin:0 0 6px;">LIVE 2 HELP TALENT SUITE</p>
-    <h1 style="font-size:22px;margin:0 0 14px;color:#fff;">Thank you, your ${flEsc(TS_TIERS[o.tier].name)} is booked</h1>
-    <p style="color:#C9CCD6;margin:0 0 14px;">Hi ${flEsc(String(o.candidate_name).split(' ')[0])}, we have your payment and your CV. A Live 2 Help recruiter will now review it against ${flEsc(o.target_role || 'your target roles')}.</p>
+    <h1 style="font-size:22px;margin:0 0 14px;color:#fff;">Thank you, your ${flEsc(tier.name)} is confirmed</h1>
+    <p style="color:#C9CCD6;margin:0 0 14px;">${intro}</p>
     <table style="width:100%;border-collapse:collapse;margin:0 0 16px;color:#C9CCD6;font-size:14px;">
       <tr><td style="padding:6px 0;border-top:1px solid #2C2C4C;">Order reference</td><td style="padding:6px 0;border-top:1px solid #2C2C4C;color:#fff;text-align:right;">${flEsc(o.order_id)}</td></tr>
       <tr><td style="padding:6px 0;border-top:1px solid #2C2C4C;">Amount paid</td><td style="padding:6px 0;border-top:1px solid #2C2C4C;color:#fff;text-align:right;">£${flEsc(Number(o.amount_gbp).toFixed(2))}</td></tr>
-      <tr><td style="padding:6px 0;border-top:1px solid #2C2C4C;">Your reviewed CV by</td><td style="padding:6px 0;border-top:1px solid #2C2C4C;color:#C9A84C;text-align:right;"><b>${flEsc(ukDate)}</b></td></tr>
+      <tr><td style="padding:6px 0;border-top:1px solid #2C2C4C;">${dueLabel}</td><td style="padding:6px 0;border-top:1px solid #2C2C4C;color:#C9A84C;text-align:right;"><b>${flEsc(ukDate)}</b></td></tr>
     </table>
-    ${coaching ? (booking
-      ? `<p style="color:#C9CCD6;margin:0 0 16px;">Your 30 minute coaching call is included. <a href="${flEsc(booking)}" style="color:#C9A84C;">Book your call here</a> at a time that suits you.</p>`
-      : `<p style="color:#C9CCD6;margin:0 0 16px;">Your 30 minute coaching call is included. We will email you within one working day to book it${o.coaching_availability ? ', using the availability you gave us' : ''}.</p>`) : ''}
-    <p style="color:#C9CCD6;margin:0 0 14px;">We may email you a few quick questions so nothing in your CV is guessed. Your receipt comes separately from Stripe.</p>
+    ${link ? `<p style="margin:0 0 16px;"><a href="${flEsc(link)}" style="display:inline-block;background:#C9A84C;color:#0B0B18;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:2px;">Book your ${accel ? '45' : '30'} minute call</a></p>
+    <p style="color:#C9CCD6;margin:0 0 16px;">Pick any time that suits you, Monday to Friday. If you would rather we arrange it, just reply${o.coaching_availability ? ' (we have your availability: ' + flEsc(o.coaching_availability) + ')' : ''}.</p>`
+      : `<p style="color:#C9CCD6;margin:0 0 16px;">We will email you within one working day to arrange your call${o.coaching_availability ? ', using the availability you gave us' : ''}.</p>`}
+    <p style="color:#C9CCD6;margin:0 0 14px;">We may email you a few quick questions so nothing is guessed. Your receipt comes separately from Stripe.</p>
     <p style="color:#B4B8C4;font-size:12px;margin:0;">Live 2 Help Recruitment Ltd, Company No. 11731080. Questions? Just reply to this email.</p>
   </div></div>`;
 }
@@ -17532,14 +17786,14 @@ async function tsFulfil(order) {
   try {
     const task = { id: `task-ts-${Date.now()}-${crypto.randomBytes(2).toString('hex')}`, user: 'ella',
       title: `Talent Suite: ${tierName} for ${order.candidate_name} (due ${order.due_date})`, priority: 'High', dueDate: order.due_date,
-      context: `Paid £${Number(order.amount_gbp).toFixed(2)}. ${order.candidate_name} (${order.candidate_email}${order.candidate_phone ? ', ' + order.candidate_phone : ''}) targeting ${order.target_role}. CV: ${order.cv_file_link}${order.coaching_availability ? '. Coaching availability: ' + order.coaching_availability : ''}${order.candidate_notes ? '. Notes: ' + order.candidate_notes : ''}. Order ${order.order_id}. Mark it In review and Delivered in Talent Suite.`,
+      context: `Paid £${Number(order.amount_gbp).toFixed(2)}. ${order.candidate_name} (${order.candidate_email}${order.candidate_phone ? ', ' + order.candidate_phone : ''}) targeting ${order.target_role}. CV: ${order.cv_file_link}${order.coaching_availability ? '. Availability for the call: ' + order.coaching_availability : ''}${order.candidate_notes ? '. Notes: ' + order.candidate_notes : ''}. Order ${order.order_id}. ${(TS_TIERS[order.tier] || {}).accelerator ? 'Deliver: CV rewrite, LinkedIn profile rewrite, then the 45 minute review and interview coaching session (they book it from their email; it appears here as a separate task).' : 'Deliver: the 30 minute Recruiter Review Call (they book it from their email; it appears here as a separate task) and a short written summary of next steps.'} Mark it In review and Delivered in Talent Suite.`,
       status: 'Open', recurring: 'none', archived: false };
     await getSheetsClient().spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: TASKS_RANGE, valueInputOption: 'RAW', requestBody: { values: [taskToRow(task)] } });
   } catch (e) { console.error('Talent Suite task failed:', e.message); }
   try {
     await emailTransporter.sendMail({ from: process.env.BREVO_SENDER_EMAIL, to: order.candidate_email, replyTo: 'office@live2helprecruitment.co.uk',
-      subject: `Your ${tierName} is booked (${order.order_id})`, html: tsConfirmationEmail(order),
-      text: `Thank you, your ${tierName} is booked. Order ${order.order_id}, paid £${Number(order.amount_gbp).toFixed(2)}. Your reviewed CV will be with you by ${order.due_date}.` });
+      subject: `Your ${tierName} is confirmed: book your call (${order.order_id})`, html: tsConfirmationEmail(order),
+      text: `Thank you, your ${tierName} is confirmed. Order ${order.order_id}, paid £${Number(order.amount_gbp).toFixed(2)}. ${tsCallUrl(order) ? 'Book your call here: ' + tsCallUrl(order) : 'We will email you to arrange your call.'}` });
   } catch (e) { console.error('Talent Suite confirmation email failed:', e.message); }
   try {
     await tsUsersTable.updateWhere(o => o.email === order.candidate_email, o => { o.review_requested = 'Yes'; o.status = 'review requested'; return o; });
@@ -17581,10 +17835,11 @@ app.post('/api/stripe/webhook', async (req, res) => {
         const order = await tsOrderForSession(orderId, obj);
         if (!order || TS_PAID_OR_LATER.includes(order.status)) return res.json({ received: true }); // idempotent
         const paidIso = new Date().toISOString();
-        const due = await tsDueDate(paidIso, TS_TURNAROUND_DAYS);
+        const due = await tsDueDate(paidIso, (TS_TIERS[order.tier] && TS_TIERS[order.tier].days) || TS_TURNAROUND_DAYS);
         const amount = (Number(obj.amount_total) || 0) / 100;
         await tsOrders.update(orderId, o => {
           o.status = 'paid'; o.paid_at = paidIso; o.due_date = due; o.amount_gbp = String(amount);
+          if (!o.assigned_to) o.assigned_to = 'Ella'; // Ella delivers every Talent Suite service
           o.stripe_payment_intent = typeof obj.payment_intent === 'string' ? obj.payment_intent : ((obj.payment_intent || {}).id || '');
           if (!o.stripe_session_id) o.stripe_session_id = obj.id || '';
           return o;
@@ -17620,7 +17875,7 @@ app.post('/api/stripe/webhook', async (req, res) => {
 
 /* ---------- Staff: orders for the dashboard (Section 6 statuses) ---------- */
 app.get('/api/talent-suite-orders', async (req, res) => {
-  try { res.json({ data: await tsOrders.list() }); }
+  try { res.json({ data: (await tsOrders.list()).map(o => ({ ...o, call_minutes: tsCallMinutesFor(o), book_url: TS_BOOKABLE.includes(o.status) ? tsCallUrl(o) : '' })) }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/talent-suite-orders', async (req, res) => {

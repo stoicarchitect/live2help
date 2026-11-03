@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Book your session - Live 2 Help Talent Suite</title>
+<link rel="icon" href="../../assets/logo.png" type="image/png">
+<link rel="preconnect" href="https://l2h-api.onrender.com" crossorigin>
+<style>
+  :root { --gold: #C9A84C; --gold-l: #E8C96A; --gold-bg: #FBF6E8; --navy: #0B0B18; --navy-2: #151528; --grey: #444444; --muted: #6B6F7B; --lightbg: #F7F6F3; --border: #DDDDDD; --ok: #2E7D4F; --bad: #B23B3B; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Gill Sans MT', 'Gill Sans', Calibri, sans-serif; background: var(--lightbg); color: #1A1A1A; line-height: 1.5; }
+  .hidden { display: none !important; }
+  .topbar { background: var(--navy); padding: 26px 20px 18px; display: flex; justify-content: center; }
+  .topbar img { height: 118px; display: block; }
+  @media (max-width: 600px) { .topbar img { height: 92px; } }
+  .hero { background: linear-gradient(180deg, var(--navy) 0%, var(--navy-2) 100%); padding: 10px 20px 90px; text-align: center; color: #fff; }
+  .eyebrow { color: var(--gold); letter-spacing: 3px; font-size: 12px; font-weight: bold; text-transform: uppercase; margin: 0 0 10px; }
+  .hero h1 { font-size: clamp(26px, 5vw, 40px); margin: 0 0 10px; }
+  .hero p { color: #C9CCD6; font-size: 16.5px; margin: 0 auto; max-width: 560px; }
+  .wrap { max-width: 720px; margin: -56px auto 70px; padding: 0 20px; }
+  .card { background: #fff; border: 1px solid var(--border); border-radius: 14px; padding: 26px; box-shadow: 0 10px 30px rgba(11,11,24,.07); }
+  .card h2 { color: var(--navy); font-size: 19px; margin: 0 0 6px; }
+  .sub { color: var(--grey); font-size: 14.5px; margin: 0 0 18px; }
+  .days { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 14px; }
+  .day { flex: none; border: 1px solid var(--border); border-radius: 10px; background: #fff; padding: 8px 14px; cursor: pointer; font-family: inherit; font-size: 14px; color: var(--navy); text-align: center; }
+  .day b { display: block; font-size: 15px; }
+  .day.sel { border-color: var(--gold); background: var(--gold-bg); box-shadow: 0 0 0 3px rgba(201,168,76,.18); }
+  .times { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-bottom: 18px; }
+  .time { border: 1px solid var(--border); border-radius: 8px; background: #fff; padding: 11px 6px; font-family: inherit; font-size: 15px; cursor: pointer; color: var(--navy); }
+  .time:hover { border-color: var(--gold); }
+  .time.sel { background: var(--navy); color: #fff; border-color: var(--navy); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; padding: 14px 24px; font-size: 15.5px; font-weight: bold; font-family: inherit; cursor: pointer; background: var(--gold); color: var(--navy); }
+  .btn:hover { background: var(--gold-l); } .btn[disabled] { opacity: .6; cursor: not-allowed; }
+  .link { background: none; border: 0; color: var(--navy); text-decoration: underline; text-decoration-color: var(--gold); text-underline-offset: 3px; cursor: pointer; font-family: inherit; font-size: 14px; padding: 0; }
+  .msg { font-size: 14.5px; padding: 10px 12px; border-radius: 8px; margin-bottom: 14px; }
+  .msg.err { background: #FBEDED; color: var(--bad); }
+  .when { color: var(--navy); font-size: 21px; font-weight: bold; margin: 6px 0 12px; }
+  .tick { width: 56px; height: 56px; border-radius: 50%; border: 2px solid var(--gold); display: inline-flex; align-items: center; justify-content: center; color: var(--gold); font-size: 26px; margin-bottom: 10px; }
+  .note { font-size: 13px; color: var(--muted); margin-top: 16px; }
+  .foot { background: var(--navy); color: #8D91A0; text-align: center; font-size: 12.5px; padding: 26px 20px; }
+  .foot a { color: var(--gold); }
+</style>
+</head>
+<body>
+<header class="topbar"><a href="../"><img src="../../assets/logo3-transparent.png" alt="Live 2 Help Recruitment"></a></header>
+<section class="hero">
+  <p class="eyebrow">Live 2 Help Talent Suite</p>
+  <h1 id="title">Book your session</h1>
+  <p id="lead">Choose a time that suits you. Your calendar invite arrives as soon as you confirm.</p>
+</section>
+<main class="wrap">
+  <div class="card" id="loading"><p class="sub" style="margin:0;">Finding the available times...</p></div>
+
+  <div class="card hidden" id="problem">
+    <h2>We could not open this booking</h2>
+    <p class="sub" id="problemText"></p>
+    <p class="note">Need a hand? Email <a href="mailto:office@live2helprecruitment.co.uk">office@live2helprecruitment.co.uk</a> with your order reference and we will sort it out.</p>
+  </div>
+
+  <div class="card hidden" id="picker">
+    <div class="msg err hidden" id="err" role="alert"></div>
+    <div id="current" class="hidden">
+      <h2>Your session is booked</h2>
+      <div class="when" id="currentWhen"></div>
+      <p class="sub">Need a different time? Pick a new one below. Changes need at least 24 hours' notice.</p>
+    </div>
+    <h2 id="pickHead">Pick a day and time</h2>
+    <p class="sub" id="pickSub"></p>
+    <div class="days" id="days" role="tablist"></div>
+    <div class="times" id="times"></div>
+    <button class="btn" id="confirm" disabled>Confirm this time</button>
+    <p class="note">All times are UK time. Sessions run Monday to Friday.</p>
+  </div>
+
+  <div class="card hidden" id="done" style="text-align:center;">
+    <div class="tick">&#10003;</div>
+    <h2>You are booked in</h2>
+    <div class="when" id="doneWhen"></div>
+    <p class="sub" id="doneText"></p>
+    <p class="note">Your confirmation and calendar invite are on their way. Not there after 15 minutes? Check your spam or Promotions folder, or email <a href="mailto:office@live2helprecruitment.co.uk">office@live2helprecruitment.co.uk</a>.</p>
+    <p style="margin-top:16px;"><button class="link" id="again">Choose a different time</button></p>
+  </div>
+</main>
+<footer class="foot">Live 2 Help Recruitment Ltd, Company No. 11731080. <a href="mailto:office@live2helprecruitment.co.uk">office@live2helprecruitment.co.uk</a></footer>
+
+<script>
+(function () {
+  var API = 'https://l2h-api.onrender.com';
+  var q = new URLSearchParams(location.search), O = q.get('o') || '', T = q.get('t') || '';
+  var slots = [], order = null, byDay = {}, dayKeys = [], dayPick = '', slotPick = '', busy = false;
+  function $(id) { return document.getElementById(id); }
+  function show(id) { ['loading', 'problem', 'picker', 'done'].forEach(function (k) { $(k).classList.toggle('hidden', k !== id); }); }
+  function problem(t) { $('problemText').textContent = t; show('problem'); }
+  function err(t) { $('err').textContent = t || ''; $('err').classList.toggle('hidden', !t); }
+  var TZ = 'Europe/London';
+  function dayKey(iso) { return new Date(iso).toLocaleDateString('en-CA', { timeZone: TZ }); }
+  function dayLabel(iso) { var d = new Date(iso); return { w: d.toLocaleDateString('en-GB', { timeZone: TZ, weekday: 'short' }), d: d.toLocaleDateString('en-GB', { timeZone: TZ, day: 'numeric', month: 'short' }) }; }
+  function timeLabel(iso) { return new Date(iso).toLocaleTimeString('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }); }
+
+  function group() {
+    byDay = {}; dayKeys = [];
+    slots.forEach(function (s) { var k = dayKey(s); if (!byDay[k]) { byDay[k] = []; dayKeys.push(k); } byDay[k].push(s); });
+    dayPick = dayKeys[0] || ''; slotPick = '';
+  }
+  function renderDays() {
+    $('days').innerHTML = '';
+    dayKeys.forEach(function (k) {
+      var l = dayLabel(byDay[k][0]), b = document.createElement('button');
+      b.type = 'button'; b.className = 'day' + (k === dayPick ? ' sel' : ''); b.setAttribute('role', 'tab');
+      b.innerHTML = l.w + '<b>' + l.d + '</b>';
+      b.onclick = function () { dayPick = k; slotPick = ''; render(); };
+      $('days').appendChild(b);
+    });
+  }
+  function renderTimes() {
+    $('times').innerHTML = '';
+    (byDay[dayPick] || []).forEach(function (s) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'time' + (s === slotPick ? ' sel' : ''); b.textContent = timeLabel(s);
+      b.onclick = function () { slotPick = s; render(); };
+      $('times').appendChild(b);
+    });
+    $('confirm').disabled = !slotPick || busy;
+  }
+  function render() { renderDays(); renderTimes(); }
+
+  function load() {
+    if (!O || !T) return problem('This booking link is incomplete. Please use the link in your confirmation email.');
+    fetch(API + '/api/talent-suite/booking?o=' + encodeURIComponent(O) + '&t=' + encodeURIComponent(T), { cache: 'no-store' })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { j._status = r.status; return j; }); })
+      .then(function (j) {
+        if (!j.order) return problem(j.error || 'Something went wrong. Please try again.');
+        order = j.order; slots = j.slots || [];
+        var acc = order.minutes > 30;
+        $('title').textContent = 'Hi ' + order.first_name + ', book your ' + (acc ? '45' : '30') + ' minute session';
+        $('pickSub').textContent = order.service + ' (' + order.minutes + ' minutes, by video). ' + (acc ? 'We cover your results, your CV and LinkedIn changes, and interview coaching.' : 'Bring your free Career Toolkit results and any questions.');
+        if (order.call_when) { $('current').classList.remove('hidden'); $('currentWhen').textContent = order.call_when + ' (UK time)'; }
+        group();
+        if (!slots.length) { err('There are no free times in the next two weeks. Please email office@live2helprecruitment.co.uk and we will arrange one with you.'); }
+        render(); show('picker');
+      })
+      .catch(function () { problem('We could not connect. Please check your connection and try again.'); });
+  }
+
+  $('confirm').onclick = function () {
+    if (!slotPick || busy) return;
+    busy = true; $('confirm').disabled = true; $('confirm').textContent = 'Booking...'; err('');
+    fetch(API + '/api/talent-suite/booking', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ o: O, t: T, slot: slotPick }) })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { j._status = r.status; return j; }); })
+      .then(function (j) {
+        busy = false; $('confirm').textContent = 'Confirm this time';
+        if (j.ok) {
+          $('doneWhen').textContent = j.call_when + ' (UK time)';
+          $('doneText').textContent = 'Your ' + j.minutes + ' minute session with Ella is confirmed.';
+          show('done'); window.scrollTo({ top: 0, behavior: 'smooth' }); return;
+        }
+        err(j.error || 'Something went wrong. Please try again.');
+        if (j._status === 409) load(); // someone took that time: refresh the list
+        else renderTimes();
+      })
+      .catch(function () { busy = false; $('confirm').textContent = 'Confirm this time'; err('We could not connect. Please try again.'); renderTimes(); });
+  };
+  $('again').onclick = function () { show('loading'); load(); };
+  load();
+})();
+</script>
+</body>
+</html>

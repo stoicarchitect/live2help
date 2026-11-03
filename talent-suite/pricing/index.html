@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Expert CV Services - Live 2 Help Talent Suite</title>
-<meta name="description" content="Have a Live 2 Help recruiter review your CV by hand. Expert CV Review £25, or CV Review plus Interview Coaching £49. Delivered within 3 working days.">
+<title>Talk to a Recruiter - Live 2 Help Talent Suite</title>
+<meta name="description" content="Get a working recruiter on your side. Recruiter Review Call £24.99, or the Career Accelerator £49.99 with a hand-rewritten CV, an improved LinkedIn profile and interview coaching.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Live 2 Help Recruitment">
-<meta property="og:title" content="Expert CV Services - Live 2 Help Talent Suite">
-<meta property="og:description" content="A working UK recruiter reviews your CV by hand. From £25, delivered within 3 working days.">
+<meta property="og:title" content="Talk to a Recruiter - Live 2 Help Talent Suite">
+<meta property="og:description" content="A working UK recruiter on a call with you. From £24.99, booked online in minutes.">
 <meta property="og:image" content="https://careers.live2helprecruitment.co.uk/assets/og-image.png">
 <link rel="icon" href="../../assets/logo.png" type="image/png">
 <link rel="preconnect" href="https://l2h-api.onrender.com" crossorigin>
@@ -92,33 +92,33 @@
 
 <section class="hero">
   <p class="eyebrow">Live 2 Help Talent Suite</p>
-  <h1>Have a recruiter <span>fix your CV by hand</span></h1>
-  <p>A working UK recruiter reviews your CV against the roles you want, then returns it polished and ready to send. Delivered within 3 working days.</p>
+  <h1>Get a recruiter <span>in your corner</span></h1>
+  <p>The free Career Toolkit shows you what to fix. A working UK recruiter shows you how hiring managers actually read your CV, and helps you land the interview. Book your session online as soon as you have paid.</p>
 </section>
 
 <main class="wrap">
   <div class="banner hidden" id="cancelled">Payment cancelled. Nothing has been charged. Your details are still here if you want to try again.</div>
 
   <div class="tiers" role="radiogroup" aria-label="Choose a service">
-    <div class="tier" data-tier="cv_review" role="radio" tabindex="0" aria-checked="false">
+    <div class="tier" data-tier="recruiter_call" role="radio" tabindex="0" aria-checked="false">
       <span class="radio"></span>
-      <h2>Expert CV Review</h2>
-      <div class="price">£25 <small>one-off</small></div>
-      <p>Your CV reviewed line by line and returned polished, screening-safe and aimed at your target roles.</p>
-      <ul><li>Reviewed by a working UK recruiter</li><li>Your CV rewritten and polished</li><li>Written feedback on positioning and where to apply</li><li>Delivered within 3 working days</li></ul>
+      <h2>Recruiter Review Call</h2>
+      <div class="price">£24.99 <small>one-off</small></div>
+      <p>A 30 minute one to one with a working recruiter. Bring your results from the free Career Toolkit and get the human view on what they mean.</p>
+      <ul><li>30 minute video call, booked online at a time that suits you</li><li>We go through your free Career Toolkit results together</li><li>A recruiter's view of how hiring managers and screening software read your CV</li><li>Ask anything: applications, career change, gaps, salary, where to apply</li><li>A short written summary of your next steps</li></ul>
     </div>
-    <div class="tier" data-tier="cv_review_coaching" role="radio" tabindex="0" aria-checked="false">
+    <div class="tier" data-tier="career_accelerator" role="radio" tabindex="0" aria-checked="false">
       <span class="tag">Best value</span><span class="radio"></span>
-      <h2>CV Review + Interview Coaching</h2>
-      <div class="price">£49 <small>one-off</small></div>
-      <p>Everything in the Expert CV Review, plus a 30 minute one to one call to get you ready for interviews.</p>
-      <ul><li>Everything in the Expert CV Review</li><li>30 minute video or phone coaching call</li><li>Practice on the questions you are most likely to face</li><li>Honest advice on salary and offers</li></ul>
+      <h2>Career Accelerator</h2>
+      <div class="price">£49.99 <small>one-off</small></div>
+      <p>The full service. Your CV and LinkedIn profile improved by hand, then a 45 minute session to review your results and get you ready for interviews.</p>
+      <ul><li>Everything in the Recruiter Review Call</li><li>Your CV rewritten by hand: polished, screening-safe and aimed at your target roles</li><li>Your LinkedIn profile improved: headline, About section and experience</li><li>Interview coaching: practice on the questions you are most likely to face</li><li>Honest advice on salary and offers</li></ul>
     </div>
   </div>
 
   <form class="card" id="intake" novalidate>
     <h2>Your details</h2>
-    <p class="sub">Tell us about you and upload your CV. You pay securely by card on the next page.</p>
+    <p class="sub">Tell us about you and upload your CV. You pay securely on the next page, then book your session online.</p>
     <div class="grid2">
       <div class="field"><label for="candidate_name">Full name <span class="req">*</span></label><input type="text" id="candidate_name" autocomplete="name"></div>
       <div class="field"><label for="candidate_email">Email <span class="req">*</span></label><input type="email" id="candidate_email" autocomplete="email"><div class="hint">Your receipt and reviewed CV come here.</div></div>
@@ -130,8 +130,9 @@
       <div class="drop" id="drop" tabindex="0"><b>Upload your CV</b><br><span id="dropText" style="font-size:13px;color:var(--muted);">PDF or Word (.docx), up to 5MB</span></div>
       <input type="file" id="cv" accept=".pdf,.docx" class="hidden">
     </div>
-    <div class="field hidden" id="availField"><label for="coaching_availability">When are you free for your coaching call?</label><input type="text" id="coaching_availability" placeholder="e.g. weekday evenings after 6pm, or Saturday mornings"></div>
-    <div class="field"><label for="candidate_notes">Anything we should know?</label><textarea id="candidate_notes" placeholder="e.g. returning after a career break, changing sector, an interview next week"></textarea></div>
+    <div class="field hidden" id="linkedinField"><label for="linkedin_url">Your LinkedIn profile link <span class="req">*</span></label><input type="text" id="linkedin_url" placeholder="e.g. linkedin.com/in/your-name" autocomplete="url"><div class="hint">So we can improve your profile as part of the Career Accelerator.</div></div>
+    <div class="field"><label for="coaching_availability">When are you usually free for your call?</label><input type="text" id="coaching_availability" placeholder="e.g. weekday lunchtimes, or mornings before 12"><div class="hint">Optional. You pick your exact time online once you have paid. Calls run Monday to Friday, in UK time.</div></div>
+    <div class="field"><label for="candidate_notes" id="notesLabel">Anything we should know?</label><textarea id="candidate_notes" placeholder="e.g. returning after a career break, changing sector, an interview next week"></textarea></div>
     <input type="text" id="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
     <div class="field"><label class="check"><input type="checkbox" id="start_now"> <span>I ask Live 2 Help to start work within the 14-day cancellation period. I understand that I can cancel before the service is complete, and that I lose my right to cancel once the service has been fully delivered. I agree to the <a href="../terms/" target="_blank" rel="noopener">Terms of Service</a>.</span></label></div>
     <div id="turnstileBox" style="margin-bottom:12px;"></div>
@@ -144,10 +145,10 @@
   </form>
 
   <section class="faq">
-    <details><summary>What happens after I pay?</summary><p>You get a confirmation email straight away with your order reference and the date your reviewed CV is due. A Live 2 Help recruiter reviews your CV and may email you a few quick questions so nothing is guessed.</p></details>
-    <details><summary>How long does it take?</summary><p>Within 3 UK working days of payment. Weekends and bank holidays are not counted.</p></details>
-    <details><summary>How does the coaching call work?</summary><p>Once you have paid, we arrange a 30 minute video or phone call at a time that suits you, using the availability you give us.</p></details>
-    <details><summary>Can I get a refund?</summary><p>You can cancel before the service is complete by replying to your confirmation email. If we cannot help with your CV for any reason, we refund you in full.</p></details>
+    <details><summary>What happens after I pay?</summary><p>You get a confirmation email straight away with your order reference and a secure link to book your session. Pick any free time Monday to Friday, and your calendar invite arrives instantly. We may email you a few quick questions beforehand so nothing is guessed.</p></details>
+    <details><summary>What is the difference between the two?</summary><p>The Recruiter Review Call is a 30 minute conversation: we go through your free Career Toolkit results, give you a recruiter's view and answer your questions. The Career Accelerator adds the hands-on work: we rewrite your CV by hand, improve your LinkedIn profile and coach you for interviews in a 45 minute session.</p></details>
+    <details><summary>How long does it take?</summary><p>You can usually book a call within a couple of working days. For the Career Accelerator, your rewritten CV and LinkedIn profile are with you within 3 UK working days of payment. Weekends and bank holidays are not counted.</p></details>
+    <details><summary>Can I get a refund?</summary><p>You can cancel before the service is complete by replying to your confirmation email. If we cannot help for any reason, we refund you in full.</p></details>
     <details><summary>Not ready to pay?</summary><p>Try our free <a href="../career/">Career Toolkit</a> first: a CV health check, job match score, CV rewrite and interview prep, with free credits every month.</p></details>
   </section>
 </main>
@@ -161,7 +162,8 @@
 (function () {
   var API = 'https://l2h-api.onrender.com';
   var TURNSTILE_SITE_KEY = '';
-  var TIERS = { cv_review: { name: 'Expert CV Review', price: '£25' }, cv_review_coaching: { name: 'CV Review + Interview Coaching', price: '£49' } };
+  var TIERS = { recruiter_call: { name: 'Recruiter Review Call', price: '£24.99' }, career_accelerator: { name: 'Career Accelerator', price: '£49.99' } };
+  var LEGACY = { cv_review: 'recruiter_call', cv_review_coaching: 'career_accelerator' }; // old links and saved forms
   var tier = '', file = null, busy = false, tw = null;
   function $(id) { return document.getElementById(id); }
   function err(t) { $('err').textContent = t || ''; $('err').classList.toggle('hidden', !t); if (t) $('err').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
@@ -178,9 +180,11 @@
   }
 
   function pick(t) {
+    if (LEGACY[t]) t = LEGACY[t];
     if (!TIERS[t]) return; tier = t;
     Array.prototype.forEach.call(document.querySelectorAll('.tier'), function (el) { var on = el.getAttribute('data-tier') === t; el.classList.toggle('sel', on); el.setAttribute('aria-checked', on ? 'true' : 'false'); });
-    $('availField').classList.toggle('hidden', t !== 'cv_review_coaching');
+    $('linkedinField').classList.toggle('hidden', t !== 'career_accelerator');
+    $('notesLabel').textContent = t === 'recruiter_call' ? 'What would you like to cover on the call?' : 'Anything we should know?';
     $('what').innerHTML = '<b>' + TIERS[t].name + '</b> &nbsp;' + TIERS[t].price;
   }
   Array.prototype.forEach.call(document.querySelectorAll('.tier'), function (el) {
@@ -189,13 +193,13 @@
   });
 
   var q = {}; try { q = Object.fromEntries(new URLSearchParams(location.search)); } catch (e) {}
-  pick(q.tier || 'cv_review_coaching');
+  pick(q.tier || 'career_accelerator');
   if (q.cancelled) { $('cancelled').classList.remove('hidden'); }
   // prefill from the Career Toolkit or from this page before a cancelled payment (same site storage, never the URL)
   try {
     var pre = JSON.parse(sessionStorage.getItem('l2h_ts_prefill') || 'null');
     if (pre) { if (pre.name) $('candidate_name').value = pre.name; if (pre.email) $('candidate_email').value = pre.email; if (pre.role) $('target_role').value = pre.role;
-      ['candidate_phone', 'candidate_notes', 'coaching_availability'].forEach(function (k) { if (pre[k]) $(k).value = pre[k]; }); if (pre.tier) pick(pre.tier); }
+      ['candidate_phone', 'candidate_notes', 'coaching_availability', 'linkedin_url'].forEach(function (k) { if (pre[k]) $(k).value = pre[k]; }); if (pre.tier && !q.tier) pick(pre.tier); }
   } catch (e) {}
 
   var drop = $('drop');
@@ -227,7 +231,7 @@
 
   // if an order was saved but its payment page did not open, retry that order instead of uploading again
   var pending = null; // { id, sig }
-  function formSig(v) { return [tier, v('candidate_name'), v('candidate_email'), v('candidate_phone'), v('target_role'), v('candidate_notes'), v('coaching_availability'), file ? file.name + file.size : ''].join('|'); }
+  function formSig(v) { return [tier, v('candidate_name'), v('candidate_email'), v('candidate_phone'), v('target_role'), v('candidate_notes'), v('coaching_availability'), v('linkedin_url'), file ? file.name + file.size : ''].join('|'); }
   function go(url, t0, server) {
     var ms = Math.round(performance.now() - t0);
     try { console.info('[talent-suite] click to Stripe URL: ' + ms + 'ms', server || ''); } catch (e) {}
@@ -244,10 +248,11 @@
     if (v('candidate_name').length < 2) return fail('Please add your full name.');
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(v('candidate_email'))) return fail('Please check your email address.');
     if (v('target_role').length < 2) return fail('Please tell us the role or sector you are applying for.');
+    if (tier === 'career_accelerator' && !/linkedin\.com\/.+/i.test(v('linkedin_url'))) return fail('Please add the link to your LinkedIn profile so we can improve it.');
     if (!file) return fail('Please upload your CV.');
     if (!$('start_now').checked) return fail('Please tick the box asking us to start within the cancellation period.');
     err('');
-    try { sessionStorage.setItem('l2h_ts_prefill', JSON.stringify({ tier: tier, name: v('candidate_name'), email: v('candidate_email'), role: v('target_role'), candidate_phone: v('candidate_phone'), candidate_notes: v('candidate_notes'), coaching_availability: v('coaching_availability') })); } catch (e2) {}
+    try { sessionStorage.setItem('l2h_ts_prefill', JSON.stringify({ tier: tier, name: v('candidate_name'), email: v('candidate_email'), role: v('target_role'), candidate_phone: v('candidate_phone'), candidate_notes: v('candidate_notes'), coaching_availability: v('coaching_availability'), linkedin_url: v('linkedin_url') })); } catch (e2) {}
     var sig = formSig(v);
 
     if (pending && pending.sig === sig) {
@@ -261,7 +266,8 @@
     var fd = new FormData();
     fd.append('tier', tier);
     ['candidate_name', 'candidate_email', 'candidate_phone', 'target_role', 'candidate_notes'].forEach(function (k) { fd.append(k, v(k)); });
-    if (tier === 'cv_review_coaching') fd.append('coaching_availability', v('coaching_availability'));
+    fd.append('coaching_availability', v('coaching_availability'));
+    if (tier === 'career_accelerator') fd.append('linkedin_url', v('linkedin_url'));
     fd.append('start_now', 'true');
     fd.append('website', $('website').value);
     fd.append('turnstileToken', (window.turnstile && tw !== null) ? window.turnstile.getResponse(tw) : '');

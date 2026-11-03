@@ -16102,7 +16102,23 @@ function l2hPager(total, page, per, fnPage, fnPer){
 /* ---------- Talent Suite (Career Toolkit users) ---------- */
 const TSU = {list: [], orders: [], loaded: false, selO: new Set(), selU: new Set(), shownO: [], shownU: []};
 const TSO_STATUS = {pending_payment:'Awaiting payment', paid:'Paid, not started', in_review:'In review', delivered:'Delivered', abandoned:'Abandoned checkout', refunded:'Refunded'};
-const TSO_TIER = {cv_review:'Expert CV Review', cv_review_coaching:'CV Review + Interview Coaching'};
+const TSO_TIER = {recruiter_call:'Recruiter Review Call', career_accelerator:'Career Accelerator', cv_review:'Expert CV Review (retired)', cv_review_coaching:'CV Review + Interview Coaching (retired)'};
+function tsoCallLine(o){
+  if(!['recruiter_call','career_accelerator'].includes(o.tier) || !['paid','in_review','delivered'].includes(o.status)) return '';
+  const mins = o.tier === 'career_accelerator' ? 45 : 30;
+  if(o.call_slot){
+    const when = new Date(o.call_slot).toLocaleString('en-GB', {timeZone:'Europe/London', weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'});
+    return '<div class="pool-muted" style="color:var(--gold);font-weight:bold;">Call: ' + esc(when) + ' (' + mins + ' min)</div>';
+  }
+  return '<div class="pool-muted" style="color:#B23B3B;font-weight:bold;">Call not booked yet (' + mins + ' min)</div>';
+}
+function tsoCopyLink(id){
+  const o = (TSU.orders || []).find(x => x.id === id);
+  if(!o || !o.book_url){ showToast('No booking link for this order'); return; }
+  const done = () => showToast('Booking link copied. Paste it into an email or message.');
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(o.book_url).then(done, () => prompt('Copy this booking link:', o.book_url));
+  else prompt('Copy this booking link:', o.book_url);
+}
 const TSO_NEXT = {paid:['in_review'], in_review:['paid','delivered'], delivered:['in_review']};
 const TSU_STATUS = {'active':'Active', 'review requested':'Review requested', 'contacted':'Contacted', 'in talent pool':'In talent pool', 'placed':'Placed', 'blocked':'Blocked'};
 const TSU_FREE = 8;
@@ -16137,7 +16153,7 @@ const TSU_FREE = 8;
         <div class="section-title">Career Toolkit users</div>
         <div class="ts-bulk" id="tsuBulk"></div>
         <div class="ops-table-wrap"><table class="ops-table" style="min-width:1080px;"><thead><tr><th class="ts-chk"><input type="checkbox" id="tsuAll" title="Select all users shown" onchange="tsSelectAll('u', this.checked)"></th><th>Joined</th><th>Person</th><th>Field and target</th><th>Tools used</th><th>Credits this month</th><th>Last seen</th><th>Status</th><th>Notes</th><th style="text-align:right;">Actions</th></tr></thead><tbody id="tsuBody"><tr><td colspan="10" class="empty-row">Loading...</td></tr></tbody></table></div>
-        <div class="note-line">These people signed up to the Career Toolkit at careers.live2helprecruitment.co.uk/talent-suite/career and confirmed their email. Each gets ${TSU_FREE} free credits a month; talent pool members get extra. "Review requested" means they asked for a paid expert CV review, and a task was created for Ella. Use Give credits to top someone up, or Blocked to stop an email address using the toolkit. Orders are confirmed by Stripe only: once paid, the customer gets their confirmation email and Ella gets a task due in 3 UK working days. Move paid orders to In review and then Delivered here. Past-due orders show in red.</div>
+        <div class="note-line">These people signed up to the Career Toolkit at careers.live2helprecruitment.co.uk/talent-suite/career and confirmed their email. Each gets ${TSU_FREE} free credits a month; talent pool members get extra. "Review requested" means they asked for a paid expert CV review, and a task was created for Ella. Use Give credits to top someone up, or Blocked to stop an email address using the toolkit. Orders are confirmed by Stripe only: once paid, the customer gets their confirmation email with a secure link to book their call (30 minutes for the Recruiter Review Call, 45 for the Career Accelerator), and Ella gets a task. When they book, Ella gets a second task and a calendar invite. Use Booking link to resend the link to anyone who has not booked. Move paid orders to In review and then Delivered here. Past-due orders show in red.</div>
       </div>`;
     host.parentNode.appendChild(v);
   }
@@ -16197,13 +16213,13 @@ function renderTalentSuite(){
     <td class="ts-chk"><input type="checkbox" ${on ? 'checked' : ''} onchange="tsSelectOne('o','${esc(o.id)}',this.checked)"></td>
     <td>${esc(opsFmt(String(o.created_at).slice(0, 10)))}<div class="pool-muted">${esc(o.order_id)}</div></td>
     <td class="strong">${esc(o.candidate_name)}<div class="pool-muted">${esc(o.candidate_email)}${o.candidate_phone ? ' | ' + esc(o.candidate_phone) : ''}</div>${o.target_role ? '<div class="pool-muted">' + esc(o.target_role) + '</div>' : ''}</td>
-    <td>${esc(TSO_TIER[o.tier] || o.tier)}${o.cv_file_link ? `<div><a href="${esc(o.cv_file_link)}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;">Open CV</a></div>` : ''}${o.coaching_availability ? '<div class="pool-muted">Free: ' + esc(o.coaching_availability) + '</div>' : ''}${o.candidate_notes ? '<div class="pool-muted">' + esc(o.candidate_notes) + '</div>' : ''}</td>
+    <td>${esc(TSO_TIER[o.tier] || o.tier)}${o.cv_file_link ? `<div><a href="${esc(o.cv_file_link)}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;">Open CV</a></div>` : ''}${tsoCallLine(o)}${o.coaching_availability ? '<div class="pool-muted">Free: ' + esc(o.coaching_availability) + '</div>' : ''}${o.candidate_notes ? '<div class="pool-muted">' + esc(o.candidate_notes) + '</div>' : ''}</td>
     <td>${o.amount_gbp ? '£' + esc(parseFloat(o.amount_gbp).toFixed(2)) : '-'}${o.paid_at ? '<div class="pool-muted">paid ' + esc(opsFmt(o.paid_at.slice(0, 10))) + '</div>' : ''}</td>
     <td>${sel}</td>
     <td>${o.due_date ? `<span class="status-pill ${overdue ? 'lost' : 'active'}">${esc(opsFmt(o.due_date))}</span>` : '-'}${o.delivered_at ? '<div class="pool-muted">delivered ' + esc(opsFmt(o.delivered_at.slice(0, 10))) + '</div>' : ''}</td>
     <td><select onchange="setTalentSuiteOrder('${esc(o.id)}',{assigned_to:this.value})" style="padding:6px 8px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:12px;background:#fff;">${['','Dan','Ella'].map(k => `<option value="${k}"${(o.assigned_to || '') === k ? ' selected' : ''}>${k || 'Not assigned'}</option>`).join('')}</select></td>
-    <td><div class="row-actions"><button onclick="tsoEmail('${esc(o.id)}')">Email</button><button onclick="tsoDelete('${esc(o.id)}')">Delete</button></div></td></tr>`;
-  }).join('') : '<tr><td colspan="9" class="empty-row">No orders yet. Paid expert reviews and coaching appear here.</td></tr>';
+    <td><div class="row-actions">${o.book_url ? `<button onclick="tsoCopyLink('${esc(o.id)}')">Booking link</button>` : ''}<button onclick="tsoEmail('${esc(o.id)}')">Email</button><button onclick="tsoDelete('${esc(o.id)}')">Delete</button></div></td></tr>`;
+  }).join('') : '<tr><td colspan="9" class="empty-row">No orders yet. Paid Recruiter Review Calls and Career Accelerators appear here.</td></tr>';
   document.getElementById('tsuBody').innerHTML = shown.length ? shown.map(u => {
     const used = tsuUsed(u), allow = tsuAllow(u);
     const hot = u.status === 'review requested';
