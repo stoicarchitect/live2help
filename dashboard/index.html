@@ -16940,7 +16940,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '3 Nov 2026 - build 54.1 (2027 campaigns, Talent Suite marketing opt-in)';
+var PAGE_BUILD = '3 Nov 2026 - build 54.2 (marketing delete options)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -18375,7 +18375,7 @@ function buildTagApply(){
 
   /* ---------- Marketing ---------- */
   /* build 51: LinkedIn outreach tab, copy and post-to-LinkedIn buttons, post images, campaign filter */
-  const MKT = { tab: 'post', rows: [], funnel: 0, tsLinkedIn: 0, tsTotal: 0, q: '', sector: '', where: '', camp: undefined, tsSrc: [] };
+  const MKT = { sel: new Set(), tab: 'post', rows: [], funnel: 0, tsLinkedIn: 0, tsTotal: 0, q: '', sector: '', where: '', camp: undefined, tsSrc: [] };
   const MKT_TABS = [['post','LinkedIn posts'],['outreach','Outreach and email'],['brevo','Brevo workflows'],['magnet','Lead magnets'],['event','Events']];
   async function mktLoad(){
     try{
@@ -18420,6 +18420,18 @@ function buildTagApply(){
       MKT.camp = name; toast41(`Created ${name} with ${items.length} copied items. Edit the wording for the new offer.`); mktLoad();
     }catch(err){ toast41(err.message); }
   }
+  async function mkDeleteIds(ids, msg){
+    if(msg && !confirm(msg)) return;
+    let n = 0;
+    try{ for(const id of ids){ await b2Del('/api/marketing', id); n++; MKT.sel.delete(id); } toast41(`Deleted ${n}`); }
+    catch(err){ toast41(`Deleted ${n}, then stopped: ${err.message}`); }
+    mktLoad();
+  }
+  document.addEventListener('change', e => {
+    const t = e.target; if(!t.dataset) return;
+    if(t.dataset.mksel){ if(t.checked) MKT.sel.add(t.dataset.mksel); else MKT.sel.delete(t.dataset.mksel); mktRender(); }
+    else if(t.dataset.mkall){ const vis = [...document.querySelectorAll('#mk41Body [data-mksel]')].map(x => x.dataset.mksel); vis.forEach(id => t.checked ? MKT.sel.add(id) : MKT.sel.delete(id)); mktRender(); }
+  });
   const mkText = r => String(r.body || r.notes || '');
   // a sector message holds a connection note and a first message; split them so each copies on its own
   function mkParts(r){
@@ -18480,9 +18492,11 @@ function buildTagApply(){
     const active = camps.filter(c => c.status !== 'Finished'), done = camps.filter(c => c.status === 'Finished');
     const campBar = !hasCamps ? '' : `<div class="mk51-cards"><button class="mk51-card" data-mkcamp="" aria-pressed="${MKT.camp === ''}"><b>All campaigns</b><span>${MKT.rows.filter(r => r.type === MKT.tab).length} ${noun}s</span></button>${active.map(card).join('')}${unassigned ? `<button class="mk51-card" data-mkcamp="__none" aria-pressed="${MKT.camp === '__none'}"><b>Unassigned</b><span>${unassigned} ${noun}${unassigned === 1 ? '' : 's'}</span></button>` : ''}</div>
       ${done.length ? `<details class="mk51-arch"${done.some(c => c.title === MKT.camp) ? ' open' : ''}><summary>Finished campaigns (${done.length})</summary><div class="mk51-cards">${done.map(card).join('')}</div></details>` : ''}
-      ${realCamp ? `<div class="mk51-camp"><div><b>${h(realCamp.title)}</b>${realCamp.audience ? ' · ' + h(realCamp.audience) : ''}${realCamp.notes ? `<div class="mk51-goal">${h(realCamp.notes)}</div>` : ''}</div><div class="mk51-acts"><button class="p41-btn sm" data-rec-edit="campaign|${h(realCamp.id)}">Edit campaign</button><button class="p41-btn sm" data-mkdup="${h(realCamp.id)}">Duplicate campaign</button></div></div>` : ''}`;
+      ${realCamp ? `<div class="mk51-camp"><div><b>${h(realCamp.title)}</b>${realCamp.audience ? ' · ' + h(realCamp.audience) : ''}${realCamp.notes ? `<div class="mk51-goal">${h(realCamp.notes)}</div>` : ''}</div><div class="mk51-acts"><button class="p41-btn sm" data-rec-edit="campaign|${h(realCamp.id)}">Edit campaign</button><button class="p41-btn sm" data-mkdup="${h(realCamp.id)}">Duplicate campaign</button><button class="p41-btn sm" data-mkdelcamp="${h(realCamp.id)}" style="color:var(--danger)">Delete campaign</button></div></div>` : ''}`;
     const heads = {post:['Date','Image','Post','Where','Status','Actions'], outreach:['Type','Message','Sector','Actions'], brevo:['Workflow','Audience','Status','Next step','Owner',''], magnet:['Lead magnet','Promoted','Status','Leads','Owner',''], event:['Date','Event','Location','Cost','Status','']}[MKT.tab];
-    const cells = r => ({
+    const chk = r => `<span data-mkx="1"><input type="checkbox" data-mksel="${h(r.id)}" aria-label="Select"${MKT.sel.has(r.id) ? ' checked' : ''}></span>`;
+    const delBtn = r => `<button class="p41-btn sm" data-mkdel="${h(r.id)}" style="color:var(--danger)">Delete</button>`;
+    const cells0 = r => ({
       post: [r.date ? fmt41(r.date, true) + (r.post_time ? ' · ' + h(r.post_time) : '') : 'No date', r.image ? `<img class="mk51-th" src="${h(mkImg(r))}" alt="" loading="lazy">` : '', `<b>${h(r.title)}</b>${!MKT.camp && r.campaign ? `<div class="mk51-tagc">${h(r.campaign)}</div>` : ''}${prev(r)}`, h(r.channel), pill(r.status), postActs(r)],
       outreach: [h(r.channel), `<b>${h(r.title)}</b>${!MKT.camp && r.campaign ? `<div class="mk51-tagc">${h(r.campaign)}</div>` : ''}${prev(r)}`, h(r.audience), outActs(r)],
       brevo: [`<b>${h(r.title)}</b>`, h(r.audience), pill(r.status), h(r.next_step), h(who41(r.owner)), link(r)],
@@ -18492,23 +18506,35 @@ function buildTagApply(){
         h(who41(r.owner)), link(r)],
       event: [r.date ? fmt41(r.date, true) : 'No date', `<b>${h(r.title)}</b>`, h(r.location), h(r.cost), pill(r.status), link(r)],
     })[MKT.tab];
+    const cells = r => { const c = cells0(r).slice(); if(MKT.tab === 'post' || MKT.tab === 'outreach') c[c.length - 1] = `<div class="mk51-acts" data-mkx="1">${c[c.length - 1]}${delBtn(r)}</div>`; return [chk(r)].concat(c); };
     const sectors = REC_CFG.outreach.fields.find(f => f.k === 'audience').opts.filter(x => x !== 'All sectors');
     const bar = MKT.tab === 'post' ? `<div class="mk51-tip">Post on LinkedIn copies the text and opens LinkedIn with it filled in. Add the image (use the Image button to download it) before posting. For the company page, choose to post as Live 2 Help in the LinkedIn box. Candidate posts go out Tuesdays and Thursdays at 8am or 5pm.</div>
         <div class="mk51-bar"><select class="p41-in" id="mk51Where"><option value="">All pages</option>${['Company page','Ella','Dan'].map(w => `<option${MKT.where === w ? ' selected' : ''}>${w}</option>`).join('')}</select><input class="p41-in" id="mk51Q" placeholder="Search posts" value="${h(MKT.q)}"></div>`
       : MKT.tab === 'outreach' ? `<div class="mk51-tip">Pick the sector, copy the connection note, then the first message once they accept. Swap [First name] and change one line so it reads personally. Keep to 20 to 25 requests a day. No prices in messages. Email steps are sent one to one from Outlook, never as a bulk send: read the "How to" message in the campaign first.</div>
         <div class="mk51-bar"><select class="p41-in" id="mk51Sector"><option value="">All sectors</option>${sectors.map(x => `<option${MKT.sector === x ? ' selected' : ''}>${h(x)}</option>`).join('')}</select><input class="p41-in" id="mk51Q" placeholder="Search messages" value="${h(MKT.q)}"></div>` : '';
-    $('mk41Body').innerHTML = campBar + bar + (rows.length ? `<div class="p41-tw"><table><thead><tr>${heads.map(x => `<th>${x}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr class="click" data-rec-edit="${MKT.tab}|${h(r.id)}">${cells(r).map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
+    const selN = rows.filter(r => MKT.sel.has(r.id)).length;
+    const bulk = selN ? `<div class="mk51-bar"><b>${selN} selected</b><button class="p41-btn sm" data-mkbulk="del" style="color:var(--danger)">Delete selected</button><button class="p41-btn sm" data-mkbulk="clear">Clear</button></div>` : '';
+    $('mk41Body').innerHTML = campBar + bar + bulk + (rows.length ? `<div class="p41-tw"><table><thead><tr><th><input type="checkbox" data-mkall="1" aria-label="Select all shown"${rows.length && rows.every(r => MKT.sel.has(r.id)) ? ' checked' : ''}></th>${heads.map(x => `<th>${x}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr class="click" data-rec-edit="${MKT.tab}|${h(r.id)}">${cells(r).map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
       : `<div class="p41-panel"><div class="p41-empty">Nothing here yet. Use the add button to start.</div></div>`);
     const q = $('mk51Q'); if(q) q.oninput = () => { MKT.q = q.value; const pos = q.selectionStart; mktRender(); const n = $('mk51Q'); if(n){ n.focus(); n.setSelectionRange(pos, pos); } };
     const sel = $('mk51Sector'); if(sel) sel.onchange = () => { MKT.sector = sel.value; mktRender(); };
     const wh = $('mk51Where'); if(wh) wh.onchange = () => { MKT.where = wh.value; mktRender(); };
   }
   document.addEventListener('click', async e => {
-    const t = e.target.closest('[data-mkt],[data-mkcopy],[data-mkli],[data-mkposted],[data-mkcamp],[data-mkdup]'); if(!t) return;
-    if(t.dataset.mkt){ MKT.tab = t.dataset.mkt; MKT.q = ''; mktRender(); return; }
-    if(t.dataset.mkcamp !== undefined){ MKT.camp = t.dataset.mkcamp; mktRender(); return; }
+    const t = e.target.closest('[data-mkt],[data-mkcopy],[data-mkli],[data-mkposted],[data-mkcamp],[data-mkdup],[data-mkdel],[data-mkdelcamp],[data-mkbulk]'); if(!t) return;
+    if(t.dataset.mkt){ MKT.tab = t.dataset.mkt; MKT.q = ''; MKT.sel.clear(); mktRender(); return; }
+    if(t.dataset.mkcamp !== undefined){ MKT.camp = t.dataset.mkcamp; MKT.sel.clear(); mktRender(); return; }
     if(t.dataset.mkdup){ const c = MKT.rows.find(r => r.id === t.dataset.mkdup); if(c) mkDuplicate(c); return; }
     e.stopPropagation();
+    if(t.dataset.mkdel){ const r = MKT.rows.find(x => x.id === t.dataset.mkdel); if(r) mkDeleteIds([r.id], `Delete "${r.title}"? This cannot be undone.`); return; }
+    if(t.dataset.mkbulk === 'clear'){ MKT.sel.clear(); mktRender(); return; }
+    if(t.dataset.mkbulk === 'del'){ const ids = [...MKT.sel]; if(ids.length) mkDeleteIds(ids, `Delete ${ids.length} selected item${ids.length === 1 ? '' : 's'}? This cannot be undone.`); return; }
+    if(t.dataset.mkdelcamp){ const c = MKT.rows.find(x => x.id === t.dataset.mkdelcamp); if(!c) return;
+      const kids = MKT.rows.filter(x => x.campaign === c.title && x.type !== 'campaign');
+      if(kids.length && confirm(`Delete the campaign "${c.title}" AND its ${kids.length} posts and messages?\n\nOK = delete everything\nCancel = next question`)){ mkDeleteIds(kids.map(x => x.id).concat([c.id]), null); return; }
+      if(confirm(`Delete only the campaign "${c.title}"?${kids.length ? ` Its ${kids.length} posts and messages will be kept as Unassigned.` : ''}`)){
+        (async () => { try{ for(const k of kids) await post41('/api/marketing', {...k, campaign: '', updated_by: me41().key, updated_at: new Date().toISOString()}); await b2Del('/api/marketing', c.id); if(MKT.camp === c.title) MKT.camp = ''; toast41('Campaign deleted'); mktLoad(); }catch(err){ toast41(err.message); } })(); }
+      return; }
     if(t.dataset.mkcopy){ const [id, i] = t.dataset.mkcopy.split('|'); const r = MKT.rows.find(x => x.id === id); if(!r) return;
       const part = mkParts(r)[Number(i) || 0]; toast41(await mkCopy(part[1]) ? 'Copied - paste it into LinkedIn' : 'Could not copy, open the item and copy the text'); return; }
     if(t.dataset.mkli){ const r = MKT.rows.find(x => x.id === t.dataset.mkli); if(!r) return;

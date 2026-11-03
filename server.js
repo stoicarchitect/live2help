@@ -16165,7 +16165,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '3 Nov 2026 - build 54.1 (2027 campaigns, Talent Suite marketing opt-in)';
+const SERVER_BUILD = '3 Nov 2026 - build 54.2 (marketing delete options)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
