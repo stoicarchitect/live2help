@@ -16165,7 +16165,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '3 Nov 2026 - build 53.0 (Marketing campaigns)';
+const SERVER_BUILD = '3 Nov 2026 - build 54.0 (2027 campaigns)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -16984,6 +16984,43 @@ async function seedMarketingCampaigns() {
   } catch (e) { console.error('Marketing campaigns seed:', e.message); }
 }
 setTimeout(seedMarketingCampaigns, 30000);
+
+/* build 54: 2027 campaign suite (9 campaigns, posts, outreach and email sequences, Brevo plans).
+   Loaded once from scripts/campaigns-2027.json. A hidden marker row stops it re-adding anything Dan or Ella later edit or delete.
+   {link} is swapped for the campaign link with its tracking tag, the same way the Add post and Duplicate buttons do. */
+const MK_2027_MARKER = '__seed-campaigns-2027-v1';
+async function seedCampaigns2027() {
+  try {
+    const all = await marketingTable.listAll();
+    if (all.some(o => o.id === MK_2027_MARKER)) return;
+    const c = JSON.parse(fs.readFileSync(path.join(__dirname, 'scripts', 'campaigns-2027.json'), 'utf8'));
+    const have = new Set(all.map(o => o.id));
+    const byTitle = {};
+    const now = new Date().toISOString();
+    let nc = 0, ni = 0;
+    for (const cm of c.campaigns) {
+      byTitle[cm.title] = cm;
+      if (have.has(cm.id)) continue;
+      await marketingTable.upsert({ ...cm, type: 'campaign', date: '2027-01-04', updated_by: 'system', updated_at: now });
+      nc++;
+    }
+    const linkFor = it => {
+      const cm = byTitle[it.campaign];
+      if (!cm || !cm.link) return '';
+      const suffix = it.type === 'outreach' ? 'outreach' : (it.channel === 'Ella' ? 'ella' : 'company');
+      return cm.link + (cm.tag ? (cm.link.includes('?') ? '&' : '?') + 'src=' + cm.tag + '-' + suffix : '');
+    };
+    for (const it of c.items) {
+      if (have.has(it.id)) continue;
+      const body = String(it.body || '').split('{link}').join(linkFor(it));
+      await marketingTable.upsert({ ...it, body, link: it.link || '', updated_by: 'system', updated_at: now });
+      ni++;
+    }
+    await marketingTable.upsert({ id: MK_2027_MARKER, type: 'system', title: '2027 campaigns loaded', updated_by: 'system', updated_at: now });
+    console.log(`Marketing: 2027 campaigns loaded (${nc} campaigns, ${ni} items)`);
+  } catch (e) { console.error('2027 campaigns seed:', e.message); }
+}
+setTimeout(seedCampaigns2027, 45000);
 
 /* ======================================================================
    LIVE 2 HELP TALENT SUITE - CAREER TOOLKIT (candidate side)

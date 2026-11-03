@@ -16939,7 +16939,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '3 Nov 2026 - build 53.0 (Marketing campaigns)';
+var PAGE_BUILD = '3 Nov 2026 - build 54.0 (2027 campaigns)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -18271,7 +18271,7 @@ function buildTagApply(){
       {k:'campaign', l:'Campaign', opts: mkCampOpts}, {k:'post_time', l:'Post time', opts:['','08:00','10:00','12:00','17:00']}, {k:'next_step', l:'Call to action'}, {k:'image', l:'Image (file path)'},
       {k:'body', l:'Post text (copied to LinkedIn. Type {link} to insert the campaign link)', type:'area', rows:14}, {k:'link', l:'Link to the live post'}, {k:'notes', l:'Notes', type:'area'}], after: mktLoad},
     outreach: {api: '/api/marketing', type:'outreach', title: 'LinkedIn message', fields: [
-      {k:'title', l:'Name', req:1}, {k:'channel', l:'Message type', opts:['Connection note','First message','Follow-up','After sign-up','Reply','Sector message','InMail','How to']},
+      {k:'title', l:'Name', req:1}, {k:'channel', l:'Message type', opts:['Connection note','First message','Follow-up','After sign-up','Reply','Sector message','InMail','How to','Email','Email 1','Email 2','Email 3']},
       {k:'audience', l:'Sector', opts:['All sectors','Engineering and technical','Sales and business development','Operations and logistics','Purchasing and supply chain','Accountancy, finance and office','IT and technology','Construction','Industrial and manufacturing','Driving','Health and social care','Catering and hospitality','Corporate and HR']},
       {k:'campaign', l:'Campaign', opts: mkCampOpts}, {k:'status', l:'Status', opts:['Live','Draft','Retired']}, {k:'owner', l:'Owner', opts:['ella','dan']},
       {k:'body', l:'Message (use [First name] and edit one line to make it personal. Type {link} to insert the campaign link)', type:'area', rows:14}, {k:'notes', l:'Notes', type:'area'}], after: mktLoad},
@@ -18375,14 +18375,16 @@ function buildTagApply(){
   /* ---------- Marketing ---------- */
   /* build 51: LinkedIn outreach tab, copy and post-to-LinkedIn buttons, post images, campaign filter */
   const MKT = { tab: 'post', rows: [], funnel: 0, tsLinkedIn: 0, tsTotal: 0, q: '', sector: '', where: '', camp: undefined, tsSrc: [] };
-  const MKT_TABS = [['post','LinkedIn posts'],['outreach','LinkedIn outreach'],['brevo','Brevo workflows'],['magnet','Lead magnets'],['event','Events']];
+  const MKT_TABS = [['post','LinkedIn posts'],['outreach','Outreach and email'],['brevo','Brevo workflows'],['magnet','Lead magnets'],['event','Events']];
   async function mktLoad(){
     try{
       MKT.rows = b2List(await api41('/api/marketing'));
-      MKT.funnel = b2List(await api41('/api/funnel-leads').catch(() => ({data:[]}))).length;
+      const fl = b2List(await api41('/api/funnel-leads').catch(() => ({data:[]})));
+      MKT.funnel = fl.length;
       const ts = b2List(await api41('/api/talent-suite-users').catch(() => ({data:[]})));
       MKT.tsTotal = ts.length; MKT.tsLinkedIn = ts.filter(u => /^li-/i.test(String(u.source || ''))).length;
-      MKT.tsSrc = ts.map(u => String(u.source || '').toLowerCase());
+      // build 54: Hiring Toolkit leads store the source as "src=tag-channel", so they count toward campaign cards too
+      MKT.tsSrc = ts.map(u => String(u.source || '').toLowerCase()).concat(fl.map(l => String(l.source || '').toLowerCase().replace(/^\??src=/, '')));
       MKT.tsBy = ts.reduce((m, u) => { const k = String(u.source || ''); if(/^li-/i.test(k)) m[k] = (m[k] || 0) + 1; return m; }, {});
     }catch(e){ $('mk41Body').innerHTML = `<div class="p41-panel"><div class="p41-err">${h(e.message)}</div></div>`; return; }
     if(MKT.camp === undefined){ const a = MKT.rows.find(r => r.type === 'campaign' && r.status === 'Active'); MKT.camp = a ? a.title : ''; }
@@ -18456,7 +18458,7 @@ function buildTagApply(){
     let rows = MKT.rows.filter(r => r.type === MKT.tab);
     if(hasCamps){ if(MKT.camp === '__none') rows = rows.filter(r => !r.campaign); else if(MKT.camp) rows = rows.filter(r => r.campaign === MKT.camp); }
     if(MKT.tab === 'outreach'){
-      const order = ['How to','Connection note','First message','Follow-up','After sign-up','Reply','InMail','Sector message'];
+      const order = ['How to','Connection note','First message','Follow-up','Email','Email 1','Email 2','Email 3','After sign-up','Reply','InMail','Sector message'];
       rows.sort((a, b) => (order.indexOf(a.channel) - order.indexOf(b.channel)) || String(a.audience).localeCompare(String(b.audience)) || String(a.title).localeCompare(String(b.title)));
       if(MKT.sector) rows = rows.filter(r => r.audience === MKT.sector || r.audience === 'All sectors');
     } else rows.sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')));
@@ -18492,7 +18494,7 @@ function buildTagApply(){
     const sectors = REC_CFG.outreach.fields.find(f => f.k === 'audience').opts.filter(x => x !== 'All sectors');
     const bar = MKT.tab === 'post' ? `<div class="mk51-tip">Post on LinkedIn copies the text and opens LinkedIn with it filled in. Add the image (use the Image button to download it) before posting. For the company page, choose to post as Live 2 Help in the LinkedIn box. Candidate posts go out Tuesdays and Thursdays at 8am or 5pm.</div>
         <div class="mk51-bar"><select class="p41-in" id="mk51Where"><option value="">All pages</option>${['Company page','Ella','Dan'].map(w => `<option${MKT.where === w ? ' selected' : ''}>${w}</option>`).join('')}</select><input class="p41-in" id="mk51Q" placeholder="Search posts" value="${h(MKT.q)}"></div>`
-      : MKT.tab === 'outreach' ? `<div class="mk51-tip">Pick the sector, copy the connection note, then the first message once they accept. Swap [First name] and change one line so it reads personally. Keep to 20 to 25 requests a day. No prices in messages.</div>
+      : MKT.tab === 'outreach' ? `<div class="mk51-tip">Pick the sector, copy the connection note, then the first message once they accept. Swap [First name] and change one line so it reads personally. Keep to 20 to 25 requests a day. No prices in messages. Email steps are sent one to one from Outlook, never as a bulk send: read the "How to" message in the campaign first.</div>
         <div class="mk51-bar"><select class="p41-in" id="mk51Sector"><option value="">All sectors</option>${sectors.map(x => `<option${MKT.sector === x ? ' selected' : ''}>${h(x)}</option>`).join('')}</select><input class="p41-in" id="mk51Q" placeholder="Search messages" value="${h(MKT.q)}"></div>` : '';
     $('mk41Body').innerHTML = campBar + bar + (rows.length ? `<div class="p41-tw"><table><thead><tr>${heads.map(x => `<th>${x}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr class="click" data-rec-edit="${MKT.tab}|${h(r.id)}">${cells(r).map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
       : `<div class="p41-panel"><div class="p41-empty">Nothing here yet. Use the add button to start.</div></div>`);
