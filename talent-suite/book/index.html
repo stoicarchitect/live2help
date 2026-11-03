@@ -133,8 +133,8 @@
       .then(function (j) {
         if (!j.order) return problem(j.error || 'Something went wrong. Please try again.');
         order = j.order; slots = j.slots || [];
-        var acc = order.minutes >= 60;
-        $('title').textContent = 'Hi ' + order.first_name + ', book your ' + (acc ? '60' : '30') + ' minute session';
+        var acc = order.minutes > 30;
+        $('title').textContent = 'Hi ' + order.first_name + ', book your ' + (acc ? '45' : '30') + ' minute session';
         $('pickSub').textContent = order.service + ' (' + order.minutes + ' minutes, by video). ' + (acc ? 'We cover your results, your CV and LinkedIn changes, and interview coaching.' : 'Bring your free Career Toolkit results and any questions.');
         if (order.call_when) { $('current').classList.remove('hidden'); $('currentWhen').textContent = order.call_when + ' (UK time)'; }
         group();

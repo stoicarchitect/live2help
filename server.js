@@ -17099,7 +17099,7 @@ app.post('/api/talent-suite/review-request', async (req, res) => {
 
 const TS_TIERS = {
   recruiter_call: { name: 'Recruiter Review Call', priceEnv: 'STRIPE_PRICE_RECRUITER_CALL', days: 5, callMinutes: 30 },
-  career_accelerator: { name: 'Career Accelerator', priceEnv: 'STRIPE_PRICE_ACCELERATOR', days: 3, callMinutes: 60, accelerator: true },
+  career_accelerator: { name: 'Career Accelerator', priceEnv: 'STRIPE_PRICE_ACCELERATOR', days: 3, callMinutes: 45, accelerator: true },
   // retired in build 50: kept so orders already in the sheet still show a name
   cv_review: { name: 'Expert CV Review', priceEnv: 'STRIPE_PRICE_CV_REVIEW', legacy: true },
   cv_review_coaching: { name: 'CV Review + Interview Coaching', priceEnv: 'STRIPE_PRICE_CV_COACHING', legacy: true },
@@ -17523,7 +17523,7 @@ function tsStripeSignatureOk(raw, header, secret) {
 const tsWebhookBusy = new Set();
 
 /* ---------- Call booking (built into the CRM, build 50) ----------
-   Every paid order includes a call with Ella: 30 minutes for the Recruiter Review Call, 60 minutes for the Career
+   Every paid order includes a call with Ella: 30 minutes for the Recruiter Review Call, 45 minutes for the Career
    Accelerator (recruiter review plus interview coaching). The customer books from a secure link in their
    confirmation email (tokened like the invoice pay links). Slots come from TS_CALL_HOURS (UK time, Monday to
    Friday, bank holidays skipped, 24 hours notice, next 14 days). A slot is held by the order row (call_slot), so
@@ -17566,10 +17566,10 @@ function tsLondonToUtcIso(ymd, minutes) {
 function tsCallWhen(iso) {
   return new Date(iso).toLocaleString('en-GB', { timeZone: 'Europe/London', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
 }
-// every 30 minute cell an order's call occupies, as ISO strings
+// every 15 minute cell an order's call occupies (a 45 minute call takes three), as ISO strings
 function tsCellsOf(startIso, minutes) {
   const out = []; const t0 = Date.parse(startIso);
-  for (let i = 0; i < Math.ceil(minutes / 30); i++) out.push(new Date(t0 + i * 30 * 60000).toISOString());
+  for (let i = 0; i < Math.ceil(minutes / 15); i++) out.push(new Date(t0 + i * 15 * 60000).toISOString());
   return out;
 }
 function tsTakenCells(orders, exceptOrderId) {
@@ -17580,9 +17580,58 @@ function tsTakenCells(orders, exceptOrderId) {
   }
   return taken;
 }
+/* Ella's Outlook calendar (Microsoft 365). Set TS_CALENDAR_ICS_URL on Render to her published calendar link
+   (Outlook on the web > Settings > Calendar > Shared calendars > Publish a calendar > "Can view when I'm busy",
+   then copy the ICS link). Busy times, recurring meetings and all-day busy events are read from it and hidden
+   from the booking page. Cached for 2 minutes. If the feed cannot be read, the last good copy is used for up to
+   6 hours, then booking carries on without it and Dan is alerted once an hour. */
+let tsBusyCache = { at: 0, ranges: [], ok: false };
+async function tsCalendarBusy() {
+  const url = String(process.env.TS_CALENDAR_ICS_URL || '').trim();
+  if (!url) return [];
+  if (Date.now() - tsBusyCache.at < 120000 && tsBusyCache.ok) return tsBusyCache.ranges;
+  try {
+    const ical = (await import('node-ical')).default;
+    const r = await fetch(url.replace(/^webcal:/i, 'https:'), { signal: AbortSignal.timeout(10000) });
+    if (!r.ok) throw new Error('calendar feed answered ' + r.status);
+    const data = ical.parseICS(await r.text());
+    const from = new Date(Date.now() - 24 * 3600000), to = new Date(Date.now() + 18 * 86400000);
+    const ranges = [];
+    const add = (s, e, allDay) => {
+      let a = new Date(s).getTime(), b = new Date(e).getTime();
+      if (!(b > a)) b = a + 30 * 60000;
+      if (allDay) { // an all-day event blocks that whole UK day
+        a = Date.parse(tsLondonToUtcIso(tsLondonDate(new Date(a).toISOString()), 0));
+        b = Math.max(b, a + 86400000);
+      }
+      if (b > from.getTime() && a < to.getTime()) ranges.push([a, b]);
+    };
+    for (const ev of Object.values(data)) {
+      if (!ev || ev.type !== 'VEVENT' || ev.start == null) continue;
+      if (String(ev.transparency || '').toUpperCase() === 'TRANSPARENT') continue; // shown as Free
+      if (String(ev.status || '').toUpperCase() === 'CANCELLED') continue;
+      const allDay = ev.datetype === 'date';
+      if (ev.rrule) {
+        let inst = [];
+        try { inst = ical.expandRecurringEvent(ev, { from, to, includeOverrides: true, excludeExdates: true, expandOngoing: true }); } catch (e) { inst = []; }
+        if (!inst.length && ev.rrule) { try { inst = ev.rrule.between(from, to, true).map(d => ({ start: d, end: new Date(d.getTime() + (new Date(ev.end) - new Date(ev.start))) })); } catch (e) { /* skip */ } }
+        inst.forEach(i => add(i.start, i.end, allDay));
+      } else add(ev.start, ev.end || ev.start, allDay);
+    }
+    tsBusyCache = { at: Date.now(), ranges, ok: true };
+    return ranges;
+  } catch (e) {
+    console.error('[talent-suite] Ella calendar feed could not be read:', e.message);
+    alertDan('ts-calendar-feed', 'Talent Suite: Ella\'s calendar feed could not be read', `Booking slots are not checking her Outlook calendar right now (${e.message}). Check TS_CALENDAR_ICS_URL on Render and that the calendar is still published.`).catch(() => {});
+    if (tsBusyCache.at && Date.now() - tsBusyCache.at < 6 * 3600000) return tsBusyCache.ranges;
+    return [];
+  }
+}
+
 async function tsCallSlots(order, orders) {
   const hol = await tsLoadBankHolidays();
   const taken = tsTakenCells(orders, order.order_id);
+  const busy = await tsCalendarBusy();
   const mins = tsCallMinutesFor(order);
   const earliest = Date.now() + 24 * 3600000;
   const out = [];
@@ -17595,6 +17644,8 @@ async function tsCallSlots(order, orders) {
         const iso = tsLondonToUtcIso(ymd, m);
         if (Date.parse(iso) < earliest) continue;
         if (tsCellsOf(iso, mins).some(c => taken.has(c))) continue;
+        const a = Date.parse(iso), b = a + mins * 60000;
+        if (busy.some(([s, e]) => a < e && b > s)) continue; // Ella is busy in Outlook
         out.push(iso);
       }
     }
@@ -17666,7 +17717,7 @@ app.post('/api/talent-suite/booking', async (req, res) => {
 async function tsAfterBooking(o, mins, when, tier, rescheduled) {
   const meeting = process.env.TS_CALL_MEETING_URL || '';
   const first = flEsc(String(o.candidate_name).split(' ')[0]);
-  const what = tier.accelerator ? '60 minute Career Accelerator session (recruiter review plus interview coaching)' : '30 minute Recruiter Review Call';
+  const what = tier.accelerator ? '45 minute Career Accelerator session (recruiter review plus interview coaching)' : '30 minute Recruiter Review Call';
   const ics = tsIcs(o, o.call_slot, mins, `Live 2 Help: ${tier.name}`, `Order ${o.order_id}. Your session with Ella from Live 2 Help.${meeting ? ' Join: ' + meeting : ''}`, meeting);
   const bring = tier.accelerator
     ? 'Please have your target roles, the job adverts you are aiming for and any interviews you have coming up to hand.'
@@ -17709,7 +17760,7 @@ function tsConfirmationEmail(o) {
   const link = tsCallUrl(o);
   const ukDate = new Date(o.due_date + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
   const intro = accel
-    ? `Hi ${flEsc(String(o.candidate_name).split(' ')[0])}, we have your payment and your CV. Ella from Live 2 Help will rewrite your CV and improve your LinkedIn profile for ${flEsc(o.target_role || 'your target roles')}, then take you through interview coaching in a 60 minute session.`
+    ? `Hi ${flEsc(String(o.candidate_name).split(' ')[0])}, we have your payment and your CV. Ella from Live 2 Help will rewrite your CV and improve your LinkedIn profile for ${flEsc(o.target_role || 'your target roles')}, then take you through interview coaching in a 45 minute session.`
     : `Hi ${flEsc(String(o.candidate_name).split(' ')[0])}, we have your payment and your CV. Next step: book your 30 minute call with Ella, a working recruiter, who will go through what you found in the free Career Toolkit and answer your questions about ${flEsc(o.target_role || 'your target roles')}.`;
   const dueLabel = accel ? 'Your CV and LinkedIn rewrite by' : 'Please have your call by';
   return `<div style="background:#0B0B18;padding:32px 24px;font-family:'Gill Sans MT','Gill Sans',Calibri,sans-serif;color:#fff;">
@@ -17722,7 +17773,7 @@ function tsConfirmationEmail(o) {
       <tr><td style="padding:6px 0;border-top:1px solid #2C2C4C;">Amount paid</td><td style="padding:6px 0;border-top:1px solid #2C2C4C;color:#fff;text-align:right;">£${flEsc(Number(o.amount_gbp).toFixed(2))}</td></tr>
       <tr><td style="padding:6px 0;border-top:1px solid #2C2C4C;">${dueLabel}</td><td style="padding:6px 0;border-top:1px solid #2C2C4C;color:#C9A84C;text-align:right;"><b>${flEsc(ukDate)}</b></td></tr>
     </table>
-    ${link ? `<p style="margin:0 0 16px;"><a href="${flEsc(link)}" style="display:inline-block;background:#C9A84C;color:#0B0B18;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:2px;">Book your ${accel ? '60' : '30'} minute call</a></p>
+    ${link ? `<p style="margin:0 0 16px;"><a href="${flEsc(link)}" style="display:inline-block;background:#C9A84C;color:#0B0B18;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:2px;">Book your ${accel ? '45' : '30'} minute call</a></p>
     <p style="color:#C9CCD6;margin:0 0 16px;">Pick any time that suits you, Monday to Friday. If you would rather we arrange it, just reply${o.coaching_availability ? ' (we have your availability: ' + flEsc(o.coaching_availability) + ')' : ''}.</p>`
       : `<p style="color:#C9CCD6;margin:0 0 16px;">We will email you within one working day to arrange your call${o.coaching_availability ? ', using the availability you gave us' : ''}.</p>`}
     <p style="color:#C9CCD6;margin:0 0 14px;">We may email you a few quick questions so nothing is guessed. Your receipt comes separately from Stripe.</p>
@@ -17735,7 +17786,7 @@ async function tsFulfil(order) {
   try {
     const task = { id: `task-ts-${Date.now()}-${crypto.randomBytes(2).toString('hex')}`, user: 'ella',
       title: `Talent Suite: ${tierName} for ${order.candidate_name} (due ${order.due_date})`, priority: 'High', dueDate: order.due_date,
-      context: `Paid £${Number(order.amount_gbp).toFixed(2)}. ${order.candidate_name} (${order.candidate_email}${order.candidate_phone ? ', ' + order.candidate_phone : ''}) targeting ${order.target_role}. CV: ${order.cv_file_link}${order.coaching_availability ? '. Availability for the call: ' + order.coaching_availability : ''}${order.candidate_notes ? '. Notes: ' + order.candidate_notes : ''}. Order ${order.order_id}. ${(TS_TIERS[order.tier] || {}).accelerator ? 'Deliver: CV rewrite, LinkedIn profile rewrite, then the 60 minute review and interview coaching session (they book it from their email; it appears here as a separate task).' : 'Deliver: the 30 minute Recruiter Review Call (they book it from their email; it appears here as a separate task) and a short written summary of next steps.'} Mark it In review and Delivered in Talent Suite.`,
+      context: `Paid £${Number(order.amount_gbp).toFixed(2)}. ${order.candidate_name} (${order.candidate_email}${order.candidate_phone ? ', ' + order.candidate_phone : ''}) targeting ${order.target_role}. CV: ${order.cv_file_link}${order.coaching_availability ? '. Availability for the call: ' + order.coaching_availability : ''}${order.candidate_notes ? '. Notes: ' + order.candidate_notes : ''}. Order ${order.order_id}. ${(TS_TIERS[order.tier] || {}).accelerator ? 'Deliver: CV rewrite, LinkedIn profile rewrite, then the 45 minute review and interview coaching session (they book it from their email; it appears here as a separate task).' : 'Deliver: the 30 minute Recruiter Review Call (they book it from their email; it appears here as a separate task) and a short written summary of next steps.'} Mark it In review and Delivered in Talent Suite.`,
       status: 'Open', recurring: 'none', archived: false };
     await getSheetsClient().spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: TASKS_RANGE, valueInputOption: 'RAW', requestBody: { values: [taskToRow(task)] } });
   } catch (e) { console.error('Talent Suite task failed:', e.message); }

@@ -16141,7 +16141,7 @@ const TSO_STATUS = {pending_payment:'Awaiting payment', paid:'Paid, not started'
 const TSO_TIER = {recruiter_call:'Recruiter Review Call', career_accelerator:'Career Accelerator', cv_review:'Expert CV Review (retired)', cv_review_coaching:'CV Review + Interview Coaching (retired)'};
 function tsoCallLine(o){
   if(!['recruiter_call','career_accelerator'].includes(o.tier) || !['paid','in_review','delivered'].includes(o.status)) return '';
-  const mins = o.tier === 'career_accelerator' ? 60 : 30;
+  const mins = o.tier === 'career_accelerator' ? 45 : 30;
   if(o.call_slot){
     const when = new Date(o.call_slot).toLocaleString('en-GB', {timeZone:'Europe/London', weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'});
     return '<div class="pool-muted" style="color:var(--gold);font-weight:bold;">Call: ' + esc(when) + ' (' + mins + ' min)</div>';
@@ -16189,7 +16189,7 @@ const TSU_FREE = 8;
         <div class="section-title">Career Toolkit users</div>
         <div class="ts-bulk" id="tsuBulk"></div>
         <div class="ops-table-wrap"><table class="ops-table" style="min-width:1080px;"><thead><tr><th class="ts-chk"><input type="checkbox" id="tsuAll" title="Select all users shown" onchange="tsSelectAll('u', this.checked)"></th><th>Joined</th><th>Person</th><th>Field and target</th><th>Tools used</th><th>Credits this month</th><th>Last seen</th><th>Status</th><th>Notes</th><th style="text-align:right;">Actions</th></tr></thead><tbody id="tsuBody"><tr><td colspan="10" class="empty-row">Loading...</td></tr></tbody></table></div>
-        <div class="note-line">These people signed up to the Career Toolkit at careers.live2helprecruitment.co.uk/talent-suite/career and confirmed their email. Each gets ${TSU_FREE} free credits a month; talent pool members get extra. "Review requested" means they asked for a paid expert CV review, and a task was created for Ella. Use Give credits to top someone up, or Blocked to stop an email address using the toolkit. Orders are confirmed by Stripe only: once paid, the customer gets their confirmation email with a secure link to book their call (30 minutes for the Recruiter Review Call, 60 for the Career Accelerator), and Ella gets a task. When they book, Ella gets a second task and a calendar invite. Use Booking link to resend the link to anyone who has not booked. Move paid orders to In review and then Delivered here. Past-due orders show in red.</div>
+        <div class="note-line">These people signed up to the Career Toolkit at careers.live2helprecruitment.co.uk/talent-suite/career and confirmed their email. Each gets ${TSU_FREE} free credits a month; talent pool members get extra. "Review requested" means they asked for a paid expert CV review, and a task was created for Ella. Use Give credits to top someone up, or Blocked to stop an email address using the toolkit. Orders are confirmed by Stripe only: once paid, the customer gets their confirmation email with a secure link to book their call (30 minutes for the Recruiter Review Call, 45 for the Career Accelerator), and Ella gets a task. When they book, Ella gets a second task and a calendar invite. Use Booking link to resend the link to anyone who has not booked. Move paid orders to In review and then Delivered here. Past-due orders show in red.</div>
       </div>`;
     host.parentNode.appendChild(v);
   }
