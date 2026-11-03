@@ -15887,7 +15887,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '3 Nov 2026 - build 51.0 (Talent Suite LinkedIn campaign in Marketing)';
+const SERVER_BUILD = '3 Nov 2026 - build 51.1 (Talent Suite campaign loads into Marketing)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -16669,7 +16669,7 @@ async function seedTalentSuiteCampaign() {
   try {
     const all = await marketingTable.listAll();
     if (all.some(o => o.id === MK_SEED_MARKER)) return;
-    const c = require('./scripts/talent-suite-campaign.json');
+    const c = JSON.parse(fs.readFileSync(path.join(__dirname, 'scripts', 'talent-suite-campaign.json'), 'utf8'));
     const linkFor = it => it.type === 'outreach' ? c.link_outreach : (it.channel === 'Ella' ? c.link_ella : c.link_company);
     const have = new Set(all.map(o => o.id));
     let n = 0;
