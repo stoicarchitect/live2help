@@ -16165,7 +16165,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '3 Nov 2026 - build 52.4 (Talent Partnership explainer and calculator in the portal)';
+const SERVER_BUILD = '3 Nov 2026 - build 53.0 (Marketing campaigns)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -16934,7 +16934,7 @@ const roadmapTable = makeSimpleTable({
 const marketingTable = makeSimpleTable({
   tab: 'Marketing', path: '/api/marketing', label: 'Marketing item', auditType: 'marketing', auditName: o => `${o.type} ${o.title}`,
   // build 51: body (copy-ready post or message), image (repo path of the visual), campaign and post_time
-  header: ['id', 'type', 'title', 'date', 'status', 'owner', 'channel', 'audience', 'location', 'cost', 'link', 'next_step', 'notes', 'updated_by', 'updated_at', 'body', 'image', 'campaign', 'post_time'],
+  header: ['id', 'type', 'title', 'date', 'status', 'owner', 'channel', 'audience', 'location', 'cost', 'link', 'next_step', 'notes', 'updated_by', 'updated_at', 'body', 'image', 'campaign', 'post_time', 'tag'],
   seed: [{ id: 'mk-hiring-toolkit', type: 'magnet', title: 'Hiring Toolkit', status: 'Live', owner: 'ella', channel: 'LinkedIn website button',
     link: 'https://careers.live2helprecruitment.co.uk/hire/', notes: 'Vacancy cost, process score and offer rating. Leads land in CRM > Funnel leads.', updated_by: 'system' }],
 });
@@ -16962,6 +16962,28 @@ async function seedTalentSuiteCampaign() {
   } catch (e) { console.error('Talent Suite campaign seed:', e.message); }
 }
 setTimeout(seedTalentSuiteCampaign, 20000);
+
+/* build 53: campaigns. A campaign is a Marketing record of type 'campaign'; posts and messages point at it by name.
+   The tag is the tracking prefix: links in a campaign carry ?src=<tag>-company, <tag>-ella or <tag>-outreach. */
+const MK_CAMP_MARKER = '__seed-campaigns-v1';
+async function seedMarketingCampaigns() {
+  try {
+    const all = await marketingTable.listAll();
+    if (all.some(o => o.id === MK_CAMP_MARKER)) return;
+    const name = 'Talent Suite launch - Open to Work';
+    if (!all.some(o => o.type === 'campaign' && o.title === name)) {
+      await marketingTable.upsert({ id: 'cmp-ts-open-to-work', type: 'campaign', title: name, status: 'Active', owner: 'ella', date: '2026-11-03',
+        audience: 'UK job seekers with Open to Work profiles, all sectors', link: 'https://careers.live2helprecruitment.co.uk/talent-suite/career/', tag: 'li',
+        notes: 'Free Career Toolkit promoted to people who are open to work, to grow the talent pool. Organic posts first, then boost the best performer. No prices in any LinkedIn content.',
+        updated_by: 'system', updated_at: new Date().toISOString() });
+    }
+    // anything posted or written before campaigns existed goes into this campaign
+    for (const o of all) if ((o.type === 'post' || o.type === 'outreach') && !o.campaign) await marketingTable.upsert({ ...o, campaign: name });
+    await marketingTable.upsert({ id: MK_CAMP_MARKER, type: 'system', title: 'Campaigns loaded', updated_by: 'system', updated_at: new Date().toISOString() });
+    console.log('Marketing: campaigns set up');
+  } catch (e) { console.error('Marketing campaigns seed:', e.message); }
+}
+setTimeout(seedMarketingCampaigns, 30000);
 
 /* ======================================================================
    LIVE 2 HELP TALENT SUITE - CAREER TOOLKIT (candidate side)
