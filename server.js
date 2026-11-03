@@ -6910,11 +6910,9 @@ app.post('/api/onboarding/:clientId/countersign', requireAdmin, async (req, res)
       catch (e) { console.error('Onboarding Drive filing failed:', e.message); filed.push({ doc: s.doc, error: friendlyDriveError(e) }); }
     }
     // build 49.4: the client gets both signed copies once everything is countersigned
+    // build 55: the signed copies are no longer emailed automatically. The dashboard opens them for review first.
     let emailed = null;
-    if (row) {
-      try { emailed = await onbSendSignedCopies(pool, id, actorOf(req)); }
-      catch (e) { emailed = { error: e.message }; console.error('Signed copies email failed:', e.message); }
-    }
+    if (row) emailed = { needs_review: true };
     row = (await pool.query('select * from onboarding where client_id = $1', [id])).rows[0];
     res.json({ ok: true, countersigned: done.map(s => s.doc), filed, emailed, data: onbOut(row) });
   } catch (e) { onbErr(res, 'POST onboarding countersign', e); }
@@ -7151,16 +7149,34 @@ async function onbBadAddresses() {
 const onbFirst = n => String(n || '').trim().split(/\s+/)[0] || '';
 function onbList(items) { return items.length > 1 ? items.slice(0, -1).join(', ') + ' and ' + items[items.length - 1] : (items[0] || ''); }
 
-// Sends one onboarding email. from: 'clients' (Daniel Brown at clients@) or a user key (their own address).
-async function onbSendEmail({ key, from, to, vars, attachments, company, actor, bccClients }) {
+// Renders one onboarding email without sending it (used for the review screen and the send itself)
+async function onbRenderEmail({ key, from, vars }) {
   const tpl = onbTemplates()[key];
   if (!tpl) throw new Error(`The ${key} email text is missing`);
-  if (!onbEmailOk(to)) throw new Error(`${to || 'The recipient'} is not a valid email address`);
-  const counts = await mailCounts(actor || 'system');
-  if (counts.today >= MAIL_DAILY_LIMIT) throw new Error(`Today's limit of ${MAIL_DAILY_LIMIT} emails through Brevo has been reached. Try again tomorrow.`);
   const sender = from === 'clients' ? { name: ONB_FROM.name, email: ONB_FROM.email, sig: 'clients' } : (() => { const p = profileOf(from); return { name: p.fullName, email: p.email, sig: p.key }; })();
   const sig = await loadSignature(sender.sig);
   const r = onbDocs.renderEmail(tpl, vars, sig.html || `<p style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#222;"><strong>${htmlEsc(sender.name)}</strong></p>`, sig.text || sender.name);
+  return { sender, sig, r };
+}
+// Build 55: the portal link is different every time one is made, so the review fingerprint uses this
+// stand-in for it. What the person reviews is the wording, recipients and attachments.
+const ONB_LINK_STANDIN = '{{PORTAL_LINK}}';
+const onbLinkVars = url => ({ signing_link: url, form_link: url, portal_link: url });
+function onbEmailHash(e) { return reviewHash({ key: e.key, to: lc(e.to), subject: e.subject, text: e.text, atts: e.attachmentNames || [] }); }
+// One reviewable email: wording with the link stood in, plus attachment names
+async function onbReviewItem({ key, from, to, vars, attachmentNames, label }) {
+  const { sender, r } = await onbRenderEmail({ key, from, vars: { ...vars, ...onbLinkVars(ONB_LINK_STANDIN) } });
+  const item = { key, label: label || key, to, from: `${sender.name} <${sender.email}>`, subject: r.subject, text: r.text, attachmentNames: attachmentNames || [] };
+  item.hash = onbEmailHash(item);
+  return item;
+}
+// Sends one onboarding email. from: 'clients' (Daniel Brown at clients@) or a user key (their own address).
+// Callers must have the content reviewed first (pack send, outbox send, signed copies, approved queue).
+async function onbSendEmail({ key, from, to, vars, attachments, company, actor, bccClients }) {
+  if (!onbEmailOk(to)) throw new Error(`${to || 'The recipient'} is not a valid email address`);
+  const counts = await mailCounts(actor || 'system');
+  if (counts.today >= MAIL_DAILY_LIMIT) throw new Error(`Today's limit of ${MAIL_DAILY_LIMIT} emails through Brevo has been reached. Try again tomorrow.`);
+  const { sender, sig, r } = await onbRenderEmail({ key, from, vars });
   const files = (sig.images || []).map((im, i) => ({ filename: `logo${i + 1}.${/png/.test(im.mime) ? 'png' : 'jpg'}`, content: im.base64, encoding: 'base64', contentType: im.mime, cid: im.cid }))
     .concat((attachments || []).map(a => ({ filename: a.filename, content: a.content, contentType: 'application/pdf' })));
   const info = await emailTransporter.sendMail({
@@ -7225,6 +7241,34 @@ app.get('/api/onboarding/:clientId/link', async (req, res) => {
   } catch (e) { onbErr(res, 'GET onboarding link', e); }
 });
 
+// Build 55: everything the onboarding pack will send, as the reviewer sees it
+async function onbPackPlan(pool, row, me) {
+  const rec = row.recipients || {}, sig = rec.signatory;
+  const wel = rec.welcome && rec.welcome.email ? rec.welcome : sig;
+  const vars = await onbVars(pool, row);
+  const cons = profileOf(String(row.started_by || me).split(' ')[0]);
+  const base = { company_name: vars.company_name, consultant_first_name: onbFirst(cons.fullName) };
+  const pv = p => ({ ...base, contact_first_name: onbFirst(p.name), contact_name: p.name });
+  const items = [];
+  const welcomeTo = [sig].concat(lc(wel.email) !== lc(sig.email) ? [wel] : []);
+  for (const p of welcomeTo) items.push(await onbReviewItem({ key: 'email1', from: me, to: p.email, vars: pv(p), label: 'Welcome from you' + (welcomeTo.length > 1 ? ' (' + p.name + ')' : '') }));
+  items.push(await onbReviewItem({ key: 'email2', from: 'clients', to: sig.email, vars: pv(sig), label: 'Agreements to sign (follows 5 minutes later)' }));
+  items.push(await onbReviewItem({ key: 'email3', from: 'clients', to: wel.email, vars: pv(wel), attachmentNames: ['welcome', 'pricing'].map(k => `${ONB_DOCS[k].name}.pdf`), label: 'Welcome pack and site form (follows 10 minutes later)' }));
+  return { items, hash: reviewHash(items.map(i => i.hash)) };
+}
+app.get('/api/onboarding/:clientId/send-preview', async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const pool = onbPool(); await onbEnsure(pool);
+    const row = (await pool.query('select * from onboarding where client_id = $1', [id])).rows[0];
+    if (!row) return res.status(404).json({ error: 'Onboarding has not been started for this client' });
+    const sig = (row.recipients || {}).signatory;
+    if (!sig || !sig.email) return res.status(400).json({ error: 'Choose who signs for the client first' });
+    const plan = await onbPackPlan(pool, row, actorOf(req));
+    res.json({ items: plan.items.map(({ hash, ...rest }) => rest), token: reviewTokenFor(actorOf(req), plan.hash) });
+  } catch (e) { onbErr(res, 'GET onboarding send preview', e); }
+});
+
 // Send the onboarding pack: Emails 1, 2 and 3. Needs the recipient check to be confirmed.
 app.post('/api/onboarding/:clientId/send', async (req, res) => {
   try {
@@ -7244,6 +7288,10 @@ app.post('/api/onboarding/:clientId/send', async (req, res) => {
     const counts = await mailCounts(actorOf(req));
     const planned = 2 + (lc(wel.email) !== lc(sig.email) ? 2 : 1);
     if (counts.today + planned > MAIL_DAILY_LIMIT) return res.status(429).json({ error: `Sending needs ${planned} emails but only ${Math.max(0, MAIL_DAILY_LIMIT - counts.today)} are left today. Try again tomorrow.` });
+    // build 55: the wording, recipients and attachments must be the ones that were reviewed
+    const plan = await onbPackPlan(pool, row, actorOf(req));
+    if (!reviewTokenOk(actorOf(req), plan.hash, b.reviewToken)) return res.status(409).json(NOT_REVIEWED);
+    const itemHash = (key, to) => (plan.items.find(i => i.key === key && lc(i.to) === lc(to)) || {}).hash;
     // the same link in every email (a fresh one if the old one is missing or nearly expired)
     let url = onbCurrentUrl(row);
     if (!url) { const made = await onbMakeLink(pool, id, actorOf(req)); url = made.url; row = made.row; }
@@ -7272,8 +7320,8 @@ app.post('/api/onboarding/:clientId/send', async (req, res) => {
     }
     const now = new Date().toISOString();
     const queue = queueIt ? [
-      { key: 'email2', to: sig.email, name: sig.name, due_at: new Date(Date.now() + ONB_PACK_DELAY_MIN.email2 * 60000).toISOString(), status: 'queued' },
-      { key: 'email3', to: wel.email, name: wel.name, due_at: new Date(Date.now() + ONB_PACK_DELAY_MIN.email3 * 60000).toISOString(), status: 'queued' },
+      { key: 'email2', to: sig.email, name: sig.name, due_at: new Date(Date.now() + ONB_PACK_DELAY_MIN.email2 * 60000).toISOString(), status: 'queued', approved: itemHash('email2', sig.email), approved_by: me },
+      { key: 'email3', to: wel.email, name: wel.name, due_at: new Date(Date.now() + ONB_PACK_DELAY_MIN.email3 * 60000).toISOString(), status: 'queued', approved: itemHash('email3', wel.email), approved_by: me },
     ] : [];
     row = await onbUpdate(pool, id, c => {
       if (!queueIt) ['welcome', 'pricing'].forEach(k => { if ((c.steps[k] || {}).status === 'pending') c.steps[k] = { status: 'sent', at: now }; });
@@ -7319,6 +7367,13 @@ async function runOnboardingQueue() {
           const vars = await onbVars(pool, cur);
           const cons = profileOf(String(cur.started_by || 'ella').split(' ')[0]);
           const base = { company_name: vars.company_name, consultant_first_name: onbFirst(cons.fullName), signing_link: url, form_link: url, portal_link: url, contact_first_name: onbFirst(it.name), contact_name: it.name };
+          // build 55: only the exact email that was reviewed goes out
+          const again = await onbReviewItem({ key: it.key, from: 'clients', to: it.to, vars: { ...base, ...onbLinkVars(ONB_LINK_STANDIN) }, attachmentNames: it.key === 'email3' ? ['welcome', 'pricing'].map(k => `${ONB_DOCS[k].name}.pdf`) : [] });
+          if (!it.approved || again.hash !== it.approved) {
+            await onbQueueSet(pool, row.client_id, it, { status: 'failed', error: it.approved ? 'The email wording changed after it was reviewed, so it was not sent. Use Resend to review it again.' : 'This email was queued before reviews were required, so it was not sent. Use Resend to review it first.', attempts: 3 });
+            out.failed.push(`${row.company}: ${it.key} needs review`);
+            continue;
+          }
           const attachments = it.key === 'email3' ? await onbPdfAttachments(pool, cur, ['welcome', 'pricing']) : undefined;
           await onbSendEmail({ key: it.key, from: 'clients', to: it.to, vars: base, attachments, company: cur.company, actor: (cur.reminders || {}).sent_by || 'system' });
           const at = new Date().toISOString();
@@ -7401,17 +7456,18 @@ async function runOnboardingReminders(pool, opts = {}) {
       }
       const key = days >= 7 ? (rem.r2 ? null : 'reminder2') : (rem.r1 ? null : 'reminder1');
       if (!key) continue;
-      const url = onbCurrentUrl(row) || (await onbMakeLink(pool, row.client_id, 'system')).url;
       const wel = rec.welcome && rec.welcome.email ? rec.welcome : null;
       const vars = await onbVars(pool, row);
       const sigTodo = todo.filter(t => t !== 'your site and account form' || !wel || lc(wel.email) === lc(sig.email));
-      const send = async (p, items) => onbSendEmail({ key, from: 'clients', to: p.email, company: row.company, actor: 'system',
-        vars: { company_name: vars.company_name, contact_first_name: onbFirst(p.name), contact_name: p.name, outstanding_items: onbList(items), is_are: items.length > 1 ? 'are' : 'is', portal_link: url } });
+      // build 55: reminders are written to the Emails to review list, not sent
+      const send = async (p, items) => outboxAdd({ kind: 'onboarding_reminder', company: row.company, name: p.name, to: p.email,
+        subject: (onbTemplates()[key] || {}).subject ? String(onbTemplates()[key].subject).replace(/\{\{\s*company_name\s*\}\}/g, vars.company_name) : 'Onboarding reminder',
+        payload: { key, client_id: row.client_id, vars: { company_name: vars.company_name, contact_first_name: onbFirst(p.name), contact_name: p.name, outstanding_items: onbList(items), is_are: items.length > 1 ? 'are' : 'is' } } });
       if (sigTodo.length) await send(sig, sigTodo);
       // the site form went to the welcome pack contact, so they get their own nudge
       if (wel && lc(wel.email) !== lc(sig.email) && todo.includes('your site and account form')) await send(wel, ['your site and account form']);
       await onbUpdate(pool, row.client_id, c => ({ ...c, reminders: { ...(c.reminders || {}), [key === 'reminder2' ? 'r2' : 'r1']: new Date(now).toISOString(), ...(key === 'reminder2' && !(c.reminders || {}).r1 ? { r1: 'skipped' } : {}) } }));
-      auditLog('system', 'reminder sent', 'onboarding', row.company, `${key === 'reminder2' ? 'day 7' : 'day 3'}: ${onbList(todo)}`);
+      auditLog('system', 'reminder queued for review', 'onboarding', row.company, `${key === 'reminder2' ? 'day 7' : 'day 3'}: ${onbList(todo)}`);
       result.reminders++;
       // build 49.5: day 3 and nothing signed yet: the consultant chases them personally
       const st = k => ((row.steps || {})[k] || {}).status;
@@ -7459,26 +7515,41 @@ app.post('/api/onboarding-bulk/start', requireAdmin, async (req, res) => {
 });
 
 // After Dan countersigns: the client gets both signed copies (Dan gets a copy at clients@)
-async function onbSendSignedCopies(pool, id, actor) {
+async function onbSignedPlan(pool, id) {
   const row = (await pool.query('select * from onboarding where client_id = $1', [id])).rows[0];
   const sig = ((row && row.recipients) || {}).signatory;
   if (!row || !sig || !sig.email) throw new Error('There is no signatory to send the signed copies to');
   const docs = (await pool.query(`select doc, pdf from onboarding_signatures where client_id = $1 and countersigned_at is not null and method <> 'uploaded' and pdf is not null order by id`, [id])).rows;
   if (!docs.length) throw new Error('There are no countersigned agreements to send');
   const cons = profileOf(String(row.started_by || 'ella').split(' ')[0]);
-  const r = await onbSendEmail({ key: 'completion', from: 'clients', to: sig.email, company: row.company, actor, bccClients: true,
-    vars: { company_name: row.company, contact_first_name: onbFirst(sig.name), contact_name: sig.name, consultant_first_name: onbFirst(cons.fullName) },
-    attachments: docs.map(d => ({ filename: `${row.company} - ${ONB_DOCS[d.doc].name} - Signed.pdf`.replace(/[\\/:*?"<>|]/g, ''), content: d.pdf })) });
+  const vars = { company_name: row.company, contact_first_name: onbFirst(sig.name), contact_name: sig.name, consultant_first_name: onbFirst(cons.fullName) };
+  const attachments = docs.map(d => ({ filename: `${row.company} - ${ONB_DOCS[d.doc].name} - Signed.pdf`.replace(/[\\/:*?"<>|]/g, ''), content: d.pdf }));
+  const item = await onbReviewItem({ key: 'completion', from: 'clients', to: sig.email, vars, attachmentNames: attachments.map(a => a.filename), label: 'Signed copies to the client' });
+  return { row, sig, vars, attachments, item };
+}
+async function onbSendSignedCopies(pool, id, actor, reviewToken) {
+  const plan = await onbSignedPlan(pool, id);
+  if (!reviewTokenOk(actor, plan.item.hash, reviewToken)) { const e = new Error(NOT_REVIEWED.error); e.code = NOT_REVIEWED.code; throw e; }
+  const r = await onbSendEmail({ key: 'completion', from: 'clients', to: plan.sig.email, company: plan.row.company, actor, bccClients: true, vars: plan.vars, attachments: plan.attachments });
   await onbUpdate(pool, id, c => ({ ...c, reminders: { ...(c.reminders || {}), completion_sent_at: new Date().toISOString() } }));
   return r;
 }
+app.get('/api/onboarding/:clientId/send-signed-preview', requireAdmin, async (req, res) => {
+  try {
+    const id = onbClientIdOf(req, res); if (!id) return;
+    const pool = onbPool(); await onbEnsure(pool);
+    const plan = await onbSignedPlan(pool, id);
+    const { hash, ...item } = plan.item;
+    res.json({ items: [item], token: reviewTokenFor(actorOf(req), hash) });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
 app.post('/api/onboarding/:clientId/send-signed', requireAdmin, async (req, res) => {
   try {
     const id = onbClientIdOf(req, res); if (!id) return;
     const pool = onbPool(); await onbEnsure(pool);
-    const r = await onbSendSignedCopies(pool, id, actorOf(req));
+    const r = await onbSendSignedCopies(pool, id, actorOf(req), (req.body || {}).reviewToken);
     res.json({ ok: true, sent: r });
-  } catch (e) { res.status(400).json({ error: e.message }); }
+  } catch (e) { res.status(e.code === 'NOT_REVIEWED' ? 409 : 400).json({ error: e.message, code: e.code }); }
 });
 
 // Nightly backup: the live onboarding tables, as extra tabs in the database backup sheet
@@ -11981,6 +12052,12 @@ async function runDailyJob(skipBackup) {
   await step('talentPoolReconsent', talentPoolReconsentCheck);
   // build 49.4: onboarding reminders (live database only)
   if (pgLivePool) await step('onboardingReminders', () => runOnboardingReminders(pgLivePool));
+  // build 55: a task reminds Dan to review whatever is waiting in Emails to review
+  await step('outboxTask', async () => {
+    const n = (await emailOutboxTable.list()).filter(o => o.status === 'pending').length;
+    if (!n) return 0;
+    return addAutoTasks([{ key: 'outbox-review-' + rfxToday(), user: 'dan', title: `Review ${n} email${n > 1 ? 's' : ''} waiting to be sent`, priority: 'High', dueDate: rfxToday(), context: 'Open Home > Emails to review. Nothing goes out until you read it and press Send.' }]);
+  });
   return result;
 }
 app.get('/api/cron/daily', cronOnly, async (req, res) => {
@@ -13815,7 +13892,7 @@ async function talentPoolReconsentCheck() {
   poolRowsCache = null;
   const rows = (await readPoolRows()).map(padPoolRow);
   const today = todayISO();
-  let sent = 0, flagged = 0, failed = 0;
+  let sent = 0, flagged = 0, failed = 0, queuedIds = null;
   for (const r of rows) {
     if (!r[0] || r[20] || r[5] !== TALENT_POOL_ROLE) continue;
     const consent = String(r[17] || r[8] || '').slice(0, 10);
@@ -13834,14 +13911,13 @@ async function talentPoolReconsentCheck() {
       const first = String(r[1] || '').trim().split(/\s+/)[0] || 'there';
       const link = `${tpPublicBase()}/t/${tpToken(r[0])}`;
       try {
-        await emailTransporter.sendMail({
-          from: `"Live 2 Help Recruitment" <${process.env.BREVO_SENDER_EMAIL}>`,
-          replyTo: process.env.BREVO_SENDER_EMAIL,
-          to: r[2],
-          subject: 'Do you still want to be on our talent pool?',
-          text: `Hi ${first},\n\nYou joined the Live 2 Help Recruitment talent pool on ${tpUkDate(consent)}. We only keep your details for 12 months, so before that runs out we would like to check you are happy for us to keep them.\n\nPlease choose here: ${link}\n\nIf we do not hear from you by ${tpUkDate(expiry)}, your record will be marked for deletion and your details and CV will be removed.\n\nKind regards,\nThe Live 2 Help Recruitment team`,
-        });
-        await tpPatchCells(r[0], { 30: today });
+        // build 55: written to Emails to review, never sent on its own. Once per person, even if skipped.
+        if (!queuedIds) queuedIds = new Set((await emailOutboxTable.list().catch(() => [])).filter(o => o.kind === 'reconsent').map(o => { try { return JSON.parse(o.payload || '{}').pool_id; } catch (e) { return ''; } }));
+        if (queuedIds.has(r[0])) continue;
+        await outboxAdd({ kind: 'reconsent', company: '', name: r[1], to: r[2], subject: 'Do you still want to be on our talent pool?',
+          payload: { pool_id: r[0], subject: 'Do you still want to be on our talent pool?',
+            text: `Hi ${first},\n\nYou joined the Live 2 Help Recruitment talent pool on ${tpUkDate(consent)}. We only keep your details for 12 months, so before that runs out we would like to check you are happy for us to keep them.\n\nPlease choose here: ${link}\n\nIf we do not hear from you by ${tpUkDate(expiry)}, your record will be marked for deletion and your details and CV will be removed.\n\nKind regards,\nThe Live 2 Help Recruitment team` } });
+        queuedIds.add(r[0]);
         sent++;
       } catch (e) {
         failed++;
@@ -16165,7 +16241,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '3 Nov 2026 - build 54.2 (marketing delete options)';
+const SERVER_BUILD = '3 Nov 2026 - build 55 (every email reviewed before sending)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -18578,6 +18654,47 @@ app.post('/api/mail/settings', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+
+/* ---------- Build 55: review lock ----------
+   No email to a client or candidate leaves the dashboard unless the person has been shown the exact
+   content first. The review screen asks the server for a short-lived token tied to that exact content
+   (recipients, subject, message text and attachment names/sizes). The send route recomputes the same
+   fingerprint and refuses anything that does not match, so an edit after review needs a fresh review
+   and no future feature can send without going through it. */
+const REVIEW_TTL_MS = 2 * 60 * 60 * 1000;
+function reviewHash(parts) { return crypto.createHash('sha256').update(JSON.stringify(parts)).digest('hex'); }
+function mailReviewHash({ to, cc, subject, text, attachments }) {
+  return reviewHash({
+    to: mailAddrs(to).map(lc), cc: mailAddrs(cc).map(lc), subject: String(subject || '').trim().slice(0, 250),
+    text: String(text || '').replace(/\r\n/g, '\n').trim(),
+    atts: (attachments || []).map(a => [String(a.fileName || ''), Number(a.len) || 0]),
+  });
+}
+function reviewTokenFor(actor, hash) {
+  const ts = Date.now();
+  return ts + '.' + crypto.createHmac('sha256', AUTH_SECRET).update(`review|${actor}|${hash}|${ts}`).digest('base64url');
+}
+function reviewTokenOk(actor, hash, token) {
+  const [ts, sig] = String(token || '').split('.');
+  if (!ts || !sig || !/^\d+$/.test(ts) || Date.now() - Number(ts) > REVIEW_TTL_MS || Number(ts) > Date.now() + 60000) return false;
+  const want = crypto.createHmac('sha256', AUTH_SECRET).update(`review|${actor}|${hash}|${ts}`).digest('base64url');
+  const a = Buffer.from(sig), b = Buffer.from(want);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+const NOT_REVIEWED = { error: 'This email has not been reviewed yet, or it changed after you reviewed it. Open it again, check it and tick the box before sending.', code: 'NOT_REVIEWED' };
+
+// Review screen asks for this when the person ticks "I have checked this email"
+app.post('/api/mail/reviewed', (req, res) => {
+  try {
+    const me = actorOf(req);
+    if (!me || me === 'unknown') return res.status(401).json({ error: 'Please sign in again' });
+    const b = req.body || {};
+    const hash = mailReviewHash({ to: b.to, cc: b.cc, subject: b.subject, text: b.text,
+      attachments: (Array.isArray(b.attachments) ? b.attachments : []).map(a => ({ fileName: a.fileName, len: a.len })) });
+    res.json({ ok: true, token: reviewTokenFor(me, hash) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 const MAIL_KINDS = ['email', 'submission', 'interview_pack', 'offer_docs', 'invite', 'rejection', 'invoice', 'checkin', 'outreach', 'spec', 'candidate'];
 
 app.post('/api/mail/send', async (req, res) => {
@@ -18594,6 +18711,9 @@ app.post('/api/mail/send', async (req, res) => {
     const kind = MAIL_KINDS.includes(b.kind) ? b.kind : 'email';
     const meta = b.meta || {};
     const cold = COLD_KINDS.includes(kind);
+    // Build 55: nothing is sent unless this exact content was reviewed
+    const sentHash = mailReviewHash({ to, cc, subject, text: b.text, attachments: (Array.isArray(b.attachments) ? b.attachments : []).map(a => ({ fileName: a && a.fileName, len: a && a.base64 ? a.base64.length : 0 })) });
+    if (!reviewTokenOk(me, sentHash, b.reviewToken)) return res.status(409).json(NOT_REVIEWED);
 
     const counts = await mailCounts(me);
     if (counts.today >= MAIL_DAILY_LIMIT) return res.status(429).json({ error: `Today's limit of ${MAIL_DAILY_LIMIT} emails through Brevo has been reached. Use the .eml backup for anything else today.` });
@@ -18665,6 +18785,101 @@ app.post('/api/mail/send', async (req, res) => {
   } catch (e) {
     console.error('POST /api/mail/send error:', e.message);
     res.status(e.aiBudget ? 429 : 502).json({ error: 'The email could not be sent: ' + e.message + '. Nothing went out, so you can try again or use the .eml backup.' });
+  }
+});
+
+
+/* ---------- Build 55: Emails to review (the outbox) ----------
+   Emails the system used to send on its own (onboarding reminders to clients, talent pool re-consent
+   emails to candidates) are now written here instead. Nothing goes until Dan or Ella opens it, reads
+   exactly what the recipient will get and sends it, or skips it. */
+const emailOutboxTable = makeSimpleTable({
+  tab: 'Email Outbox',
+  header: ['id', 'created_at', 'kind', 'company', 'name', 'to', 'subject', 'payload', 'status', 'handled_by', 'handled_at', 'note'],
+  path: null,
+  label: 'Outbox email',
+});
+async function outboxAdd({ kind, company, name, to, subject, payload }) {
+  const row = { id: 'ob-' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), created_at: new Date().toISOString(), kind,
+    company: String(company || '').slice(0, 120), name: String(name || '').slice(0, 120), to, subject: String(subject || '').slice(0, 250),
+    payload: JSON.stringify(payload || {}), status: 'pending', handled_by: '', handled_at: '', note: '' };
+  await emailOutboxTable.append(row);
+  return row;
+}
+// What the recipient will get, exactly as it will be sent (link stood in for the fingerprint)
+async function outboxRender(o) {
+  const p = (() => { try { return JSON.parse(o.payload || '{}'); } catch (e) { return {}; } })();
+  if (o.kind === 'onboarding_reminder') {
+    const it = await onbReviewItem({ key: p.key, from: 'clients', to: o.to, vars: p.vars || {}, label: 'Onboarding reminder' });
+    return { ...it, payload: p };
+  }
+  if (o.kind === 'reconsent') {
+    const item = { key: 'reconsent', label: 'Talent pool re-consent', to: o.to, from: `Live 2 Help Recruitment <${process.env.BREVO_SENDER_EMAIL}>`, subject: p.subject, text: p.text, attachmentNames: [] };
+    item.hash = onbEmailHash(item);
+    return { ...item, payload: p };
+  }
+  throw new Error('Unknown email type');
+}
+app.get('/api/outbox', async (req, res) => {
+  try {
+    const all = await emailOutboxTable.list();
+    const pending = all.filter(o => o.status === 'pending').sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+    const recent = all.filter(o => o.status !== 'pending').slice(-15).reverse();
+    const view = o => ({ id: o.id, created_at: o.created_at, kind: o.kind, company: o.company, name: o.name, to: o.to, subject: o.subject, status: o.status, handled_by: o.handled_by, handled_at: o.handled_at });
+    res.json({ pending: pending.map(view), recent: recent.map(view) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/outbox/:id', async (req, res) => {
+  try {
+    const o = (await emailOutboxTable.list()).find(x => x.id === req.params.id);
+    if (!o) return res.status(404).json({ error: 'Email not found' });
+    if (o.status !== 'pending') return res.status(409).json({ error: `This email was already ${o.status}` });
+    const it = await outboxRender(o);
+    res.json({ id: o.id, item: { label: it.label, to: it.to, from: it.from, subject: it.subject, text: it.text, attachmentNames: it.attachmentNames }, token: reviewTokenFor(actorOf(req), it.hash) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/outbox/:id/skip', async (req, res) => {
+  try {
+    const me = auditActorOf(req);
+    const r = await emailOutboxTable.updateWhere(o => o.id === req.params.id && o.status === 'pending', o => ({ ...o, status: 'skipped', handled_by: me, handled_at: new Date().toISOString(), note: String((req.body || {}).note || '').slice(0, 200) }));
+    auditLog(me, 'outbox_skipped', 'email', req.params.id, '');
+    res.json({ ok: true, changed: r });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/outbox/:id/send', async (req, res) => {
+  try {
+    const me = actorOf(req);
+    if (!me || me === 'unknown') return res.status(401).json({ error: 'Please sign in again' });
+    const o = (await emailOutboxTable.list()).find(x => x.id === req.params.id);
+    if (!o) return res.status(404).json({ error: 'Email not found' });
+    if (o.status !== 'pending') return res.status(409).json({ error: `This email was already ${o.status}` });
+    const it = await outboxRender(o);
+    if (!reviewTokenOk(me, it.hash, (req.body || {}).reviewToken)) return res.status(409).json(NOT_REVIEWED);
+    const bad = await onbBadAddresses();
+    if (bad[lc(o.to)] && bad[lc(o.to)].hard) return res.status(409).json({ error: `${o.to} ${bad[lc(o.to)].reason}, so this cannot be sent. Skip it instead.` });
+    if (o.kind === 'onboarding_reminder') {
+      const pool = onbPool(); await onbEnsure(pool);
+      const row = (await pool.query('select * from onboarding where client_id = $1', [it.payload.client_id])).rows[0];
+      if (!row) return res.status(404).json({ error: 'That client no longer has onboarding' });
+      if (!onbOutstanding(row).length) return res.status(409).json({ error: 'They have finished everything since this was written, so there is nothing to remind them about. Skip it.' });
+      const url = onbCurrentUrl(row) || (await onbMakeLink(pool, row.client_id, me)).url;
+      await onbSendEmail({ key: it.payload.key, from: 'clients', to: o.to, company: row.company, actor: me, vars: { ...(it.payload.vars || {}), ...onbLinkVars(url) } });
+    } else if (o.kind === 'reconsent') {
+      const counts = await mailCounts(me);
+      if (counts.today >= MAIL_DAILY_LIMIT) return res.status(429).json({ error: `Today's limit of ${MAIL_DAILY_LIMIT} emails through Brevo has been reached. Try again tomorrow.` });
+      const found = await findPoolRowById(it.payload.pool_id);
+      if (!found || found.row[20]) return res.status(409).json({ error: 'This candidate has been removed from the talent pool, so nothing is sent. Skip it.' });
+      const info = await emailTransporter.sendMail({ from: `"Live 2 Help Recruitment" <${process.env.BREVO_SENDER_EMAIL}>`, replyTo: process.env.BREVO_SENDER_EMAIL, to: o.to, subject: it.subject, text: it.text });
+      const now = new Date().toISOString();
+      await mailLogTable.append({ id: 'em-' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), at: now, day: rfxToday(), user: me, from: process.env.BREVO_SENDER_EMAIL, to: o.to, cc: '', subject: it.subject, kind: 'candidate', company: '', role: '', entity: o.name, attachments: '', message_id: String((info && info.messageId) || '').replace(/[<>]/g, ''), status: 'sent', event_at: now, ref: 'reconsent' }).catch(() => {});
+      await tpPatchCells(it.payload.pool_id, { 30: todayISO() });
+    }
+    await emailOutboxTable.updateWhere(x => x.id === o.id, x => ({ ...x, status: 'sent', handled_by: auditActorOf(req), handled_at: new Date().toISOString() }));
+    auditLog(auditActorOf(req), 'email_sent', 'outbox:' + o.kind, o.to, it.subject);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('POST /api/outbox/:id/send error:', e.message);
+    res.status(502).json({ error: 'The email could not be sent: ' + e.message + '. Nothing went out.' });
   }
 });
 
