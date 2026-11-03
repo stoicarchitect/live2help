@@ -237,7 +237,8 @@
         </select></div>
       <div class="field"><label for="targetRole">Role you are aiming for</label><input type="text" id="targetRole" placeholder="e.g. Senior Controls Engineer"></div>
       <input type="text" id="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
-      <div class="field"><label class="check"><input type="checkbox" id="consent"> <span>I agree to Live 2 Help Recruitment storing my name, email and toolkit activity to run this service and to contact me about relevant roles and career support. I can ask for my details to be deleted at any time by emailing office@live2helprecruitment.co.uk.</span></label></div>
+      <div class="field"><label class="check"><input type="checkbox" id="consent"> <span>I agree to Live 2 Help Recruitment storing my name, email and toolkit activity to run this service. I can ask for my details to be deleted at any time by emailing office@live2helprecruitment.co.uk.</span></label></div>
+      <div class="field"><label class="check"><input type="checkbox" id="marketing"> <span>Optional: I would also like to receive occasional emails from Live 2 Help Recruitment about relevant roles, career tips and Talent Suite updates. I can unsubscribe at any time.</span></label></div>
       <div id="turnstileBox" style="margin-bottom:14px;"></div>
       <button class="btn btn-gold btn-block" id="signupBtn" type="submit">Email me my code</button>
       <div id="signupMsg" class="msg hidden"></div>
@@ -383,7 +384,7 @@
     if (!$('consent').checked) return msg('signupMsg', 'Please tick the consent box to continue.');
     var t = (window.turnstile && turnstileWidget !== null) ? window.turnstile.getResponse(turnstileWidget) : '';
     $('signupBtn').disabled = true; $('signupBtn').textContent = 'One moment...'; msg('signupMsg', '');
-    api('/api/talent-suite/start', { name: name, email: email, sector: sector, targetRole: $('targetRole').value.trim(), consent: true, website: $('website').value, turnstileToken: t, src: src() })
+    api('/api/talent-suite/start', { name: name, email: email, sector: sector, targetRole: $('targetRole').value.trim(), consent: true, marketing: $('marketing').checked, website: $('website').value, turnstileToken: t, src: src() })
       .then(function (j) {
         $('signupBtn').disabled = false; $('signupBtn').textContent = 'Email me my code';
         if (window.turnstile && turnstileWidget !== null) try { window.turnstile.reset(turnstileWidget); } catch (e) {}

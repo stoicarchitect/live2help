@@ -16165,7 +16165,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '3 Nov 2026 - build 54.0 (2027 campaigns)';
+const SERVER_BUILD = '3 Nov 2026 - build 54.1 (2027 campaigns, Talent Suite marketing opt-in)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -17022,6 +17022,24 @@ async function seedCampaigns2027() {
 }
 setTimeout(seedCampaigns2027, 45000);
 
+/* build 54.1: Funded Youth Hire is parked as a future project. One-off patch: clear its provisional post dates and say so on the campaign. */
+const MK_YOUTH_MARKER = '__patch-youth-future-v1';
+async function patchYouthFuture() {
+  try {
+    const all = await marketingTable.listAll();
+    if (all.some(o => o.id === MK_YOUTH_MARKER)) return;
+    if (!all.some(o => o.id === 'cmp-27-youth')) return; // 2027 campaigns not loaded yet; the seed file already carries the change
+    const now = new Date().toISOString();
+    for (const o of all) {
+      if (o.id === 'c27-p-y1' || o.id === 'c27-p-y2') await marketingTable.upsert({ ...o, date: '', post_time: '', updated_by: 'system', updated_at: now });
+      if (o.id === 'cmp-27-youth' && !String(o.notes || '').startsWith('FUTURE')) await marketingTable.upsert({ ...o, status: 'Paused', notes: 'FUTURE PROJECT, not for 2027 Q1. Dan has parked Funded Youth Hire for now.\n\n' + String(o.notes || ''), updated_by: 'system', updated_at: now });
+    }
+    await marketingTable.upsert({ id: MK_YOUTH_MARKER, type: 'system', title: 'Funded Youth Hire parked', updated_by: 'system', updated_at: now });
+    console.log('Marketing: Funded Youth Hire parked');
+  } catch (e) { console.error('Youth patch:', e.message); }
+}
+setTimeout(patchYouthFuture, 75000);
+
 /* ======================================================================
    LIVE 2 HELP TALENT SUITE - CAREER TOOLKIT (candidate side)
    Public page: careers.live2helprecruitment.co.uk/talent-suite
@@ -17046,7 +17064,7 @@ const TS_SECTORS = ['Engineering', 'Technical and CAD', 'Sales and Business Deve
 const tsUsersTable = makeSimpleTable({
   tab: 'Talent Suite Users',
   header: ['id', 'date', 'name', 'email', 'sector', 'target_role', 'source', 'consent', 'verified_at', 'last_seen',
-    'period', 'credits_used', 'bonus_credits', 'total_runs', 'tools_used', 'review_requested', 'status', 'notes', 'topup_credits'],
+    'period', 'credits_used', 'bonus_credits', 'total_runs', 'tools_used', 'review_requested', 'status', 'notes', 'topup_credits', 'marketing', 'marketing_at'],
   path: '/api/talent-suite-users',
   label: 'Talent Suite user',
   auditType: 'talent_suite_user',
@@ -17115,7 +17133,7 @@ app.post('/api/talent-suite/start', async (req, res) => {
     if (!(await tpVerifyTurnstile(b.turnstileToken, ip))) return res.status(400).json({ error: 'We could not confirm you are human. Please refresh and try again.' });
     const code = String(crypto.randomInt(100000, 1000000));
     tsCodes.set(email, { hash: crypto.createHash('sha256').update(code).digest('hex'), exp: Date.now() + 15 * 60000, tries: 0,
-      pending: { name, sector, target_role: tpClean(b.targetRole, 100), source: normaliseSource(b.src, '') } });
+      pending: { name, sector, target_role: tpClean(b.targetRole, 100), source: normaliseSource(b.src, ''), marketing: b.marketing === true } });
     // reply straight away; the email goes out in the background so the page never waits on the mail server
     res.json({ ok: true });
     emailTransporter.sendMail({
@@ -17156,6 +17174,8 @@ app.post('/api/talent-suite/verify', async (req, res) => {
       last_seen: nowIso, period: ex.period || tsPeriod(), credits_used: ex.credits_used || '0', bonus_credits: bonus,
       total_runs: ex.total_runs || '0', tools_used: ex.tools_used || '', review_requested: ex.review_requested || '',
       status: ex.status || 'active', notes: ex.notes || '',
+      marketing: (rec.pending.marketing || ex.marketing === 'Yes') ? 'Yes' : (ex.marketing || ''),
+      marketing_at: ex.marketing === 'Yes' ? (ex.marketing_at || nowIso) : (rec.pending.marketing ? nowIso : (ex.marketing_at || '')),
     });
     if (!ex.id) auditLog('website', 'talent_suite_signup', 'talent_suite', `${u.name} (${email})`, u.sector);
     res.json({ ok: true, token: tsSign({ t: 'ts', e: email, exp: Date.now() + 30 * 86400000 }), user: tsPublicUser(u) });

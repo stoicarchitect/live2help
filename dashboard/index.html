@@ -16203,6 +16203,7 @@ function renderTalentSuite(){
     {n: openOrders.length, l: late ? late + ' order' + (late === 1 ? '' : 's') + ' past due' : 'Orders open', warn: late > 0 || openOrders.length > 0},
     {n: '£' + revMonth.toLocaleString('en-GB'), l:'Paid services this month'},
     {n: runs, l:'Tool runs in total'},
+    {n: list.filter(u => u.marketing === 'Yes').length, l:'Opted in to marketing emails'},
   ].map(t => `<div class="tile static ${t.warn ? 'warn' : ''}"><div class="n">${esc(t.n)}</div><div class="l">${t.l}</div></div>`).join('');
   document.getElementById('tsoBody').innerHTML = orders.length ? orders.map(o => {
     const overdue = ['paid','in_review'].includes(o.status) && o.due_date && o.due_date < today;
@@ -16229,7 +16230,7 @@ function renderTalentSuite(){
     return `<tr class="${on ? 'ts-sel' : ''}"${hot ? ' style="background:#FBF6E8;"' : ''}>
     <td class="ts-chk"><input type="checkbox" ${on ? 'checked' : ''} onchange="tsSelectOne('u','${esc(u.id)}',this.checked)"></td>
     <td>${esc(opsFmt(u.date))}${u.source ? '<div class="pool-muted">' + esc(u.source) + '</div>' : ''}</td>
-    <td class="strong">${esc(u.name)}<div class="pool-muted">${esc(u.email)}</div></td>
+    <td class="strong">${esc(u.name)}<div class="pool-muted">${esc(u.email)}</div>${u.marketing === 'Yes' ? '<div class="pool-muted" style="color:var(--gold);">Opted in to marketing emails</div>' : ''}</td>
     <td>${esc(u.sector)}<div class="pool-muted">${esc(u.target_role || '')}</div></td>
     <td>${esc(u.tools_used || '-')}<div class="pool-muted">${esc(u.total_runs || 0)} run${u.total_runs === '1' ? '' : 's'}</div></td>
     <td><span class="status-pill ${used >= allow ? 'lost' : used ? 'hold' : 'active'}">${used} of ${allow} used</span>${parseInt(u.bonus_credits, 10) ? '<div class="pool-muted">includes ' + esc(u.bonus_credits) + ' bonus</div>' : ''}${parseInt(u.topup_credits, 10) ? '<div class="pool-muted" style="color:var(--gold);">+ ' + esc(u.topup_credits) + ' bought credits</div>' : ''}</td>
@@ -16939,7 +16940,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '3 Nov 2026 - build 54.0 (2027 campaigns)';
+var PAGE_BUILD = '3 Nov 2026 - build 54.1 (2027 campaigns, Talent Suite marketing opt-in)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
