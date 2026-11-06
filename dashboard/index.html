@@ -16008,6 +16008,9 @@ async function lpxSaveNew(){
 td.cmp-link{cursor:pointer;color:var(--gold);text-decoration:underline;}
 #competitorsView.visible{display:flex;}
 tr.cmp-row{cursor:pointer;}
+.cmp-pin{margin-right:8px;padding:3px 8px;font-size:11px;border:1px solid var(--border);background:#fff;color:var(--grey);cursor:pointer;border-radius:2px;font-family:inherit;white-space:nowrap;vertical-align:middle;}
+.cmp-pin:hover{background:var(--lightbg);}
+.cmp-pin.on{background:var(--gold);border-color:var(--gold);color:#fff;font-weight:600;}
 tr.cmp-row.sel td{background:#FBF6E8;}
 .cmp-trend.up{color:#9B2C22;font-weight:600;}
 .cmp-trend.down{color:#2D6A3E;font-weight:600;}
@@ -16483,7 +16486,7 @@ function cmpRender(){
     const trend = !c.last30 && !c.prev30 ? '-' : diff > 0 ? `<span class="cmp-trend up">Up ${diff}</span>` : diff < 0 ? `<span class="cmp-trend down">Down ${-diff}</span>` : 'Steady';
     const size = c.size ? `<span class="cmp-size ${esc(c.size)}">${esc(c.size)}</span>` : '<span class="rfx-sub">-</span>';
     return `<tr class="cmp-row ${CMP.agency === c.id ? 'sel' : ''}" onclick="cmpPickAgency('${esc(c.id)}')">
-      <td class="strong">${esc(c.name)}<div>${c.pinned === 'yes' ? '<span class="rfx-pill short">Main competitor</span>' : ''}<span class="rfx-pill">${esc(c.source || '')}</span>${c.watch_urls ? `<span class="rfx-pill dive">${String(c.watch_urls).split(/\s+/).filter(Boolean).length} job page${String(c.watch_urls).split(/\s+/).filter(Boolean).length === 1 ? '' : 's'} watched</span>` : ''}</div>${c.address ? `<div class="rfx-sub">${esc(c.address)}</div>` : ''}${!c.live ? `<div class="rfx-sub" style="color:#9B2C22;">No live adverts found${c.watch_urls ? '' : '. Add their job pages'}</div>` : ''}</td>
+      <td class="strong"><button class="cmp-pin ${c.pinned === 'yes' ? 'on' : ''}" title="${c.pinned === 'yes' ? 'Unpin: stop keeping this agency at the top' : 'Pin as a main competitor: always kept at the top'}" onclick="event.stopPropagation();cmpTogglePin('${esc(c.id)}')">${c.pinned === 'yes' ? '&#9733; Pinned' : '&#9734; Pin'}</button>${esc(c.name)}<div>${c.pinned === 'yes' ? '<span class="rfx-pill short">Main competitor</span>' : ''}<span class="rfx-pill">${esc(c.source || '')}</span>${c.watch_urls ? `<span class="rfx-pill dive">${String(c.watch_urls).split(/\s+/).filter(Boolean).length} job page${String(c.watch_urls).split(/\s+/).filter(Boolean).length === 1 ? '' : 's'} watched</span>` : ''}</div>${c.address ? `<div class="rfx-sub">${esc(c.address)}</div>` : ''}${!c.live ? `<div class="rfx-sub" style="color:#9B2C22;">No live adverts found${c.watch_urls ? '' : '. Add their job pages'}</div>` : ''}</td>
       <td>${size}${c.company_created ? `<div class="rfx-sub">since ${esc(String(c.company_created).slice(0,4))}</div>` : ''}</td>
       <td><span class="rfx-days">${c.live}</span></td><td>${c.newThisWeek}</td><td>${trend}<div class="rfx-sub">${c.last30} in the last 30 days</div></td>
       <td>${c.live ? c.avgDays + ' days' : '-'}</td><td>${esc(c.sectors.join(', ') || '-')}</td>
@@ -16962,7 +16965,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '6 Nov 2026 - build 55.2 (pin any competitor)';
+var PAGE_BUILD = '6 Nov 2026 - build 55.3 (pin button by agency name)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
