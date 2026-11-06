@@ -15930,7 +15930,7 @@ async function cmpRun(settings, summary, roleFinderResults, opts = {}) {
     summary.newCompetitors = (summary.newCompetitors || 0) + 1;
     return c;
   };
-  for (const name of CMP_PINNED) { const c = await addComp({ name, source: 'Pinned' }); if (c && c.pinned !== 'yes') { c.pinned = 'yes'; compsChanged = true; } }
+  for (const name of CMP_PINNED) { const c = await addComp({ name, source: 'Pinned' }); if (c && !c.pinned) { c.pinned = 'yes'; compsChanged = true; } } // only until someone unpins them
   // competitors' own job pages (their website, CV-Library and similar)
   for (const c of byNorm.values()) {
     const def = CMP_DEFAULT_PAGES[rfxNormCompany(c.name)];
@@ -16265,7 +16265,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '3 Nov 2026 - build 55.1 (rejecting applicants sticks)';
+const SERVER_BUILD = '6 Nov 2026 - build 55.2 (pin any competitor)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

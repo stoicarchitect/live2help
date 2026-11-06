@@ -16456,7 +16456,7 @@ function cmpRender(){
   const txtA = { name: c => c.name || '', sectors: c => (c.sectors || []).join(', ') };
   const sa = CMP.sA || {key:'live', dir:-1};
   comps.sort((a, b) => {
-    if(sa.key === 'live' && sa.dir < 0){ const p = (b.pinned === 'yes') - (a.pinned === 'yes'); if(p) return p; }
+    const p = (b.pinned === 'yes') - (a.pinned === 'yes'); if(p) return p; // main competitors always sit on top
     let r = 0;
     if(txtA[sa.key]){ const x = txtA[sa.key](a), y = txtA[sa.key](b); r = (!x) - (!y) || x.localeCompare(y) * sa.dir; }
     else { const f = numA[sa.key] || numA.live; r = (f(a) - f(b)) * sa.dir; }
@@ -16489,7 +16489,7 @@ function cmpRender(){
       <td>${c.live ? c.avgDays + ' days' : '-'}</td><td>${esc(c.sectors.join(', ') || '-')}</td>
       <td>${c.salMin ? money(c.salMin) + (c.salMax > c.salMin ? ' - ' + money(c.salMax) : '') : '-'}</td>
       <td ${c.clientsKnown ? `class="cmp-link" onclick="event.stopPropagation();cmpShowClients('${esc(c.id)}')" title="Show the roles and clients"` : ''}>${c.clientsKnown}</td>
-      <td><div class="rfx-actions"><button class="${c.watch_urls ? '' : 'gold'}" onclick="event.stopPropagation();cmpOpenPages('${esc(c.id)}')">Job pages</button><button onclick="event.stopPropagation();cmpHide('${esc(c.id)}')">Hide</button></div></td></tr>`;
+      <td><div class="rfx-actions"><button class="${c.watch_urls ? '' : 'gold'}" onclick="event.stopPropagation();cmpOpenPages('${esc(c.id)}')">Job pages</button><button onclick="event.stopPropagation();cmpTogglePin('${esc(c.id)}')">${c.pinned === 'yes' ? 'Unpin' : 'Pin'}</button><button onclick="event.stopPropagation();cmpHide('${esc(c.id)}')">Hide</button></div></td></tr>`;
   }).join('') : `<tr><td colspan="10" class="empty-row">${all.length ? 'No agencies match these filters.' : 'No agencies yet. Press Search competitors now.'}</td></tr>`;
   document.getElementById('cmpPagerA').innerHTML = l2hPager(comps.length, CMP.pageA, CMP.per, 'cmpPageA', 'cmpPer');
 
@@ -16629,7 +16629,12 @@ function cmpPoll(){
       if(st.running) return;
       clearInterval(CMP.polling); CMP.polling = null;
       btn.disabled = false; btn.textContent = 'Search competitors now';
-      cmpLoad();
+      await cmpLoad();
+      if(CMP.pendingAgency){ // just added: show that agency's roles
+        const c = ((CMP.data && CMP.data.competitors) || []).find(x => String(x.name).toLowerCase() === CMP.pendingAgency);
+        CMP.pendingAgency = '';
+        if(c){ CMP.agency = c.id; CMP.pageB = 1; cmpRender(); showToast(c.name + ': ' + (c.live || 0) + ' live role' + (c.live == 1 ? '' : 's') + ' found'); }
+      }
     }catch(e){ /* keep trying */ }
   };
   tick();
@@ -16709,6 +16714,18 @@ async function cmpClientAction(id, what){
   }catch(e){ showToast(e.message); }
 }
 
+async function cmpTogglePin(id){
+  const c = ((CMP.data && CMP.data.competitors) || []).find(x => x.id === id);
+  if(!c) return;
+  const on = c.pinned !== 'yes';
+  try{
+    const { live, newThisWeek, last30, prev30, avgDays, sectors, salMin, salMax, clientsKnown, everAdvertised, ...rest } = c;
+    await b2Post('/api/competitors', {...rest, pinned: on ? 'yes' : 'no'});
+    c.pinned = on ? 'yes' : 'no'; cmpRender();
+    showToast(c.name + (on ? ' pinned as a main competitor' : ' unpinned'));
+  }catch(e){ showToast('Could not save: ' + e.message); }
+}
+
 async function cmpHide(id){
   const c = ((CMP.data && CMP.data.competitors) || []).find(x => x.id === id);
   if(!c || !confirm(`Hide ${c.name} from Competitor Watch? Its adverts stop showing.`)) return;
@@ -16764,7 +16781,7 @@ function cmpOpenAdd(){
 async function cmpSaveNew(){
   const name = b2Val('cmpNName').trim();
   if(!name){ showToast('Name is required'); return; }
-  try{ await b2Post('/api/competitors', {id: b2Id('cp'), name, website: b2Val('cmpNWeb').trim(), watch_urls: b2Val('cmpNPages').trim(), notes: b2Val('cmpNNotes').trim(), source:'Added by hand', added_at:new Date().toISOString(), added_by:(signedInUser && signedInUser.key) || ''}); closeModal('cmpModal'); cmpLoad(); showToast(name + ' added'); }
+  try{ await b2Post('/api/competitors', {id: b2Id('cp'), name, website: b2Val('cmpNWeb').trim(), watch_urls: b2Val('cmpNPages').trim(), notes: b2Val('cmpNNotes').trim(), source:'Added by hand', pinned:'yes', added_at:new Date().toISOString(), added_by:(signedInUser && signedInUser.key) || ''}); closeModal('cmpModal'); CMP.pendingAgency = name.toLowerCase(); showToast(name + ' added and pinned. Searching for their live roles now'); cmpRunNow(); }
   catch(e){ showToast('Could not add: ' + e.message); }
 }
 
@@ -16945,7 +16962,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '3 Nov 2026 - build 55.1 (rejecting applicants sticks)';
+var PAGE_BUILD = '6 Nov 2026 - build 55.2 (pin any competitor)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
