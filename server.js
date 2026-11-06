@@ -112,6 +112,7 @@ const TABLE_GROUPS = {
   'Client Sites': 'clients', 'Client Terms': 'clients', 'Client Feedback': 'clients', 'Comms Log': 'clients',
   'Lead Pipeline': 'clients', 'Funnel Leads': 'clients', 'Site Details': 'clients', 'Reply Links': 'clients',
   'Employees': 'hr', 'Holiday Requests': 'hr', 'Absences': 'hr', 'HR Documents': 'hr', 'Reviews': 'hr', 'Commission': 'hr',
+  'BMS Documents': 'hr', 'BMS Acknowledgements': 'hr',
   'Role Finder Searches': 'rolefinder', 'Role Finder Results': 'rolefinder', 'Agency Block List': 'rolefinder',
   'Role Finder Dismissed': 'rolefinder', 'Competitors': 'rolefinder', 'Competitor Adverts': 'rolefinder',
   'Talent Suite Users': 'talentsuite', 'Talent Suite Orders': 'talentsuite', 'Credit Purchases': 'talentsuite',
@@ -16265,7 +16266,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '6 Nov 2026 - build 55.2 (pin any competitor)';
+const SERVER_BUILD = '6 Nov 2026 - build 56.0 (Business Management System)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -17021,6 +17022,207 @@ if (HR_SHEET_ID) setTimeout(async () => {
     try { await t.ensure(); } catch (e) { console.error('HR warm-up:', e.message); }
   }
 }, 15000);
+
+/* ======================================================================
+   Build 56.0: Business Management System (BMS)
+
+   The controlled library of policies, procedures, work instructions and forms.
+   - The source documents are Google Docs in Live2Help > BMS in Drive (BMS_FOLDER_ID).
+   - The Master Document Register (L2H-REC-001) is the 'BMS Documents' table, kept in the
+     BMS spreadsheet (BMS_SHEET_ID) and moved to Postgres with the other HR tables.
+   - Staff only ever see documents whose status is Live and whose audience includes them.
+     Draft, Planned and Retired documents, and Admin only documents, are never sent to staff.
+   - Acknowledgements are recorded per person and per version, so a new version has to be
+     read again.
+   ====================================================================== */
+const BMS_SHEET_ID = process.env.BMS_SHEET_ID || '1k4U8K0q300r84UkHzfed-voO3GhboUPRldofam834WY';
+const BMS_FOLDER_ID = process.env.BMS_FOLDER_ID || '1mCwEH53fot_8m4H6aiIYn_01cq80j8II';
+let BMS_SEED = [];
+try { BMS_SEED = JSON.parse(fs.readFileSync(path.join(__dirname, 'bms-register.json'), 'utf8')); } catch (e) { console.error('BMS register seed not found:', e.message); }
+
+const bmsDocs = makeSimpleTable({
+  sheetId: BMS_SHEET_ID, tab: 'BMS Documents', path: null, label: 'BMS document',
+  header: ['id', 'title', 'level', 'area', 'version', 'status', 'owner', 'approver', 'audience', 'needs_ack', 'phase', 'review_months',
+    'effective_date', 'next_review', 'file_id', 'notes', 'updated_by', 'updated_at'],
+  seed: BMS_SEED,
+});
+const bmsAcks = makeSimpleTable({
+  sheetId: BMS_SHEET_ID, tab: 'BMS Acknowledgements', path: null, label: 'BMS acknowledgement',
+  header: ['id', 'doc_id', 'version', 'person', 'acknowledged_at'],
+});
+
+const BMS_STATUSES = ['Planned', 'Draft', 'Live', 'Retired'];
+const BMS_STAFF_AUDIENCES = new Set(['everyone', 'recruitment team']);
+const bmsToday = () => new Date().toISOString().slice(0, 10);
+const bmsVisible = (d, admin) => admin || (d.status === 'Live' && BMS_STAFF_AUDIENCES.has(String(d.audience || '').toLowerCase()));
+
+let bmsShared = false;
+async function bmsEnsureAccess() {
+  if (bmsShared) return;
+  bmsShared = true;
+  const bot = botEmail();
+  if (!bot || !oauthUploadsConfigured()) return;
+  try {
+    await getUploadDriveClient().permissions.create({ fileId: BMS_FOLDER_ID, requestBody: { type: 'user', role: 'writer', emailAddress: bot }, sendNotificationEmail: false });
+  } catch (e) { bmsShared = false; console.error('Could not share the BMS folder with the service account:', e.message); }
+}
+
+function bmsAddMonths(iso, months) {
+  const d = new Date(iso + 'T00:00:00Z');
+  if (isNaN(d)) return '';
+  d.setUTCMonth(d.getUTCMonth() + Number(months || 12));
+  return d.toISOString().slice(0, 10);
+}
+function bmsReviewState(d) {
+  if (d.status !== 'Live' || !d.next_review) return '';
+  const days = Math.round((Date.parse(d.next_review) - Date.parse(bmsToday())) / 86400000);
+  return days < 0 ? 'overdue' : days <= 30 ? 'due_soon' : '';
+}
+function bmsOut(d, acks, key, admin) {
+  const mine = acks.find(a => a.doc_id === d.id && a.version === d.version && a.person === key);
+  const out = {
+    id: d.id, title: d.title, level: d.level, area: d.area, version: d.version, status: d.status, owner: d.owner, approver: d.approver,
+    audience: d.audience, needs_ack: hrTrue(d.needs_ack), effective_date: d.effective_date, next_review: d.next_review,
+    has_file: !!d.file_id, acknowledged: !!mine, acknowledged_at: mine ? mine.acknowledged_at : '', review_state: bmsReviewState(d),
+  };
+  if (admin) Object.assign(out, { phase: d.phase, review_months: d.review_months, notes: d.notes, file_id: d.file_id, updated_at: d.updated_at });
+  return out;
+}
+
+app.get('/api/bms/documents', async (req, res) => {
+  try {
+    await bmsEnsureAccess();
+    const { key, admin } = hrWho(req);
+    const [docs, acks] = await Promise.all([bmsDocs.list(), bmsAcks.list()]);
+    const seen = docs.filter(d => bmsVisible(d, admin));
+    const out = seen.map(d => bmsOut(d, acks, key, admin));
+    const live = out.filter(d => d.status === 'Live');
+    const body = {
+      data: out,
+      me: { key, admin },
+      toRead: live.filter(d => d.needs_ack && !d.acknowledged).length,
+    };
+    if (admin) {
+      body.summary = {
+        total: out.length,
+        byStatus: BMS_STATUSES.reduce((a, s) => { a[s] = out.filter(d => d.status === s).length; return a; }, {}),
+        reviewOverdue: live.filter(d => d.review_state === 'overdue').length,
+        reviewDueSoon: live.filter(d => d.review_state === 'due_soon').length,
+      };
+    }
+    res.json(body);
+  } catch (e) { console.error('GET /api/bms/documents error:', e.message); res.status(500).json({ error: 'The Business Management System could not load: ' + e.message }); }
+});
+
+app.get('/api/bms/documents/:id/file', async (req, res) => {
+  try {
+    await bmsEnsureAccess();
+    const { admin } = hrWho(req);
+    const d = (await bmsDocs.list()).find(x => x.id === req.params.id);
+    if (!d || !bmsVisible(d, admin)) return res.status(404).json({ error: 'Document not found' });
+    if (!d.file_id) return res.status(404).json({ error: 'This document has no file attached yet' });
+    const drive = getDriveClient();
+    const meta = await drive.files.get({ fileId: d.file_id, fields: 'name,mimeType' });
+    const isGoogle = String(meta.data.mimeType).startsWith('application/vnd.google-apps');
+    const out = isGoogle
+      ? await drive.files.export({ fileId: d.file_id, mimeType: 'application/pdf' }, { responseType: 'stream' })
+      : await drive.files.get({ fileId: d.file_id, alt: 'media' }, { responseType: 'stream' });
+    const name = `${d.id} ${d.title}${d.status === 'Live' ? ` v${d.version}` : ` (${d.status})`}${isGoogle ? '.pdf' : ''}`;
+    res.setHeader('Content-Type', isGoogle ? 'application/pdf' : (meta.data.mimeType || 'application/octet-stream'));
+    res.setHeader('Content-Disposition', `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="${name.replace(/"/g, '')}"`);
+    out.data.pipe(res);
+  } catch (e) { res.status(500).json({ error: friendlyDriveError(e) }); }
+});
+
+app.post('/api/bms/documents/:id/ack', async (req, res) => {
+  try {
+    if (req.user && req.user.va) return res.status(403).json({ error: 'Exit View as to mark a document as read for yourself' });
+    const { key, admin } = hrWho(req);
+    const d = (await bmsDocs.list()).find(x => x.id === req.params.id);
+    if (!d || !bmsVisible(d, admin) || d.status !== 'Live') return res.status(404).json({ error: 'Document not found' });
+    const id = `${d.id}|${d.version}|${key}`;
+    const existing = (await bmsAcks.list()).find(a => a.id === id);
+    if (existing) return res.json({ ok: true, data: existing });
+    const saved = await bmsAcks.upsert({ id, doc_id: d.id, version: d.version, person: key, acknowledged_at: hrNow() });
+    auditLog(auditActorOf(req), 'acknowledged', 'bms document', `${d.id} ${d.title}`, `version ${d.version}`);
+    res.json({ ok: true, data: saved });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin: change a register line. Going Live needs a version, an effective date and a file.
+app.post('/api/bms/documents/:id', requireAdmin, async (req, res) => {
+  try {
+    const cur = (await bmsDocs.list()).find(x => x.id === req.params.id);
+    if (!cur) return res.status(404).json({ error: 'Document not found' });
+    const b = req.body || {};
+    const next = { ...cur };
+    for (const f of ['title', 'level', 'area', 'owner', 'approver', 'audience', 'notes', 'phase', 'review_months', 'version', 'effective_date']) {
+      if (b[f] !== undefined) next[f] = String(b[f]).slice(0, 300);
+    }
+    if (b.needs_ack !== undefined) next.needs_ack = hrTrue(b.needs_ack) ? 'TRUE' : 'FALSE';
+    if (b.link || b.file_id) {
+      const m = String(b.link || b.file_id).match(/[-\w]{25,}/);
+      if (!m) return res.status(400).json({ error: 'That does not look like a Google Drive link' });
+      next.file_id = m[0];
+    }
+    if (b.status !== undefined) {
+      if (!BMS_STATUSES.includes(b.status)) return res.status(400).json({ error: 'Status must be Planned, Draft, Live or Retired' });
+      next.status = b.status;
+    }
+    if (next.status === 'Live') {
+      if (!next.file_id) return res.status(400).json({ error: 'Attach the Google Doc before making this document Live' });
+      if (!next.version || next.version.startsWith('0.')) next.version = '1.0';
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(next.effective_date || '')) next.effective_date = bmsToday();
+      if (b.next_review) next.next_review = String(b.next_review).slice(0, 10);
+      else if (!next.next_review || b.effective_date !== undefined || cur.status !== 'Live') next.next_review = bmsAddMonths(next.effective_date, next.review_months);
+    }
+    next.updated_by = actorOf(req);
+    next.updated_at = bmsToday();
+    const saved = await bmsDocs.upsert(next);
+    auditLog(auditActorOf(req), cur.status !== next.status ? `set to ${next.status}` : 'updated', 'bms document', `${next.id} ${next.title}`, `version ${next.version || '-'}`);
+    res.json({ ok: true, data: bmsOut(saved, await bmsAcks.list(), hrWho(req).key, true) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin: add a new line to the register (the next free number for its type is suggested by the page)
+app.post('/api/bms/documents', requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const id = String(b.id || '').trim().toUpperCase();
+    if (!/^L2H-(MAN|POL|PRO|WI|FRM|REC)-\d{3}$/.test(id)) return res.status(400).json({ error: 'The ID must look like L2H-POL-039' });
+    if (!b.title) return res.status(400).json({ error: 'Give the document a title' });
+    if ((await bmsDocs.list()).some(x => x.id === id)) return res.status(400).json({ error: id + ' is already in the register. Numbers are never reused.' });
+    const row = {
+      id, title: String(b.title).slice(0, 200), level: b.level || 'L2 Policy', area: b.area || 'Compliance and Governance', version: '', status: 'Planned',
+      owner: b.owner || 'Daniel Brown', approver: 'Daniel Brown', audience: b.audience || 'Everyone', needs_ack: hrTrue(b.needs_ack) ? 'TRUE' : 'FALSE',
+      phase: String(b.phase || ''), review_months: String(b.review_months || '12'), effective_date: '', next_review: '', file_id: '', notes: String(b.notes || '').slice(0, 300),
+      updated_by: actorOf(req), updated_at: bmsToday(),
+    };
+    const saved = await bmsDocs.upsert(row);
+    auditLog(auditActorOf(req), 'added', 'bms document', `${id} ${row.title}`, '');
+    res.json({ ok: true, data: bmsOut(saved, [], hrWho(req).key, true) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin: who has read which Live document, version by version
+app.get('/api/bms/compliance', requireAdmin, async (req, res) => {
+  try {
+    const [docs, acks, emps] = await Promise.all([bmsDocs.list(), bmsAcks.list(), hrEmployees.list().catch(() => [])]);
+    const people = emps.filter(e => String(e.status || 'Active').toLowerCase() === 'active').map(e => ({ id: e.id, name: e.known_as || e.full_name }));
+    const live = docs.filter(d => d.status === 'Live' && hrTrue(d.needs_ack));
+    res.json({
+      people,
+      docs: live.map(d => ({
+        id: d.id, title: d.title, version: d.version,
+        acks: people.reduce((a, p) => { const x = acks.find(k => k.doc_id === d.id && k.version === d.version && k.person === p.id); a[p.id] = x ? x.acknowledged_at : ''; return a; }, {}),
+      })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+setTimeout(async () => {
+  try { await bmsEnsureAccess(); for (const t of [bmsDocs, bmsAcks]) await t.ensure(); } catch (e) { console.error('BMS warm-up:', e.message); }
+}, 18000);
 
 /* ---------- build 42: planning and marketing records (tracker sheet) ---------- */
 const weekPlanTable = makeSimpleTable({

@@ -16965,7 +16965,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '6 Nov 2026 - build 55.3 (pin button by agency name)';
+var PAGE_BUILD = '6 Nov 2026 - build 56.0 (Business Management System)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -18206,8 +18206,159 @@ function buildTagApply(){
   }
 
   /* ---------------- Library ---------------- */
+  /* ---------------- Library: Business Management System (page build 56.0) ---------------- */
+  const BMS = { tab: 'docs', docs: [], summary: null, toRead: 0, q: '', level: 'all', area: 'all', status: 'Live', err: '', receipts: null, editId: '', adding: false, loaded: 0 };
+  const BMS_LEVELS = [['all', 'All'], ['L1', 'Manual'], ['L2', 'Policies'], ['L3', 'Procedures'], ['L4', 'Work instructions'], ['L5', 'Forms and records']];
+  const bmsPill = d => {
+    const cls = d.status === 'Live' ? 'ok' : d.status === 'Draft' ? 'warn' : '';
+    return `<span class="p41-pill ${cls}">${h(d.status)}</span>`;
+  };
+  async function bmsFetch(){
+    try{
+      const r = await api41('/api/bms/documents');
+      BMS.docs = r.data || []; BMS.summary = r.summary || null; BMS.toRead = r.toRead || 0; BMS.err = ''; BMS.loaded = Date.now();
+    }catch(e){ BMS.err = e.message; }
+  }
+  function libTabs(){
+    const host = $('lib41Tabs'); if(!host) return;
+    const extra = isAdmin41() && BMS.summary && BMS.summary.reviewOverdue ? ' · ' + BMS.summary.reviewOverdue + ' review overdue' : (BMS.toRead ? ' · ' + BMS.toRead + ' to read' : '');
+    host.innerHTML = [['docs', 'Documents'], ['bms', 'Business Management System' + extra]].map(([k, l]) => `<button class="p41-chip" data-bmstab="${k}" aria-pressed="${BMS.tab === k}">${h(l)}</button>`).join('');
+  }
   async function libLoad(){
     const body = $('lib41Body');
+    if(!$('lib41Pane')){ body.innerHTML = '<div class="p41-tabs" id="lib41Tabs"></div><div id="lib41Pane" style="display:flex;flex-direction:column;gap:16px"></div>'; }
+    libTabs();
+    if(!BMS.loaded){ bmsFetch().then(libTabs); }
+    if(BMS.tab === 'bms') await bmsLoad(); else await libLoadDocs($('lib41Pane'));
+  }
+  async function bmsLoad(){
+    const pane = $('lib41Pane');
+    $('lib41Admin').innerHTML = isAdmin41() ? '<button class="p41-btn sm" data-bmsadd="1">+ Add to register</button><button class="p41-btn sm" data-bmsrec="1">Read receipts</button>' : '';
+    if(!BMS.loaded || Date.now() - BMS.loaded > 30000){ pane.innerHTML = '<div class="p41-empty">Loading...</div>'; await bmsFetch(); }
+    libTabs(); bmsRender();
+  }
+  function bmsFiltered(){
+    const q = BMS.q.trim().toLowerCase();
+    return BMS.docs.filter(d =>
+      (BMS.level === 'all' || d.level.startsWith(BMS.level)) &&
+      (BMS.area === 'all' || d.area === BMS.area) &&
+      (!isAdmin41() || BMS.status === 'all' || d.status === BMS.status) &&
+      (!q || (d.id + ' ' + d.title + ' ' + d.owner + ' ' + d.area).toLowerCase().includes(q)));
+  }
+  function bmsRender(){
+    const pane = $('lib41Pane'); if(!pane || BMS.tab !== 'bms') return;
+    if(BMS.err){ pane.innerHTML = `<div class="p41-panel"><div class="p41-err">${h(BMS.err)}</div><div class="p41-bar"><button class="p41-btn pri sm" data-bmsretry="1">Try again</button></div></div>`; return; }
+    const admin = isAdmin41();
+    const areas = [...new Set(BMS.docs.map(d => d.area))].sort();
+    const s = BMS.summary;
+    const stats = admin && s ? `<div class="p41-grid g4">${[
+      ['Live', s.byStatus.Live, 'In force for the team'], ['Draft', s.byStatus.Draft, 'Waiting for your approval'], ['Planned', s.byStatus.Planned, 'Still to be written'],
+      ['Reviews due', s.reviewOverdue + s.reviewDueSoon, s.reviewOverdue ? s.reviewOverdue + ' overdue' : 'Within 30 days'],
+    ].map(([k, v, n]) => `<div class="p41-stat"><span class="k">${k}</span><span class="v">${v}</span><span class="n">${n}</span></div>`).join('')}</div>` : '';
+    const banner = !admin && BMS.toRead ? `<div class="p41-note">You have ${BMS.toRead} document${BMS.toRead === 1 ? '' : 's'} to read. Open each one, then choose Mark as read.</div>` : '';
+    const rows = bmsFiltered();
+    const list = rows.length ? rows.map(d => {
+      const due = d.review_state === 'overdue' ? '<span class="p41-pill bad">Review overdue</span>' : d.review_state === 'due_soon' ? '<span class="p41-pill warn">Review due soon</span>' : '';
+      const read = d.status === 'Live' && d.needs_ack ? (d.acknowledged ? '<span class="p41-pill ok">Read</span>' : '<span class="p41-pill gold">To read</span>') : '';
+      const meta = [d.status === 'Live' ? 'v' + d.version : '', 'Owner ' + d.owner, d.status === 'Live' && d.next_review ? 'Review ' + fmt41(d.next_review, true) : '', admin ? d.audience : ''].filter(Boolean).join(' · ');
+      return `<div class="p41-row"><div class="m"><div><span class="p41-mono">${h(d.id)}</span> &nbsp;<b>${h(d.title)}</b></div><div class="s">${h(d.area)} · ${h(meta)}</div></div>
+        <div class="p41-bar">${due}${read}${bmsPill(d)}
+        ${d.has_file ? `<button class="p41-btn sm" data-bmsopen="${h(d.id)}">Open</button>` : ''}
+        ${d.status === 'Live' && d.needs_ack && !d.acknowledged && !admin ? `<button class="p41-btn pri sm" data-bmsack="${h(d.id)}">Mark as read</button>` : ''}
+        ${admin ? `<button class="p41-btn sm" data-bmsedit="${h(d.id)}">Edit</button>` : ''}</div></div>`;
+    }).join('') : `<div class="p41-empty">${admin ? 'No documents match these filters.' : 'No documents have been published yet. The team will see policies and procedures here once they are approved.'}</div>`;
+    pane.innerHTML = `${banner}${stats}<div id="bms41Form"></div>
+      <div class="p41-panel"><div class="p41-bar"><input class="p41-in" id="bms41Q" placeholder="Search by ID, title or owner" value="${h(BMS.q)}" style="flex:1;min-width:200px" aria-label="Search the Business Management System">
+        <select class="p41-in" id="bms41Area" aria-label="Filter by area"><option value="all">All areas</option>${areas.map(a => `<option${BMS.area === a ? ' selected' : ''}>${h(a)}</option>`).join('')}</select>
+        ${admin ? `<select class="p41-in" id="bms41Status" aria-label="Filter by status">${['Live', 'Draft', 'Planned', 'Retired', 'all'].map(x => `<option value="${x}"${BMS.status === x ? ' selected' : ''}>${x === 'all' ? 'Every status' : x}</option>`).join('')}</select>` : ''}</div>
+        <div class="p41-tabs" style="margin-top:10px">${BMS_LEVELS.map(([k, l]) => `<button class="p41-chip" data-bmslevel="${k}" aria-pressed="${BMS.level === k}">${l}</button>`).join('')}</div>
+        <div class="s" style="color:var(--muted);margin:10px 0 0">${rows.length} document${rows.length === 1 ? '' : 's'}</div>
+        <div class="p41-list">${list}</div></div>`;
+    const q = $('bms41Q'); if(q){ q.oninput = () => { BMS.q = q.value; const pos = q.selectionStart; bmsRender(); const n = $('bms41Q'); if(n){ n.focus(); n.setSelectionRange(pos, pos); } }; }
+    const ar = $('bms41Area'); if(ar) ar.onchange = () => { BMS.area = ar.value; bmsRender(); };
+    const st = $('bms41Status'); if(st) st.onchange = () => { BMS.status = st.value; bmsRender(); };
+    if(BMS.editId) bmsEditForm(BMS.editId); else if(BMS.adding) bmsAddForm();
+  }
+  async function bmsOpen(id){
+    const d = BMS.docs.find(x => x.id === id) || {};
+    $('vw41Title').textContent = (d.id ? d.id + ' ' : '') + (d.title || 'Document');
+    { const old = $('sign41'); if(old) old.remove(); }
+    $('vw41Body').innerHTML = '<div class="p41-empty" style="padding:24px">Opening...</div>';
+    $('viewer41').classList.add('open');
+    $('vw41Dl').onclick = async () => { try{ const r = await fetch(API_BASE + '/api/bms/documents/' + encodeURIComponent(id) + '/file?download=1'); if(!r.ok) throw new Error('Could not download the document'); const url = URL.createObjectURL(await r.blob()); const a = document.createElement('a'); a.href = url; a.download = (d.id + ' ' + d.title).replace(/[\\/:*?"<>|]/g, '') + '.pdf'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000); }catch(e){ toast41(e.message); } };
+    try{
+      const r = await fetch(API_BASE + '/api/bms/documents/' + encodeURIComponent(id) + '/file');
+      if(!r.ok){ const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Could not open the document'); }
+      const type = (r.headers.get('Content-Type') || '').toLowerCase();
+      const blob = await r.blob();
+      if(type.includes('pdf')){ $('vw41Body').innerHTML = `<iframe title="${h(d.title || 'Document')}" src="${URL.createObjectURL(blob)}"></iframe>`; return; }
+      $('vw41Body').innerHTML = '<div class="p41-empty" style="padding:24px">This file type cannot be shown here. Use Download.</div>';
+    }catch(e){ $('vw41Body').innerHTML = `<div style="padding:24px"><div class="p41-err">${h(e.message)}</div></div>`; }
+  }
+  function bmsEditForm(id){
+    const d = BMS.docs.find(x => x.id === id); const el = $('bms41Form'); if(!d || !el) return;
+    const opt = (list, cur) => list.map(x => `<option${x === cur ? ' selected' : ''}>${h(x)}</option>`).join('');
+    el.innerHTML = `<form class="p41-panel p41-form" id="bms41Edit"><h3>${h(d.id)} ${h(d.title)}</h3>
+      <div class="two"><label>Status<select class="p41-in" name="status">${opt(['Planned', 'Draft', 'Live', 'Retired'], d.status)}</select></label><label>Version<input class="p41-in" name="version" value="${h(d.version)}" placeholder="1.0"></label></div>
+      <div class="two"><label>Effective date<input class="p41-in" type="date" name="effective_date" value="${h(d.effective_date)}"></label><label>Next review date<input class="p41-in" type="date" name="next_review" value="${h(d.next_review)}"></label></div>
+      <label>Google Doc link<input class="p41-in" name="link" placeholder="${d.has_file ? 'A file is attached. Paste a new link to replace it.' : 'https://docs.google.com/document/d/...'}"></label>
+      <div class="two"><label>Owner<input class="p41-in" name="owner" value="${h(d.owner)}"></label><label>Who sees it<select class="p41-in" name="audience">${opt(['Everyone', 'Recruitment team', 'Admin only'], d.audience)}</select></label></div>
+      <div class="two"><label>Review every (months)<input class="p41-in" name="review_months" value="${h(d.review_months)}"></label><label style="flex-direction:row;gap:8px;align-items:center;margin-top:18px"><input type="checkbox" name="needs_ack"${d.needs_ack ? ' checked' : ''}> Staff must mark it as read</label></div>
+      <label>Notes<input class="p41-in" name="notes" value="${h(d.notes)}"></label>
+      <div class="p41-note">Going Live needs a Google Doc attached. A new version number means everyone has to mark it as read again. Staff never see Draft, Planned, Retired or Admin only documents.</div>
+      <div class="p41-bar"><button class="p41-btn pri sm" type="submit">Save</button><button class="p41-btn sm" type="button" data-bmscancel="1">Cancel</button></div></form>`;
+    $('bms41Edit').onsubmit = async e => {
+      e.preventDefault(); const f = e.target; const body = {};
+      new FormData(f).forEach((v, k) => { if(v !== '' || k === 'notes' || k === 'version') body[k] = v; });
+      body.needs_ack = !!f.needs_ack.checked;
+      if(!body.next_review) delete body.next_review;
+      try{ await post41('/api/bms/documents/' + encodeURIComponent(id), body); toast41('Saved'); BMS.editId = ''; await bmsFetch(); libTabs(); bmsRender(); }catch(err){ toast41(err.message); }
+    };
+    el.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+  }
+  function bmsAddForm(){
+    const el = $('bms41Form'); if(!el) return;
+    const next = t => { const n = BMS.docs.filter(d => d.id.startsWith('L2H-' + t + '-')).map(d => Number(d.id.split('-')[2])).reduce((a, b) => Math.max(a, b), 0); return 'L2H-' + t + '-' + String(n + 1).padStart(3, '0'); };
+    el.innerHTML = `<form class="p41-panel p41-form" id="bms41Add"><h3>Add to the register</h3>
+      <div class="two"><label>Type<select class="p41-in" name="type">${['POL', 'PRO', 'WI', 'FRM', 'REC', 'MAN'].map(t => `<option value="${t}">${t}</option>`).join('')}</select></label><label>ID<input class="p41-in" name="id" value="${next('POL')}" required></label></div>
+      <label>Title<input class="p41-in" name="title" required></label>
+      <div class="two"><label>Level<select class="p41-in" name="level">${['L1 Manual', 'L2 Policy', 'L3 Procedure', 'L4 Work Instruction', 'L5 Form', 'L5 Record'].map(x => `<option${x === 'L2 Policy' ? ' selected' : ''}>${x}</option>`).join('')}</select></label><label>Area<input class="p41-in" name="area" value="Compliance and Governance"></label></div>
+      <div class="two"><label>Owner<input class="p41-in" name="owner" value="Daniel Brown"></label><label>Who sees it<select class="p41-in" name="audience">${['Everyone', 'Recruitment team', 'Admin only'].map(x => `<option>${x}</option>`).join('')}</select></label></div>
+      <div class="p41-bar"><button class="p41-btn pri sm" type="submit">Add</button><button class="p41-btn sm" type="button" data-bmscancel="1">Cancel</button></div></form>`;
+    const f = $('bms41Add'); f.type.onchange = () => { f.id.value = next(f.type.value); };
+    f.onsubmit = async e => { e.preventDefault(); const body = {}; new FormData(f).forEach((v, k) => body[k] = v); delete body.type;
+      try{ await post41('/api/bms/documents', body); toast41('Added to the register'); BMS.adding = false; BMS.status = 'all'; await bmsFetch(); libTabs(); bmsRender(); }catch(err){ toast41(err.message); } };
+  }
+  async function bmsReceipts(){
+    const el = $('bms41Form'); if(!el) return;
+    el.innerHTML = '<div class="p41-panel"><div class="p41-empty">Loading...</div></div>';
+    try{
+      const r = await api41('/api/bms/compliance');
+      el.innerHTML = r.docs.length ? `<div class="p41-panel"><h3>Read receipts</h3><div class="s" style="color:var(--muted)">Each person must read the current version of every Live document marked as required reading.</div>
+        <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:13px"><thead><tr><th style="text-align:left;padding:6px">Document</th>${r.people.map(p => `<th style="text-align:left;padding:6px">${h(p.name)}</th>`).join('')}</tr></thead>
+        <tbody>${r.docs.map(d => `<tr style="border-top:1px solid var(--border)"><td style="padding:6px"><span class="p41-mono">${h(d.id)}</span> ${h(d.title)} <span class="p41-pill">v${h(d.version)}</span></td>${r.people.map(p => `<td style="padding:6px">${d.acks[p.id] ? '<span class="p41-pill ok">Read ' + fmt41(d.acks[p.id].slice(0, 10), true) + '</span>' : '<span class="p41-pill warn">Not yet</span>'}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+        <div class="p41-bar"><button class="p41-btn sm" data-bmscancel="1">Close</button></div></div>`
+        : '<div class="p41-panel"><div class="p41-empty">No Live documents need reading yet.</div><div class="p41-bar"><button class="p41-btn sm" data-bmscancel="1">Close</button></div></div>';
+    }catch(e){ el.innerHTML = `<div class="p41-panel"><div class="p41-err">${h(e.message)}</div></div>`; }
+  }
+  document.addEventListener('click', async e => {
+    const t = e.target.closest('[data-bmstab],[data-bmslevel],[data-bmsopen],[data-bmsack],[data-bmsedit],[data-bmsadd],[data-bmsrec],[data-bmscancel],[data-bmsretry]');
+    if(!t) return;
+    try{
+      if(t.dataset.bmstab){ BMS.tab = t.dataset.bmstab; BMS.editId = ''; BMS.adding = false; libLoad(); return; }
+      if(t.dataset.bmslevel){ BMS.level = t.dataset.bmslevel; bmsRender(); return; }
+      if(t.dataset.bmsopen){ bmsOpen(t.dataset.bmsopen); return; }
+      if(t.dataset.bmsack){ await post41('/api/bms/documents/' + encodeURIComponent(t.dataset.bmsack) + '/ack', {}); toast41('Marked as read'); await bmsFetch(); libTabs(); bmsRender(); return; }
+      if(t.dataset.bmsedit){ BMS.editId = t.dataset.bmsedit; BMS.adding = false; bmsRender(); return; }
+      if(t.dataset.bmsadd){ BMS.adding = true; BMS.editId = ''; bmsRender(); return; }
+      if(t.dataset.bmsrec){ BMS.adding = false; BMS.editId = ''; bmsRender(); bmsReceipts(); return; }
+      if(t.dataset.bmscancel){ BMS.editId = ''; BMS.adding = false; bmsRender(); return; }
+      if(t.dataset.bmsretry){ BMS.loaded = 0; libLoad(); return; }
+    }catch(err){ toast41(err.message); }
+  });
+  window.openBmsLibrary = function(){ BMS.tab = 'bms'; if(typeof switchTab === 'function') switchTab('library'); };
+
+  async function libLoadDocs(body){
     $('lib41Admin').innerHTML = isAdmin41() ? '<button class="p41-btn sm" data-libadd="1">+ Add document</button>' : '';
     let docs = [];
     try{ docs = (await api41('/api/hr/documents')).data || []; HR.docs = docs; }catch(e){ body.innerHTML = `<div class="p41-panel"><div class="p41-err">${h(e.message)}</div></div>`; return; }
@@ -18241,6 +18392,9 @@ function buildTagApply(){
     if(!glanceHR.m || Date.now() - glanceHR.at > 60000){ try{ glanceHR = { at: Date.now(), m: await api41('/api/hr/me') }; st41.pending = glanceHR.m.pendingApprovals || 0; renderRail(); }catch(e){} }
     const m = glanceHR.m; const mine = m && m.employees.find(x => x.id === m.key); const b = mine ? m.balances[mine.id] : null;
     const obx = (typeof obxLoad === 'function') ? await obxLoad(false) : null; const obn = obx ? obx.pending.length : 0;
+    if(!BMS.loaded || Date.now() - BMS.loaded > 60000){ try{ await bmsFetch(); }catch(e){} }
+    const bmsAct = isAdmin41() ? (BMS.summary ? BMS.summary.byStatus.Draft + BMS.summary.reviewOverdue + BMS.summary.reviewDueSoon : 0) : BMS.toRead;
+    const bmsTile = bmsAct > 0 ? (isAdmin41() ? {n: bmsAct, l: 'Policy documents to action', s: BMS.summary.byStatus.Draft + ' to approve, ' + (BMS.summary.reviewOverdue + BMS.summary.reviewDueSoon) + ' reviews due', go: 'openBmsLibrary()', warn: true} : {n: bmsAct, l: 'Documents to read', s: 'Policies and procedures', go: 'openBmsLibrary()', warn: true}) : null;
     const items = [
       {n: notes.length, l: 'Needs attention', s: urgent ? urgent + ' urgent' : 'All notifications', go: "switchTab('notifications')", warn: urgent > 0},
       {n: obn, l: 'Emails to review', s: obn ? 'Read and send, or skip' : 'Nothing waiting', go: "outboxOpen()", warn: obn > 0},
@@ -18250,6 +18404,7 @@ function buildTagApply(){
       {n: count(['interview_requested','interview_scheduled','interviewed']), l: 'In interviews', s: 'Requested, booked or done', go: "openCandidatesView('interviews')"},
       m && m.admin ? {n: m.pendingApprovals || 0, l: 'Holiday requests', s: 'Waiting for your decision', go: "switchTab('hr')", warn: (m.pendingApprovals || 0) > 0}
         : (b ? {n: b.remaining, l: 'Holiday left to book', s: b.year + ', after pending requests', go: "switchTab('hr')"} : null),
+      bmsTile,
     ].filter(Boolean);
     g.innerHTML = `<div class="glance42">${items.map(i => `<button class="gl42${i.warn ? ' warn' : ''}" onclick="${i.go}"><span class="n">${h(i.n)}</span><span class="l">${h(i.l)}</span><span class="s">${h(i.s)}</span></button>`).join('')}</div>`;
   }
