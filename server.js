@@ -16266,7 +16266,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '6 Nov 2026 - build 56.0 (Business Management System)';
+const SERVER_BUILD = '6 Nov 2026 - build 56.1 (Business Management System)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -17222,6 +17222,11 @@ app.get('/api/bms/compliance', requireAdmin, async (req, res) => {
 
 setTimeout(async () => {
   try { await bmsEnsureAccess(); for (const t of [bmsDocs, bmsAcks]) await t.ensure(); } catch (e) { console.error('BMS warm-up:', e.message); }
+  // Build 56.1: the three foundation documents were re-issued with the logo header. Point the register at the new files (runs once, only where the old ID is still held).
+  try {
+    const BMS_FILE_SWAP = {"12EwscIeJOzgoA3N3BJIkeLXDhHVQh8nGe5pu6OOjESo": "1At4ToNGUmHCnzWoAqby4jeyewNqr5MiyP5qawSRCxdg", "13CAxYGD7iVJIBfgRCw5GCTqSMy4-cJVOq4ob83PN1do": "1Du0paSiKanMLnjg_xOg2GpEduogKD6hI1qHZlTVOnU8", "1gry54kaG_dWHgVs_oIfGbQHHTUliJmaNgfNsAkiFPGk": "10nOu-KWoV3uxusGSbUTY0bTXWXBhJl36cbTcPNE1E2o"};
+    for (const d of await bmsDocs.list()) { const nf = BMS_FILE_SWAP[d.file_id]; if (nf) await bmsDocs.upsert({ ...d, file_id: nf, updated_by: 'system', updated_at: new Date().toISOString().slice(0, 10) }); }
+  } catch (e) { console.error('BMS file swap:', e.message); }
 }, 18000);
 
 /* ---------- build 42: planning and marketing records (tracker sheet) ---------- */
