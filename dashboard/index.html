@@ -1181,6 +1181,7 @@ h1,h2,.view-head h2,#leadClientsHeader h2,#clientsHeader h2,.modal h2{font-famil
 .p41-panel h3{font-family:var(--f-display);font-size:19px;font-weight:600;color:var(--navy);margin:0;}
 .p41-ph{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;}
 .p41-stat{background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:3px;box-shadow:inset 0 3px 0 var(--gold);}
+.button.p41-stat[aria-pressed="true"],button.p41-stat[aria-pressed="true"]{outline:2px solid var(--navy);outline-offset:1px;}
 .p41-stat .k{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
 .p41-stat .v{font-family:var(--f-display);font-size:30px;font-weight:600;color:var(--navy);font-variant-numeric:tabular-nums;line-height:1.1;}
 .p41-stat .n{font-size:12px;color:var(--muted);}
@@ -16965,7 +16966,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '6 Nov 2026 - build 56.1 (Business Management System)';
+var PAGE_BUILD = '8 Nov 2026 - build 56.2 (BMS list opens on Draft)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -18207,7 +18208,7 @@ function buildTagApply(){
 
   /* ---------------- Library ---------------- */
   /* ---------------- Library: Business Management System (page build 56.0) ---------------- */
-  const BMS = { tab: 'docs', docs: [], summary: null, toRead: 0, q: '', level: 'all', area: 'all', status: 'Live', err: '', receipts: null, editId: '', adding: false, loaded: 0 };
+  const BMS = { tab: 'docs', docs: [], summary: null, toRead: 0, q: '', level: 'all', area: 'all', status: '', statusSet: false, err: '', receipts: null, editId: '', adding: false, loaded: 0 };
   const BMS_LEVELS = [['all', 'All'], ['L1', 'Manual'], ['L2', 'Policies'], ['L3', 'Procedures'], ['L4', 'Work instructions'], ['L5', 'Forms and records']];
   const bmsPill = d => {
     const cls = d.status === 'Live' ? 'ok' : d.status === 'Draft' ? 'warn' : '';
@@ -18217,6 +18218,7 @@ function buildTagApply(){
     try{
       const r = await api41('/api/bms/documents');
       BMS.docs = r.data || []; BMS.summary = r.summary || null; BMS.toRead = r.toRead || 0; BMS.err = ''; BMS.loaded = Date.now();
+      if(!BMS.statusSet){ BMS.status = (BMS.summary && BMS.summary.byStatus && BMS.summary.byStatus.Draft > 0) ? 'Draft' : 'all'; BMS.statusSet = true; }
     }catch(e){ BMS.err = e.message; }
   }
   function libTabs(){
@@ -18254,7 +18256,7 @@ function buildTagApply(){
     const stats = admin && s ? `<div class="p41-grid g4">${[
       ['Live', s.byStatus.Live, 'In force for the team'], ['Draft', s.byStatus.Draft, 'Waiting for your approval'], ['Planned', s.byStatus.Planned, 'Still to be written'],
       ['Reviews due', s.reviewOverdue + s.reviewDueSoon, s.reviewOverdue ? s.reviewOverdue + ' overdue' : 'Within 30 days'],
-    ].map(([k, v, n]) => `<div class="p41-stat"><span class="k">${k}</span><span class="v">${v}</span><span class="n">${n}</span></div>`).join('')}</div>` : '';
+    ].map(([k, v, n]) => `<button type="button" class="p41-stat" data-bmsstat="${k === 'Reviews due' ? 'Live' : k}" aria-pressed="${BMS.status === (k === 'Reviews due' ? 'Live' : k)}" style="text-align:left;cursor:pointer;font:inherit;color:inherit"><span class="k">${k}</span><span class="v">${v}</span><span class="n">${n}</span></button>`).join('')}</div>` : '';
     const banner = !admin && BMS.toRead ? `<div class="p41-note">You have ${BMS.toRead} document${BMS.toRead === 1 ? '' : 's'} to read. Open each one, then choose Mark as read.</div>` : '';
     const rows = bmsFiltered();
     const list = rows.length ? rows.map(d => {
@@ -18266,7 +18268,7 @@ function buildTagApply(){
         ${d.has_file ? `<button class="p41-btn sm" data-bmsopen="${h(d.id)}">Open</button>` : ''}
         ${d.status === 'Live' && d.needs_ack && !d.acknowledged && !admin ? `<button class="p41-btn pri sm" data-bmsack="${h(d.id)}">Mark as read</button>` : ''}
         ${admin ? `<button class="p41-btn sm" data-bmsedit="${h(d.id)}">Edit</button>` : ''}</div></div>`;
-    }).join('') : `<div class="p41-empty">${admin ? 'No documents match these filters.' : 'No documents have been published yet. The team will see policies and procedures here once they are approved.'}</div>`;
+    }).join('') : `<div class="p41-empty">${admin ? 'No documents match these filters' + (BMS.status !== 'all' ? ' (status: ' + h(BMS.status) + ')' : '') + '.' + (BMS.status !== 'all' ? ' <button type="button" class="p41-btn sm" data-bmsstat="all">Show every status</button>' : '') : 'No documents have been published yet. The team will see policies and procedures here once they are approved.'}</div>`;
     pane.innerHTML = `${banner}${stats}<div id="bms41Form"></div>
       <div class="p41-panel"><div class="p41-bar"><input class="p41-in" id="bms41Q" placeholder="Search by ID, title or owner" value="${h(BMS.q)}" style="flex:1;min-width:200px" aria-label="Search the Business Management System">
         <select class="p41-in" id="bms41Area" aria-label="Filter by area"><option value="all">All areas</option>${areas.map(a => `<option${BMS.area === a ? ' selected' : ''}>${h(a)}</option>`).join('')}</select>
@@ -18342,10 +18344,11 @@ function buildTagApply(){
     }catch(e){ el.innerHTML = `<div class="p41-panel"><div class="p41-err">${h(e.message)}</div></div>`; }
   }
   document.addEventListener('click', async e => {
-    const t = e.target.closest('[data-bmstab],[data-bmslevel],[data-bmsopen],[data-bmsack],[data-bmsedit],[data-bmsadd],[data-bmsrec],[data-bmscancel],[data-bmsretry]');
+    const t = e.target.closest('[data-bmstab],[data-bmsstat],[data-bmslevel],[data-bmsopen],[data-bmsack],[data-bmsedit],[data-bmsadd],[data-bmsrec],[data-bmscancel],[data-bmsretry]');
     if(!t) return;
     try{
       if(t.dataset.bmstab){ BMS.tab = t.dataset.bmstab; BMS.editId = ''; BMS.adding = false; libLoad(); return; }
+      if(t.dataset.bmsstat){ BMS.status = t.dataset.bmsstat; BMS.statusSet = true; bmsRender(); return; }
       if(t.dataset.bmslevel){ BMS.level = t.dataset.bmslevel; bmsRender(); return; }
       if(t.dataset.bmsopen){ bmsOpen(t.dataset.bmsopen); return; }
       if(t.dataset.bmsack){ await post41('/api/bms/documents/' + encodeURIComponent(t.dataset.bmsack) + '/ack', {}); toast41('Marked as read'); await bmsFetch(); libTabs(); bmsRender(); return; }
