@@ -16966,7 +16966,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '8 Nov 2026 - build 56.4 (BMS list opens on Draft)';
+var PAGE_BUILD = '8 Nov 2026 - build 56.7 (Retention review list)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -18396,11 +18396,13 @@ function buildTagApply(){
     const m = glanceHR.m; const mine = m && m.employees.find(x => x.id === m.key); const b = mine ? m.balances[mine.id] : null;
     const obx = (typeof obxLoad === 'function') ? await obxLoad(false) : null; const obn = obx ? obx.pending.length : 0;
     if(!BMS.loaded || Date.now() - BMS.loaded > 60000){ try{ await bmsFetch(); }catch(e){} }
+    const rtd = isAdmin41() && typeof rtLoad === 'function' ? await rtLoad(false) : null; const rtn = rtd ? rtd.counts.open : 0;
     const bmsAct = isAdmin41() ? (BMS.summary ? BMS.summary.byStatus.Draft + BMS.summary.reviewOverdue + BMS.summary.reviewDueSoon : 0) : BMS.toRead;
     const bmsTile = bmsAct > 0 ? (isAdmin41() ? {n: bmsAct, l: 'Policy documents to action', s: BMS.summary.byStatus.Draft + ' to approve, ' + (BMS.summary.reviewOverdue + BMS.summary.reviewDueSoon) + ' reviews due', go: 'openBmsLibrary()', warn: true} : {n: bmsAct, l: 'Documents to read', s: 'Policies and procedures', go: 'openBmsLibrary()', warn: true}) : null;
     const items = [
       {n: notes.length, l: 'Needs attention', s: urgent ? urgent + ' urgent' : 'All notifications', go: "switchTab('notifications')", warn: urgent > 0},
       {n: obn, l: 'Emails to review', s: obn ? 'Read and send, or skip' : 'Nothing waiting', go: "outboxOpen()", warn: obn > 0},
+      isAdmin41() ? {n: rtn, l: 'Records to review', s: rtn ? rtd.counts.due + ' past their retention date' : 'Nothing past retention', go: 'retentionOpen()', warn: rtn > 0 && rtd.counts.due > 0} : null,
       {n: due, l: 'Tasks due or overdue', s: tasks.length + ' open in total', go: "switchTab('tasks')", warn: due > 0},
       {n: count(['applied']), l: 'New applications', s: 'Waiting to be screened', go: "openCandidatesView('applications')"},
       {n: count(['submitted']), l: 'Awaiting client feedback', s: 'Submitted candidates', go: "openCandidatesView('submitted')"},
@@ -20709,7 +20711,7 @@ async function obxLoad(force){
   try{ OBX.d = await b2Api('/api/outbox'); OBX.at = Date.now(); }catch(e){ /* optional */ }
   return OBX.d;
 }
-const OBX_KIND = {onboarding_reminder:'Onboarding reminder', reconsent:'Talent pool re-consent'};
+const OBX_KIND = {onboarding_reminder:'Onboarding reminder', reconsent:'Talent pool re-consent', retention_request:'Request to keep records'};
 async function outboxOpen(){
   const box = b46Shell('obOv');
   box.innerHTML = '<div class="b46-sub">Loading...</div>';
@@ -20732,6 +20734,67 @@ async function outboxReview(id){
       onSend: async tok => { await b2Post('/api/outbox/' + encodeURIComponent(id) + '/send', {reviewToken: tok}); showToast('Email sent'); await obxLoad(true); if(typeof renderHome === 'function') renderHome(); outboxOpen(); },
       onSkip: async () => { await b2Post('/api/outbox/' + encodeURIComponent(id) + '/skip', {}); showToast('Skipped'); await obxLoad(true); if(typeof renderHome === 'function') renderHome(); outboxOpen(); }});
   }catch(e){ showToast(e.message); outboxOpen(); }
+}
+
+/* ---------- Retention review (records past their retention period, L2H-POL-004) ---------- */
+var RT = {d:null, at:0, form:'', mode:'', busy:false, err:''};
+async function rtLoad(force){
+  if(!force && RT.d && Date.now() - RT.at < 300000) return RT.d;
+  try{ RT.d = await b2Api('/api/retention'); RT.at = Date.now(); }catch(e){ if(force) RT.err = e.message; }
+  return RT.d;
+}
+function rtUk(iso){ const p = String(iso || '').slice(0, 10).split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : ''; }
+async function retentionOpen(force){
+  const box = b46Shell('rtOv');
+  if(!RT.d || force) box.innerHTML = '<div class="b46-sub">Checking your records...</div>';
+  const d = await rtLoad(true);
+  if(!d){ box.innerHTML = '<div class="b46-err">Could not load the list. ' + esc(RT.err || '') + '</div><div class="b46-row" style="justify-content:flex-end;"><button class="b46-btn" onclick="b46Close(\'rtOv\')">Close</button></div>'; return; }
+  const row = x => {
+    const due = x.due_date <= d.today;
+    const open = RT.form === x.id;
+    let actions = '<button class="b46-btn" onclick="rtForm(\'' + esc(x.id) + '\',\'keep\')">Keep</button> ' +
+      (x.category === 'Staff' ? '' : '<button class="b46-btn" onclick="rtForm(\'' + esc(x.id) + '\',\'request\')">Request to keep</button> ') +
+      '<button class="b46-btn" onclick="rtForm(\'' + esc(x.id) + '\',\'delete\')">Delete</button>';
+    let form = '';
+    if(open && RT.mode === 'keep') form = '<div class="b46-row" style="margin-top:8px;gap:8px;flex-wrap:wrap;"><input id="rtReason" placeholder="Why are we keeping it?" style="flex:1;min-width:220px;padding:7px;border:1px solid var(--border);">' +
+      '<select id="rtMonths" style="padding:7px;border:1px solid var(--border);"><option value="12">Review in 12 months</option><option value="6">Review in 6 months</option><option value="24">Review in 24 months</option><option value="72">Review in 6 years</option></select>' +
+      '<button class="b46-btn gold" ' + (RT.busy ? 'disabled' : '') + ' onclick="rtKeep(\'' + esc(x.id) + '\')">Save</button></div>';
+    if(open && RT.mode === 'request') form = '<div class="b46-row" style="margin-top:8px;gap:8px;flex-wrap:wrap;"><input id="rtTo" value="' + esc(x.email || '') + '" placeholder="Email address to ask" style="flex:1;min-width:220px;padding:7px;border:1px solid var(--border);">' +
+      '<button class="b46-btn gold" ' + (RT.busy ? 'disabled' : '') + ' onclick="rtRequest(\'' + esc(x.id) + '\')">Write the email</button></div><div class="b46-sub">It goes to Emails to review. Nothing is sent until you read it and press Send.</div>';
+    if(open && RT.mode === 'delete') form = '<div class="b46-row" style="margin-top:8px;gap:8px;flex-wrap:wrap;"><div class="b46-sub" style="flex:1;min-width:220px;">' + (x.category === 'Candidate'
+        ? 'This permanently erases the candidate, their CV and their pipeline records.'
+        : 'This records that it is approved for deletion. Remove the files, sheet rows and emails yourself first, then confirm.') + '</div>' +
+      '<button class="b46-btn gold" ' + (RT.busy ? 'disabled' : '') + ' onclick="rtDelete(\'' + esc(x.id) + '\',\'' + esc(x.category) + '\',\'' + esc(x.record_id) + '\')">' + (x.category === 'Candidate' ? 'Erase now' : 'Confirmed deleted') + '</button></div>';
+    return '<tr><td><span class="b46-pill">' + esc(x.category) + '</span></td><td><strong>' + esc(x.subject) + '</strong><div class="b46-sub">' + esc(x.rule) + '</div>' + (x.note ? '<div class="b46-sub">' + esc(x.note) + '</div>' : '') + form + '</td>' +
+      '<td>' + esc(rtUk(x.basis_date)) + '</td><td style="' + (due ? 'color:#b3261e;font-weight:600;' : '') + '">' + esc(rtUk(x.due_date)) + (due ? '<div class="b46-sub" style="color:#b3261e;">Due now</div>' : '<div class="b46-sub">Due soon</div>') + '</td><td style="text-align:right;white-space:nowrap;">' + actions + '</td></tr>';
+  };
+  const wrow = x => '<tr><td><span class="b46-pill">' + esc(x.category) + '</span></td><td><strong>' + esc(x.subject) + '</strong><div class="b46-sub">' + esc(x.note || '') + '</div></td><td colspan="2">Reply wanted by ' + esc(rtUk(x.request_deadline)) + '</td><td style="text-align:right;white-space:nowrap;"><button class="b46-btn" onclick="rtForm(\'' + esc(x.id) + '\',\'keep\')">They want it kept</button> <button class="b46-btn" onclick="rtForm(\'' + esc(x.id) + '\',\'delete\')">Delete</button></td></tr>' +
+    (RT.form === x.id ? '<tr><td></td><td colspan="4">' + (RT.mode === 'keep' ? '<div class="b46-row" style="gap:8px;flex-wrap:wrap;"><input id="rtReason" placeholder="Why are we keeping it? (for example: asked in writing)" style="flex:1;min-width:220px;padding:7px;border:1px solid var(--border);"><select id="rtMonths" style="padding:7px;border:1px solid var(--border);"><option value="12">Review in 12 months</option><option value="24">Review in 24 months</option></select><button class="b46-btn gold" onclick="rtKeep(\'' + esc(x.id) + '\')">Save</button></div>'
+      : '<div class="b46-row" style="gap:8px;"><div class="b46-sub" style="flex:1;">' + (x.category === 'Candidate' ? 'This permanently erases the candidate, their CV and their pipeline records.' : 'Remove the files, sheet rows and emails yourself first, then confirm.') + '</div><button class="b46-btn gold" onclick="rtDelete(\'' + esc(x.id) + '\',\'' + esc(x.category) + '\',\'' + esc(x.record_id) + '\')">' + (x.category === 'Candidate' ? 'Erase now' : 'Confirmed deleted') + '</button></div>') + '</td></tr>' : '');
+  const drow = x => '<tr><td><span class="b46-pill ' + (x.status === 'kept' ? 'yes' : '') + '">' + esc(x.status) + '</span></td><td>' + esc(x.subject) + '<div class="b46-sub">' + esc(x.keep_reason || x.note || '') + '</div></td><td>' + esc(rtUk(x.decided_at)) + '</td><td>' + (x.next_review ? 'Review ' + esc(rtUk(x.next_review)) : '') + '</td><td>' + esc(x.decided_by || '') + '</td></tr>';
+  box.innerHTML = '<div style="display:flex;justify-content:space-between;"><div><div class="b46-k">RETENTION REVIEW</div><h3>' + (d.counts.open ? d.counts.open + ' to decide' : 'Nothing to decide') + '</h3>' +
+    '<div class="b46-sub">Records at the end of their retention period (Data Retention and Deletion Policy). Nothing is deleted or sent until you choose. Candidates 24 months after last contact; clients, placed candidates and staff 6 years.</div></div>' +
+    '<button onclick="b46Close(\'rtOv\')" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;align-self:flex-start;">&times;</button></div>' +
+    (RT.err ? '<div class="b46-err">' + esc(RT.err) + '</div>' : '') +
+    (d.open.length ? '<table class="b46-tbl"><tr><th>Type</th><th>Record</th><th>Last contact</th><th>Retention date</th><th></th></tr>' + d.open.map(row).join('') + '</table>' : '<div class="b46-ok">All clear.</div>') +
+    (d.waiting.length ? '<label>Waiting for a reply</label><table class="b46-tbl">' + d.waiting.map(wrow).join('') + '</table>' : '') +
+    (d.done.length ? '<label>Recently decided</label><table class="b46-tbl">' + d.done.map(drow).join('') + '</table>' : '') +
+    '<div class="b46-row" style="justify-content:flex-end;margin-top:14px;"><button class="b46-btn" onclick="b46Close(\'rtOv\')">Close</button></div>';
+}
+function rtForm(id, mode){ RT.form = RT.form === id && RT.mode === mode ? '' : id; RT.mode = mode; RT.err = ''; retentionOpen(); }
+async function rtDo(fn){
+  if(RT.busy) return; RT.busy = true; RT.err = '';
+  try{ await fn(); RT.form = ''; await rtLoad(true); }catch(e){ RT.err = e.message; }
+  RT.busy = false; if(typeof renderHome === 'function') renderHome(); retentionOpen();
+}
+function rtKeep(id){ return rtDo(async () => { await b2Post('/api/retention/' + encodeURIComponent(id) + '/keep', {reason: ($('rtReason') || {}).value || '', months: ($('rtMonths') || {}).value || 12}); showToast('Kept, reason recorded'); }); }
+function rtRequest(id){ return rtDo(async () => { await b2Post('/api/retention/' + encodeURIComponent(id) + '/request', {to: ($('rtTo') || {}).value || ''}); showToast('Email written. Open Emails to review to send it'); if(typeof obxLoad === 'function') await obxLoad(true); }); }
+function rtDelete(id, category, recordId){
+  return rtDo(async () => {
+    if(category === 'Candidate') await b2Post('/api/gdpr/erase/' + encodeURIComponent(recordId), {confirm: 'ERASE'});
+    await b2Post('/api/retention/' + encodeURIComponent(id) + '/deleted', {note: category === 'Candidate' ? 'Erased from the workspace' : 'Deleted by Daniel Brown'});
+    showToast('Recorded as deleted');
+  });
 }
 </script>
 </body>

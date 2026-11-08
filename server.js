@@ -119,7 +119,7 @@ const TABLE_GROUPS = {
   'Week Plans': 'planning', 'Roadmap': 'planning', 'Marketing': 'planning', 'Ad Spend': 'planning',
   'Roles': 'records', 'Role Notes': 'records', 'Role Briefs': 'records', 'Placements': 'records',
   'Interviews': 'records', 'Templates': 'records', 'Activity': 'records', 'Invoice Charges': 'records',
-  'Audit Log': 'system', 'Email Log': 'system', 'AI Usage': 'system', 'Settings': 'system', 'Suppression List': 'system',
+  'Audit Log': 'system', 'Retention Reviews': 'system', 'Email Log': 'system', 'AI Usage': 'system', 'Settings': 'system', 'Suppression List': 'system',
   'Users': 'auth',
 };
 const SIMPLE_TABLES = []; // every makeSimpleTable table, for import, copy back and the nightly backup
@@ -12075,6 +12075,8 @@ async function runDailyJob(skipBackup) {
   await step('tasks', reconcileTasks);
   await step('invoiceChase', checkOverdueInvoices);
   await step('talentPoolReconsent', talentPoolReconsentCheck);
+  // build 56.7: records past their retention period go to the Retention review list
+  await step('retentionScan', () => retentionScan());
   // build 49.4: onboarding reminders (live database only)
   if (pgLivePool) await step('onboardingReminders', () => runOnboardingReminders(pgLivePool));
   // build 55: a task reminds Dan to review whatever is waiting in Emails to review
@@ -16266,7 +16268,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '8 Nov 2026 - build 56.6 (BMS batch 2 drafts linked)';
+const SERVER_BUILD = '8 Nov 2026 - build 56.7 (data retention review queue)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -19069,6 +19071,11 @@ async function outboxRender(o) {
     item.hash = onbEmailHash(item);
     return { ...item, payload: p };
   }
+  if (o.kind === 'retention_request') {
+    const item = { key: 'retention_request', label: 'Request to keep records', to: o.to, from: `Live 2 Help Recruitment <${process.env.BREVO_SENDER_EMAIL}>`, subject: p.subject, text: p.text, attachmentNames: [] };
+    item.hash = onbEmailHash(item);
+    return { ...item, payload: p };
+  }
   throw new Error('Unknown email type');
 }
 app.get('/api/outbox', async (req, res) => {
@@ -19125,6 +19132,14 @@ app.post('/api/outbox/:id/send', async (req, res) => {
       await mailLogTable.append({ id: 'em-' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), at: now, day: rfxToday(), user: me, from: process.env.BREVO_SENDER_EMAIL, to: o.to, cc: '', subject: it.subject, kind: 'candidate', company: '', role: '', entity: o.name, attachments: '', message_id: String((info && info.messageId) || '').replace(/[<>]/g, ''), status: 'sent', event_at: now, ref: 'reconsent' }).catch(() => {});
       await tpPatchCells(it.payload.pool_id, { 30: todayISO() });
     }
+    else if (o.kind === 'retention_request') {
+      const counts = await mailCounts(me);
+      if (counts.today >= MAIL_DAILY_LIMIT) return res.status(429).json({ error: `Today's limit of ${MAIL_DAILY_LIMIT} emails through Brevo has been reached. Try again tomorrow.` });
+      const info = await emailTransporter.sendMail({ from: `"Live 2 Help Recruitment" <${process.env.BREVO_SENDER_EMAIL}>`, replyTo: process.env.BREVO_SENDER_EMAIL, to: o.to, subject: it.subject, text: it.text });
+      const now = new Date().toISOString();
+      await mailLogTable.append({ id: 'em-' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), at: now, day: rfxToday(), user: me, from: process.env.BREVO_SENDER_EMAIL, to: o.to, cc: '', subject: it.subject, kind: 'retention', company: o.company || '', role: '', entity: o.name, attachments: '', message_id: String((info && info.messageId) || '').replace(/[<>]/g, ''), status: 'sent', event_at: now, ref: 'retention' }).catch(() => {});
+      await retentionMarkRequestSent(it.payload.item_id).catch(() => {});
+    }
     await emailOutboxTable.updateWhere(x => x.id === o.id, x => ({ ...x, status: 'sent', handled_by: auditActorOf(req), handled_at: new Date().toISOString() }));
     auditLog(auditActorOf(req), 'email_sent', 'outbox:' + o.kind, o.to, it.subject);
     res.json({ ok: true });
@@ -19132,6 +19147,164 @@ app.post('/api/outbox/:id/send', async (req, res) => {
     console.error('POST /api/outbox/:id/send error:', e.message);
     res.status(502).json({ error: 'The email could not be sent: ' + e.message + '. Nothing went out.' });
   }
+});
+
+/* ---------- Build 56.7: Retention review (L2H-POL-004) ----------
+   A daily scan finds records past their retention period and lists them under Retention review.
+   Nothing is deleted or emailed on its own. For each record Dan can Keep (reason and new date),
+   Request to keep (a template email goes to Emails to review) or Delete.
+   Periods: candidates 24 months after last contact, placed candidates and client records 6 years,
+   staff who have left 6 years. The Talent Pool has its own 12 month consent flow and is left out.
+   Registers for complaints, breaches and subject requests join RETENTION_SOURCES when they exist. */
+const retentionTable = makeSimpleTable({
+  tab: 'Retention Reviews',
+  header: ['id', 'category', 'record_id', 'subject', 'email', 'basis_date', 'due_date', 'rule', 'status', 'decided_by', 'decided_at', 'keep_reason', 'next_review', 'request_deadline', 'note', 'created_at'],
+  path: null,
+  label: 'Retention review',
+});
+const RETENTION_REQUEST_DAYS = 30;
+const RETENTION_SOON_DAYS = 30;
+const RETENTION_PLACED = new Set(['start_date', 'day1', 'week1', 'month1']);
+
+async function retentionCandidates() {
+  poolRowsCache = null;
+  const out = [];
+  for (const r of (await readPoolRows()).map(padPoolRow)) {
+    if (!r[0] || r[20] || r[5] === TALENT_POOL_ROLE) continue;
+    const placed = RETENTION_PLACED.has(normStage(r[6])) || RETENTION_PLACED.has(normStage(r[7]));
+    const basis = String(r[9] || r[8] || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(basis)) continue;
+    out.push({ category: 'Candidate', record_id: r[0], subject: r[1], email: r[2], basis_date: basis,
+      due_date: addMonthsISO(basis, placed ? 72 : 24), rule: placed ? 'Placed candidate: 6 years' : 'Candidate: 24 months after last contact' });
+  }
+  return out;
+}
+async function retentionClients() {
+  const roles = await rolesTable.list();
+  const comms = await commsTable.list().catch(() => []);
+  const byCo = new Map();
+  for (const r of roles) {
+    const co = String(r.company || '').trim(); if (!co) continue;
+    const e = byCo.get(co.toLowerCase()) || { company: co, last: '', live: false };
+    if (r.status === 'open' || r.status === 'hold') e.live = true;
+    for (const d of [r.date_closed, r.date_opened]) { const x = String(d || '').slice(0, 10); if (x > e.last) e.last = x; }
+    byCo.set(co.toLowerCase(), e);
+  }
+  for (const c of comms) {
+    const e = byCo.get(String(c.company || '').trim().toLowerCase()); if (!e) continue;
+    const x = String(c.timestamp || '').slice(0, 10); if (x > e.last) e.last = x;
+  }
+  const out = [];
+  for (const e of byCo.values()) {
+    if (e.live || !/^\d{4}-\d{2}-\d{2}$/.test(e.last)) continue;
+    out.push({ category: 'Client', record_id: 'client:' + rfxSlug(e.company), subject: e.company, email: '', basis_date: e.last,
+      due_date: addMonthsISO(e.last, 72), rule: 'Client records: 6 years after last work together' });
+  }
+  return out;
+}
+async function retentionStaff() {
+  const out = [];
+  for (const e of await hrEmployees.list().catch(() => [])) {
+    if (lc(e.status) !== 'left') continue;
+    const basis = String(e.updated_at || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(basis)) continue;
+    out.push({ category: 'Staff', record_id: 'staff:' + e.id, subject: e.full_name || e.id, email: e.email || '', basis_date: basis,
+      due_date: addMonthsISO(basis, 72), rule: 'Staff: employment plus 6 years (date taken from when the record was marked Left)' });
+  }
+  return out;
+}
+const RETENTION_SOURCES = [retentionCandidates, retentionClients, retentionStaff];
+
+let retentionRunning = null;
+function retentionScan() {
+  if (retentionRunning) return retentionRunning;
+  retentionRunning = (async () => {
+    const today = todayISO(), soon = addDaysISO(today, RETENTION_SOON_DAYS);
+    const existing = new Map((await retentionTable.list()).map(x => [x.id, x]));
+    let added = 0, reopened = 0;
+    for (const src of RETENTION_SOURCES) {
+      let found = [];
+      try { found = await src(); } catch (e) { console.error('Retention source failed:', src.name, e.message); continue; }
+      for (const f of found) {
+        if (!f.due_date || f.due_date > soon) continue;
+        const id = 'ret-' + crypto.createHash('sha1').update(f.category + '|' + f.record_id).digest('hex').slice(0, 12);
+        const cur = existing.get(id);
+        if (!cur) { await retentionTable.append({ id, ...f, status: 'open', decided_by: '', decided_at: '', keep_reason: '', next_review: '', request_deadline: '', note: '', created_at: today }); added++; continue; }
+        if (cur.status === 'kept' && cur.next_review && cur.next_review <= soon) { await retentionTable.updateWhere(x => x.id === id, x => ({ ...x, status: 'open', due_date: x.next_review, note: 'Kept until ' + x.next_review + ', due for review again' })); reopened++; }
+        else if (cur.status === 'requested' && cur.request_deadline && cur.request_deadline < today) { await retentionTable.updateWhere(x => x.id === id, x => ({ ...x, status: 'open', note: 'No answer to the request by ' + x.request_deadline + '. Ready to delete unless you decide to keep it.' })); reopened++; }
+      }
+    }
+    return { added, reopened };
+  })().finally(() => { retentionRunning = null; });
+  return retentionRunning;
+}
+function retentionFirst(name) { return String(name || '').trim().split(/\s+/)[0] || 'there'; }
+function retentionUk(iso) { const d = new Date(String(iso).slice(0, 10) + 'T00:00:00Z'); return isNaN(d) ? iso : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }); }
+// The template emails. Plain text, no links, reply by email.
+function retentionEmail(item, deadline) {
+  const first = retentionFirst(item.subject), by = retentionUk(deadline), last = retentionUk(item.basis_date);
+  if (item.category === 'Client') return {
+    subject: 'Your records with Live 2 Help Recruitment',
+    text: `Hi ${first},\n\nOur last work together was in ${last}. We keep records of our agreements, placements and invoices for 6 years after that, and we are now due to delete the records we hold for ${item.subject}, including contact details for the people we worked with.\n\nIf you would like a copy of anything, or would like us to keep your records for longer, please reply to this email by ${by}. If we do not hear from you by then, we will delete them. Some financial records may have to be kept longer by law, and if so we will keep only those.\n\nYou can ask us to delete your records sooner at any time by replying "delete".\n\nKind regards,\nDaniel Brown\nLive 2 Help Recruitment\ninfo@live2helprecruitment.co.uk`,
+  };
+  return {
+    subject: 'Do you want us to keep your details?',
+    text: `Hi ${first},\n\nWe last had contact with you in ${last}. We only keep candidate details for a limited time, and yours are now due to be deleted, including your CV.\n\nIf you would like us to keep them so we can contact you about suitable roles, please reply to this email by ${by} and we will keep them for another 12 months. If we do not hear from you by then, we will delete them.\n\nYou can ask us to delete your details sooner at any time by replying "delete".\n\nKind regards,\nDaniel Brown\nLive 2 Help Recruitment\ninfo@live2helprecruitment.co.uk`,
+  };
+}
+async function retentionMarkRequestSent(id) {
+  await retentionTable.updateWhere(x => x.id === id, x => ({ ...x, note: 'Request email sent ' + todayISO() }));
+}
+const retentionOf = async id => (await retentionTable.list()).find(x => x.id === id);
+
+app.get('/api/retention', requireAdmin, async (req, res) => {
+  try {
+    await retentionScan();
+    const all = await retentionTable.list();
+    const today = todayISO();
+    const open = all.filter(x => x.status === 'open').sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
+    const waiting = all.filter(x => x.status === 'requested');
+    const done = all.filter(x => ['kept', 'deleted'].includes(x.status)).sort((a, b) => String(b.decided_at).localeCompare(String(a.decided_at))).slice(0, 15);
+    res.json({ today, open, waiting, done, counts: { open: open.length, due: open.filter(x => x.due_date <= today).length, waiting: waiting.length } });
+  } catch (e) { console.error('GET /api/retention error:', e.message); res.status(500).json({ error: e.message }); }
+});
+app.post('/api/retention/:id/keep', requireAdmin, async (req, res) => {
+  try {
+    const reason = String((req.body || {}).reason || '').trim().slice(0, 300);
+    const months = Math.min(Math.max(parseInt((req.body || {}).months, 10) || 12, 1), 72);
+    if (!reason) return res.status(400).json({ error: 'Please write the reason for keeping it. It is kept as the record of the decision.' });
+    const me = auditActorOf(req), today = todayISO();
+    const n = await retentionTable.updateWhere(x => x.id === req.params.id && ['open', 'requested'].includes(x.status), x => ({ ...x, status: 'kept', decided_by: me, decided_at: today, keep_reason: reason, next_review: addMonthsISO(today, months), note: '' }));
+    if (!n) return res.status(409).json({ error: 'That one has already been dealt with' });
+    auditLog(me, 'retention_kept', 'retention', req.params.id, reason);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/retention/:id/request', requireAdmin, async (req, res) => {
+  try {
+    const it = await retentionOf(req.params.id);
+    if (!it || it.status !== 'open') return res.status(409).json({ error: 'That one is not waiting for a decision' });
+    const to = String((req.body || {}).to || it.email || '').trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return res.status(400).json({ error: 'Enter an email address to send the request to' });
+    if (it.category === 'Staff') return res.status(400).json({ error: 'Staff records are decided by you, so there is no request email for them' });
+    const deadline = addDaysISO(todayISO(), RETENTION_REQUEST_DAYS);
+    const mail = retentionEmail(it, deadline);
+    await outboxAdd({ kind: 'retention_request', company: it.category === 'Client' ? it.subject : '', name: it.subject, to, subject: mail.subject, payload: { item_id: it.id, subject: mail.subject, text: mail.text } });
+    const me = auditActorOf(req);
+    await retentionTable.updateWhere(x => x.id === it.id, x => ({ ...x, status: 'requested', email: to, decided_by: me, decided_at: todayISO(), request_deadline: deadline, note: 'Request written to Emails to review' }));
+    auditLog(me, 'retention_request_queued', 'retention', it.id, to);
+    res.json({ ok: true, deadline });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/retention/:id/deleted', requireAdmin, async (req, res) => {
+  try {
+    const me = auditActorOf(req), today = todayISO();
+    const note = String((req.body || {}).note || '').trim().slice(0, 300);
+    const n = await retentionTable.updateWhere(x => x.id === req.params.id && ['open', 'requested'].includes(x.status), x => ({ ...x, status: 'deleted', decided_by: me, decided_at: today, email: '', subject: x.category === 'Candidate' ? 'Erased candidate' : x.subject, note: note || 'Deleted' }));
+    if (!n) return res.status(409).json({ error: 'That one has already been dealt with' });
+    auditLog(me, 'retention_deleted', 'retention', req.params.id, note);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Build 47: addresses that have bounced or opted out, so the Email buttons can warn before sending
