@@ -16268,7 +16268,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '8 Nov 2026 - build 56.7 (data retention review queue)';
+const SERVER_BUILD = '8 Nov 2026 - build 56.8 (BMS batch 2 Live)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -17249,6 +17249,11 @@ setTimeout(async () => {
     const BMS_BATCH2 = {"L2H-POL-004": "1laJfpnyFULYOkxplHwmp9pAIFTc8gQnftRzu_VZZxX4", "L2H-POL-005": "1gzOuCCTkzV0MWFrpoq_FcbSfGmjWboTJ3_Ucjkv2G7o", "L2H-POL-006": "1d_jhYD5k-8cfSgYGtskEDHt1TJS09mUhqG_-yzq7ZCQ", "L2H-POL-011": "1-bZWXE0OpV0uiZCuyna_hqZoqCDpY1Y6bFAB0lt9AC0", "L2H-PRO-036": "1Dr2Xvc3Nb79tJnuUwHz1OKvJSAoeymO7cRZDcpQFV_A", "L2H-PRO-037": "1Tf03jgfG6HrrnnwR7wl66nISmFJk5BEEOBDfnHcmzY4", "L2H-PRO-038": "1jhRFdJnemBj0qfP6dOcxseNDpSL5yGffTzc23YwupuM", "L2H-PRO-052": "1qk2Jt1jdda6u3oktIyIvtWtjOdjNQq940JsYxX0JIuM"};
     for (const d of await bmsDocs.list()) { const nf = BMS_BATCH2[d.id]; if (nf && !d.file_id && d.status === 'Planned') await bmsDocs.upsert({ ...d, file_id: nf, status: 'Draft', version: '0.1', updated_by: 'system', updated_at: '2026-11-08' }); }
   } catch (e) { console.error('BMS batch 2 56.6:', e.message); }
+  // Build 56.8: Daniel approved batch 2 in chat on 8 Nov 2026. Relink the re-issued v1.0 files and make them Live
+  try {
+    const BMS_LIVE_568 = {"1laJfpnyFULYOkxplHwmp9pAIFTc8gQnftRzu_VZZxX4": "1DC84ysuSeHn8iqiCtOG8_srPcqAkktQHKr2yVayiChk", "1gzOuCCTkzV0MWFrpoq_FcbSfGmjWboTJ3_Ucjkv2G7o": "1IfPg28Uwyf-NjHNY5iyrZJ5li1mTUs8SDKOyFH_Q4JM", "1d_jhYD5k-8cfSgYGtskEDHt1TJS09mUhqG_-yzq7ZCQ": "1vzoviuquDOf6fFaL3K_2hUtYbLjDr59l3ZxAdlixntg", "1-bZWXE0OpV0uiZCuyna_hqZoqCDpY1Y6bFAB0lt9AC0": "1bGAab5F9LzLjvwiqi_zxLNjQAmWLWN-79ye7Dv4FZEI", "1Dr2Xvc3Nb79tJnuUwHz1OKvJSAoeymO7cRZDcpQFV_A": "1vfdvmfeVHo1dMMAXUDoAv0K7B-dty2tkgLM70x1_Ggw", "1Tf03jgfG6HrrnnwR7wl66nISmFJk5BEEOBDfnHcmzY4": "1UyYEO4a5OgQZ7dzRs-bXjTZ3ArGDLe8Q1ma805LmGq8", "1jhRFdJnemBj0qfP6dOcxseNDpSL5yGffTzc23YwupuM": "1ccmSNXOljRHX-2UnxjQ3xcMuusalLXVnLQreFTuGDGk", "1qk2Jt1jdda6u3oktIyIvtWtjOdjNQq940JsYxX0JIuM": "1xGa6ac1d-beiPEiB0rabM59hzKmMi2Kqjggsd-qN9k8"};
+    for (const d of await bmsDocs.list()) { const nf = BMS_LIVE_568[d.file_id]; if (nf) await bmsDocs.upsert({ ...d, file_id: nf, status: 'Live', version: '1.0', effective_date: '2026-11-08', next_review: bmsAddMonths('2026-11-08', d.review_months), updated_by: 'Daniel Brown (approved in chat)', updated_at: '2026-11-08' }); }
+  } catch (e) { console.error('BMS go-live 56.8:', e.message); }
 }, 18000);
 
 /* ---------- build 42: planning and marketing records (tracker sheet) ---------- */
