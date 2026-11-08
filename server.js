@@ -16266,7 +16266,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '6 Nov 2026 - build 56.1 (Business Management System)';
+const SERVER_BUILD = '8 Nov 2026 - build 56.3 (BMS Phase 1 batch 1 drafts)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -17227,6 +17227,11 @@ setTimeout(async () => {
     const BMS_FILE_SWAP = {"12EwscIeJOzgoA3N3BJIkeLXDhHVQh8nGe5pu6OOjESo": "1At4ToNGUmHCnzWoAqby4jeyewNqr5MiyP5qawSRCxdg", "13CAxYGD7iVJIBfgRCw5GCTqSMy4-cJVOq4ob83PN1do": "1Du0paSiKanMLnjg_xOg2GpEduogKD6hI1qHZlTVOnU8", "1gry54kaG_dWHgVs_oIfGbQHHTUliJmaNgfNsAkiFPGk": "10nOu-KWoV3uxusGSbUTY0bTXWXBhJl36cbTcPNE1E2o"};
     for (const d of await bmsDocs.list()) { const nf = BMS_FILE_SWAP[d.file_id]; if (nf) await bmsDocs.upsert({ ...d, file_id: nf, updated_by: 'system', updated_at: new Date().toISOString().slice(0, 10) }); }
   } catch (e) { console.error('BMS file swap:', e.message); }
+  // Build 56.3: Phase 1 batch 1 drafts. Link each new document and mark it Draft (runs once per document, only where no file is linked yet and it is still Planned).
+  try {
+    const BMS_BATCH1 = {"L2H-POL-001": "1to-C4Y2d5UY_TaXDYwfnJQ80gqNsPjKdJaLUL7eBTeY", "L2H-POL-002": "1B8QHSwH2dZI4x4QMLys09dQjDVq3V7VorfVuixuwllA", "L2H-POL-003": "1HRBaqlJTD7cr-YH43JC5izHb1G8sTl0z6AhI3Hmg980", "L2H-POL-007": "1d6nuVDv9h8W2KkXPQ05R_oA1EZUNemV_KCGLaGlTk5w", "L2H-POL-010": "1OjhAvGb2MWIIAKt5cERfYaFk5u3R0dV8nWoBCyspgBY", "L2H-POL-015": "1M3A4IyWFcoQWszh94squNReEH5u4nSYNn_tTG3h401w", "L2H-POL-030": "1q29eTEutXVquoG5p4dPBGc1nh-JWHzPGDrkmiHrczGw"};
+    for (const d of await bmsDocs.list()) { const nf = BMS_BATCH1[d.id]; if (nf && !d.file_id && d.status === 'Planned') await bmsDocs.upsert({ ...d, file_id: nf, status: 'Draft', version: '0.1', updated_by: 'system', updated_at: new Date().toISOString().slice(0, 10) }); }
+  } catch (e) { console.error('BMS batch 1 link:', e.message); }
 }, 18000);
 
 /* ---------- build 42: planning and marketing records (tracker sheet) ---------- */
