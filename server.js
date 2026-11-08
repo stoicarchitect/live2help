@@ -16266,7 +16266,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '8 Nov 2026 - build 56.4 (BMS privacy notices re-issued)';
+const SERVER_BUILD = '8 Nov 2026 - build 56.5 (BMS first four policies Live)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -17237,6 +17237,11 @@ setTimeout(async () => {
     const BMS_SWAP_564 = {"1B8QHSwH2dZI4x4QMLys09dQjDVq3V7VorfVuixuwllA": "1U0Ond4_dEVwKr3yPTvxLuZPxvbDvbtS2JeLq5gLd5AQ", "1HRBaqlJTD7cr-YH43JC5izHb1G8sTl0z6AhI3Hmg980": "1WXfL40qc7sw3WYCZStQufYCVxULEg2fxiaWz3PmkL10"};
     for (const d of await bmsDocs.list()) { const nf = BMS_SWAP_564[d.file_id]; if (nf) await bmsDocs.upsert({ ...d, file_id: nf, updated_by: 'system', updated_at: new Date().toISOString().slice(0, 10) }); }
   } catch (e) { console.error('BMS swap 56.4:', e.message); }
+  // Build 56.5: Daniel approved four batch 1 policies in chat on 8 Nov 2026 (revision history now names him only). Relink the re-issued files and make them Live v1.0, effective 2026-11-08, next review from review_months. Runs once, only where the old file ID is still held.
+  try {
+    const BMS_LIVE_565 = {"1d6nuVDv9h8W2KkXPQ05R_oA1EZUNemV_KCGLaGlTk5w": "1VzdbviS-Mz_msfd0u6iJ93wO9GlrtGSADtZR45V7Ol4", "1OjhAvGb2MWIIAKt5cERfYaFk5u3R0dV8nWoBCyspgBY": "1XPCsl_i46EtiOY2KxktyRhQvvFbYv_FEs-nhZ08QpRI", "1M3A4IyWFcoQWszh94squNReEH5u4nSYNn_tTG3h401w": "185S5ZmUEatEs9If4_fqYlehWJqpaF4CN5Jdl6AYU09Q", "1q29eTEutXVquoG5p4dPBGc1nh-JWHzPGDrkmiHrczGw": "1t-49-5LSNnsTObsowzog4fUUKyPTUyvcnijDbFQHi1M"};
+    for (const d of await bmsDocs.list()) { const nf = BMS_LIVE_565[d.file_id]; if (nf) await bmsDocs.upsert({ ...d, file_id: nf, status: 'Live', version: '1.0', effective_date: '2026-11-08', next_review: bmsAddMonths('2026-11-08', d.review_months), updated_by: 'Daniel Brown (approved in chat)', updated_at: '2026-11-08' }); }
+  } catch (e) { console.error('BMS go-live 56.5:', e.message); }
 }, 18000);
 
 /* ---------- build 42: planning and marketing records (tracker sheet) ---------- */
