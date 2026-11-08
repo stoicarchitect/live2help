@@ -16266,7 +16266,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '8 Nov 2026 - build 56.5 (BMS first four policies Live)';
+const SERVER_BUILD = '8 Nov 2026 - build 56.6 (BMS batch 2 drafts linked)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -17242,6 +17242,11 @@ setTimeout(async () => {
     const BMS_LIVE_565 = {"1d6nuVDv9h8W2KkXPQ05R_oA1EZUNemV_KCGLaGlTk5w": "1VzdbviS-Mz_msfd0u6iJ93wO9GlrtGSADtZR45V7Ol4", "1OjhAvGb2MWIIAKt5cERfYaFk5u3R0dV8nWoBCyspgBY": "1XPCsl_i46EtiOY2KxktyRhQvvFbYv_FEs-nhZ08QpRI", "1M3A4IyWFcoQWszh94squNReEH5u4nSYNn_tTG3h401w": "185S5ZmUEatEs9If4_fqYlehWJqpaF4CN5Jdl6AYU09Q", "1q29eTEutXVquoG5p4dPBGc1nh-JWHzPGDrkmiHrczGw": "1t-49-5LSNnsTObsowzog4fUUKyPTUyvcnijDbFQHi1M"};
     for (const d of await bmsDocs.list()) { const nf = BMS_LIVE_565[d.file_id]; if (nf) await bmsDocs.upsert({ ...d, file_id: nf, status: 'Live', version: '1.0', effective_date: '2026-11-08', next_review: bmsAddMonths('2026-11-08', d.review_months), updated_by: 'Daniel Brown (approved in chat)', updated_at: '2026-11-08' }); }
   } catch (e) { console.error('BMS go-live 56.5:', e.message); }
+  // Build 56.6: Phase 1 batch 2 drafts (data retention, security, AI, complaints, breach, SAR, erasure, complaints handling) linked as Draft v0.1
+  try {
+    const BMS_BATCH2 = {"L2H-POL-004": "1laJfpnyFULYOkxplHwmp9pAIFTc8gQnftRzu_VZZxX4", "L2H-POL-005": "1gzOuCCTkzV0MWFrpoq_FcbSfGmjWboTJ3_Ucjkv2G7o", "L2H-POL-006": "1d_jhYD5k-8cfSgYGtskEDHt1TJS09mUhqG_-yzq7ZCQ", "L2H-POL-011": "1-bZWXE0OpV0uiZCuyna_hqZoqCDpY1Y6bFAB0lt9AC0", "L2H-PRO-036": "1Dr2Xvc3Nb79tJnuUwHz1OKvJSAoeymO7cRZDcpQFV_A", "L2H-PRO-037": "1Tf03jgfG6HrrnnwR7wl66nISmFJk5BEEOBDfnHcmzY4", "L2H-PRO-038": "1jhRFdJnemBj0qfP6dOcxseNDpSL5yGffTzc23YwupuM", "L2H-PRO-052": "1qk2Jt1jdda6u3oktIyIvtWtjOdjNQq940JsYxX0JIuM"};
+    for (const d of await bmsDocs.list()) { const nf = BMS_BATCH2[d.id]; if (nf && !d.file_id && d.status === 'Planned') await bmsDocs.upsert({ ...d, file_id: nf, status: 'Draft', version: '0.1', updated_by: 'system', updated_at: '2026-11-08' }); }
+  } catch (e) { console.error('BMS batch 2 56.6:', e.message); }
 }, 18000);
 
 /* ---------- build 42: planning and marketing records (tracker sheet) ---------- */
