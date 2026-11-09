@@ -16966,7 +16966,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '8 Nov 2026 - build 56.7 (Retention review list)';
+var PAGE_BUILD = '9 Nov 2026 - build 56.9 (BMS registers)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -18224,14 +18224,18 @@ function buildTagApply(){
   function libTabs(){
     const host = $('lib41Tabs'); if(!host) return;
     const extra = isAdmin41() && BMS.summary && BMS.summary.reviewOverdue ? ' · ' + BMS.summary.reviewOverdue + ' review overdue' : (BMS.toRead ? ' · ' + BMS.toRead + ' to read' : '');
-    host.innerHTML = [['docs', 'Documents'], ['bms', 'Business Management System' + extra]].map(([k, l]) => `<button class="p41-chip" data-bmstab="${k}" aria-pressed="${BMS.tab === k}">${h(l)}</button>`).join('');
+    const rl = isAdmin41() && REG.list ? REG.list.reduce((a, r) => a + r.overdue, 0) : 0;
+    const tabs = [['docs', 'Documents'], ['bms', 'Business Management System' + extra]];
+    if(isAdmin41()) tabs.push(['reg', 'Registers' + (rl ? ' · ' + rl + ' overdue' : '')]);
+    host.innerHTML = tabs.map(([k, l]) => `<button class="p41-chip" data-bmstab="${k}" aria-pressed="${BMS.tab === k}">${h(l)}</button>`).join('');
   }
   async function libLoad(){
     const body = $('lib41Body');
     if(!$('lib41Pane')){ body.innerHTML = '<div class="p41-tabs" id="lib41Tabs"></div><div id="lib41Pane" style="display:flex;flex-direction:column;gap:16px"></div>'; }
     libTabs();
     if(!BMS.loaded){ bmsFetch().then(libTabs); }
-    if(BMS.tab === 'bms') await bmsLoad(); else await libLoadDocs($('lib41Pane'));
+    if(isAdmin41() && !REG.list){ regFetchList().then(libTabs); }
+    if(BMS.tab === 'reg' && isAdmin41()) await regLoad(); else if(BMS.tab === 'bms') await bmsLoad(); else await libLoadDocs($('lib41Pane'));
   }
   async function bmsLoad(){
     const pane = $('lib41Pane');
@@ -18361,6 +18365,113 @@ function buildTagApply(){
   });
   window.openBmsLibrary = function(){ BMS.tab = 'bms'; if(typeof switchTab === 'function') switchTab('library'); };
 
+  /* ---------------- Library: BMS registers (page build 56.9) ---------------- */
+  // Complaints, breaches, rights requests and declarations. Admin only. Records are closed, never deleted.
+  const REG = { key: 'complaints', list: null, rows: [], showClosed: false, form: '', err: '', loadedAt: 0 };
+  const REG_OPT = {
+    complainant_type: ['Candidate', 'Client', 'Other'], channel: ['Email', 'Phone', 'In person', 'Letter', 'LinkedIn', 'Other'],
+    category: ['Service', 'Conduct of a team member', 'Discrimination', 'Personal data', 'Fees or invoicing', 'Other'],
+    risk: ['Not yet assessed', 'Unlikely to result in risk', 'Risk', 'High risk'], ico_decision: ['Pending', 'Reported', 'Not reportable'],
+    individuals_decision: ['Pending', 'Informed', 'Not required'],
+    request_type: ['Access', 'Erasure', 'Rectification', 'Restriction', 'Objection', 'Portability'], requester_type: ['Candidate', 'Client contact', 'Employee', 'Other'],
+    kind: ['Gift received', 'Gift offered', 'Hospitality received', 'Hospitality offered', 'Outside interest', 'Conflict of interest'],
+    decision: ['Pending', 'Accepted', 'Declined', 'Approved with conditions', 'Not approved', 'Noted'], status: ['Open', 'Closed'],
+  };
+  // [field, label, type]  type: t text, a long text, d date, dt date and time, s select, c checkbox
+  const REG_FIELDS = {
+    complaints: [['received_date', 'Received', 'd'], ['complainant', 'Complainant', 't'], ['complainant_type', 'They are a', 's'], ['channel', 'How it came in', 's'],
+      ['category', 'Type', 's'], ['about_director', 'About the Director (independent review needed)', 'c'], ['summary', 'What happened and what they want', 'a'],
+      ['acknowledged_date', 'Acknowledged in writing', 'd'], ['new_response_date', 'New reply date (only if we told them it will take longer)', 'd'], ['responded_date', 'Outcome sent', 'd'],
+      ['outcome', 'What we found', 'a'], ['remedy', 'Remedy', 'a'], ['root_cause', 'Root cause', 'a'], ['improvement', 'Improvement agreed', 'a'],
+      ['review_requested_date', 'Review requested', 'd'], ['review_answered_date', 'Review answered', 'd'], ['notes', 'Notes', 'a'], ['status', 'Status', 's']],
+    breaches: [['discovered_at', 'When we became aware', 'dt'], ['reported_by', 'Reported by', 't'], ['description', 'What happened', 'a'], ['data_types', 'Personal data involved', 't'],
+      ['people_affected', 'People affected (number and who)', 't'], ['cause', 'Cause', 'a'], ['contained_date', 'Contained', 'd'], ['risk', 'Risk to people', 's'],
+      ['ico_decision', 'ICO decision', 's'], ['ico_reported_at', 'Reported to the ICO at', 'dt'], ['ico_reference', 'ICO reference', 't'], ['reason_not_reported', 'Why it was not reported', 'a'],
+      ['individuals_decision', 'People affected told', 's'], ['individuals_informed_date', 'Told on', 'd'], ['actions', 'Actions to stop it happening again', 'a'], ['notes', 'Notes', 'a'], ['status', 'Status', 's']],
+    sars: [['request_type', 'Right asked for', 's'], ['received_date', 'Received', 'd'], ['requester', 'Requester', 't'], ['requester_type', 'They are a', 's'], ['channel', 'How it came in', 's'],
+      ['id_requested_date', 'Proof of identity asked for (leave blank if not needed)', 'd'], ['id_received_date', 'Proof of identity received', 'd'],
+      ['extended', 'Extended by two months (complex or many requests)', 'c'], ['extension_reason', 'Reason for the extension', 'a'], ['extension_notified_date', 'Extension explained to them on', 'd'],
+      ['responded_date', 'Responded', 'd'], ['outcome', 'What we provided or did', 'a'], ['exemptions', 'Exemptions or refusal, with reason', 'a'], ['notes', 'Notes', 'a'], ['status', 'Status', 's']],
+    declarations: [['kind', 'Type', 's'], ['person', 'Declared by', 't'], ['declared_date', 'Declared on', 'd'], ['counterparty', 'Other party (company or person)', 't'],
+      ['description', 'Details', 'a'], ['value', 'Estimated value (GBP)', 't'], ['decision', 'Decision', 's'], ['conditions', 'Conditions or how it is managed', 'a'],
+      ['decided_by', 'Decided by', 't'], ['decided_date', 'Decided on', 'd'], ['next_review', 'Re-confirm by (interests only)', 'd'], ['notes', 'Notes', 'a'], ['status', 'Status', 's']],
+  };
+  const REG_TITLE_FIELD = { complaints: 'complainant', breaches: 'description', sars: 'requester', declarations: 'counterparty' };
+  const regDue = dl => !dl.due ? '' : dl.due.length > 10 ? new Date(dl.due + 'Z').toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London'}) : fmt41(dl.due, true);
+  async function regFetchList(){ try{ REG.list = (await api41('/api/bms/registers')).registers; REG.loadedAt = Date.now(); }catch(e){ REG.err = e.message; } return REG.list; }
+  window.bmsRegistersSummary = async function(force){ if(!isAdmin41()) return null; if(force || !REG.list || Date.now() - REG.loadedAt > 60000) await regFetchList(); return REG.list; };
+  async function regLoad(){
+    const pane = $('lib41Pane');
+    $('lib41Admin').innerHTML = '';
+    pane.innerHTML = '<div class="p41-empty">Loading...</div>';
+    REG.err = '';
+    await regFetchList();
+    try{ REG.rows = (await api41('/api/bms/registers/' + REG.key)).data || []; }catch(e){ REG.err = e.message; }
+    libTabs(); regRender();
+  }
+  function regRender(){
+    const pane = $('lib41Pane'); if(!pane || BMS.tab !== 'reg') return;
+    if(REG.err){ pane.innerHTML = `<div class="p41-panel"><div class="p41-err">${h(REG.err)}</div><div class="p41-bar"><button class="p41-btn pri sm" data-regkey="${REG.key}">Try again</button></div></div>`; return; }
+    const meta = (REG.list || []).find(r => r.key === REG.key) || {};
+    const chips = (REG.list || []).map(r => `<button type="button" class="p41-stat" data-regkey="${r.key}" aria-pressed="${REG.key === r.key}" style="text-align:left;cursor:pointer;font:inherit;color:inherit"><span class="k">${h(r.doc)}</span><span class="v">${r.open}</span><span class="n">${h(r.title)}${r.overdue ? ' · <b style="color:var(--danger)">' + r.overdue + ' overdue</b>' : r.dueSoon ? ' · ' + r.dueSoon + ' due soon' : ''}</span></button>`).join('');
+    const rows = REG.rows.filter(r => REG.showClosed || r.status !== 'Closed');
+    const tf = REG_TITLE_FIELD[REG.key];
+    const list = rows.length ? rows.map(r => {
+      const pill = r.status === 'Closed' ? '<span class="p41-pill">Closed</span>' : r.state === 'overdue' ? '<span class="p41-pill bad">Overdue</span>' : r.state === 'due_soon' ? '<span class="p41-pill warn">Due soon</span>' : r.state === 'waiting' ? '<span class="p41-pill gold">Waiting</span>' : '<span class="p41-pill ok">Open</span>';
+      const next = (r.next || []).map(dl => `<div class="s"${dl.state === 'overdue' ? ' style="color:var(--danger)"' : ''}>Next: ${h(dl.what)}${dl.due ? ' by ' + h(regDue(dl)) : ''}</div>`).join('');
+      const lead = String(r[tf] || r.summary || '').slice(0, 90);
+      const sub = REG.key === 'complaints' ? [r.complainant_type, r.category, 'received ' + fmt41(r.received_date, true)] : REG.key === 'breaches' ? [r.risk, 'ICO: ' + (r.ico_decision || 'Pending'), 'aware ' + regDue({due: r.discovered_at})] : REG.key === 'sars' ? [r.request_type, r.requester_type, 'received ' + fmt41(r.received_date, true)] : [r.kind, r.person, r.value ? 'GBP ' + r.value : '', r.decision];
+      return `<div class="p41-row"><div class="m"><div><span class="p41-mono">${h(r.ref)}</span> &nbsp;<b>${h(lead)}</b></div><div class="s">${h(sub.filter(Boolean).join(' · '))}</div>${r.status === 'Closed' ? '<div class="s">Closed ' + fmt41(r.closed_date, true) + '</div>' : next}</div>
+        <div class="p41-bar">${pill}<button class="p41-btn sm" data-regedit="${h(r.id)}">View</button></div></div>`;
+    }).join('') : `<div class="p41-empty">Nothing ${REG.showClosed ? '' : 'open '}in the ${h(meta.title || 'register')}.</div>`;
+    pane.innerHTML = `<div class="p41-note">Registers are admin only and are never deleted here. Closed records are kept for 6 years after closing (L2H-POL-004). Deadlines follow the Live procedures and use working days in England where the procedure says so.</div>
+      <div class="p41-grid g4">${chips}</div><div id="reg41Form"></div>
+      <div class="p41-panel"><div class="p41-bar"><h3 style="margin:0;flex:1">${h(meta.doc || '')} ${h(meta.title || '')}</h3>
+        <label style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" id="reg41Closed"${REG.showClosed ? ' checked' : ''}> Show closed</label>
+        <button class="p41-btn pri sm" data-regnew="1">+ Log ${h((meta.label || 'record').toLowerCase())}</button></div>
+        <div class="p41-list">${list}</div></div>`;
+    const c = $('reg41Closed'); if(c) c.onchange = () => { REG.showClosed = c.checked; regRender(); };
+    if(REG.form) regForm(REG.form);
+  }
+  function regForm(id){
+    const el = $('reg41Form'); if(!el) return;
+    const r = id === 'new' ? { status: 'Open' } : REG.rows.find(x => x.id === id);
+    if(!r){ REG.form = ''; el.innerHTML = ''; return; }
+    const meta = (REG.list || []).find(x => x.key === REG.key) || {};
+    const fields = REG_FIELDS[REG.key].filter(([f]) => !(id === 'new' && f === 'status'));
+    const input = ([f, l, t]) => {
+      const v = r[f] == null ? '' : String(r[f]);
+      if(t === 'c') return `<label style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="${f}"${v === 'TRUE' ? ' checked' : ''}> ${h(l)}</label>`;
+      if(t === 'a') return `<label style="grid-column:1/-1">${h(l)}<textarea class="p41-in" name="${f}" rows="3">${h(v)}</textarea></label>`;
+      if(t === 's') return `<label>${h(l)}<select class="p41-in" name="${f}"><option value=""></option>${REG_OPT[f].map(o => `<option${o === v ? ' selected' : ''}>${h(o)}</option>`).join('')}</select></label>`;
+      if(t === 'dt'){ const d = v ? new Date(v.slice(0, 16) + 'Z') : null; const loc = d && !isNaN(d) ? new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''; return `<label>${h(l)} (UK time)<input class="p41-in" type="datetime-local" name="${f}" value="${h(loc)}"></label>`; }
+      return `<label>${h(l)}<input class="p41-in" ${t === 'd' ? 'type="date" ' : ''}name="${f}" value="${h(v)}"></label>`;
+    };
+    const next = id === 'new' ? '' : (r.next || []).map(dl => `<span class="p41-pill ${dl.state === 'overdue' ? 'bad' : dl.state === 'due_soon' ? 'warn' : ''}">${h(dl.what)}${dl.due ? ' by ' + h(regDue(dl)) : ''}</span>`).join(' ');
+    el.innerHTML = `<form class="p41-panel p41-form" id="reg41Edit"><h3>${id === 'new' ? 'Log a ' + h((meta.label || 'record').toLowerCase()) : h(r.ref) + ' ' + h(meta.title || '')}</h3>${next ? '<div class="p41-bar">' + next + '</div>' : ''}
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">${fields.map(input).join('')}</div>
+      ${id !== 'new' ? `<div class="s" style="color:var(--muted)">Logged by ${h(r.created_by)} ${fmt41(String(r.created_at).slice(0, 10), true)} · last updated by ${h(r.updated_by)} ${fmt41(String(r.updated_at).slice(0, 10), true)}</div>` : ''}
+      <div class="p41-bar"><button class="p41-btn pri sm" type="submit">${id === 'new' ? 'Log it' : 'Save'}</button><button class="p41-btn sm" type="button" data-regcancel="1">Cancel</button></div></form>`;
+    $('reg41Edit').onsubmit = async e => {
+      e.preventDefault(); const f = e.target; const body = {};
+      REG_FIELDS[REG.key].forEach(([k, , t]) => { if(!f[k]) return; body[k] = t === 'c' ? f[k].checked : t === 'dt' && f[k].value ? new Date(f[k].value).toISOString().slice(0, 16) : f[k].value; });
+      try{
+        await post41('/api/bms/registers/' + REG.key + (id === 'new' ? '' : '/' + encodeURIComponent(id)), body);
+        toast41(id === 'new' ? 'Logged' : 'Saved'); REG.form = ''; await regLoad(); if(typeof renderHome === 'function') renderHome();
+      }catch(err){ toast41(err.message); }
+    };
+    el.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+  }
+  document.addEventListener('click', e => {
+    const t = e.target.closest('[data-regkey],[data-regnew],[data-regedit],[data-regcancel]');
+    if(!t) return;
+    if(t.dataset.regkey){ REG.key = t.dataset.regkey; REG.form = ''; regLoad(); return; }
+    if(t.dataset.regnew){ REG.form = 'new'; regRender(); return; }
+    if(t.dataset.regedit){ REG.form = t.dataset.regedit; regRender(); return; }
+    if(t.dataset.regcancel){ REG.form = ''; regRender(); return; }
+  });
+  window.openBmsRegisters = function(key){ BMS.tab = 'reg'; if(key) REG.key = key; REG.form = ''; if(typeof switchTab === 'function') switchTab('library'); };
+
   async function libLoadDocs(body){
     $('lib41Admin').innerHTML = isAdmin41() ? '<button class="p41-btn sm" data-libadd="1">+ Add document</button>' : '';
     let docs = [];
@@ -18397,6 +18508,10 @@ function buildTagApply(){
     const obx = (typeof obxLoad === 'function') ? await obxLoad(false) : null; const obn = obx ? obx.pending.length : 0;
     if(!BMS.loaded || Date.now() - BMS.loaded > 60000){ try{ await bmsFetch(); }catch(e){} }
     const rtd = isAdmin41() && typeof rtLoad === 'function' ? await rtLoad(false) : null; const rtn = rtd ? rtd.counts.open : 0;
+    const regs = isAdmin41() ? await window.bmsRegistersSummary(false) : null;
+    const regOver = regs ? regs.reduce((a, r) => a + r.overdue, 0) : 0, regSoon = regs ? regs.reduce((a, r) => a + r.dueSoon, 0) : 0;
+    const regFirst = regs ? (regs.find(r => r.overdue) || regs.find(r => r.dueSoon)) : null;
+    const regTile = regOver + regSoon > 0 ? {n: regOver + regSoon, l: 'Register deadlines', s: regOver ? regOver + ' overdue (complaints, breaches, requests)' : regSoon + ' due within 2 days', go: "openBmsRegisters('" + regFirst.key + "')", warn: true} : null;
     const bmsAct = isAdmin41() ? (BMS.summary ? BMS.summary.byStatus.Draft + BMS.summary.reviewOverdue + BMS.summary.reviewDueSoon : 0) : BMS.toRead;
     const bmsTile = bmsAct > 0 ? (isAdmin41() ? {n: bmsAct, l: 'Policy documents to action', s: BMS.summary.byStatus.Draft + ' to approve, ' + (BMS.summary.reviewOverdue + BMS.summary.reviewDueSoon) + ' reviews due', go: 'openBmsLibrary()', warn: true} : {n: bmsAct, l: 'Documents to read', s: 'Policies and procedures', go: 'openBmsLibrary()', warn: true}) : null;
     const items = [
@@ -18409,6 +18524,7 @@ function buildTagApply(){
       {n: count(['interview_requested','interview_scheduled','interviewed']), l: 'In interviews', s: 'Requested, booked or done', go: "openCandidatesView('interviews')"},
       m && m.admin ? {n: m.pendingApprovals || 0, l: 'Holiday requests', s: 'Waiting for your decision', go: "switchTab('hr')", warn: (m.pendingApprovals || 0) > 0}
         : (b ? {n: b.remaining, l: 'Holiday left to book', s: b.year + ', after pending requests', go: "switchTab('hr')"} : null),
+      regTile,
       bmsTile,
     ].filter(Boolean);
     g.innerHTML = `<div class="glance42">${items.map(i => `<button class="gl42${i.warn ? ' warn' : ''}" onclick="${i.go}"><span class="n">${h(i.n)}</span><span class="l">${h(i.l)}</span><span class="s">${h(i.s)}</span></button>`).join('')}</div>`;

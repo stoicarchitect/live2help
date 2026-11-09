@@ -284,8 +284,8 @@
   "title": "Anti-Bribery and Corruption Policy",
   "level": "L2 Policy",
   "area": "Compliance and Governance",
-  "version": "",
-  "status": "Planned",
+  "version": "0.1",
+  "status": "Draft",
   "owner": "Daniel Brown",
   "approver": "Daniel Brown",
   "audience": "Everyone",
@@ -294,10 +294,10 @@
   "review_months": "12",
   "effective_date": "",
   "next_review": "",
-  "file_id": "",
+  "file_id": "1ds6iq-Nnz-0KDZx9ruHgYV9AslgY0kkbka1iG3wBLTM",
   "notes": "",
   "updated_by": "system",
-  "updated_at": "2026-11-06"
+  "updated_at": "2026-11-09"
  },
  {
   "id": "L2H-POL-009",
@@ -364,8 +364,8 @@
   "title": "Conflict of Interest Policy",
   "level": "L2 Policy",
   "area": "Compliance and Governance",
-  "version": "",
-  "status": "Planned",
+  "version": "0.1",
+  "status": "Draft",
   "owner": "Daniel Brown",
   "approver": "Daniel Brown",
   "audience": "Everyone",
@@ -374,10 +374,10 @@
   "review_months": "12",
   "effective_date": "",
   "next_review": "",
-  "file_id": "",
+  "file_id": "1PXFLRSA-HKtUCLknRAi9O84QNWwGBvT9VugkTkOrkOQ",
   "notes": "",
   "updated_by": "system",
-  "updated_at": "2026-11-06"
+  "updated_at": "2026-11-09"
  },
  {
   "id": "L2H-POL-013",
@@ -664,8 +664,8 @@
   "title": "Disciplinary Policy",
   "level": "L2 Policy",
   "area": "People and HR",
-  "version": "",
-  "status": "Planned",
+  "version": "0.1",
+  "status": "Draft",
   "owner": "Daniel Brown",
   "approver": "Daniel Brown",
   "audience": "Everyone",
@@ -674,18 +674,18 @@
   "review_months": "12",
   "effective_date": "",
   "next_review": "",
-  "file_id": "",
+  "file_id": "19ehHR7FsDylFVz-5ntv6heS1Ll8zsimtyyeX7k0czgE",
   "notes": "",
   "updated_by": "system",
-  "updated_at": "2026-11-06"
+  "updated_at": "2026-11-09"
  },
  {
   "id": "L2H-POL-028",
   "title": "Grievance Policy",
   "level": "L2 Policy",
   "area": "People and HR",
-  "version": "",
-  "status": "Planned",
+  "version": "0.1",
+  "status": "Draft",
   "owner": "Daniel Brown",
   "approver": "Daniel Brown",
   "audience": "Everyone",
@@ -694,10 +694,10 @@
   "review_months": "12",
   "effective_date": "",
   "next_review": "",
-  "file_id": "",
+  "file_id": "1ipdXFbmJeL4JqmKmVVJQ8_iiMGJatazgYOeVafkDQ5Y",
   "notes": "",
   "updated_by": "system",
-  "updated_at": "2026-11-06"
+  "updated_at": "2026-11-09"
  },
  {
   "id": "L2H-POL-029",
@@ -1084,8 +1084,8 @@
   "title": "Job Advertising",
   "level": "L3 Procedure",
   "area": "Recruitment Delivery",
-  "version": "",
-  "status": "Planned",
+  "version": "0.1",
+  "status": "Draft",
   "owner": "Ella Pietrzak",
   "approver": "Daniel Brown",
   "audience": "Recruitment team",
@@ -1094,10 +1094,10 @@
   "review_months": "6",
   "effective_date": "",
   "next_review": "",
-  "file_id": "",
+  "file_id": "1v_CVlPlSPM90KRR48Ecrw84byF4h08eSeEBnJ4p6i9g",
   "notes": "",
   "updated_by": "system",
-  "updated_at": "2026-11-06"
+  "updated_at": "2026-11-09"
  },
  {
   "id": "L2H-PRO-012",
@@ -1124,8 +1124,8 @@
   "title": "Candidate Registration, Consent and Data Capture",
   "level": "L3 Procedure",
   "area": "Recruitment Delivery",
-  "version": "",
-  "status": "Planned",
+  "version": "0.1",
+  "status": "Draft",
   "owner": "Ella Pietrzak",
   "approver": "Daniel Brown",
   "audience": "Recruitment team",
@@ -1134,10 +1134,10 @@
   "review_months": "6",
   "effective_date": "",
   "next_review": "",
-  "file_id": "",
+  "file_id": "1dh8EeIzXwyvnagCfokBT8GWTkJuQ7-OncYuy_akurDY",
   "notes": "",
   "updated_by": "system",
-  "updated_at": "2026-11-06"
+  "updated_at": "2026-11-09"
  },
  {
   "id": "L2H-PRO-014",
@@ -1244,8 +1244,8 @@
   "title": "References and Pre-placement Checks",
   "level": "L3 Procedure",
   "area": "Recruitment Delivery",
-  "version": "",
-  "status": "Planned",
+  "version": "0.1",
+  "status": "Draft",
   "owner": "Ella Pietrzak",
   "approver": "Daniel Brown",
   "audience": "Recruitment team",
@@ -1254,10 +1254,10 @@
   "review_months": "6",
   "effective_date": "",
   "next_review": "",
-  "file_id": "",
+  "file_id": "1mqRsayX7WTqAlibao6p3Yc7sWmMBdfIckI50nrsnb4M",
   "notes": "",
   "updated_by": "system",
-  "updated_at": "2026-11-06"
+  "updated_at": "2026-11-09"
  },
  {
   "id": "L2H-PRO-020",
@@ -2824,8 +2824,8 @@
   "title": "Complaints Register",
   "level": "L5 Record",
   "area": "Registers",
-  "version": "",
-  "status": "Planned",
+  "version": "0.1",
+  "status": "Draft",
   "owner": "Daniel Brown",
   "approver": "Daniel Brown",
   "audience": "Admin only",
@@ -2834,18 +2834,18 @@
   "review_months": "12",
   "effective_date": "",
   "next_review": "",
-  "file_id": "",
+  "file_id": "18a5soyqjb-SDh3km4kl-Xo1moJZ8XsxpkBb80NcBeKs",
   "notes": "",
   "updated_by": "system",
-  "updated_at": "2026-11-06"
+  "updated_at": "2026-11-09"
  },
  {
   "id": "L2H-REC-004",
   "title": "Data Breach Register",
   "level": "L5 Record",
   "area": "Registers",
-  "version": "",
-  "status": "Planned",
+  "version": "0.1",
+  "status": "Draft",
   "owner": "Daniel Brown",
   "approver": "Daniel Brown",
   "audience": "Admin only",
@@ -2854,18 +2854,18 @@
   "review_months": "12",
   "effective_date": "",
   "next_review": "",
-  "file_id": "",
+  "file_id": "1ItVd8dob3ULD_lFcUUjOGYYLvCHHDdSsRqu_Y0UrsAQ",
   "notes": "",
   "updated_by": "system",
-  "updated_at": "2026-11-06"
+  "updated_at": "2026-11-09"
  },
  {
   "id": "L2H-REC-005",
   "title": "Subject Access Request Register",
   "level": "L5 Record",
   "area": "Registers",
-  "version": "",
-  "status": "Planned",
+  "version": "0.1",
+  "status": "Draft",
   "owner": "Daniel Brown",
   "approver": "Daniel Brown",
   "audience": "Admin only",
@@ -2874,10 +2874,10 @@
   "review_months": "12",
   "effective_date": "",
   "next_review": "",
-  "file_id": "",
+  "file_id": "1f_O8KoIVaqJecOEsUeU29O6sZNsg5wKTUte2USrGC3A",
   "notes": "",
   "updated_by": "system",
-  "updated_at": "2026-11-06"
+  "updated_at": "2026-11-09"
  },
  {
   "id": "L2H-REC-006",
@@ -2958,5 +2958,25 @@
   "notes": "",
   "updated_by": "system",
   "updated_at": "2026-11-06"
+ },
+ {
+  "id": "L2H-REC-010",
+  "title": "Gifts, Hospitality and Interests Register",
+  "level": "L5 Record",
+  "area": "Registers",
+  "version": "0.1",
+  "status": "Draft",
+  "owner": "Daniel Brown",
+  "approver": "Daniel Brown",
+  "audience": "Admin only",
+  "needs_ack": "FALSE",
+  "phase": "1",
+  "review_months": "12",
+  "effective_date": "",
+  "next_review": "",
+  "file_id": "1sN6Wy-mf1HoehgcUKhgFdrLXmF3N4NAYoB8xc9wxaD4",
+  "notes": "Added in batch 3 for POL-008 and POL-012",
+  "updated_by": "system",
+  "updated_at": "2026-11-09"
  }
 ]

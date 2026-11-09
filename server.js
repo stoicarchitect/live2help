@@ -113,6 +113,7 @@ const TABLE_GROUPS = {
   'Lead Pipeline': 'clients', 'Funnel Leads': 'clients', 'Site Details': 'clients', 'Reply Links': 'clients',
   'Employees': 'hr', 'Holiday Requests': 'hr', 'Absences': 'hr', 'HR Documents': 'hr', 'Reviews': 'hr', 'Commission': 'hr',
   'BMS Documents': 'hr', 'BMS Acknowledgements': 'hr',
+  'BMS Complaints': 'hr', 'BMS Breaches': 'hr', 'BMS SARs': 'hr', 'BMS Declarations': 'hr',
   'Role Finder Searches': 'rolefinder', 'Role Finder Results': 'rolefinder', 'Agency Block List': 'rolefinder',
   'Role Finder Dismissed': 'rolefinder', 'Competitors': 'rolefinder', 'Competitor Adverts': 'rolefinder',
   'Talent Suite Users': 'talentsuite', 'Talent Suite Orders': 'talentsuite', 'Credit Purchases': 'talentsuite',
@@ -16268,7 +16269,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '8 Nov 2026 - build 56.8 (BMS batch 2 Live)';
+const SERVER_BUILD = '9 Nov 2026 - build 56.9 (BMS registers and batch 3 drafts)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -17222,8 +17223,217 @@ app.get('/api/bms/compliance', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/* ======================================================================
+   Build 56.9: BMS registers (Phase 1 batch 3)
+
+   The records the Live procedures log to. Admin only, never deleted from the
+   workspace (closed records are kept for 6 years, Data Retention and Deletion Policy).
+   - L2H-REC-003 Complaints Register (POL-011, PRO-052): acknowledge in 2 working days,
+     answer in 10, a review answered in 10 working days.
+   - L2H-REC-004 Data Breach Register (PRO-036, POL-005): ICO decision within 72 hours
+     of becoming aware.
+   - L2H-REC-005 Subject Access Request Register (PRO-037, PRO-038): one calendar month,
+     the clock waits while proof of identity is awaited, extendable by two months.
+   - L2H-REC-010 Gifts, Hospitality and Interests Register (POL-008, POL-012): a decision
+     within 5 working days, outside interests re-confirmed every 12 months.
+   Deadlines are worked out here, so the page and the Today tile always agree.
+   ====================================================================== */
+// Bank holidays in England and Wales (gov.uk), used for working-day deadlines
+const BMS_BANK_HOLIDAYS = new Set([
+  '2026-01-01', '2026-04-03', '2026-04-06', '2026-05-04', '2026-05-25', '2026-08-31', '2026-12-25', '2026-12-28',
+  '2027-01-01', '2027-03-26', '2027-03-29', '2027-05-03', '2027-05-31', '2027-08-30', '2027-12-27', '2027-12-28',
+  '2028-01-03', '2028-04-14', '2028-04-17', '2028-05-01', '2028-05-29', '2028-08-28', '2028-12-25', '2028-12-26',
+]);
+const bmsIsDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
+function bmsAddWorkingDays(iso, n) {
+  if (!bmsIsDate(iso)) return '';
+  const d = new Date(iso + 'T00:00:00Z');
+  let left = Number(n) || 0;
+  while (left > 0) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    const day = d.getUTCDay();
+    if (day !== 0 && day !== 6 && !BMS_BANK_HOLIDAYS.has(d.toISOString().slice(0, 10))) left--;
+  }
+  return d.toISOString().slice(0, 10);
+}
+// ICO rule: the same date next month, or the last day of that month if it has no such date
+function bmsAddCalendarMonths(iso, n) {
+  if (!bmsIsDate(iso)) return '';
+  const [y, m, day] = iso.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1 + Number(n), 1));
+  const last = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate();
+  t.setUTCDate(Math.min(day, last));
+  return t.toISOString().slice(0, 10);
+}
+const bmsDaysTo = iso => Math.round((Date.parse(iso) - Date.parse(bmsToday())) / 86400000);
+
+const BMS_SYS_FIELDS = ['id', 'ref', 'created_by', 'created_at', 'updated_by', 'updated_at'];
+const BMS_REGISTERS = {
+  complaints: {
+    doc: 'L2H-REC-003', title: 'Complaints Register', label: 'Complaint', prefix: 'CMP', tab: 'BMS Complaints',
+    header: ['id', 'ref', 'status', 'received_date', 'complainant', 'complainant_type', 'channel', 'category', 'summary', 'about_director',
+      'acknowledged_date', 'new_response_date', 'responded_date', 'outcome', 'remedy', 'root_cause', 'improvement',
+      'review_requested_date', 'review_answered_date', 'closed_date', 'notes', 'created_by', 'created_at', 'updated_by', 'updated_at'],
+    required: ['received_date', 'complainant', 'summary'],
+    deadlines(r) {
+      const out = [];
+      if (r.status === 'Closed') return out;
+      if (!r.acknowledged_date) out.push({ what: 'Acknowledge', due: bmsAddWorkingDays(r.received_date, 2) });
+      else if (!r.responded_date) out.push({ what: 'Reply with the outcome', due: bmsIsDate(r.new_response_date) ? r.new_response_date : bmsAddWorkingDays(r.received_date, 10) });
+      else if (r.review_requested_date && !r.review_answered_date) out.push({ what: 'Answer the review', due: bmsAddWorkingDays(r.review_requested_date, 10) });
+      else out.push({ what: 'Record the root cause and close', due: '' });
+      return out;
+    },
+  },
+  breaches: {
+    doc: 'L2H-REC-004', title: 'Data Breach Register', label: 'Breach or near miss', prefix: 'BRC', tab: 'BMS Breaches',
+    header: ['id', 'ref', 'status', 'discovered_at', 'reported_by', 'description', 'data_types', 'people_affected', 'cause', 'risk', 'contained_date',
+      'ico_decision', 'ico_reported_at', 'ico_reference', 'reason_not_reported', 'individuals_decision', 'individuals_informed_date', 'actions',
+      'closed_date', 'notes', 'created_by', 'created_at', 'updated_by', 'updated_at'],
+    required: ['discovered_at', 'description'],
+    defaults: { risk: 'Not yet assessed', ico_decision: 'Pending', individuals_decision: 'Pending' },
+    deadlines(r) {
+      const out = [];
+      if (r.status === 'Closed') return out;
+      if ((r.ico_decision || 'Pending') === 'Pending') {
+        const t = Date.parse(r.discovered_at);
+        out.push({ what: 'Decide whether to report to the ICO', due: isNaN(t) ? '' : new Date(t + 72 * 3600000).toISOString().slice(0, 16), hours: true });
+      }
+      if (!r.contained_date) out.push({ what: 'Contain the breach', due: '' });
+      if (r.risk === 'High risk' && (r.individuals_decision || 'Pending') === 'Pending') {
+        const t = Date.parse(r.discovered_at);
+        out.push({ what: 'Tell the people affected without undue delay', due: isNaN(t) ? '' : new Date(t + 72 * 3600000).toISOString().slice(0, 16), hours: true });
+      }
+      if (!out.length) out.push({ what: 'Record the actions taken and close', due: '' });
+      return out;
+    },
+  },
+  sars: {
+    doc: 'L2H-REC-005', title: 'Subject Access Request Register', label: 'Rights request', prefix: 'SAR', tab: 'BMS SARs',
+    header: ['id', 'ref', 'status', 'request_type', 'received_date', 'requester', 'requester_type', 'channel', 'id_requested_date', 'id_received_date',
+      'extended', 'extension_reason', 'extension_notified_date', 'responded_date', 'outcome', 'exemptions', 'closed_date', 'notes',
+      'created_by', 'created_at', 'updated_by', 'updated_at'],
+    required: ['received_date', 'requester', 'request_type'],
+    defaults: { request_type: 'Access', extended: 'FALSE' },
+    deadlines(r) {
+      if (r.status === 'Closed') return [];
+      if (r.responded_date) return [{ what: 'Close the request', due: '' }];
+      if (r.id_requested_date && !r.id_received_date) return [{ what: 'Waiting for proof of identity (the clock is paused)', due: '', waiting: true }];
+      const start = r.id_requested_date ? r.id_received_date : r.received_date;
+      return [{ what: 'Respond', due: bmsAddCalendarMonths(start, hrTrue(r.extended) ? 3 : 1) }];
+    },
+  },
+  declarations: {
+    doc: 'L2H-REC-010', title: 'Gifts, Hospitality and Interests Register', label: 'Declaration', prefix: 'DEC', tab: 'BMS Declarations',
+    header: ['id', 'ref', 'status', 'kind', 'person', 'declared_date', 'counterparty', 'description', 'value', 'decision', 'conditions',
+      'decided_by', 'decided_date', 'next_review', 'closed_date', 'notes', 'created_by', 'created_at', 'updated_by', 'updated_at'],
+    required: ['kind', 'person', 'declared_date', 'description'],
+    defaults: { decision: 'Pending' },
+    deadlines(r) {
+      if (r.status === 'Closed') return [];
+      if ((r.decision || 'Pending') === 'Pending') return [{ what: 'Decide', due: bmsAddWorkingDays(r.declared_date, 5) }];
+      const interest = /interest|conflict/i.test(r.kind || '');
+      if (interest) return [{ what: 'Re-confirm the declaration', due: bmsIsDate(r.next_review) ? r.next_review : bmsAddCalendarMonths(r.decided_date || r.declared_date, 12) }];
+      return [{ what: 'Close', due: '' }];
+    },
+  },
+};
+for (const reg of Object.values(BMS_REGISTERS)) {
+  reg.table = makeSimpleTable({ sheetId: BMS_SHEET_ID, tab: reg.tab, path: null, label: reg.label, header: reg.header });
+}
+
+function bmsDeadlineState(dl) {
+  if (!dl || !dl.due) return dl && dl.waiting ? 'waiting' : '';
+  if (dl.hours) {
+    const left = Date.parse(dl.due) - Date.now();
+    return left < 0 ? 'overdue' : left <= 24 * 3600000 ? 'due_soon' : '';
+  }
+  const days = bmsDaysTo(dl.due);
+  return days < 0 ? 'overdue' : days <= 2 ? 'due_soon' : '';
+}
+function bmsRegisterOut(reg, r) {
+  const next = reg.deadlines(r).map(dl => ({ ...dl, state: bmsDeadlineState(dl) }));
+  const rank = { overdue: 3, due_soon: 2, waiting: 1, '': 0 };
+  const top = next.slice().sort((a, b) => rank[b.state] - rank[a.state])[0] || null;
+  return { ...r, next, state: r.status === 'Closed' ? 'closed' : (top ? top.state : '') };
+}
+async function bmsRegisterSummary() {
+  const out = [];
+  for (const [key, reg] of Object.entries(BMS_REGISTERS)) {
+    const rows = (await reg.table.list()).map(r => bmsRegisterOut(reg, r));
+    const open = rows.filter(r => r.status !== 'Closed');
+    out.push({ key, doc: reg.doc, title: reg.title, label: reg.label, total: rows.length, open: open.length,
+      overdue: open.filter(r => r.state === 'overdue').length, dueSoon: open.filter(r => r.state === 'due_soon').length });
+  }
+  return out;
+}
+
+app.get('/api/bms/registers', requireAdmin, async (req, res) => {
+  try { res.json({ registers: await bmsRegisterSummary() }); }
+  catch (e) { res.status(500).json({ error: 'The registers could not load: ' + e.message }); }
+});
+
+app.get('/api/bms/registers/:key', requireAdmin, async (req, res) => {
+  try {
+    const reg = BMS_REGISTERS[req.params.key];
+    if (!reg) return res.status(404).json({ error: 'Register not found' });
+    const rows = (await reg.table.list()).map(r => bmsRegisterOut(reg, r));
+    rows.sort((a, b) => (a.status === 'Closed') - (b.status === 'Closed') || String(b.ref).localeCompare(String(a.ref)));
+    res.json({ key: req.params.key, doc: reg.doc, title: reg.title, label: reg.label, data: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+function bmsRegisterClean(reg, b, cur) {
+  const next = { ...cur };
+  for (const f of reg.header) {
+    if (BMS_SYS_FIELDS.includes(f) || b[f] === undefined) continue;
+    let v = String(b[f] == null ? '' : b[f]).slice(0, f.match(/summary|description|notes|actions|outcome|remedy|root_cause|improvement|conditions|exemptions|cause/) ? 3000 : 300).trim();
+    if (f === 'about_director' || f === 'extended') v = hrTrue(b[f]) ? 'TRUE' : 'FALSE';
+    next[f] = v;
+  }
+  if (!['Open', 'Closed'].includes(next.status)) next.status = 'Open';
+  if (next.status === 'Closed' && !bmsIsDate(next.closed_date)) next.closed_date = bmsToday();
+  if (next.status === 'Open') next.closed_date = '';
+  return next;
+}
+
+app.post('/api/bms/registers/:key', requireAdmin, async (req, res) => {
+  try {
+    const reg = BMS_REGISTERS[req.params.key];
+    if (!reg) return res.status(404).json({ error: 'Register not found' });
+    const b = req.body || {};
+    const row = bmsRegisterClean(reg, { ...(reg.defaults || {}), ...b }, {});
+    const missing = reg.required.filter(f => !row[f]);
+    if (missing.length) return res.status(400).json({ error: 'Please fill in: ' + missing.map(f => f.replace(/_/g, ' ')).join(', ') });
+    const all = await reg.table.list();
+    const year = new Date().getUTCFullYear();
+    const n = all.filter(r => String(r.ref).startsWith(`${reg.prefix}-${year}-`)).map(r => Number(String(r.ref).split('-')[2]) || 0).reduce((a, x) => Math.max(a, x), 0) + 1;
+    Object.assign(row, { id: `${req.params.key}-${Date.now().toString(36)}`, ref: `${reg.prefix}-${year}-${String(n).padStart(3, '0')}`,
+      created_by: actorOf(req), created_at: hrNow(), updated_by: actorOf(req), updated_at: hrNow() });
+    const saved = await reg.table.upsert(row);
+    auditLog(auditActorOf(req), 'logged', 'bms register', `${reg.doc} ${saved.ref}`, reg.title);
+    res.json({ ok: true, data: bmsRegisterOut(reg, saved) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/bms/registers/:key/:id', requireAdmin, async (req, res) => {
+  try {
+    const reg = BMS_REGISTERS[req.params.key];
+    if (!reg) return res.status(404).json({ error: 'Register not found' });
+    const cur = (await reg.table.list()).find(r => r.id === req.params.id);
+    if (!cur) return res.status(404).json({ error: 'Record not found' });
+    const next = bmsRegisterClean(reg, req.body || {}, cur);
+    const missing = reg.required.filter(f => !next[f]);
+    if (missing.length) return res.status(400).json({ error: 'Please fill in: ' + missing.map(f => f.replace(/_/g, ' ')).join(', ') });
+    next.updated_by = actorOf(req); next.updated_at = hrNow();
+    const saved = await reg.table.upsert(next);
+    auditLog(auditActorOf(req), cur.status !== next.status ? (next.status === 'Closed' ? 'closed' : 'reopened') : 'updated', 'bms register', `${reg.doc} ${saved.ref}`, reg.title);
+    res.json({ ok: true, data: bmsRegisterOut(reg, saved) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 setTimeout(async () => {
-  try { await bmsEnsureAccess(); for (const t of [bmsDocs, bmsAcks]) await t.ensure(); } catch (e) { console.error('BMS warm-up:', e.message); }
+  try { await bmsEnsureAccess(); for (const t of [bmsDocs, bmsAcks, ...Object.values(BMS_REGISTERS).map(r => r.table)]) await t.ensure(); } catch (e) { console.error('BMS warm-up:', e.message); }
   // Build 56.1: the three foundation documents were re-issued with the logo header. Point the register at the new files (runs once, only where the old ID is still held).
   try {
     const BMS_FILE_SWAP = {"12EwscIeJOzgoA3N3BJIkeLXDhHVQh8nGe5pu6OOjESo": "1At4ToNGUmHCnzWoAqby4jeyewNqr5MiyP5qawSRCxdg", "13CAxYGD7iVJIBfgRCw5GCTqSMy4-cJVOq4ob83PN1do": "1Du0paSiKanMLnjg_xOg2GpEduogKD6hI1qHZlTVOnU8", "1gry54kaG_dWHgVs_oIfGbQHHTUliJmaNgfNsAkiFPGk": "10nOu-KWoV3uxusGSbUTY0bTXWXBhJl36cbTcPNE1E2o"};
@@ -17254,6 +17464,16 @@ setTimeout(async () => {
     const BMS_LIVE_568 = {"1laJfpnyFULYOkxplHwmp9pAIFTc8gQnftRzu_VZZxX4": "1DC84ysuSeHn8iqiCtOG8_srPcqAkktQHKr2yVayiChk", "1gzOuCCTkzV0MWFrpoq_FcbSfGmjWboTJ3_Ucjkv2G7o": "1IfPg28Uwyf-NjHNY5iyrZJ5li1mTUs8SDKOyFH_Q4JM", "1d_jhYD5k-8cfSgYGtskEDHt1TJS09mUhqG_-yzq7ZCQ": "1vzoviuquDOf6fFaL3K_2hUtYbLjDr59l3ZxAdlixntg", "1-bZWXE0OpV0uiZCuyna_hqZoqCDpY1Y6bFAB0lt9AC0": "1bGAab5F9LzLjvwiqi_zxLNjQAmWLWN-79ye7Dv4FZEI", "1Dr2Xvc3Nb79tJnuUwHz1OKvJSAoeymO7cRZDcpQFV_A": "1vfdvmfeVHo1dMMAXUDoAv0K7B-dty2tkgLM70x1_Ggw", "1Tf03jgfG6HrrnnwR7wl66nISmFJk5BEEOBDfnHcmzY4": "1UyYEO4a5OgQZ7dzRs-bXjTZ3ArGDLe8Q1ma805LmGq8", "1jhRFdJnemBj0qfP6dOcxseNDpSL5yGffTzc23YwupuM": "1ccmSNXOljRHX-2UnxjQ3xcMuusalLXVnLQreFTuGDGk", "1qk2Jt1jdda6u3oktIyIvtWtjOdjNQq940JsYxX0JIuM": "1xGa6ac1d-beiPEiB0rabM59hzKmMi2Kqjggsd-qN9k8"};
     for (const d of await bmsDocs.list()) { const nf = BMS_LIVE_568[d.file_id]; if (nf) await bmsDocs.upsert({ ...d, file_id: nf, status: 'Live', version: '1.0', effective_date: '2026-11-08', next_review: bmsAddMonths('2026-11-08', d.review_months), updated_by: 'Daniel Brown (approved in chat)', updated_at: '2026-11-08' }); }
   } catch (e) { console.error('BMS go-live 56.8:', e.message); }
+  // Build 56.9: Phase 1 batch 3 drafts (registers REC-003/004/005/010, POL-008/012/027/028, PRO-011/013/019) linked as Draft v0.1.
+  // REC-010 Gifts, Hospitality and Interests Register is new to the register, so it is added first if missing (numbers are never reused).
+  try {
+    const BMS_BATCH3 = {"L2H-REC-003": "18a5soyqjb-SDh3km4kl-Xo1moJZ8XsxpkBb80NcBeKs", "L2H-REC-004": "1ItVd8dob3ULD_lFcUUjOGYYLvCHHDdSsRqu_Y0UrsAQ", "L2H-REC-005": "1f_O8KoIVaqJecOEsUeU29O6sZNsg5wKTUte2USrGC3A", "L2H-REC-010": "1sN6Wy-mf1HoehgcUKhgFdrLXmF3N4NAYoB8xc9wxaD4", "L2H-POL-028": "1ipdXFbmJeL4JqmKmVVJQ8_iiMGJatazgYOeVafkDQ5Y", "L2H-POL-027": "19ehHR7FsDylFVz-5ntv6heS1Ll8zsimtyyeX7k0czgE", "L2H-POL-008": "1ds6iq-Nnz-0KDZx9ruHgYV9AslgY0kkbka1iG3wBLTM", "L2H-POL-012": "1PXFLRSA-HKtUCLknRAi9O84QNWwGBvT9VugkTkOrkOQ", "L2H-PRO-011": "1v_CVlPlSPM90KRR48Ecrw84byF4h08eSeEBnJ4p6i9g", "L2H-PRO-013": "1dh8EeIzXwyvnagCfokBT8GWTkJuQ7-OncYuy_akurDY", "L2H-PRO-019": "1mqRsayX7WTqAlibao6p3Yc7sWmMBdfIckI50nrsnb4M"};
+    if (!(await bmsDocs.list()).some(d => d.id === 'L2H-REC-010')) {
+      const seed = BMS_SEED.find(d => d.id === 'L2H-REC-010');
+      if (seed) await bmsDocs.upsert({ ...seed, status: 'Planned', version: '', file_id: '' });
+    }
+    for (const d of await bmsDocs.list()) { const nf = BMS_BATCH3[d.id]; if (nf && !d.file_id && d.status === 'Planned') await bmsDocs.upsert({ ...d, file_id: nf, status: 'Draft', version: '0.1', updated_by: 'system', updated_at: '2026-11-09' }); }
+  } catch (e) { console.error('BMS batch 3 56.9:', e.message); }
 }, 18000);
 
 /* ---------- build 42: planning and marketing records (tracker sheet) ---------- */
