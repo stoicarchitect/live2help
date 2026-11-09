@@ -15,6 +15,7 @@ import zlib from 'zlib';
 import dns from 'dns';
 import { fileURLToPath } from 'url';
 import * as onbDocs from './onboarding-docs.js';
+import { createMailEngine, ENGINE_LOG_HEADER, msSecretExpires, msSecretDaysLeft } from './mail-engine.js'; // build 57.0
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -120,7 +121,7 @@ const TABLE_GROUPS = {
   'Week Plans': 'planning', 'Roadmap': 'planning', 'Marketing': 'planning', 'Ad Spend': 'planning',
   'Roles': 'records', 'Role Notes': 'records', 'Role Briefs': 'records', 'Placements': 'records',
   'Interviews': 'records', 'Templates': 'records', 'Activity': 'records', 'Invoice Charges': 'records',
-  'Audit Log': 'system', 'Retention Reviews': 'system', 'Email Log': 'system', 'AI Usage': 'system', 'Settings': 'system', 'Suppression List': 'system',
+  'Audit Log': 'system', 'Retention Reviews': 'system', 'Email Log': 'system', 'Engine Log': 'system', 'AI Usage': 'system', 'Settings': 'system', 'Suppression List': 'system',
   'Users': 'auth',
 };
 const SIMPLE_TABLES = []; // every makeSimpleTable table, for import, copy back and the nightly backup
@@ -12081,6 +12082,15 @@ async function runDailyJob(skipBackup) {
   // build 49.4: onboarding reminders (live database only)
   if (pgLivePool) await step('onboardingReminders', () => runOnboardingReminders(pgLivePool));
   // build 55: a task reminds Dan to review whatever is waiting in Emails to review
+  // build 57.0: remind Dan a month before the Microsoft 365 client secret expires (Entra, Certificates and secrets)
+  await step('msSecretExpiry', async () => {
+    const d = msSecretDaysLeft();
+    if (d > 30) return d;
+    await alertDan('ms-secret-expiry', `Live 2 Help: Microsoft 365 email secret expires in ${Math.max(0, d)} days`,
+      `The client secret for the "Live 2 Help Workspace Mail" app expires on ${msSecretExpires()}. In entra.microsoft.com open App registrations, Live 2 Help Workspace Mail, Certificates and secrets, add a new client secret (24 months), put its Value in MS_CLIENT_SECRET on Render and set MS_SECRET_EXPIRES to the new date.`);
+    await addAutoTasks([{ key: 'ms-secret-renew-' + msSecretExpires(), user: 'dan', title: 'Renew the Microsoft 365 email secret', priority: 'High', dueDate: msSecretExpires(), context: 'Entra, App registrations, Live 2 Help Workspace Mail, Certificates and secrets. New secret Value goes in MS_CLIENT_SECRET on Render; update MS_SECRET_EXPIRES.' }]);
+    return d;
+  });
   await step('outboxTask', async () => {
     const n = (await emailOutboxTable.list()).filter(o => o.status === 'pending').length;
     if (!n) return 0;
@@ -16269,7 +16279,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '9 Nov 2026 - build 56.9 (BMS registers and batch 3 drafts)';
+const SERVER_BUILD = '9 Nov 2026 - build 57.0 (new email engine: Microsoft 365 and Amazon SES, alongside Brevo)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -19574,6 +19584,78 @@ app.post('/api/brevo/webhook', async (req, res) => {
 app.get('/api/mail/webhook-url', requireAdmin, (req, res) => {
   const key = crypto.createHmac('sha256', AUTH_SECRET).update('brevo-hook').digest('hex').slice(0, 24);
   res.json({ url: `${tpPublicBase()}/api/brevo/webhook?key=${key}` });
+});
+
+/* ---------------- Build 57.0: new email engine (Microsoft 365 + Amazon SES) ----------------
+   Runs alongside Brevo; nothing above this line was changed. See mail-engine.js.
+   Only the test panel uses it in 57.0. Gap Briefs (57.2) and later builds send through engineMail.send. */
+const engineLogTable = makeSimpleTable({
+  tab: 'Engine Log',
+  header: ENGINE_LOG_HEADER,
+  path: null,
+  label: 'Engine email',
+});
+const engineMail = createMailEngine({ fetch, isPreview, logTable: engineLogTable, isSuppressed, today: rfxToday });
+
+function engineSenders() {
+  const seen = new Set(), out = [];
+  [...(AUTH_USERS || []).map(u => u.key), ...Object.keys(TEAM_DEFAULTS)].forEach(k => {
+    const p = profileOf(k);
+    if (!p.email || seen.has(lc(p.email))) return;
+    seen.add(lc(p.email)); out.push({ key: p.key, fullName: p.fullName, email: p.email });
+  });
+  return out;
+}
+async function engineLastTests() {
+  try { return JSON.parse(((await settingsTable.list()).find(o => o.id === 'engine_last_tests') || {}).value || '{}'); }
+  catch (e) { return {}; }
+}
+
+app.get('/api/engine/status', requireAdmin, async (req, res) => {
+  try {
+    const recent = (await engineLogTable.list().catch(() => [])).slice(-20).reverse();
+    res.json({ ...(await engineMail.status()), senders: engineSenders(), lastTests: await engineLastTests(), recent, preview: isPreview() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/engine/test', requireAdmin, async (req, res) => {
+  const b = req.body || {};
+  const me = actorOf(req);
+  const route = b.route === 'ses' ? 'ses' : 'm365';
+  const sender = profileOf(b.from || me);
+  const to = String(b.to || profileOf(me).email).trim();
+  const when = new Date().toLocaleString('en-GB', { timeZone: 'Europe/London', dateStyle: 'medium', timeStyle: 'short' });
+  const label = route === 'ses' ? 'Amazon SES (bulk route)' : 'Microsoft 365 (one-to-one route)';
+  const fromAddr = route === 'ses' ? engineMail.bulkFrom() : sender.email;
+  const html = `<html><body style="margin:0;padding:20px;background:#f4f4f6;">
+<table role="presentation" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;border-collapse:collapse;font-family:Calibri,'Segoe UI',Arial,sans-serif;">
+<tr><td style="background:#0B1F3A;padding:16px 20px;border-bottom:3px solid #C9A84C;color:#C9A84C;font-weight:bold;letter-spacing:.5px;">LIVE 2 HELP WORKSPACE - EMAIL ENGINE TEST</td></tr>
+<tr><td style="background:#ffffff;padding:18px 20px;color:#222;font-size:11pt;line-height:1.5;">
+<p style="margin:0 0 10px;">This is a test from build 57.0.</p>
+<p style="margin:0 0 10px;"><strong>Route:</strong> ${label}<br><strong>From:</strong> ${fromAddr}<br><strong>Sent:</strong> ${when}<br><strong>Pressed by:</strong> ${profileOf(me).fullName}</p>
+<p style="margin:0;">If this arrived in the inbox (not junk), the route works. Nothing needs doing.</p>
+</td></tr></table></body></html>`;
+  const result = { at: new Date().toISOString(), route, from: fromAddr, to, by: me };
+  try {
+    const r = await engineMail.send({
+      route, from: route === 'ses' ? undefined : sender.email, fromName: route === 'ses' ? 'Live 2 Help Recruitment' : sender.fullName,
+      replyTo: route === 'ses' ? profileOf(me).email : undefined,
+      to, subject: `Email engine test: ${route === 'ses' ? 'Amazon SES' : 'Microsoft 365'} (${when})`,
+      html, text: `This is a test from build 57.0.\nRoute: ${label}\nFrom: ${fromAddr}\nSent: ${when}`,
+      kind: 'engine-test', user: me, skipSuppression: true,
+    });
+    Object.assign(result, { ok: true, preview: !!r.preview, message: r.preview ? 'Preview: nothing was sent' : `Sent to ${to}` });
+  } catch (e) {
+    Object.assign(result, { ok: false, message: e.message, error: e.message });
+  }
+  if (!isPreview()) {
+    try {
+      const all = await engineLastTests(); all[route] = result;
+      await settingsTable.upsert({ id: 'engine_last_tests', value: JSON.stringify(all), updated_by: me });
+    } catch (e) { /* the result is still returned */ }
+    auditLog(auditActorOf(req), 'engine_test', route, to, result.ok ? 'sent' : 'failed: ' + String(result.message).slice(0, 120));
+  }
+  res.status(result.ok ? 200 : 502).json(result);
 });
 
 // One-click opt out from first-contact emails

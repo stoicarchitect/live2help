@@ -1217,6 +1217,7 @@ h1,h2,.view-head h2,#leadClientsHeader h2,#clientsHeader h2,.modal h2{font-famil
 .p41-panel h3{font-family:var(--f-display);font-size:19px;font-weight:600;color:var(--navy);margin:0;}
 .p41-ph{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;}
 .p41-stat{background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:3px;box-shadow:inset 0 3px 0 var(--gold);}
+.button.p41-stat[aria-pressed="true"],button.p41-stat[aria-pressed="true"]{outline:2px solid var(--navy);outline-offset:1px;}
 .p41-stat .k{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
 .p41-stat .v{font-family:var(--f-display);font-size:30px;font-weight:600;color:var(--navy);font-variant-numeric:tabular-nums;line-height:1.1;}
 .p41-stat .n{font-size:12px;color:var(--muted);}
@@ -2913,11 +2914,13 @@ async function saveCandidate(c){
     if(!res.ok){
       const err = await res.json().catch(()=>({}));
       // the move was refused (lead client): put the board back as it was
-      if(err.code === 'LEAD_STAGE_CAP'){ showToast(err.error); loadLeadCompanies(true); loadCandidates(); return; }
+      if(err.code === 'LEAD_STAGE_CAP'){ showToast(err.error); loadLeadCompanies(true); loadCandidates(); return false; }
       throw new Error(err.error || ('Server returned ' + res.status));
     }
+    return true;
   }catch(e){
     showToast('Could not save to backend: ' + e.message);
+    return false;
   }
 }
 
@@ -3512,12 +3515,13 @@ async function advanceStage(newStage){
   const prevCompany = currentCompany, prevRole = currentRole;
   captureFieldsFromModal(c);
 
-  if(c.stage === 'applied' && !c.company){
+  // build 55.1: rejecting an applicant never needs a company or role assigned first
+  if(c.stage === 'applied' && !c.company && newStage !== 'rejected'){
     showToast('Assign a company before moving this candidate forward');
     openCandidateModal(c.id);
     return;
   }
-  if(c.stage === 'applied' && roleChoiceMissing(c)){
+  if(c.stage === 'applied' && newStage !== 'rejected' && roleChoiceMissing(c)){
     showToast('Choose which role this candidate is for before moving them forward');
     openCandidateModal(c.id);
     return;
@@ -3534,7 +3538,9 @@ async function advanceStage(newStage){
 
   renderBoard();
   closeModal('candModalOverlay');
-  await saveCandidate(c);
+  const saved = await saveCandidate(c);
+  // build 55.1: if the save did not go through, show the board as it really is, not a move that never happened
+  if(saved === false){ await loadCandidates(); return; }
   await reloadIfMoved(c, prevCompany, prevRole);
 
   if(newStage === 'submitted'){
@@ -8254,7 +8260,7 @@ function openFeedbackModal(id, preset){
    Email templates (round 2): merge fields, pickers, Outlook
    ============================================================ */
 
-const TPL_FIELDS = ['first_name','candidate_name','role','company','company_address','contact_name','contact_first_name','interviewer','salary','start_date','interview_date','interview_time','interview_location','interview_format','invoice_ref','fee_amount','signature'];
+const TPL_FIELDS = ['first_name','candidate_name','role','company','company_address','contact_name','contact_first_name','interviewer','salary','start_date','interview_date','interview_time','interview_location','interview_format','invoice_ref','fee_amount','prospectus_link','pricing_link','call_point_line','role_line','partnership_line','partnership_link','signature'];
 
 function senderProfile(){
   const u = signedInUser || {};
@@ -8282,6 +8288,7 @@ function renderTplPane(){
         <button class="ghost-btn" onclick="tplDuplicate()">Duplicate</button>
         <button class="ghost-btn" style="color:var(--danger);border-color:var(--danger);" onclick="tplDelete()">Delete</button>
       </div>
+      ${/prospectus_link|pricing_link/.test(t.body) ? '<div id="pdocBox" style="margin-top:22px;"></div>' : ''}
       <div class="section-title" style="margin-top:26px;">Fill in and send</div>
       <label>Candidate</label>
       <select id="tplCand" onchange="tplPickCandidate()"><option value="">Choose a candidate...</option>
@@ -9836,6 +9843,7 @@ renderTplPane = function(){
         <button class="ghost-btn" onclick="tplDuplicate()">Duplicate</button>
         <button class="ghost-btn" style="color:var(--danger);border-color:var(--danger);" onclick="tplDelete()">Delete</button>
       </div>
+      ${/prospectus_link|pricing_link/.test(t.body) ? '<div id="pdocBox" style="margin-top:22px;"></div>' : ''}
       <div class="section-title" style="margin-top:26px;">Fill in and send</div>
       <label>Candidate</label>
       <select id="tplCand" onchange="tplPickCandidate()"><option value="">Choose a candidate...</option>
@@ -10878,7 +10886,7 @@ function subEmailHtml(){
   }
   h += '</div>';
 
-  h += '<div class="sub-block"><div class="sub-block-h">Email <span class="sub-hint">Edit anything here before it opens in Outlook.</span></div>' +
+  h += '<div class="sub-block"><div class="sub-block-h">Email <span class="sub-hint">Edit anything here, then press Review and send.</span></div>' +
     '<label class="sub-label">To</label><input id="subTo" value="' + esc(SUB.to) + '" placeholder="client@company.co.uk">' +
     '<label class="sub-label">Subject</label><input id="subSubject" value="' + esc(SUB.subject) + '" oninput="SUB.emailEdited=true">' +
     '<label class="sub-label">Message</label><textarea id="subEmailBody" rows="' + subRows(SUB.body, 10, 20) + '" oninput="SUB.emailEdited=true">' + esc(SUB.body) + '</textarea>' +
@@ -10895,9 +10903,9 @@ function subEmailHtml(){
   h += '</div>';
 
   h += '<div class="sub-actions sticky"><button class="sub-btn" onclick="subCopyEmail()">Copy text</button>' +
-    '<button class="sub-btn gold" ' + (SUB.busy ? 'disabled' : '') + ' onclick="subBuildEml()">' + (SUB.busy ? 'Building...' : 'Open in Outlook (.eml with attachments)') + '</button>' +
+    '<button class="sub-btn gold" ' + (SUB.busy ? 'disabled' : '') + ' onclick="subBuildEml()">' + (SUB.busy ? 'Preparing...' : 'Review and send') + '</button>' +
     '<button class="sub-btn" onclick="subClose()">Close</button></div>' +
-    '<div class="sub-hint">A file downloads. Open it and Outlook shows a ready-to-send email with the attachments already in place. Nothing is sent until you press Send.</div>';
+    '<div class="sub-hint">A review screen opens next. You read the email exactly as the client will see it, open both documents, and tick to confirm before it can be sent. Nothing is sent until you do.</div>';
   return h;
 }
 
@@ -16037,6 +16045,9 @@ async function lpxSaveNew(){
 td.cmp-link{cursor:pointer;color:var(--gold);text-decoration:underline;}
 #competitorsView.visible{display:flex;}
 tr.cmp-row{cursor:pointer;}
+.cmp-pin{margin-right:8px;padding:3px 8px;font-size:11px;border:1px solid var(--border);background:#fff;color:var(--grey);cursor:pointer;border-radius:2px;font-family:inherit;white-space:nowrap;vertical-align:middle;}
+.cmp-pin:hover{background:var(--lightbg);}
+.cmp-pin.on{background:var(--gold);border-color:var(--gold);color:#fff;font-weight:600;}
 tr.cmp-row.sel td{background:#FBF6E8;}
 .cmp-trend.up{color:#9B2C22;font-weight:600;}
 .cmp-trend.down{color:#2D6A3E;font-weight:600;}
@@ -16237,6 +16248,7 @@ function renderTalentSuite(){
     {n: openOrders.length, l: late ? late + ' order' + (late === 1 ? '' : 's') + ' past due' : 'Orders open', warn: late > 0 || openOrders.length > 0},
     {n: '£' + revMonth.toLocaleString('en-GB'), l:'Paid services this month'},
     {n: runs, l:'Tool runs in total'},
+    {n: list.filter(u => u.marketing === 'Yes').length, l:'Opted in to marketing emails'},
   ].map(t => `<div class="tile static ${t.warn ? 'warn' : ''}"><div class="n">${esc(t.n)}</div><div class="l">${t.l}</div></div>`).join('');
   document.getElementById('tsoBody').innerHTML = orders.length ? orders.map(o => {
     const overdue = ['paid','in_review'].includes(o.status) && o.due_date && o.due_date < today;
@@ -16263,7 +16275,7 @@ function renderTalentSuite(){
     return `<tr class="${on ? 'ts-sel' : ''}"${hot ? ' style="background:#FBF6E8;"' : ''}>
     <td class="ts-chk"><input type="checkbox" ${on ? 'checked' : ''} onchange="tsSelectOne('u','${esc(u.id)}',this.checked)"></td>
     <td>${esc(opsFmt(u.date))}${u.source ? '<div class="pool-muted">' + esc(u.source) + '</div>' : ''}</td>
-    <td class="strong">${esc(u.name)}<div class="pool-muted">${esc(u.email)}</div></td>
+    <td class="strong">${esc(u.name)}<div class="pool-muted">${esc(u.email)}</div>${u.marketing === 'Yes' ? '<div class="pool-muted" style="color:var(--gold);">Opted in to marketing emails</div>' : ''}</td>
     <td>${esc(u.sector)}<div class="pool-muted">${esc(u.target_role || '')}</div></td>
     <td>${esc(u.tools_used || '-')}<div class="pool-muted">${esc(u.total_runs || 0)} run${u.total_runs === '1' ? '' : 's'}</div></td>
     <td><span class="status-pill ${used >= allow ? 'lost' : used ? 'hold' : 'active'}">${used} of ${allow} used</span>${parseInt(u.bonus_credits, 10) ? '<div class="pool-muted">includes ' + esc(u.bonus_credits) + ' bonus</div>' : ''}${parseInt(u.topup_credits, 10) ? '<div class="pool-muted" style="color:var(--gold);">+ ' + esc(u.topup_credits) + ' bought credits</div>' : ''}</td>
@@ -16484,7 +16496,7 @@ function cmpRender(){
   const txtA = { name: c => c.name || '', sectors: c => (c.sectors || []).join(', ') };
   const sa = CMP.sA || {key:'live', dir:-1};
   comps.sort((a, b) => {
-    if(sa.key === 'live' && sa.dir < 0){ const p = (b.pinned === 'yes') - (a.pinned === 'yes'); if(p) return p; }
+    const p = (b.pinned === 'yes') - (a.pinned === 'yes'); if(p) return p; // main competitors always sit on top
     let r = 0;
     if(txtA[sa.key]){ const x = txtA[sa.key](a), y = txtA[sa.key](b); r = (!x) - (!y) || x.localeCompare(y) * sa.dir; }
     else { const f = numA[sa.key] || numA.live; r = (f(a) - f(b)) * sa.dir; }
@@ -16511,13 +16523,13 @@ function cmpRender(){
     const trend = !c.last30 && !c.prev30 ? '-' : diff > 0 ? `<span class="cmp-trend up">Up ${diff}</span>` : diff < 0 ? `<span class="cmp-trend down">Down ${-diff}</span>` : 'Steady';
     const size = c.size ? `<span class="cmp-size ${esc(c.size)}">${esc(c.size)}</span>` : '<span class="rfx-sub">-</span>';
     return `<tr class="cmp-row ${CMP.agency === c.id ? 'sel' : ''}" onclick="cmpPickAgency('${esc(c.id)}')">
-      <td class="strong">${esc(c.name)}<div>${c.pinned === 'yes' ? '<span class="rfx-pill short">Main competitor</span>' : ''}<span class="rfx-pill">${esc(c.source || '')}</span>${c.watch_urls ? `<span class="rfx-pill dive">${String(c.watch_urls).split(/\s+/).filter(Boolean).length} job page${String(c.watch_urls).split(/\s+/).filter(Boolean).length === 1 ? '' : 's'} watched</span>` : ''}</div>${c.address ? `<div class="rfx-sub">${esc(c.address)}</div>` : ''}${!c.live ? `<div class="rfx-sub" style="color:#9B2C22;">No live adverts found${c.watch_urls ? '' : '. Add their job pages'}</div>` : ''}</td>
+      <td class="strong"><button class="cmp-pin ${c.pinned === 'yes' ? 'on' : ''}" title="${c.pinned === 'yes' ? 'Unpin: stop keeping this agency at the top' : 'Pin as a main competitor: always kept at the top'}" onclick="event.stopPropagation();cmpTogglePin('${esc(c.id)}')">${c.pinned === 'yes' ? '&#9733; Pinned' : '&#9734; Pin'}</button>${esc(c.name)}<div>${c.pinned === 'yes' ? '<span class="rfx-pill short">Main competitor</span>' : ''}<span class="rfx-pill">${esc(c.source || '')}</span>${c.watch_urls ? `<span class="rfx-pill dive">${String(c.watch_urls).split(/\s+/).filter(Boolean).length} job page${String(c.watch_urls).split(/\s+/).filter(Boolean).length === 1 ? '' : 's'} watched</span>` : ''}</div>${c.address ? `<div class="rfx-sub">${esc(c.address)}</div>` : ''}${!c.live ? `<div class="rfx-sub" style="color:#9B2C22;">No live adverts found${c.watch_urls ? '' : '. Add their job pages'}</div>` : ''}</td>
       <td>${size}${c.company_created ? `<div class="rfx-sub">since ${esc(String(c.company_created).slice(0,4))}</div>` : ''}</td>
       <td><span class="rfx-days">${c.live}</span></td><td>${c.newThisWeek}</td><td>${trend}<div class="rfx-sub">${c.last30} in the last 30 days</div></td>
       <td>${c.live ? c.avgDays + ' days' : '-'}</td><td>${esc(c.sectors.join(', ') || '-')}</td>
       <td>${c.salMin ? money(c.salMin) + (c.salMax > c.salMin ? ' - ' + money(c.salMax) : '') : '-'}</td>
       <td ${c.clientsKnown ? `class="cmp-link" onclick="event.stopPropagation();cmpShowClients('${esc(c.id)}')" title="Show the roles and clients"` : ''}>${c.clientsKnown}</td>
-      <td><div class="rfx-actions"><button class="${c.watch_urls ? '' : 'gold'}" onclick="event.stopPropagation();cmpOpenPages('${esc(c.id)}')">Job pages</button><button onclick="event.stopPropagation();cmpHide('${esc(c.id)}')">Hide</button></div></td></tr>`;
+      <td><div class="rfx-actions"><button class="${c.watch_urls ? '' : 'gold'}" onclick="event.stopPropagation();cmpOpenPages('${esc(c.id)}')">Job pages</button><button onclick="event.stopPropagation();cmpTogglePin('${esc(c.id)}')">${c.pinned === 'yes' ? 'Unpin' : 'Pin'}</button><button onclick="event.stopPropagation();cmpHide('${esc(c.id)}')">Hide</button></div></td></tr>`;
   }).join('') : `<tr><td colspan="10" class="empty-row">${all.length ? 'No agencies match these filters.' : 'No agencies yet. Press Search competitors now.'}</td></tr>`;
   document.getElementById('cmpPagerA').innerHTML = l2hPager(comps.length, CMP.pageA, CMP.per, 'cmpPageA', 'cmpPer');
 
@@ -16657,7 +16669,12 @@ function cmpPoll(){
       if(st.running) return;
       clearInterval(CMP.polling); CMP.polling = null;
       btn.disabled = false; btn.textContent = 'Search competitors now';
-      cmpLoad();
+      await cmpLoad();
+      if(CMP.pendingAgency){ // just added: show that agency's roles
+        const c = ((CMP.data && CMP.data.competitors) || []).find(x => String(x.name).toLowerCase() === CMP.pendingAgency);
+        CMP.pendingAgency = '';
+        if(c){ CMP.agency = c.id; CMP.pageB = 1; cmpRender(); showToast(c.name + ': ' + (c.live || 0) + ' live role' + (c.live == 1 ? '' : 's') + ' found'); }
+      }
     }catch(e){ /* keep trying */ }
   };
   tick();
@@ -16737,6 +16754,18 @@ async function cmpClientAction(id, what){
   }catch(e){ showToast(e.message); }
 }
 
+async function cmpTogglePin(id){
+  const c = ((CMP.data && CMP.data.competitors) || []).find(x => x.id === id);
+  if(!c) return;
+  const on = c.pinned !== 'yes';
+  try{
+    const { live, newThisWeek, last30, prev30, avgDays, sectors, salMin, salMax, clientsKnown, everAdvertised, ...rest } = c;
+    await b2Post('/api/competitors', {...rest, pinned: on ? 'yes' : 'no'});
+    c.pinned = on ? 'yes' : 'no'; cmpRender();
+    showToast(c.name + (on ? ' pinned as a main competitor' : ' unpinned'));
+  }catch(e){ showToast('Could not save: ' + e.message); }
+}
+
 async function cmpHide(id){
   const c = ((CMP.data && CMP.data.competitors) || []).find(x => x.id === id);
   if(!c || !confirm(`Hide ${c.name} from Competitor Watch? Its adverts stop showing.`)) return;
@@ -16792,7 +16821,7 @@ function cmpOpenAdd(){
 async function cmpSaveNew(){
   const name = b2Val('cmpNName').trim();
   if(!name){ showToast('Name is required'); return; }
-  try{ await b2Post('/api/competitors', {id: b2Id('cp'), name, website: b2Val('cmpNWeb').trim(), watch_urls: b2Val('cmpNPages').trim(), notes: b2Val('cmpNNotes').trim(), source:'Added by hand', added_at:new Date().toISOString(), added_by:(signedInUser && signedInUser.key) || ''}); closeModal('cmpModal'); cmpLoad(); showToast(name + ' added'); }
+  try{ await b2Post('/api/competitors', {id: b2Id('cp'), name, website: b2Val('cmpNWeb').trim(), watch_urls: b2Val('cmpNPages').trim(), notes: b2Val('cmpNNotes').trim(), source:'Added by hand', pinned:'yes', added_at:new Date().toISOString(), added_by:(signedInUser && signedInUser.key) || ''}); closeModal('cmpModal'); CMP.pendingAgency = name.toLowerCase(); showToast(name + ' added and pinned. Searching for their live roles now'); cmpRunNow(); }
   catch(e){ showToast('Could not add: ' + e.message); }
 }
 
@@ -16973,7 +17002,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '30 Oct 2026 - build 49.9 preview';
+var PAGE_BUILD = '9 Nov 2026 - build 57.0 (new email engine test panel) preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -17315,9 +17344,42 @@ function buildTagApply(){
     return `<div class="d41-sec"><span class="d41-eyebrow">Onboarding</span>
       <div class="p41-row"><div class="m"><div><span class="p41-pill ${oc}">${ol}</span></div><div class="s">Started ${fmt41(String(o.started_at).slice(0, 10), true)}${o.started_by ? ' by ' + h(typeof userLabel === 'function' ? userLabel(o.started_by) : o.started_by) : ''}${o.completed_at ? ' · completed ' + fmt41(String(o.completed_at).slice(0, 10), true) : ''}</div></div></div>
       ${who}${link}
-      <div style="margin-top:6px">${rows}</div>${drive}${onbAppliedBlock(a, o, x)}
+      <div style="margin-top:6px">${rows}</div>${drive}${onbPartnerBlock(a, o, x)}${onbAppliedBlock(a, o, x)}
       <label class="p41-row" style="cursor:pointer"><div class="m"><div><b>Pause automatic reminders</b></div><div class="s">Stops the day 3 and day 7 reminders for this client once they are switched on.</div></div><input type="checkbox" data-onb41="pause" ${o.paused ? 'checked' : ''}></label>
       ${admin ? '' : '<div class="p41-note" style="margin-top:8px">Signed documents are visible to Dan only.</div>'}</div>`;
+  }
+  // build 52.3: Talent Partnership Schedule (optional). Client ticks interest in the portal, or Dan includes it; Dan sets the Plan Order.
+  function onbPartnerBlock(a, o, x){
+    const p = (o.steps || {}).partnership || {}, st = p.status || 'not_offered', admin = isAdmin41();
+    const pl = p.plan || {};
+    const sg = (x.sigs || []).find(z => z.doc === 'partnership');
+    const pill = ({not_offered:['Not offered',''], interested:['Client interested','gold'], offered:['Sent to sign','warn'], viewed:['Viewed','warn'], signed:['Signed','ok']})[st] || [st, ''];
+    const sub = st === 'interested' ? 'Ticked in their portal' + (p.at ? ' on ' + fmt41(String(p.at).slice(0, 10), true) : '') + '. Agree the plan, then set the Plan Order below.'
+      : ['offered', 'viewed', 'signed'].includes(st) ? h(pl.name) + ' plan from ' + fmt41(pl.start, true) + ' · ' + (pl.billing === 'annual' ? 'paid annually (5% off)' : 'monthly') + (sg && sg.signed_at ? ' · signed by ' + h(sg.signer_name) + (sg.countersigned_at ? ', countersigned' : ', awaiting countersignature') : '')
+      : 'Optional. The client can tick interest in their portal, or include it here if they have already agreed.';
+    let act = '';
+    if(admin && st === 'signed' && sg && sg.has_pdf) act = `<button class="p41-btn sm" data-onb41="pdf" data-sig="${h(sg.id)}" data-name="Talent Partnership Schedule">Open signed copy</button>`;
+    else if(admin && !x.partnerEdit && st !== 'signed') act = `<button class="p41-btn ${st === 'interested' ? 'pri ' : ''}sm" data-onb41="partneredit">${['offered', 'viewed'].includes(st) ? 'Change plan' : 'Set Plan Order'}</button>`;
+    let form = '';
+    if(admin && x.partnerEdit){
+      const opt = v => ['Partner', 'Core', 'Growth', 'Scale', 'Enterprise'].map(n => `<option${v === n ? ' selected' : ''}>${n}</option>`).join('');
+      form = `<div class="p41-note" style="margin-top:6px;display:grid;gap:8px;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;">
+          <label>Plan<select id="onbPName">${opt(pl.name || 'Core')}</select></label>
+          <label>Commencement date<input type="date" id="onbPStart" value="${h(pl.start || '')}"></label>
+          <label>Billing<select id="onbPBill"><option value="monthly"${pl.billing !== 'annual' ? ' selected' : ''}>Monthly in advance</option><option value="annual"${pl.billing === 'annual' ? ' selected' : ''}>Full Term in advance (5% off)</option></select></label>
+        </div>
+        <label>Agreed scope (role categories, departments and sites)<textarea id="onbPScope" rows="2">${h(pl.scope || '')}</textarea></label>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;">
+          <label>Client hiring contact<input id="onbPHire" value="${h(pl.hiring_contact || ((o.recipients || {}).signatory || {}).name || '')}"></label>
+          <label>Client accounts contact<input id="onbPAcc" value="${h(pl.accounts_contact || '')}"></label>
+        </div>
+        <label>Enterprise terms (Enterprise plan only)<textarea id="onbPEnt" rows="2">${h(pl.enterprise || '')}</textarea></label>
+        <div id="onbPErr" class="s" style="color:var(--danger)"></div>
+        <div class="p41-bar"><button class="p41-btn pri sm" data-onb41="partnersave">Save and send to sign</button><button class="p41-btn sm" data-onb41="partnercancel">Cancel</button>${['offered', 'viewed'].includes(st) ? '<button class="p41-btn sm" data-onb41="partnerremove">Withdraw Schedule</button>' : ''}</div>
+        <div class="s">The Schedule appears in their onboarding portal straight away. Their Terms and Data Sharing Agreement are not affected, and they can become a client without it.</div></div>`;
+    }
+    return `<div class="p41-row" style="margin-top:6px"><div class="m"><div><b>Talent Partnership Schedule</b></div><div class="s">${sub}</div></div>${act}<span class="p41-pill ${pill[1]}">${pill[0]}</span></div>${form}`;
   }
   // build 49.6: where the submitted site form went (client record, interview site, Drive)
   function onbAppliedBlock(a, o, x){
@@ -17423,16 +17485,25 @@ function buildTagApply(){
       else if(what === 'send' || what === 'resend'){
         if(what === 'resend' && !confirm('Send the onboarding pack again? The reminder clock starts again.')) return;
         if(what === 'send' && !($('onbConfirm') || {}).checked){ toast41('Tick Recipients confirmed first'); return; }
-        el.disabled = true; el.textContent = 'Sending...';
-        j = await onbPost('/api/onboarding/' + id + '/send', {confirmed:true, resend: what === 'resend'});
-        toast41(j.preview ? 'Preview: ' + j.sent.length + ' emails prepared (nothing is sent from /dashboard-next)' : (j.queued && j.queued.length ? 'Welcome email sent. The agreements follow in 5 minutes and the welcome pack in 10, from clients@' : j.sent.length + ' emails sent'));
+        // build 55: read all three emails before anything is sent
+        const was = el.textContent; el.disabled = true; el.textContent = 'Preparing the emails...';
+        let pv;
+        try{ pv = await api41('/api/onboarding/' + id + '/send-preview'); }finally{ el.disabled = false; el.textContent = was; }
+        rvOpen({title: 'Onboarding pack for ' + a.name, intro: 'Three emails go out for this company. Open each tab and read it. The agreements follow 5 minutes after the welcome, and the welcome pack 10 minutes after.', items: pv.items, token: pv.token, sendLabel: 'Send the onboarding pack',
+          onSend: async tok => {
+            const jj = await onbPost('/api/onboarding/' + id + '/send', {confirmed:true, resend: what === 'resend', reviewToken: tok});
+            toast41(jj.preview ? 'Preview: ' + jj.sent.length + ' emails prepared (nothing is sent from /dashboard-next)' : (jj.queued && jj.queued.length ? 'Welcome email sent. The agreements follow in 5 minutes and the welcome pack in 10, from clients@' : jj.sent.length + ' emails sent'));
+            if(jj.data) ONB.byId.set(id, jj.data);
+            x.check = null; crmOpen(CRM.sel); crmRender();
+          }});
+        return;
       }
       else if(what === 'copylink'){
         const r = await api41('/api/onboarding/' + id + '/link');
         x.link = {url:r.url, expires_at:r.expires_at, preview: /&p=1$/.test(r.url)};
         try{ await navigator.clipboard.writeText(r.url); toast41('Portal link copied'); }catch(e2){ toast41('Link shown below'); }
       }
-      else if(what === 'sendsigned'){ el.disabled = true; await onbPost('/api/onboarding/' + id + '/send-signed', {}); toast41('Signed copies emailed'); const r = await api41('/api/onboarding/' + id); j = {data: r.data}; }
+      else if(what === 'sendsigned'){ await onbReviewSigned(a); return; }
       else if(what === 'link'){
         if(x.link && !confirm('Create a new link? The link you made earlier will stop working.')) return;
         const o = ONB.byId.get(id);
@@ -17440,6 +17511,15 @@ function buildTagApply(){
         j = await onbPost('/api/onboarding/' + id + '/link', {}); x.link = {url:j.url, expires_at:j.expires_at, preview:j.preview}; x.preview = j.preview; toast41('Portal link ready to copy');
       }
       else if(what === 'drive'){ const r = await onbPost('/api/onboarding/' + id + '/file-drive', {}); const bad = (r.filed || []).filter(f => f.error); toast41(bad.length ? 'Drive: ' + bad[0].error : 'Filed in Drive under Agreements'); x.sigs = null; }
+      else if(what === 'partneredit'){ x.partnerEdit = true; crmOpen(CRM.sel, true); return; }
+      else if(what === 'partnercancel'){ x.partnerEdit = false; crmOpen(CRM.sel, true); return; }
+      else if(what === 'partnersave' || what === 'partnerremove'){
+        if(what === 'partnerremove' && !confirm('Withdraw the Talent Partnership Schedule from their portal?')) return;
+        const body = what === 'partnerremove' ? {remove:true} : {name:$('onbPName').value, start:$('onbPStart').value, billing:$('onbPBill').value, scope:$('onbPScope').value, hiring_contact:$('onbPHire').value, accounts_contact:$('onbPAcc').value, enterprise:$('onbPEnt').value};
+        try{ j = await onbPost('/api/onboarding/' + id + '/partnership', body); }
+        catch(e3){ const er = $('onbPErr'); if(er){ er.textContent = e3.message; return; } throw e3; }
+        x.partnerEdit = false; toast41(what === 'partnerremove' ? 'Schedule withdrawn' : 'Talent Partnership Schedule is in their portal to sign');
+      }
       else if(what === 'pdf'){ onbOpenPdf(a, el.dataset.sig, el.dataset.name); return; }
       else if(what === 'countersign'){ onbCountersign(a); return; }
       else if(what === 'form'){ onbForm(a); return; }
@@ -17492,6 +17572,15 @@ function buildTagApply(){
     }catch(e){ $('vw41Body').innerHTML = `<div style="padding:24px"><div class="p41-err">${h(e.message)}</div></div>`; }
   }
   // Countersign every agreement this client has signed, with one signature
+  // build 55: the signed copies are read before they go to the client
+  async function onbReviewSigned(a){
+    const id = onbId(a.name);
+    try{
+      const pv = await api41('/api/onboarding/' + id + '/send-signed-preview');
+      rvOpen({title: 'Signed copies for ' + a.name, intro: 'The client gets both countersigned agreements by email, with a copy to clients@.', items: pv.items, token: pv.token, sendLabel: 'Send the signed copies',
+        onSend: async tok => { await onbPost('/api/onboarding/' + id + '/send-signed', {reviewToken: tok}); toast41('Signed copies emailed'); const r = await api41('/api/onboarding/' + id); ONB.byId.set(id, r.data); crmOpen(CRM.sel); crmRender(); }});
+    }catch(e){ toast41(e.message); }
+  }
   async function onbCountersign(a){
     const id = onbId(a.name), x = ONB.x[id] || {};
     const waiting = (x.sigs || []).filter(s => s.signed_at && !s.countersigned_at);
@@ -17530,9 +17619,10 @@ function buildTagApply(){
         x.sigs = null;
         const bad = (j.filed || []).filter(f => f.error);
         $('viewer41').classList.remove('open');
-        const mailNote = j.emailed && j.emailed.error ? ' The signed copies email failed: use Email signed copies.' : (j.emailed ? ' Signed copies emailed to the client.' : '');
+        const mailNote = j.emailed && j.emailed.needs_review ? ' Now check the signed copies email before it goes to the client.' : '';
         toast41((bad.length ? 'Countersigned. Drive filing failed, use File signed copies in Drive to try again.' : ((j.filed || []).some(f => f.skipped) ? 'Countersigned (preview, so nothing was filed in Drive or emailed)' : 'Countersigned and filed in Drive under Agreements.')) + ((j.filed || []).some(f => f.skipped) ? '' : mailNote));
         crmOpen(CRM.sel); crmRender();
+        if(j.emailed && j.emailed.needs_review && !(j.filed || []).some(f => f.skipped)) onbReviewSigned(a);
       }catch(e2){ err.textContent = e2.message; btn.disabled = false; btn.textContent = 'Countersign'; }
     };
   }
@@ -18153,8 +18243,272 @@ function buildTagApply(){
   }
 
   /* ---------------- Library ---------------- */
+  /* ---------------- Library: Business Management System (page build 56.0) ---------------- */
+  const BMS = { tab: 'docs', docs: [], summary: null, toRead: 0, q: '', level: 'all', area: 'all', status: '', statusSet: false, err: '', receipts: null, editId: '', adding: false, loaded: 0 };
+  const BMS_LEVELS = [['all', 'All'], ['L1', 'Manual'], ['L2', 'Policies'], ['L3', 'Procedures'], ['L4', 'Work instructions'], ['L5', 'Forms and records']];
+  const bmsPill = d => {
+    const cls = d.status === 'Live' ? 'ok' : d.status === 'Draft' ? 'warn' : '';
+    return `<span class="p41-pill ${cls}">${h(d.status)}</span>`;
+  };
+  async function bmsFetch(){
+    try{
+      const r = await api41('/api/bms/documents');
+      BMS.docs = r.data || []; BMS.summary = r.summary || null; BMS.toRead = r.toRead || 0; BMS.err = ''; BMS.loaded = Date.now();
+      if(!BMS.statusSet){ BMS.status = (BMS.summary && BMS.summary.byStatus && BMS.summary.byStatus.Draft > 0) ? 'Draft' : 'all'; BMS.statusSet = true; }
+    }catch(e){ BMS.err = e.message; }
+  }
+  function libTabs(){
+    const host = $('lib41Tabs'); if(!host) return;
+    const extra = isAdmin41() && BMS.summary && BMS.summary.reviewOverdue ? ' · ' + BMS.summary.reviewOverdue + ' review overdue' : (BMS.toRead ? ' · ' + BMS.toRead + ' to read' : '');
+    const rl = isAdmin41() && REG.list ? REG.list.reduce((a, r) => a + r.overdue, 0) : 0;
+    const tabs = [['docs', 'Documents'], ['bms', 'Business Management System' + extra]];
+    if(isAdmin41()) tabs.push(['reg', 'Registers' + (rl ? ' · ' + rl + ' overdue' : '')]);
+    host.innerHTML = tabs.map(([k, l]) => `<button class="p41-chip" data-bmstab="${k}" aria-pressed="${BMS.tab === k}">${h(l)}</button>`).join('');
+  }
   async function libLoad(){
     const body = $('lib41Body');
+    if(!$('lib41Pane')){ body.innerHTML = '<div class="p41-tabs" id="lib41Tabs"></div><div id="lib41Pane" style="display:flex;flex-direction:column;gap:16px"></div>'; }
+    libTabs();
+    if(!BMS.loaded){ bmsFetch().then(libTabs); }
+    if(isAdmin41() && !REG.list){ regFetchList().then(libTabs); }
+    if(BMS.tab === 'reg' && isAdmin41()) await regLoad(); else if(BMS.tab === 'bms') await bmsLoad(); else await libLoadDocs($('lib41Pane'));
+  }
+  async function bmsLoad(){
+    const pane = $('lib41Pane');
+    $('lib41Admin').innerHTML = isAdmin41() ? '<button class="p41-btn sm" data-bmsadd="1">+ Add to register</button><button class="p41-btn sm" data-bmsrec="1">Read receipts</button>' : '';
+    if(!BMS.loaded || Date.now() - BMS.loaded > 30000){ pane.innerHTML = '<div class="p41-empty">Loading...</div>'; await bmsFetch(); }
+    libTabs(); bmsRender();
+  }
+  function bmsFiltered(){
+    const q = BMS.q.trim().toLowerCase();
+    return BMS.docs.filter(d =>
+      (BMS.level === 'all' || d.level.startsWith(BMS.level)) &&
+      (BMS.area === 'all' || d.area === BMS.area) &&
+      (!isAdmin41() || BMS.status === 'all' || d.status === BMS.status) &&
+      (!q || (d.id + ' ' + d.title + ' ' + d.owner + ' ' + d.area).toLowerCase().includes(q)));
+  }
+  function bmsRender(){
+    const pane = $('lib41Pane'); if(!pane || BMS.tab !== 'bms') return;
+    if(BMS.err){ pane.innerHTML = `<div class="p41-panel"><div class="p41-err">${h(BMS.err)}</div><div class="p41-bar"><button class="p41-btn pri sm" data-bmsretry="1">Try again</button></div></div>`; return; }
+    const admin = isAdmin41();
+    const areas = [...new Set(BMS.docs.map(d => d.area))].sort();
+    const s = BMS.summary;
+    const stats = admin && s ? `<div class="p41-grid g4">${[
+      ['Live', s.byStatus.Live, 'In force for the team'], ['Draft', s.byStatus.Draft, 'Waiting for your approval'], ['Planned', s.byStatus.Planned, 'Still to be written'],
+      ['Reviews due', s.reviewOverdue + s.reviewDueSoon, s.reviewOverdue ? s.reviewOverdue + ' overdue' : 'Within 30 days'],
+    ].map(([k, v, n]) => `<button type="button" class="p41-stat" data-bmsstat="${k === 'Reviews due' ? 'Live' : k}" aria-pressed="${BMS.status === (k === 'Reviews due' ? 'Live' : k)}" style="text-align:left;cursor:pointer;font:inherit;color:inherit"><span class="k">${k}</span><span class="v">${v}</span><span class="n">${n}</span></button>`).join('')}</div>` : '';
+    const banner = !admin && BMS.toRead ? `<div class="p41-note">You have ${BMS.toRead} document${BMS.toRead === 1 ? '' : 's'} to read. Open each one, then choose Mark as read.</div>` : '';
+    const rows = bmsFiltered();
+    const list = rows.length ? rows.map(d => {
+      const due = d.review_state === 'overdue' ? '<span class="p41-pill bad">Review overdue</span>' : d.review_state === 'due_soon' ? '<span class="p41-pill warn">Review due soon</span>' : '';
+      const read = d.status === 'Live' && d.needs_ack ? (d.acknowledged ? '<span class="p41-pill ok">Read</span>' : '<span class="p41-pill gold">To read</span>') : '';
+      const meta = [d.status === 'Live' ? 'v' + d.version : '', 'Owner ' + d.owner, d.status === 'Live' && d.next_review ? 'Review ' + fmt41(d.next_review, true) : '', admin ? d.audience : ''].filter(Boolean).join(' · ');
+      return `<div class="p41-row"><div class="m"><div><span class="p41-mono">${h(d.id)}</span> &nbsp;<b>${h(d.title)}</b></div><div class="s">${h(d.area)} · ${h(meta)}</div></div>
+        <div class="p41-bar">${due}${read}${bmsPill(d)}
+        ${d.has_file ? `<button class="p41-btn sm" data-bmsopen="${h(d.id)}">Open</button>` : ''}
+        ${d.status === 'Live' && d.needs_ack && !d.acknowledged && !admin ? `<button class="p41-btn pri sm" data-bmsack="${h(d.id)}">Mark as read</button>` : ''}
+        ${admin ? `<button class="p41-btn sm" data-bmsedit="${h(d.id)}">Edit</button>` : ''}</div></div>`;
+    }).join('') : `<div class="p41-empty">${admin ? 'No documents match these filters' + (BMS.status !== 'all' ? ' (status: ' + h(BMS.status) + ')' : '') + '.' + (BMS.status !== 'all' ? ' <button type="button" class="p41-btn sm" data-bmsstat="all">Show every status</button>' : '') : 'No documents have been published yet. The team will see policies and procedures here once they are approved.'}</div>`;
+    pane.innerHTML = `${banner}${stats}<div id="bms41Form"></div>
+      <div class="p41-panel"><div class="p41-bar"><input class="p41-in" id="bms41Q" placeholder="Search by ID, title or owner" value="${h(BMS.q)}" style="flex:1;min-width:200px" aria-label="Search the Business Management System">
+        <select class="p41-in" id="bms41Area" aria-label="Filter by area"><option value="all">All areas</option>${areas.map(a => `<option${BMS.area === a ? ' selected' : ''}>${h(a)}</option>`).join('')}</select>
+        ${admin ? `<select class="p41-in" id="bms41Status" aria-label="Filter by status">${['Live', 'Draft', 'Planned', 'Retired', 'all'].map(x => `<option value="${x}"${BMS.status === x ? ' selected' : ''}>${x === 'all' ? 'Every status' : x}</option>`).join('')}</select>` : ''}</div>
+        <div class="p41-tabs" style="margin-top:10px">${BMS_LEVELS.map(([k, l]) => `<button class="p41-chip" data-bmslevel="${k}" aria-pressed="${BMS.level === k}">${l}</button>`).join('')}</div>
+        <div class="s" style="color:var(--muted);margin:10px 0 0">${rows.length} document${rows.length === 1 ? '' : 's'}</div>
+        <div class="p41-list">${list}</div></div>`;
+    const q = $('bms41Q'); if(q){ q.oninput = () => { BMS.q = q.value; const pos = q.selectionStart; bmsRender(); const n = $('bms41Q'); if(n){ n.focus(); n.setSelectionRange(pos, pos); } }; }
+    const ar = $('bms41Area'); if(ar) ar.onchange = () => { BMS.area = ar.value; bmsRender(); };
+    const st = $('bms41Status'); if(st) st.onchange = () => { BMS.status = st.value; bmsRender(); };
+    if(BMS.editId) bmsEditForm(BMS.editId); else if(BMS.adding) bmsAddForm();
+  }
+  async function bmsOpen(id){
+    const d = BMS.docs.find(x => x.id === id) || {};
+    $('vw41Title').textContent = (d.id ? d.id + ' ' : '') + (d.title || 'Document');
+    { const old = $('sign41'); if(old) old.remove(); }
+    $('vw41Body').innerHTML = '<div class="p41-empty" style="padding:24px">Opening...</div>';
+    $('viewer41').classList.add('open');
+    $('vw41Dl').onclick = async () => { try{ const r = await fetch(API_BASE + '/api/bms/documents/' + encodeURIComponent(id) + '/file?download=1'); if(!r.ok) throw new Error('Could not download the document'); const url = URL.createObjectURL(await r.blob()); const a = document.createElement('a'); a.href = url; a.download = (d.id + ' ' + d.title).replace(/[\\/:*?"<>|]/g, '') + '.pdf'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000); }catch(e){ toast41(e.message); } };
+    try{
+      const r = await fetch(API_BASE + '/api/bms/documents/' + encodeURIComponent(id) + '/file');
+      if(!r.ok){ const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Could not open the document'); }
+      const type = (r.headers.get('Content-Type') || '').toLowerCase();
+      const blob = await r.blob();
+      if(type.includes('pdf')){ $('vw41Body').innerHTML = `<iframe title="${h(d.title || 'Document')}" src="${URL.createObjectURL(blob)}"></iframe>`; return; }
+      $('vw41Body').innerHTML = '<div class="p41-empty" style="padding:24px">This file type cannot be shown here. Use Download.</div>';
+    }catch(e){ $('vw41Body').innerHTML = `<div style="padding:24px"><div class="p41-err">${h(e.message)}</div></div>`; }
+  }
+  function bmsEditForm(id){
+    const d = BMS.docs.find(x => x.id === id); const el = $('bms41Form'); if(!d || !el) return;
+    const opt = (list, cur) => list.map(x => `<option${x === cur ? ' selected' : ''}>${h(x)}</option>`).join('');
+    el.innerHTML = `<form class="p41-panel p41-form" id="bms41Edit"><h3>${h(d.id)} ${h(d.title)}</h3>
+      <div class="two"><label>Status<select class="p41-in" name="status">${opt(['Planned', 'Draft', 'Live', 'Retired'], d.status)}</select></label><label>Version<input class="p41-in" name="version" value="${h(d.version)}" placeholder="1.0"></label></div>
+      <div class="two"><label>Effective date<input class="p41-in" type="date" name="effective_date" value="${h(d.effective_date)}"></label><label>Next review date<input class="p41-in" type="date" name="next_review" value="${h(d.next_review)}"></label></div>
+      <label>Google Doc link<input class="p41-in" name="link" placeholder="${d.has_file ? 'A file is attached. Paste a new link to replace it.' : 'https://docs.google.com/document/d/...'}"></label>
+      <div class="two"><label>Owner<input class="p41-in" name="owner" value="${h(d.owner)}"></label><label>Who sees it<select class="p41-in" name="audience">${opt(['Everyone', 'Recruitment team', 'Admin only'], d.audience)}</select></label></div>
+      <div class="two"><label>Review every (months)<input class="p41-in" name="review_months" value="${h(d.review_months)}"></label><label style="flex-direction:row;gap:8px;align-items:center;margin-top:18px"><input type="checkbox" name="needs_ack"${d.needs_ack ? ' checked' : ''}> Staff must mark it as read</label></div>
+      <label>Notes<input class="p41-in" name="notes" value="${h(d.notes)}"></label>
+      <div class="p41-note">Going Live needs a Google Doc attached. A new version number means everyone has to mark it as read again. Staff never see Draft, Planned, Retired or Admin only documents.</div>
+      <div class="p41-bar"><button class="p41-btn pri sm" type="submit">Save</button><button class="p41-btn sm" type="button" data-bmscancel="1">Cancel</button></div></form>`;
+    $('bms41Edit').onsubmit = async e => {
+      e.preventDefault(); const f = e.target; const body = {};
+      new FormData(f).forEach((v, k) => { if(v !== '' || k === 'notes' || k === 'version') body[k] = v; });
+      body.needs_ack = !!f.needs_ack.checked;
+      if(!body.next_review) delete body.next_review;
+      try{ await post41('/api/bms/documents/' + encodeURIComponent(id), body); toast41('Saved'); BMS.editId = ''; await bmsFetch(); libTabs(); bmsRender(); }catch(err){ toast41(err.message); }
+    };
+    el.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+  }
+  function bmsAddForm(){
+    const el = $('bms41Form'); if(!el) return;
+    const next = t => { const n = BMS.docs.filter(d => d.id.startsWith('L2H-' + t + '-')).map(d => Number(d.id.split('-')[2])).reduce((a, b) => Math.max(a, b), 0); return 'L2H-' + t + '-' + String(n + 1).padStart(3, '0'); };
+    el.innerHTML = `<form class="p41-panel p41-form" id="bms41Add"><h3>Add to the register</h3>
+      <div class="two"><label>Type<select class="p41-in" name="type">${['POL', 'PRO', 'WI', 'FRM', 'REC', 'MAN'].map(t => `<option value="${t}">${t}</option>`).join('')}</select></label><label>ID<input class="p41-in" name="id" value="${next('POL')}" required></label></div>
+      <label>Title<input class="p41-in" name="title" required></label>
+      <div class="two"><label>Level<select class="p41-in" name="level">${['L1 Manual', 'L2 Policy', 'L3 Procedure', 'L4 Work Instruction', 'L5 Form', 'L5 Record'].map(x => `<option${x === 'L2 Policy' ? ' selected' : ''}>${x}</option>`).join('')}</select></label><label>Area<input class="p41-in" name="area" value="Compliance and Governance"></label></div>
+      <div class="two"><label>Owner<input class="p41-in" name="owner" value="Daniel Brown"></label><label>Who sees it<select class="p41-in" name="audience">${['Everyone', 'Recruitment team', 'Admin only'].map(x => `<option>${x}</option>`).join('')}</select></label></div>
+      <div class="p41-bar"><button class="p41-btn pri sm" type="submit">Add</button><button class="p41-btn sm" type="button" data-bmscancel="1">Cancel</button></div></form>`;
+    const f = $('bms41Add'); f.type.onchange = () => { f.id.value = next(f.type.value); };
+    f.onsubmit = async e => { e.preventDefault(); const body = {}; new FormData(f).forEach((v, k) => body[k] = v); delete body.type;
+      try{ await post41('/api/bms/documents', body); toast41('Added to the register'); BMS.adding = false; BMS.status = 'all'; await bmsFetch(); libTabs(); bmsRender(); }catch(err){ toast41(err.message); } };
+  }
+  async function bmsReceipts(){
+    const el = $('bms41Form'); if(!el) return;
+    el.innerHTML = '<div class="p41-panel"><div class="p41-empty">Loading...</div></div>';
+    try{
+      const r = await api41('/api/bms/compliance');
+      el.innerHTML = r.docs.length ? `<div class="p41-panel"><h3>Read receipts</h3><div class="s" style="color:var(--muted)">Each person must read the current version of every Live document marked as required reading.</div>
+        <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:13px"><thead><tr><th style="text-align:left;padding:6px">Document</th>${r.people.map(p => `<th style="text-align:left;padding:6px">${h(p.name)}</th>`).join('')}</tr></thead>
+        <tbody>${r.docs.map(d => `<tr style="border-top:1px solid var(--border)"><td style="padding:6px"><span class="p41-mono">${h(d.id)}</span> ${h(d.title)} <span class="p41-pill">v${h(d.version)}</span></td>${r.people.map(p => `<td style="padding:6px">${d.acks[p.id] ? '<span class="p41-pill ok">Read ' + fmt41(d.acks[p.id].slice(0, 10), true) + '</span>' : '<span class="p41-pill warn">Not yet</span>'}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+        <div class="p41-bar"><button class="p41-btn sm" data-bmscancel="1">Close</button></div></div>`
+        : '<div class="p41-panel"><div class="p41-empty">No Live documents need reading yet.</div><div class="p41-bar"><button class="p41-btn sm" data-bmscancel="1">Close</button></div></div>';
+    }catch(e){ el.innerHTML = `<div class="p41-panel"><div class="p41-err">${h(e.message)}</div></div>`; }
+  }
+  document.addEventListener('click', async e => {
+    const t = e.target.closest('[data-bmstab],[data-bmsstat],[data-bmslevel],[data-bmsopen],[data-bmsack],[data-bmsedit],[data-bmsadd],[data-bmsrec],[data-bmscancel],[data-bmsretry]');
+    if(!t) return;
+    try{
+      if(t.dataset.bmstab){ BMS.tab = t.dataset.bmstab; BMS.editId = ''; BMS.adding = false; libLoad(); return; }
+      if(t.dataset.bmsstat){ BMS.status = t.dataset.bmsstat; BMS.statusSet = true; bmsRender(); return; }
+      if(t.dataset.bmslevel){ BMS.level = t.dataset.bmslevel; bmsRender(); return; }
+      if(t.dataset.bmsopen){ bmsOpen(t.dataset.bmsopen); return; }
+      if(t.dataset.bmsack){ await post41('/api/bms/documents/' + encodeURIComponent(t.dataset.bmsack) + '/ack', {}); toast41('Marked as read'); await bmsFetch(); libTabs(); bmsRender(); return; }
+      if(t.dataset.bmsedit){ BMS.editId = t.dataset.bmsedit; BMS.adding = false; bmsRender(); return; }
+      if(t.dataset.bmsadd){ BMS.adding = true; BMS.editId = ''; bmsRender(); return; }
+      if(t.dataset.bmsrec){ BMS.adding = false; BMS.editId = ''; bmsRender(); bmsReceipts(); return; }
+      if(t.dataset.bmscancel){ BMS.editId = ''; BMS.adding = false; bmsRender(); return; }
+      if(t.dataset.bmsretry){ BMS.loaded = 0; libLoad(); return; }
+    }catch(err){ toast41(err.message); }
+  });
+  window.openBmsLibrary = function(){ BMS.tab = 'bms'; if(typeof switchTab === 'function') switchTab('library'); };
+
+  /* ---------------- Library: BMS registers (page build 56.9) ---------------- */
+  // Complaints, breaches, rights requests and declarations. Admin only. Records are closed, never deleted.
+  const REG = { key: 'complaints', list: null, rows: [], showClosed: false, form: '', err: '', loadedAt: 0 };
+  const REG_OPT = {
+    complainant_type: ['Candidate', 'Client', 'Other'], channel: ['Email', 'Phone', 'In person', 'Letter', 'LinkedIn', 'Other'],
+    category: ['Service', 'Conduct of a team member', 'Discrimination', 'Personal data', 'Fees or invoicing', 'Other'],
+    risk: ['Not yet assessed', 'Unlikely to result in risk', 'Risk', 'High risk'], ico_decision: ['Pending', 'Reported', 'Not reportable'],
+    individuals_decision: ['Pending', 'Informed', 'Not required'],
+    request_type: ['Access', 'Erasure', 'Rectification', 'Restriction', 'Objection', 'Portability'], requester_type: ['Candidate', 'Client contact', 'Employee', 'Other'],
+    kind: ['Gift received', 'Gift offered', 'Hospitality received', 'Hospitality offered', 'Outside interest', 'Conflict of interest'],
+    decision: ['Pending', 'Accepted', 'Declined', 'Approved with conditions', 'Not approved', 'Noted'], status: ['Open', 'Closed'],
+  };
+  // [field, label, type]  type: t text, a long text, d date, dt date and time, s select, c checkbox
+  const REG_FIELDS = {
+    complaints: [['received_date', 'Received', 'd'], ['complainant', 'Complainant', 't'], ['complainant_type', 'They are a', 's'], ['channel', 'How it came in', 's'],
+      ['category', 'Type', 's'], ['about_director', 'About the Director (independent review needed)', 'c'], ['summary', 'What happened and what they want', 'a'],
+      ['acknowledged_date', 'Acknowledged in writing', 'd'], ['new_response_date', 'New reply date (only if we told them it will take longer)', 'd'], ['responded_date', 'Outcome sent', 'd'],
+      ['outcome', 'What we found', 'a'], ['remedy', 'Remedy', 'a'], ['root_cause', 'Root cause', 'a'], ['improvement', 'Improvement agreed', 'a'],
+      ['review_requested_date', 'Review requested', 'd'], ['review_answered_date', 'Review answered', 'd'], ['notes', 'Notes', 'a'], ['status', 'Status', 's']],
+    breaches: [['discovered_at', 'When we became aware', 'dt'], ['reported_by', 'Reported by', 't'], ['description', 'What happened', 'a'], ['data_types', 'Personal data involved', 't'],
+      ['people_affected', 'People affected (number and who)', 't'], ['cause', 'Cause', 'a'], ['contained_date', 'Contained', 'd'], ['risk', 'Risk to people', 's'],
+      ['ico_decision', 'ICO decision', 's'], ['ico_reported_at', 'Reported to the ICO at', 'dt'], ['ico_reference', 'ICO reference', 't'], ['reason_not_reported', 'Why it was not reported', 'a'],
+      ['individuals_decision', 'People affected told', 's'], ['individuals_informed_date', 'Told on', 'd'], ['actions', 'Actions to stop it happening again', 'a'], ['notes', 'Notes', 'a'], ['status', 'Status', 's']],
+    sars: [['request_type', 'Right asked for', 's'], ['received_date', 'Received', 'd'], ['requester', 'Requester', 't'], ['requester_type', 'They are a', 's'], ['channel', 'How it came in', 's'],
+      ['id_requested_date', 'Proof of identity asked for (leave blank if not needed)', 'd'], ['id_received_date', 'Proof of identity received', 'd'],
+      ['extended', 'Extended by two months (complex or many requests)', 'c'], ['extension_reason', 'Reason for the extension', 'a'], ['extension_notified_date', 'Extension explained to them on', 'd'],
+      ['responded_date', 'Responded', 'd'], ['outcome', 'What we provided or did', 'a'], ['exemptions', 'Exemptions or refusal, with reason', 'a'], ['notes', 'Notes', 'a'], ['status', 'Status', 's']],
+    declarations: [['kind', 'Type', 's'], ['person', 'Declared by', 't'], ['declared_date', 'Declared on', 'd'], ['counterparty', 'Other party (company or person)', 't'],
+      ['description', 'Details', 'a'], ['value', 'Estimated value (GBP)', 't'], ['decision', 'Decision', 's'], ['conditions', 'Conditions or how it is managed', 'a'],
+      ['decided_by', 'Decided by', 't'], ['decided_date', 'Decided on', 'd'], ['next_review', 'Re-confirm by (interests only)', 'd'], ['notes', 'Notes', 'a'], ['status', 'Status', 's']],
+  };
+  const REG_TITLE_FIELD = { complaints: 'complainant', breaches: 'description', sars: 'requester', declarations: 'counterparty' };
+  const regDue = dl => !dl.due ? '' : dl.due.length > 10 ? new Date(dl.due + 'Z').toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London'}) : fmt41(dl.due, true);
+  async function regFetchList(){ try{ REG.list = (await api41('/api/bms/registers')).registers; REG.loadedAt = Date.now(); }catch(e){ REG.err = e.message; } return REG.list; }
+  window.bmsRegistersSummary = async function(force){ if(!isAdmin41()) return null; if(force || !REG.list || Date.now() - REG.loadedAt > 60000) await regFetchList(); return REG.list; };
+  async function regLoad(){
+    const pane = $('lib41Pane');
+    $('lib41Admin').innerHTML = '';
+    pane.innerHTML = '<div class="p41-empty">Loading...</div>';
+    REG.err = '';
+    await regFetchList();
+    try{ REG.rows = (await api41('/api/bms/registers/' + REG.key)).data || []; }catch(e){ REG.err = e.message; }
+    libTabs(); regRender();
+  }
+  function regRender(){
+    const pane = $('lib41Pane'); if(!pane || BMS.tab !== 'reg') return;
+    if(REG.err){ pane.innerHTML = `<div class="p41-panel"><div class="p41-err">${h(REG.err)}</div><div class="p41-bar"><button class="p41-btn pri sm" data-regkey="${REG.key}">Try again</button></div></div>`; return; }
+    const meta = (REG.list || []).find(r => r.key === REG.key) || {};
+    const chips = (REG.list || []).map(r => `<button type="button" class="p41-stat" data-regkey="${r.key}" aria-pressed="${REG.key === r.key}" style="text-align:left;cursor:pointer;font:inherit;color:inherit"><span class="k">${h(r.doc)}</span><span class="v">${r.open}</span><span class="n">${h(r.title)}${r.overdue ? ' · <b style="color:var(--danger)">' + r.overdue + ' overdue</b>' : r.dueSoon ? ' · ' + r.dueSoon + ' due soon' : ''}</span></button>`).join('');
+    const rows = REG.rows.filter(r => REG.showClosed || r.status !== 'Closed');
+    const tf = REG_TITLE_FIELD[REG.key];
+    const list = rows.length ? rows.map(r => {
+      const pill = r.status === 'Closed' ? '<span class="p41-pill">Closed</span>' : r.state === 'overdue' ? '<span class="p41-pill bad">Overdue</span>' : r.state === 'due_soon' ? '<span class="p41-pill warn">Due soon</span>' : r.state === 'waiting' ? '<span class="p41-pill gold">Waiting</span>' : '<span class="p41-pill ok">Open</span>';
+      const next = (r.next || []).map(dl => `<div class="s"${dl.state === 'overdue' ? ' style="color:var(--danger)"' : ''}>Next: ${h(dl.what)}${dl.due ? ' by ' + h(regDue(dl)) : ''}</div>`).join('');
+      const lead = String(r[tf] || r.summary || '').slice(0, 90);
+      const sub = REG.key === 'complaints' ? [r.complainant_type, r.category, 'received ' + fmt41(r.received_date, true)] : REG.key === 'breaches' ? [r.risk, 'ICO: ' + (r.ico_decision || 'Pending'), 'aware ' + regDue({due: r.discovered_at})] : REG.key === 'sars' ? [r.request_type, r.requester_type, 'received ' + fmt41(r.received_date, true)] : [r.kind, r.person, r.value ? 'GBP ' + r.value : '', r.decision];
+      return `<div class="p41-row"><div class="m"><div><span class="p41-mono">${h(r.ref)}</span> &nbsp;<b>${h(lead)}</b></div><div class="s">${h(sub.filter(Boolean).join(' · '))}</div>${r.status === 'Closed' ? '<div class="s">Closed ' + fmt41(r.closed_date, true) + '</div>' : next}</div>
+        <div class="p41-bar">${pill}<button class="p41-btn sm" data-regedit="${h(r.id)}">View</button></div></div>`;
+    }).join('') : `<div class="p41-empty">Nothing ${REG.showClosed ? '' : 'open '}in the ${h(meta.title || 'register')}.</div>`;
+    pane.innerHTML = `<div class="p41-note">Registers are admin only and are never deleted here. Closed records are kept for 6 years after closing (L2H-POL-004). Deadlines follow the Live procedures and use working days in England where the procedure says so.</div>
+      <div class="p41-grid g4">${chips}</div><div id="reg41Form"></div>
+      <div class="p41-panel"><div class="p41-bar"><h3 style="margin:0;flex:1">${h(meta.doc || '')} ${h(meta.title || '')}</h3>
+        <label style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" id="reg41Closed"${REG.showClosed ? ' checked' : ''}> Show closed</label>
+        <button class="p41-btn pri sm" data-regnew="1">+ Log ${h((meta.label || 'record').toLowerCase())}</button></div>
+        <div class="p41-list">${list}</div></div>`;
+    const c = $('reg41Closed'); if(c) c.onchange = () => { REG.showClosed = c.checked; regRender(); };
+    if(REG.form) regForm(REG.form);
+  }
+  function regForm(id){
+    const el = $('reg41Form'); if(!el) return;
+    const r = id === 'new' ? { status: 'Open' } : REG.rows.find(x => x.id === id);
+    if(!r){ REG.form = ''; el.innerHTML = ''; return; }
+    const meta = (REG.list || []).find(x => x.key === REG.key) || {};
+    const fields = REG_FIELDS[REG.key].filter(([f]) => !(id === 'new' && f === 'status'));
+    const input = ([f, l, t]) => {
+      const v = r[f] == null ? '' : String(r[f]);
+      if(t === 'c') return `<label style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="${f}"${v === 'TRUE' ? ' checked' : ''}> ${h(l)}</label>`;
+      if(t === 'a') return `<label style="grid-column:1/-1">${h(l)}<textarea class="p41-in" name="${f}" rows="3">${h(v)}</textarea></label>`;
+      if(t === 's') return `<label>${h(l)}<select class="p41-in" name="${f}"><option value=""></option>${REG_OPT[f].map(o => `<option${o === v ? ' selected' : ''}>${h(o)}</option>`).join('')}</select></label>`;
+      if(t === 'dt'){ const d = v ? new Date(v.slice(0, 16) + 'Z') : null; const loc = d && !isNaN(d) ? new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''; return `<label>${h(l)} (UK time)<input class="p41-in" type="datetime-local" name="${f}" value="${h(loc)}"></label>`; }
+      return `<label>${h(l)}<input class="p41-in" ${t === 'd' ? 'type="date" ' : ''}name="${f}" value="${h(v)}"></label>`;
+    };
+    const next = id === 'new' ? '' : (r.next || []).map(dl => `<span class="p41-pill ${dl.state === 'overdue' ? 'bad' : dl.state === 'due_soon' ? 'warn' : ''}">${h(dl.what)}${dl.due ? ' by ' + h(regDue(dl)) : ''}</span>`).join(' ');
+    el.innerHTML = `<form class="p41-panel p41-form" id="reg41Edit"><h3>${id === 'new' ? 'Log a ' + h((meta.label || 'record').toLowerCase()) : h(r.ref) + ' ' + h(meta.title || '')}</h3>${next ? '<div class="p41-bar">' + next + '</div>' : ''}
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">${fields.map(input).join('')}</div>
+      ${id !== 'new' ? `<div class="s" style="color:var(--muted)">Logged by ${h(r.created_by)} ${fmt41(String(r.created_at).slice(0, 10), true)} · last updated by ${h(r.updated_by)} ${fmt41(String(r.updated_at).slice(0, 10), true)}</div>` : ''}
+      <div class="p41-bar"><button class="p41-btn pri sm" type="submit">${id === 'new' ? 'Log it' : 'Save'}</button><button class="p41-btn sm" type="button" data-regcancel="1">Cancel</button></div></form>`;
+    $('reg41Edit').onsubmit = async e => {
+      e.preventDefault(); const f = e.target; const body = {};
+      REG_FIELDS[REG.key].forEach(([k, , t]) => { if(!f[k]) return; body[k] = t === 'c' ? f[k].checked : t === 'dt' && f[k].value ? new Date(f[k].value).toISOString().slice(0, 16) : f[k].value; });
+      try{
+        await post41('/api/bms/registers/' + REG.key + (id === 'new' ? '' : '/' + encodeURIComponent(id)), body);
+        toast41(id === 'new' ? 'Logged' : 'Saved'); REG.form = ''; await regLoad(); if(typeof renderHome === 'function') renderHome();
+      }catch(err){ toast41(err.message); }
+    };
+    el.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+  }
+  document.addEventListener('click', e => {
+    const t = e.target.closest('[data-regkey],[data-regnew],[data-regedit],[data-regcancel]');
+    if(!t) return;
+    if(t.dataset.regkey){ REG.key = t.dataset.regkey; REG.form = ''; regLoad(); return; }
+    if(t.dataset.regnew){ REG.form = 'new'; regRender(); return; }
+    if(t.dataset.regedit){ REG.form = t.dataset.regedit; regRender(); return; }
+    if(t.dataset.regcancel){ REG.form = ''; regRender(); return; }
+  });
+  window.openBmsRegisters = function(key){ BMS.tab = 'reg'; if(key) REG.key = key; REG.form = ''; if(typeof switchTab === 'function') switchTab('library'); };
+
+  async function libLoadDocs(body){
     $('lib41Admin').innerHTML = isAdmin41() ? '<button class="p41-btn sm" data-libadd="1">+ Add document</button>' : '';
     let docs = [];
     try{ docs = (await api41('/api/hr/documents')).data || []; HR.docs = docs; }catch(e){ body.innerHTML = `<div class="p41-panel"><div class="p41-err">${h(e.message)}</div></div>`; return; }
@@ -18187,14 +18541,27 @@ function buildTagApply(){
     const urgent = notes.filter(n => n.sev === 'high').length;
     if(!glanceHR.m || Date.now() - glanceHR.at > 60000){ try{ glanceHR = { at: Date.now(), m: await api41('/api/hr/me') }; st41.pending = glanceHR.m.pendingApprovals || 0; renderRail(); }catch(e){} }
     const m = glanceHR.m; const mine = m && m.employees.find(x => x.id === m.key); const b = mine ? m.balances[mine.id] : null;
+    const obx = (typeof obxLoad === 'function') ? await obxLoad(false) : null; const obn = obx ? obx.pending.length : 0;
+    if(!BMS.loaded || Date.now() - BMS.loaded > 60000){ try{ await bmsFetch(); }catch(e){} }
+    const rtd = isAdmin41() && typeof rtLoad === 'function' ? await rtLoad(false) : null; const rtn = rtd ? rtd.counts.open : 0;
+    const regs = isAdmin41() ? await window.bmsRegistersSummary(false) : null;
+    const regOver = regs ? regs.reduce((a, r) => a + r.overdue, 0) : 0, regSoon = regs ? regs.reduce((a, r) => a + r.dueSoon, 0) : 0;
+    const regFirst = regs ? (regs.find(r => r.overdue) || regs.find(r => r.dueSoon)) : null;
+    const regTile = regOver + regSoon > 0 ? {n: regOver + regSoon, l: 'Register deadlines', s: regOver ? regOver + ' overdue (complaints, breaches, requests)' : regSoon + ' due within 2 days', go: "openBmsRegisters('" + regFirst.key + "')", warn: true} : null;
+    const bmsAct = isAdmin41() ? (BMS.summary ? BMS.summary.byStatus.Draft + BMS.summary.reviewOverdue + BMS.summary.reviewDueSoon : 0) : BMS.toRead;
+    const bmsTile = bmsAct > 0 ? (isAdmin41() ? {n: bmsAct, l: 'Policy documents to action', s: BMS.summary.byStatus.Draft + ' to approve, ' + (BMS.summary.reviewOverdue + BMS.summary.reviewDueSoon) + ' reviews due', go: 'openBmsLibrary()', warn: true} : {n: bmsAct, l: 'Documents to read', s: 'Policies and procedures', go: 'openBmsLibrary()', warn: true}) : null;
     const items = [
       {n: notes.length, l: 'Needs attention', s: urgent ? urgent + ' urgent' : 'All notifications', go: "switchTab('notifications')", warn: urgent > 0},
+      {n: obn, l: 'Emails to review', s: obn ? 'Read and send, or skip' : 'Nothing waiting', go: "outboxOpen()", warn: obn > 0},
+      isAdmin41() ? {n: rtn, l: 'Records to review', s: rtn ? rtd.counts.due + ' past their retention date' : 'Nothing past retention', go: 'retentionOpen()', warn: rtn > 0 && rtd.counts.due > 0} : null,
       {n: due, l: 'Tasks due or overdue', s: tasks.length + ' open in total', go: "switchTab('tasks')", warn: due > 0},
       {n: count(['applied']), l: 'New applications', s: 'Waiting to be screened', go: "openCandidatesView('applications')"},
       {n: count(['submitted']), l: 'Awaiting client feedback', s: 'Submitted candidates', go: "openCandidatesView('submitted')"},
       {n: count(['interview_requested','interview_scheduled','interviewed']), l: 'In interviews', s: 'Requested, booked or done', go: "openCandidatesView('interviews')"},
       m && m.admin ? {n: m.pendingApprovals || 0, l: 'Holiday requests', s: 'Waiting for your decision', go: "switchTab('hr')", warn: (m.pendingApprovals || 0) > 0}
         : (b ? {n: b.remaining, l: 'Holiday left to book', s: b.year + ', after pending requests', go: "switchTab('hr')"} : null),
+      regTile,
+      bmsTile,
     ].filter(Boolean);
     g.innerHTML = `<div class="glance42">${items.map(i => `<button class="gl42${i.warn ? ' warn' : ''}" onclick="${i.go}"><span class="n">${h(i.n)}</span><span class="l">${h(i.l)}</span><span class="s">${h(i.s)}</span></button>`).join('')}</div>`;
   }
@@ -18260,10 +18627,20 @@ function buildTagApply(){
     post: {api: '/api/marketing', type:'post', title: 'LinkedIn post', fields: [
       {k:'date', l:'Post date', type:'date'}, {k:'title', l:'Hook or topic', req:1}, {k:'channel', l:'Where', opts:['Company page','Dan','Ella']},
       {k:'owner', l:'Owner', opts:['dan','ella']}, {k:'status', l:'Status', opts:['Idea','Drafted','Scheduled','Posted']},
-      {k:'next_step', l:'Call to action'}, {k:'link', l:'Link to post or draft'}, {k:'notes', l:'Draft or notes', type:'area'}], after: mktLoad},
+      {k:'campaign', l:'Campaign', opts: mkCampOpts}, {k:'post_time', l:'Post time', opts:['','08:00','10:00','12:00','17:00']}, {k:'next_step', l:'Call to action'}, {k:'image', l:'Image (file path)'},
+      {k:'body', l:'Post text (copied to LinkedIn. Type {link} to insert the campaign link)', type:'area', rows:14}, {k:'link', l:'Link to the live post'}, {k:'notes', l:'Notes', type:'area'}], after: mktLoad},
+    outreach: {api: '/api/marketing', type:'outreach', title: 'LinkedIn message', fields: [
+      {k:'title', l:'Name', req:1}, {k:'channel', l:'Message type', opts:['Connection note','First message','Follow-up','After sign-up','Reply','Sector message','InMail','How to','Email','Email 1','Email 2','Email 3']},
+      {k:'audience', l:'Sector', opts:['All sectors','Engineering and technical','Sales and business development','Operations and logistics','Purchasing and supply chain','Accountancy, finance and office','IT and technology','Construction','Industrial and manufacturing','Driving','Health and social care','Catering and hospitality','Corporate and HR']},
+      {k:'campaign', l:'Campaign', opts: mkCampOpts}, {k:'status', l:'Status', opts:['Live','Draft','Retired']}, {k:'owner', l:'Owner', opts:['ella','dan']},
+      {k:'body', l:'Message (use [First name] and edit one line to make it personal. Type {link} to insert the campaign link)', type:'area', rows:14}, {k:'notes', l:'Notes', type:'area'}], after: mktLoad},
     brevo: {api: '/api/marketing', type:'brevo', title: 'Brevo workflow', fields: [
       {k:'title', l:'Workflow name', req:1}, {k:'audience', l:'Audience'}, {k:'status', l:'Status', opts:['Planning','Building','Live','Paused']},
       {k:'owner', l:'Owner', opts:['dan','ella']}, {k:'next_step', l:'Next step'}, {k:'link', l:'Brevo link'}, {k:'notes', l:'Emails in the sequence', type:'area'}], after: mktLoad},
+    campaign: {api: '/api/marketing', type:'campaign', title: 'Campaign', fields: [
+      {k:'title', l:'Campaign name', req:1}, {k:'status', l:'Status', opts:['Active','Paused','Finished']}, {k:'owner', l:'Owner', opts:['ella','dan']},
+      {k:'notes', l:'Goal and plan', type:'area', rows:5}, {k:'audience', l:'Target audience'}, {k:'link', l:'Link to promote'},
+      {k:'tag', l:'Tracking tag (letters, numbers, hyphens, for example youth)'}], pre: mkCampPre, after: mktLoad},
     magnet: {api: '/api/marketing', type:'magnet', title: 'Lead magnet', fields: [
       {k:'title', l:'Name', req:1}, {k:'status', l:'Status', opts:['Idea','Building','Live','Retired']}, {k:'channel', l:'Where it is promoted'},
       {k:'owner', l:'Owner', opts:['dan','ella']}, {k:'link', l:'Link'}, {k:'notes', l:'Notes', type:'area'}], after: mktLoad},
@@ -18273,22 +18650,25 @@ function buildTagApply(){
       {k:'link', l:'Organiser link'}, {k:'next_step', l:'Follow-up'}, {k:'notes', l:'Notes and contacts met', type:'area'}], after: mktLoad},
   };
   const who41 = v => v === 'both' ? 'Dan and Ella' : (typeof userLabel === 'function' && v ? userLabel(v) : (v || ''));
-  function recOpen(kind, row){
-    const c = REC_CFG[kind]; REC.cfg = kind; REC.row = row || null;
-    const v = k => row ? (row[k] || '') : (k === 'owner' ? me41().key : (k === 'status' ? (c.fields.find(f => f.k === 'status') || {opts:['']}).opts[0] : ''));
+  function recOpen(kind, row, pre){
+    const c = REC_CFG[kind]; REC.cfg = kind; REC.row = row || null; REC.pre = pre || null;
+    const optsOf = f => typeof f.opts === 'function' ? f.opts() : f.opts;
+    const v = k => row ? (row[k] || '') : (REC.pre && REC.pre[k] ? REC.pre[k] : k === 'owner' ? me41().key : (k === 'status' ? (c.fields.find(f => f.k === 'status') || {opts:['']}).opts[0] : ''));
     $('rec41Body').innerHTML = `<div class="p41-ph"><h3>${row ? 'Edit' : 'New'} ${h(c.title.toLowerCase())}</h3><button class="p41-btn sm" data-rec41="close">Close</button></div>
-      <form class="p41-form" id="rec41Form">${c.fields.map(f => `<label>${h(f.l)}${f.opts ? `<select class="p41-in" name="${f.k}">${f.opts.map(o => `<option value="${h(o)}"${v(f.k) === o ? ' selected' : ''}>${h(f.k === 'owner' ? who41(o) : o)}</option>`).join('')}</select>`
-        : f.type === 'area' ? `<textarea class="p41-in" rows="4" name="${f.k}">${h(v(f.k))}</textarea>` : `<input class="p41-in" name="${f.k}" type="${f.type || 'text'}" value="${h(v(f.k))}"${f.req ? ' required' : ''}>`}</label>`).join('')}
+      <form class="p41-form" id="rec41Form">${c.fields.map(f => `<label>${h(f.l)}${optsOf(f) ? `<select class="p41-in" name="${f.k}">${optsOf(f).map(o => `<option value="${h(o)}"${v(f.k) === o ? ' selected' : ''}>${h(f.k === 'owner' ? who41(o) : o)}</option>`).join('')}</select>`
+        : f.type === 'area' ? `<textarea class="p41-in" rows="${f.rows || 4}" name="${f.k}">${h(v(f.k))}</textarea>` : `<input class="p41-in" name="${f.k}" type="${f.type || 'text'}" value="${h(v(f.k))}"${f.req ? ' required' : ''}>`}</label>`).join('')}
       <div class="p41-bar"><button class="p41-btn pri" type="submit">Save</button>${row ? '<button class="p41-btn" type="button" data-rec41="del" style="color:var(--danger)">Delete</button>' : ''}</div></form>`;
     $('rec41').classList.add('open');
     $('rec41Form').onsubmit = async e => { e.preventDefault(); const body = Object.assign({}, REC.row || {}, {id: (REC.row && REC.row.id) || ('rec-' + Date.now().toString(36)), updated_by: me41().key, updated_at: new Date().toISOString()});
       if(c.type) body.type = c.type; new FormData(e.target).forEach((val, k) => body[k] = val);
-      try{ await post41(c.api, body); $('rec41').classList.remove('open'); toast41('Saved'); c.after(); }catch(err){ toast41(err.message); } };
+      if(/\{link\}/.test(body.body || '') && body.campaign){ const cm = MKT.rows.find(r => r.type === 'campaign' && r.title === body.campaign);
+        if(cm && cm.link){ body.body = body.body.split('{link}').join(mkLink(cm, body.type === 'outreach' ? 'outreach' : (body.channel === 'Ella' ? 'ella' : 'company'))); } }
+      try{ if(c.pre) await c.pre(body, REC.row); await post41(c.api, body); $('rec41').classList.remove('open'); toast41('Saved'); c.after(); }catch(err){ toast41(err.message); } };
   }
   document.addEventListener('click', async e => {
     const t = e.target.closest('[data-rec41],[data-rec-new],[data-rec-edit]'); if(!t) return;
-    if(t.dataset.recNew){ recOpen(t.dataset.recNew); return; }
-    if(t.dataset.recEdit){ const [kind, id] = t.dataset.recEdit.split('|'); const list = kind === 'road' ? ROAD.rows : MKT.rows; recOpen(kind, list.find(r => r.id === id)); return; }
+    if(t.dataset.recNew){ recOpen(t.dataset.recNew, null, t.dataset.recCamp ? {campaign: t.dataset.recCamp} : null); return; }
+    if(t.dataset.recEdit){ if(e.target.closest('[data-mkx]')) return; const [kind, id] = t.dataset.recEdit.split('|'); const list = kind === 'road' ? ROAD.rows : MKT.rows; recOpen(kind, list.find(r => r.id === id)); return; }
     if(t.dataset.rec41 === 'close'){ $('rec41').classList.remove('open'); return; }
     if(t.dataset.rec41 === 'del' && REC.row){ const c = REC_CFG[REC.cfg]; try{ await b2Del(c.api, REC.row.id); $('rec41').classList.remove('open'); toast41('Deleted'); c.after(); }catch(err){ toast41(err.message); } }
   });
@@ -18352,32 +18732,178 @@ function buildTagApply(){
   });
 
   /* ---------- Marketing ---------- */
-  const MKT = { tab: 'post', rows: [], funnel: 0 };
-  const MKT_TABS = [['post','LinkedIn posts'],['brevo','Brevo workflows'],['magnet','Lead magnets'],['event','Events']];
+  /* build 51: LinkedIn outreach tab, copy and post-to-LinkedIn buttons, post images, campaign filter */
+  const MKT = { sel: new Set(), tab: 'post', rows: [], funnel: 0, tsLinkedIn: 0, tsTotal: 0, q: '', sector: '', where: '', camp: undefined, tsSrc: [] };
+  const MKT_TABS = [['post','LinkedIn posts'],['outreach','Outreach and email'],['brevo','Brevo workflows'],['magnet','Lead magnets'],['event','Events']];
   async function mktLoad(){
     try{
       MKT.rows = b2List(await api41('/api/marketing'));
-      MKT.funnel = b2List(await api41('/api/funnel-leads').catch(() => ({data:[]}))).length;
+      const fl = b2List(await api41('/api/funnel-leads').catch(() => ({data:[]})));
+      MKT.funnel = fl.length;
+      const ts = b2List(await api41('/api/talent-suite-users').catch(() => ({data:[]})));
+      MKT.tsTotal = ts.length; MKT.tsLinkedIn = ts.filter(u => /^li-/i.test(String(u.source || ''))).length;
+      // build 54: Hiring Toolkit leads store the source as "src=tag-channel", so they count toward campaign cards too
+      MKT.tsSrc = ts.map(u => String(u.source || '').toLowerCase()).concat(fl.map(l => String(l.source || '').toLowerCase().replace(/^\??src=/, '')));
+      MKT.tsBy = ts.reduce((m, u) => { const k = String(u.source || ''); if(/^li-/i.test(k)) m[k] = (m[k] || 0) + 1; return m; }, {});
     }catch(e){ $('mk41Body').innerHTML = `<div class="p41-panel"><div class="p41-err">${h(e.message)}</div></div>`; return; }
+    if(MKT.camp === undefined){ const a = MKT.rows.find(r => r.type === 'campaign' && r.status === 'Active'); MKT.camp = a ? a.title : ''; }
     mktRender();
   }
+  /* campaigns: helpers */
+  function mkCampOpts(){ return [''].concat(MKT.rows.filter(r => r.type === 'campaign').map(r => r.title)); }
+  function mkLink(cm, suffix){ return cm.link + (cm.tag ? (cm.link.includes('?') ? '&' : '?') + 'src=' + cm.tag + '-' + suffix : ''); }
+  async function mkCampPre(body, old){
+    body.tag = String(body.tag || '').toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/^-+|-+$/g, '');
+    if(old && old.title && old.title !== body.title){
+      for(const r of MKT.rows.filter(x => x.campaign === old.title && x.type !== 'campaign')) await post41('/api/marketing', {...r, campaign: body.title, updated_at: new Date().toISOString()});
+      if(MKT.camp === old.title) MKT.camp = body.title;
+    }
+  }
+  async function mkDuplicate(c){
+    const name = (prompt('Name for the new campaign:', c.title + ' (copy)') || '').trim(); if(!name) return;
+    const tag = (prompt('Tracking tag for the new campaign (letters, numbers, hyphens, for example youth). Sign-ups from its links are counted under this tag:', '') || '').toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/^-+|-+$/g, '');
+    if(!tag){ toast41('A tracking tag is needed so this campaign is counted separately'); return; }
+    const link = (prompt('Link to promote (leave as it is to keep the same page):', c.link || '') || c.link || '').trim();
+    try{
+      const stamp = Date.now().toString(36); const now = new Date().toISOString();
+      await post41('/api/marketing', {id: 'cmp-' + stamp, type: 'campaign', title: name, status: 'Active', owner: c.owner, notes: c.notes, audience: c.audience, link, tag, updated_by: me41().key, updated_at: now});
+      const items = MKT.rows.filter(r => r.campaign === c.title && (r.type === 'post' || r.type === 'outreach'));
+      let i = 0;
+      for(const r of items){
+        let body = String(r.body || '');
+        if(c.link && link) body = body.split(c.link).join(link);
+        if(c.tag) body = body.split('src=' + c.tag + '-').join('src=' + tag + '-');
+        await post41('/api/marketing', {...r, id: 'rec-' + stamp + '-' + (i++), campaign: name, body, link: '', date: '', status: r.type === 'post' ? 'Drafted' : r.status, updated_by: me41().key, updated_at: now});
+      }
+      MKT.camp = name; toast41(`Created ${name} with ${items.length} copied items. Edit the wording for the new offer.`); mktLoad();
+    }catch(err){ toast41(err.message); }
+  }
+  async function mkDeleteIds(ids, msg){
+    if(msg && !confirm(msg)) return;
+    let n = 0;
+    try{ for(const id of ids){ await b2Del('/api/marketing', id); n++; MKT.sel.delete(id); } toast41(`Deleted ${n}`); }
+    catch(err){ toast41(`Deleted ${n}, then stopped: ${err.message}`); }
+    mktLoad();
+  }
+  document.addEventListener('change', e => {
+    const t = e.target; if(!t.dataset) return;
+    if(t.dataset.mksel){ if(t.checked) MKT.sel.add(t.dataset.mksel); else MKT.sel.delete(t.dataset.mksel); mktRender(); }
+    else if(t.dataset.mkall){ const vis = [...document.querySelectorAll('#mk41Body [data-mksel]')].map(x => x.dataset.mksel); vis.forEach(id => t.checked ? MKT.sel.add(id) : MKT.sel.delete(id)); mktRender(); }
+  });
+  const mkText = r => String(r.body || r.notes || '');
+  // a sector message holds a connection note and a first message; split them so each copies on its own
+  function mkParts(r){
+    const t = mkText(r); const m = t.match(/^Connection note:\s*([\s\S]*?)\n\s*\nFirst message:\s*([\s\S]*)$/);
+    return m ? [['Copy note', m[1].trim()], ['Copy message', m[2].trim()]] : [['Copy', t.trim()]];
+  }
+  async function mkCopy(text){
+    try{ await navigator.clipboard.writeText(text); return true; }
+    catch(e){ const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select();
+      let ok = false; try{ ok = document.execCommand('copy'); }catch(_){ } ta.remove(); return ok; }
+  }
+  const mkImg = r => r.image ? '/' + String(r.image).replace(/^\/+/, '') : '';
+  function mkCss(){
+    if(document.getElementById('mk51css')) return;
+    const st = document.createElement('style'); st.id = 'mk51css';
+    st.textContent = `.mk51-acts{display:flex;gap:6px;flex-wrap:wrap}.mk51-acts .p41-btn{white-space:nowrap}
+      .mk51-li{background:#0A66C2;border-color:#0A66C2;color:#fff}.mk51-th{width:44px;height:55px;object-fit:cover;border:1px solid var(--border);display:block}
+      .mk51-prev{white-space:pre-wrap;font-size:12.5px;line-height:1.45;color:var(--grey);max-height:3.1em;overflow:hidden;margin-top:3px}
+      .mk51-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 10px}.mk51-bar .p41-in{max-width:260px}
+      .mk51-cards{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+      .mk51-card{text-align:left;background:#fff;border:1px solid var(--border);border-left:3px solid var(--gold);padding:9px 13px;min-width:170px;cursor:pointer;display:flex;flex-direction:column;gap:2px;font:inherit}
+      .mk51-card b{font-size:13.5px;color:var(--dark)}.mk51-card span{font-size:12px;color:var(--grey)}
+      .mk51-card[aria-pressed="true"]{background:var(--navy,#0F1F3D);border-color:var(--navy,#0F1F3D);border-left-color:var(--gold)}
+      .mk51-card[aria-pressed="true"] b{color:#fff}.mk51-card[aria-pressed="true"] span{color:rgba(255,255,255,.75)}.mk51-card.fin{opacity:.75}
+      .mk51-arch{margin:0 0 10px;font-size:12.5px}.mk51-arch summary{cursor:pointer;color:var(--grey);margin-bottom:8px}
+      .mk51-camp{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start;background:var(--gold-soft,#F4EAD3);padding:10px 14px;margin:0 0 10px;font-size:13px}
+      .mk51-goal{font-size:12.5px;color:var(--grey);margin-top:3px;line-height:1.45;max-width:760px}.mk51-tagc{font-size:11.5px;color:var(--gold);margin-top:2px}
+      .mk51-tip{font-size:12.5px;color:var(--grey);background:var(--gold-soft,#F4EAD3);border-left:3px solid var(--gold);padding:8px 12px;margin:0 0 10px;line-height:1.45}`;
+    document.head.appendChild(st);
+  }
   function mktRender(){
+    mkCss();
     $('mk41Tabs').innerHTML = MKT_TABS.map(([k, l]) => `<button class="p41-chip" data-mkt="${k}" aria-pressed="${MKT.tab === k}">${l} · ${MKT.rows.filter(r => r.type === k).length}</button>`).join('');
-    $('mk41Add').innerHTML = `<button class="gold-btn" data-rec-new="${MKT.tab}">+ Add ${REC_CFG[MKT.tab].title.toLowerCase()}</button>`;
-    const rows = MKT.rows.filter(r => r.type === MKT.tab).sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')));
+    const hasCamps = MKT.tab === 'post' || MKT.tab === 'outreach';
+    const realCamp = hasCamps && MKT.camp && MKT.camp !== '__none' ? MKT.rows.find(r => r.type === 'campaign' && r.title === MKT.camp) : null;
+    $('mk41Add').innerHTML = `<button class="gold-btn" data-rec-new="${MKT.tab}"${realCamp ? ` data-rec-camp="${h(realCamp.title)}"` : ''}>+ Add ${REC_CFG[MKT.tab].title.toLowerCase()}</button>${hasCamps ? '<button class="p41-btn" data-rec-new="campaign">+ New campaign</button>' : ''}`;
+    let rows = MKT.rows.filter(r => r.type === MKT.tab);
+    if(hasCamps){ if(MKT.camp === '__none') rows = rows.filter(r => !r.campaign); else if(MKT.camp) rows = rows.filter(r => r.campaign === MKT.camp); }
+    if(MKT.tab === 'outreach'){
+      const order = ['How to','Connection note','First message','Follow-up','Email','Email 1','Email 2','Email 3','After sign-up','Reply','InMail','Sector message'];
+      rows.sort((a, b) => (order.indexOf(a.channel) - order.indexOf(b.channel)) || String(a.audience).localeCompare(String(b.audience)) || String(a.title).localeCompare(String(b.title)));
+      if(MKT.sector) rows = rows.filter(r => r.audience === MKT.sector || r.audience === 'All sectors');
+    } else rows.sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')));
+    if(MKT.tab === 'post' && MKT.where) rows = rows.filter(r => r.channel === MKT.where);
+    if(MKT.q){ const q = MKT.q.toLowerCase(); rows = rows.filter(r => (r.title + ' ' + mkText(r) + ' ' + (r.audience || '')).toLowerCase().includes(q)); }
     const pill = s => `<span class="p41-pill ${['Posted','Live','Attended'].includes(s) ? 'ok' : ['Scheduled','Booked','Building','Drafted'].includes(s) ? 'gold' : ['Paused','Skipped','Retired'].includes(s) ? 'bad' : ''}">${h(s || 'Idea')}</span>`;
-    const link = r => r.link ? `<a href="${h(r.link)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Open</a>` : '';
-    const heads = {post:['Date','Post','Where','Status','Call to action',''], brevo:['Workflow','Audience','Status','Next step','Owner',''], magnet:['Lead magnet','Promoted','Status','Leads','Owner',''], event:['Date','Event','Location','Cost','Status','']}[MKT.tab];
-    const cells = r => ({
-      post: [r.date ? fmt41(r.date, true) : 'No date', `<b>${h(r.title)}</b>`, h(r.channel), pill(r.status), h(r.next_step), link(r)],
+    const link = r => r.link ? `<a href="${h(r.link)}" target="_blank" rel="noopener" data-mkx="1">Open</a>` : '';
+    const prev = r => mkText(r) ? `<div class="mk51-prev">${h(mkText(r).slice(0, 160))}</div>` : '';
+    const postActs = r => `<div class="mk51-acts" data-mkx="1">${mkText(r) ? `<button class="p41-btn sm" data-mkcopy="${h(r.id)}|0">Copy</button><button class="p41-btn sm mk51-li" data-mkli="${h(r.id)}">Post on LinkedIn</button>` : ''}${r.image ? `<a class="p41-btn sm" href="${h(mkImg(r))}" download>Image</a>` : ''}${r.status !== 'Posted' ? `<button class="p41-btn sm" data-mkposted="${h(r.id)}">Mark posted</button>` : link(r)}</div>`;
+    const outActs = r => `<div class="mk51-acts" data-mkx="1">${mkParts(r).map(([l], i) => `<button class="p41-btn sm" data-mkcopy="${h(r.id)}|${i}">${l}</button>`).join('')}</div>`;
+    const lic = k => (MKT.tsBy && MKT.tsBy[k]) || 0;
+    const camps = MKT.rows.filter(r => r.type === 'campaign');
+    const unassigned = MKT.rows.filter(r => r.type === MKT.tab && !r.campaign).length;
+    const noun = MKT.tab === 'post' ? 'post' : 'message';
+    const card = c => { const n = MKT.rows.filter(r => r.type === MKT.tab && r.campaign === c.title).length;
+      const su = c.tag ? MKT.tsSrc.filter(x => x.startsWith(c.tag.toLowerCase() + '-')).length : 0;
+      return `<button class="mk51-card${c.status === 'Finished' ? ' fin' : ''}" data-mkcamp="${h(c.title)}" aria-pressed="${MKT.camp === c.title}"><b>${h(c.title)}</b><span>${h(c.status || 'Active')} · ${n} ${noun}${n === 1 ? '' : 's'}</span>${c.tag ? `<span>${su} sign-up${su === 1 ? '' : 's'} (${h(c.tag)})</span>` : ''}</button>`; };
+    const active = camps.filter(c => c.status !== 'Finished'), done = camps.filter(c => c.status === 'Finished');
+    const campBar = !hasCamps ? '' : `<div class="mk51-cards"><button class="mk51-card" data-mkcamp="" aria-pressed="${MKT.camp === ''}"><b>All campaigns</b><span>${MKT.rows.filter(r => r.type === MKT.tab).length} ${noun}s</span></button>${active.map(card).join('')}${unassigned ? `<button class="mk51-card" data-mkcamp="__none" aria-pressed="${MKT.camp === '__none'}"><b>Unassigned</b><span>${unassigned} ${noun}${unassigned === 1 ? '' : 's'}</span></button>` : ''}</div>
+      ${done.length ? `<details class="mk51-arch"${done.some(c => c.title === MKT.camp) ? ' open' : ''}><summary>Finished campaigns (${done.length})</summary><div class="mk51-cards">${done.map(card).join('')}</div></details>` : ''}
+      ${realCamp ? `<div class="mk51-camp"><div><b>${h(realCamp.title)}</b>${realCamp.audience ? ' · ' + h(realCamp.audience) : ''}${realCamp.notes ? `<div class="mk51-goal">${h(realCamp.notes)}</div>` : ''}</div><div class="mk51-acts"><button class="p41-btn sm" data-rec-edit="campaign|${h(realCamp.id)}">Edit campaign</button><button class="p41-btn sm" data-mkdup="${h(realCamp.id)}">Duplicate campaign</button><button class="p41-btn sm" data-mkdelcamp="${h(realCamp.id)}" style="color:var(--danger)">Delete campaign</button></div></div>` : ''}`;
+    const heads = {post:['Date','Image','Post','Where','Status','Actions'], outreach:['Type','Message','Sector','Actions'], brevo:['Workflow','Audience','Status','Next step','Owner',''], magnet:['Lead magnet','Promoted','Status','Leads','Owner',''], event:['Date','Event','Location','Cost','Status','']}[MKT.tab];
+    const chk = r => `<span data-mkx="1"><input type="checkbox" data-mksel="${h(r.id)}" aria-label="Select"${MKT.sel.has(r.id) ? ' checked' : ''}></span>`;
+    const delBtn = r => `<button class="p41-btn sm" data-mkdel="${h(r.id)}" style="color:var(--danger)">Delete</button>`;
+    const cells0 = r => ({
+      post: [r.date ? fmt41(r.date, true) + (r.post_time ? ' · ' + h(r.post_time) : '') : 'No date', r.image ? `<img class="mk51-th" src="${h(mkImg(r))}" alt="" loading="lazy">` : '', `<b>${h(r.title)}</b>${!MKT.camp && r.campaign ? `<div class="mk51-tagc">${h(r.campaign)}</div>` : ''}${prev(r)}`, h(r.channel), pill(r.status), postActs(r)],
+      outreach: [h(r.channel), `<b>${h(r.title)}</b>${!MKT.camp && r.campaign ? `<div class="mk51-tagc">${h(r.campaign)}</div>` : ''}${prev(r)}`, h(r.audience), outActs(r)],
       brevo: [`<b>${h(r.title)}</b>`, h(r.audience), pill(r.status), h(r.next_step), h(who41(r.owner)), link(r)],
-      magnet: [`<b>${h(r.title)}</b>`, h(r.channel), pill(r.status), /toolkit/i.test(r.title) ? `${MKT.funnel} <a onclick="event.stopPropagation();switchTab('funnelLeads')" style="cursor:pointer;color:var(--gold)">view</a>` : '', h(who41(r.owner)), link(r)],
+      magnet: [`<b>${h(r.title)}</b>`, h(r.channel), pill(r.status),
+        /hiring toolkit/i.test(r.title) ? `${MKT.funnel} <a data-mkx="1" onclick="switchTab('funnelLeads')" style="cursor:pointer;color:var(--gold)">view</a>`
+        : /career toolkit/i.test(r.title) ? `${MKT.tsTotal} sign-ups<br><span style="font-size:12px;color:var(--grey)">LinkedIn ${MKT.tsLinkedIn}: company ${lic('li-company')}, Ella ${lic('li-ella')}, outreach ${lic('li-outreach')}</span>` : '',
+        h(who41(r.owner)), link(r)],
       event: [r.date ? fmt41(r.date, true) : 'No date', `<b>${h(r.title)}</b>`, h(r.location), h(r.cost), pill(r.status), link(r)],
     })[MKT.tab];
-    $('mk41Body').innerHTML = rows.length ? `<div class="p41-tw"><table><thead><tr>${heads.map(x => `<th>${x}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr class="click" data-rec-edit="${MKT.tab}|${h(r.id)}">${cells(r).map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
-      : `<div class="p41-panel"><div class="p41-empty">Nothing here yet. Use the add button to start.</div></div>`;
+    const cells = r => { const c = cells0(r).slice(); if(MKT.tab === 'post' || MKT.tab === 'outreach') c[c.length - 1] = `<div class="mk51-acts" data-mkx="1">${c[c.length - 1]}${delBtn(r)}</div>`; return [chk(r)].concat(c); };
+    const sectors = REC_CFG.outreach.fields.find(f => f.k === 'audience').opts.filter(x => x !== 'All sectors');
+    const bar = MKT.tab === 'post' ? `<div class="mk51-tip">Post on LinkedIn copies the text and opens LinkedIn with it filled in. Add the image (use the Image button to download it) before posting. For the company page, choose to post as Live 2 Help in the LinkedIn box. Candidate posts go out Tuesdays and Thursdays at 8am or 5pm.</div>
+        <div class="mk51-bar"><select class="p41-in" id="mk51Where"><option value="">All pages</option>${['Company page','Ella','Dan'].map(w => `<option${MKT.where === w ? ' selected' : ''}>${w}</option>`).join('')}</select><input class="p41-in" id="mk51Q" placeholder="Search posts" value="${h(MKT.q)}"></div>`
+      : MKT.tab === 'outreach' ? `<div class="mk51-tip">Pick the sector, copy the connection note, then the first message once they accept. Swap [First name] and change one line so it reads personally. Keep to 20 to 25 requests a day. No prices in messages. Email steps are sent one to one from Outlook, never as a bulk send: read the "How to" message in the campaign first.</div>
+        <div class="mk51-bar"><select class="p41-in" id="mk51Sector"><option value="">All sectors</option>${sectors.map(x => `<option${MKT.sector === x ? ' selected' : ''}>${h(x)}</option>`).join('')}</select><input class="p41-in" id="mk51Q" placeholder="Search messages" value="${h(MKT.q)}"></div>` : '';
+    const selN = rows.filter(r => MKT.sel.has(r.id)).length;
+    const bulk = selN ? `<div class="mk51-bar"><b>${selN} selected</b><button class="p41-btn sm" data-mkbulk="del" style="color:var(--danger)">Delete selected</button><button class="p41-btn sm" data-mkbulk="clear">Clear</button></div>` : '';
+    $('mk41Body').innerHTML = campBar + bar + bulk + (rows.length ? `<div class="p41-tw"><table><thead><tr><th><input type="checkbox" data-mkall="1" aria-label="Select all shown"${rows.length && rows.every(r => MKT.sel.has(r.id)) ? ' checked' : ''}></th>${heads.map(x => `<th>${x}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr class="click" data-rec-edit="${MKT.tab}|${h(r.id)}">${cells(r).map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
+      : `<div class="p41-panel"><div class="p41-empty">Nothing here yet. Use the add button to start.</div></div>`);
+    const q = $('mk51Q'); if(q) q.oninput = () => { MKT.q = q.value; const pos = q.selectionStart; mktRender(); const n = $('mk51Q'); if(n){ n.focus(); n.setSelectionRange(pos, pos); } };
+    const sel = $('mk51Sector'); if(sel) sel.onchange = () => { MKT.sector = sel.value; mktRender(); };
+    const wh = $('mk51Where'); if(wh) wh.onchange = () => { MKT.where = wh.value; mktRender(); };
   }
-  document.addEventListener('click', e => { const t = e.target.closest('[data-mkt]'); if(t){ MKT.tab = t.dataset.mkt; mktRender(); } });
+  document.addEventListener('click', async e => {
+    const t = e.target.closest('[data-mkt],[data-mkcopy],[data-mkli],[data-mkposted],[data-mkcamp],[data-mkdup],[data-mkdel],[data-mkdelcamp],[data-mkbulk]'); if(!t) return;
+    if(t.dataset.mkt){ MKT.tab = t.dataset.mkt; MKT.q = ''; MKT.sel.clear(); mktRender(); return; }
+    if(t.dataset.mkcamp !== undefined){ MKT.camp = t.dataset.mkcamp; MKT.sel.clear(); mktRender(); return; }
+    if(t.dataset.mkdup){ const c = MKT.rows.find(r => r.id === t.dataset.mkdup); if(c) mkDuplicate(c); return; }
+    e.stopPropagation();
+    if(t.dataset.mkdel){ const r = MKT.rows.find(x => x.id === t.dataset.mkdel); if(r) mkDeleteIds([r.id], `Delete "${r.title}"? This cannot be undone.`); return; }
+    if(t.dataset.mkbulk === 'clear'){ MKT.sel.clear(); mktRender(); return; }
+    if(t.dataset.mkbulk === 'del'){ const ids = [...MKT.sel]; if(ids.length) mkDeleteIds(ids, `Delete ${ids.length} selected item${ids.length === 1 ? '' : 's'}? This cannot be undone.`); return; }
+    if(t.dataset.mkdelcamp){ const c = MKT.rows.find(x => x.id === t.dataset.mkdelcamp); if(!c) return;
+      const kids = MKT.rows.filter(x => x.campaign === c.title && x.type !== 'campaign');
+      if(kids.length && confirm(`Delete the campaign "${c.title}" AND its ${kids.length} posts and messages?\n\nOK = delete everything\nCancel = next question`)){ mkDeleteIds(kids.map(x => x.id).concat([c.id]), null); return; }
+      if(confirm(`Delete only the campaign "${c.title}"?${kids.length ? ` Its ${kids.length} posts and messages will be kept as Unassigned.` : ''}`)){
+        (async () => { try{ for(const k of kids) await post41('/api/marketing', {...k, campaign: '', updated_by: me41().key, updated_at: new Date().toISOString()}); await b2Del('/api/marketing', c.id); if(MKT.camp === c.title) MKT.camp = ''; toast41('Campaign deleted'); mktLoad(); }catch(err){ toast41(err.message); } })(); }
+      return; }
+    if(t.dataset.mkcopy){ const [id, i] = t.dataset.mkcopy.split('|'); const r = MKT.rows.find(x => x.id === id); if(!r) return;
+      const part = mkParts(r)[Number(i) || 0]; toast41(await mkCopy(part[1]) ? 'Copied - paste it into LinkedIn' : 'Could not copy, open the item and copy the text'); return; }
+    if(t.dataset.mkli){ const r = MKT.rows.find(x => x.id === t.dataset.mkli); if(!r) return;
+      const text = mkText(r); await mkCopy(text);
+      window.open('https://www.linkedin.com/feed/?shareActive=true&text=' + encodeURIComponent(text), '_blank', 'noopener');
+      toast41(r.channel === 'Company page' ? 'Text copied and LinkedIn opened. Post as Live 2 Help and add the image.' : 'Text copied and LinkedIn opened. Add the image, then post.'); return; }
+    if(t.dataset.mkposted){ const r = MKT.rows.find(x => x.id === t.dataset.mkposted); if(!r) return;
+      const url = prompt('Marked as posted. Paste the link to the live post if you have it (optional):', r.link || '');
+      if(url === null) return;
+      try{ await post41('/api/marketing', {...r, status: 'Posted', link: url.trim() || r.link || '', date: r.date || todayISO41(), updated_by: me41().key, updated_at: new Date().toISOString()}); toast41('Marked as posted'); mktLoad(); }catch(err){ toast41(err.message); } }
+  });
 
   // land on the new layout straight after sign in (the splash buttons still work)
   if(typeof signedInUser !== 'undefined' && signedInUser){ renderRail(); }
@@ -18397,13 +18923,21 @@ function buildTagApply(){
 var MAILQ = new Map();
 // The saved HTML signature is added when sending, so a typed signature is only needed when none is saved
 function b46TextSig(){ return (typeof SIG !== 'undefined' && SIG.html) ? '' : ((typeof lgSignature === 'function') ? lgSignature() : ''); }
-var MAIL = {open:false, d:null, busy:false, bypass:false, hint:null, queue:null, stats:null};
+var MAIL = {open:false, d:null, busy:false, bypass:false, hint:null, queue:null, stats:null, tab:'edit', previewed:false, checked:false};
 
 function b46Css(){
   if(document.getElementById('b46css')) return;
   const st = document.createElement('style'); st.id = 'b46css';
   st.textContent = `
-  #mailOv{z-index:9500;}
+  #mailOv{z-index:9500;} #rvOv{z-index:9600;}
+  .rv-meta{font-size:12.5px;line-height:1.75;margin:8px 0 10px;} .rv-meta b{display:inline-block;min-width:70px;color:var(--grey);font-weight:600;}
+  .rv-body{white-space:pre-wrap;border:1px solid var(--border);background:#fcfbf7;padding:14px 16px;font-size:13px;line-height:1.6;max-height:44vh;overflow:auto;}
+  .rv-check{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;background:#faf7f0;border:1px solid var(--gold);margin-top:14px;font-size:13px;line-height:1.45;}
+  .rv-check input{margin-top:3px;} .rv-check.off{opacity:.55;}
+  .rv-frame{width:100%;height:44vh;border:1px solid var(--border);background:#fff;}
+  .rv-att{display:inline-flex;gap:6px;align-items:center;background:#f4f1e8;border-radius:12px;padding:3px 10px;font-size:12px;margin:0 6px 6px 0;}
+  .rv-att a{color:var(--dark);text-decoration:underline;cursor:pointer;}
+  .rv-badge{display:inline-block;background:#B3261E;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700;margin-left:6px;}
   .b46-ov{position:fixed;inset:0;background:rgba(10,15,30,.6);z-index:9000;display:flex;align-items:center;justify-content:center;padding:14px;}
   .b46-box{background:#fff;border-top:3px solid var(--gold);width:100%;max-width:760px;max-height:94vh;overflow:auto;border-radius:3px;padding:20px 22px;box-shadow:0 18px 50px rgba(0,0,0,.3);}
   .b46-box h3{margin:2px 0 4px;font-size:17px;color:var(--dark);}
@@ -18525,7 +19059,7 @@ const MAIL_KIND_LABEL = {email:'Email', submission:'Candidate submission', inter
 
 function mailOpen(d){
   MAIL.d = Object.assign({to:'', cc:'', subject:'', body:'', atts:[], rl:[], kind:'email', meta:{}}, d);
-  MAIL.open = true; MAIL.busy = false; MAIL.err = ''; MAIL.done = null;
+  MAIL.open = true; MAIL.busy = false; MAIL.err = ''; MAIL.done = null; MAIL.tab = 'edit'; MAIL.previewed = false; MAIL.checked = false;
   mailRender();
   mailStats(true).then(() => { if(MAIL.open && !MAIL.busy && !MAIL.done) mailRender(true); });
 }
@@ -18540,7 +19074,7 @@ function mailRender(keepFields){
       '<div class="b46-row" style="justify-content:flex-end;">' + (MAIL.queue ? '<button class="b46-btn gold" onclick="mailQueueNext()">Next email</button>' : '') + '<button class="b46-btn" onclick="mailClose()">Close</button></div>';
     return;
   }
-  const atts = (d.atts || []).map((a, i) => '<span class="b46-att">' + esc(a.fileName) + ' <a title="Remove" onclick="mailDropAtt(' + i + ')">&times;</a></span>').join('');
+  const atts = (d.atts || []).map((a, i) => '<span class="b46-att"><a style="color:var(--dark);text-decoration:underline;font-weight:400;" title="Open to check it" onclick="mailOpenAtt(' + i + ')">' + esc(a.fileName) + '</a> <a title="Remove" onclick="mailDropAtt(' + i + ')">&times;</a></span>').join('');
   box.innerHTML =
     '<div style="display:flex;justify-content:space-between;gap:10px;"><div><div class="b46-k">REVIEW AND SEND' + (MAIL.queue ? ' - ' + (MAIL.queue.i + 1) + ' OF ' + MAIL.queue.items.length : '') + '</div><h3>' + esc(MAIL_KIND_LABEL[d.kind] || 'Email') + '</h3>' +
     '<div class="b46-sub">Sending as <strong>' + esc(prof.fullName || '') + '</strong> &lt;' + esc(prof.email || '') + '&gt;. Replies go to your inbox and you get a copy.' +
@@ -18548,17 +19082,62 @@ function mailRender(keepFields){
     (cold && s.outreachCap != null ? ' Your first-contact emails today: ' + s.myColdToday + ' of ' + s.outreachCap + '.' : '') + '</div></div>' +
     '<button onclick="mailClose()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;align-self:flex-start;">&times;</button></div>' +
     (d.note ? '<div class="b46-note">' + d.note + '</div>' : '') +
-    '<label>To</label><input type="email" id="mlTo" value="' + esc(d.to) + '" placeholder="name@company.co.uk">' +
-    '<label>Cc (optional)</label><input type="email" id="mlCc" value="' + esc(d.cc || '') + '">' +
-    '<label>Subject</label><input type="text" id="mlSubject" value="' + esc(d.subject) + '">' +
-    '<label>Message</label><textarea id="mlBody">' + esc(d.body) + '</textarea>' +
-    (cold ? '<div class="b46-sub" style="margin-top:6px;">Your signature and the branded Talent Suite footer (with terms of business and an opt-out) are added automatically.</div>' : '<div class="b46-sub" style="margin-top:6px;">Your saved signature is added automatically.</div>') +
-    (atts ? '<label>Attachments</label><div>' + atts + '</div>' : '') +
+    '<div class="b46-tabs"><button class="' + (MAIL.tab === 'edit' ? 'on' : '') + '" onclick="mailTab(\'edit\')">1. Edit</button><button class="' + (MAIL.tab === 'preview' ? 'on' : '') + '" onclick="mailTab(\'preview\')">2. Preview as they will see it' + (MAIL.previewed ? ' &#10003;' : '') + '</button></div>' +
+    (MAIL.tab === 'preview' ? mailPreviewHtml(d, prof, cold) :
+      '<label>To</label><input type="email" id="mlTo" value="' + esc(d.to) + '" placeholder="name@company.co.uk" oninput="mailDirty()">' +
+      '<label>Cc (optional)</label><input type="email" id="mlCc" value="' + esc(d.cc || '') + '" oninput="mailDirty()">' +
+      '<label>Subject</label><input type="text" id="mlSubject" value="' + esc(d.subject) + '" oninput="mailDirty()">' +
+      '<label>Message</label><textarea id="mlBody" oninput="mailDirty()">' + esc(d.body) + '</textarea>' +
+      (cold ? '<div class="b46-sub" style="margin-top:6px;">Your signature and the branded Talent Suite footer (with terms of business and an opt-out) are added automatically.</div>' : '<div class="b46-sub" style="margin-top:6px;">Your saved signature is added automatically.</div>') +
+      (atts ? '<label>Attachments <span style="font-weight:400;">(click one to open it and check it)</span></label><div>' + atts + '</div>' : '')) +
     (MAIL.err ? '<div class="b46-err">' + esc(MAIL.err) + '</div>' : '') +
+    '<label class="rv-check' + (MAIL.previewed ? '' : ' off') + '" id="mlChkWrap"><input type="checkbox" id="mlChk" ' + (MAIL.checked ? 'checked ' : '') + (MAIL.previewed ? '' : 'disabled ') + 'onchange="mailChk(this.checked)"><span>I have read this email in the preview' + (atts ? ' and opened every attachment' : '') + ', and it is correct. <span class="b46-sub" id="mlChkHint">' + (MAIL.previewed ? '' : 'Open the Preview tab first.') + '</span></span></label>' +
     '<div class="b46-row" style="justify-content:space-between;margin-top:14px;">' +
       '<button class="b46-btn" onclick="mailEml()" ' + (MAIL.busy ? 'disabled' : '') + ' title="The old route: a draft file that opens in Outlook">Download .eml instead</button>' +
       '<div class="b46-row">' + (MAIL.queue ? '<button class="b46-btn" onclick="mailQueueNext(true)" ' + (MAIL.busy ? 'disabled' : '') + '>Skip</button>' : '<button class="b46-btn" onclick="mailClose()" ' + (MAIL.busy ? 'disabled' : '') + '>Cancel</button>') +
-      '<button class="b46-btn gold" onclick="mailSend()" ' + (MAIL.busy ? 'disabled' : '') + '>' + (MAIL.busy ? 'Sending...' : 'Send now') + '</button></div></div>';
+      '<button class="b46-btn gold" id="mlSend" onclick="mailSend()" ' + ((MAIL.busy || !MAIL.checked) ? 'disabled' : '') + '>' + (MAIL.busy ? 'Sending...' : 'Send now') + '</button></div></div>';
+}
+
+// Build 55: the review steps
+function mailTab(t){
+  if(MAIL.tab === 'edit') mailCollect();
+  if(t === 'preview'){
+    const d = MAIL.d;
+    if(!d.to || d.to.indexOf('@') < 1){ MAIL.err = 'Add the email address to send to first.'; mailRender(); return; }
+    MAIL.previewed = true; MAIL.err = '';
+  }
+  MAIL.tab = t; mailRender();
+}
+function mailDirty(){
+  // any change after looking at the preview means it must be looked at again
+  MAIL.previewed = false; MAIL.checked = false;
+  const chk = document.getElementById('mlChk'); if(chk){ chk.checked = false; chk.disabled = true; }
+  const w = document.getElementById('mlChkWrap'); if(w) w.classList.add('off');
+  const h = document.getElementById('mlChkHint'); if(h) h.textContent = 'You changed the email. Open the Preview tab again.';
+  const sb = document.getElementById('mlSend'); if(sb) sb.disabled = true;
+}
+function mailChk(on){
+  MAIL.checked = !!on;
+  const sb = document.getElementById('mlSend'); if(sb) sb.disabled = !MAIL.checked || MAIL.busy;
+}
+function mailPreviewHtml(d, prof, cold){
+  const parts = mailParts(d.body, d.rl);
+  const attList = (d.atts || []).map((a, i) => '<span class="rv-att">' + esc(a.fileName) + ' <a onclick="mailOpenAtt(' + i + ')">open</a></span>').join('');
+  const note = (cold ? 'The branded Talent Suite footer (terms of business and an opt-out) is added below your signature when it is sent. ' : '') + (d.rl && d.rl.length ? 'The client reply links shown here are the real ones. ' : '');
+  return '<div class="rv-meta"><div><b>From</b>' + esc(prof.fullName || '') + ' &lt;' + esc(prof.email || '') + '&gt;</div><div><b>To</b>' + esc(d.to) + '</div>' + (d.cc ? '<div><b>Cc</b>' + esc(d.cc) + '</div>' : '') +
+    '<div><b>Subject</b><strong>' + esc(d.subject) + '</strong></div>' + (attList ? '<div><b>Attached</b>' + attList + '</div>' : '<div><b>Attached</b><span class="b46-sub">Nothing attached</span></div>') + '</div>' +
+    '<iframe class="rv-frame" sandbox="" srcdoc="' + esc(parts.html) + '"></iframe>' +
+    (note ? '<div class="b46-sub" style="margin-top:6px;">' + esc(note) + '</div>' : '');
+}
+function mailOpenAtt(i){
+  if(MAIL.tab === 'edit') mailCollect();
+  const a = (MAIL.d.atts || [])[i]; if(!a) return;
+  try{
+    const bin = atob(a.base64), arr = new Uint8Array(bin.length); for(let k = 0; k < bin.length; k++) arr[k] = bin.charCodeAt(k);
+    const url = URL.createObjectURL(new Blob([arr], {type: a.mime || 'application/octet-stream'}));
+    if(/pdf|image|text/.test(a.mime || '')){ window.open(url, '_blank'); }
+    else{ const l = document.createElement('a'); l.href = url; l.download = a.fileName; document.body.appendChild(l); l.click(); l.remove(); showToast('Downloaded ' + a.fileName + '. Open it to check it, then come back and tick the box.'); }
+  }catch(e){ showToast('Could not open that attachment: ' + e.message); }
 }
 
 function mailCollect(){
@@ -18566,7 +19145,7 @@ function mailCollect(){
   if(g('mlTo') === null) return;
   MAIL.d.to = g('mlTo').trim(); MAIL.d.cc = g('mlCc').trim(); MAIL.d.subject = g('mlSubject'); MAIL.d.body = g('mlBody');
 }
-function mailDropAtt(i){ mailCollect(); MAIL.d.atts.splice(i, 1); mailRender(); }
+function mailDropAtt(i){ mailCollect(); MAIL.d.atts.splice(i, 1); MAIL.previewed = false; MAIL.checked = false; mailRender(); }
 function mailClose(){
   if(MAIL.busy) return;
   MAIL.open = false; b46Close('mailOv');
@@ -18592,10 +19171,14 @@ async function mailSend(){
   if(!d.to || d.to.indexOf('@') < 1){ MAIL.err = 'Add the email address to send to.'; mailRender(); return; }
   if(!String(d.subject || '').trim()){ MAIL.err = 'Add a subject.'; mailRender(); return; }
   if(/\[[A-Z][A-Z ]{2,}\]/.test(d.body) && !confirm('The message still has text in [BRACKETS] to fill in. Send anyway?')) return;
+  if(!MAIL.checked || !MAIL.previewed){ MAIL.err = 'Open the Preview tab, read the email and tick the box before sending.'; mailRender(); return; }
   MAIL.busy = true; MAIL.err = ''; mailRender();
   try{
     const parts = mailParts(d.body, d.rl);
+    const rv = await b2Post('/api/mail/reviewed', {to: d.to, cc: d.cc, subject: d.subject, text: parts.text,
+      attachments: (d.atts || []).map(a => ({fileName: a.fileName, len: (a.base64 || '').length}))});
     const j = await b2Post('/api/mail/send', {
+      reviewToken: rv.token,
       to: d.to, cc: d.cc, subject: d.subject, text: parts.text, html: parts.html, inline: parts.inline,
       attachments: (d.atts || []).map(a => ({fileName: a.fileName, mime: a.mime, base64: a.base64})),
       kind: d.kind, meta: d.meta || {}, log: d.log !== false,
@@ -18678,6 +19261,7 @@ async function useOpen(tab){
   if(signedInUser && signedInUser.admin){
     jobs.push(b2Api('/api/ai-spend').then(j => USE.ai = j).catch(e => USE.ai = {error:e.message}));
     jobs.push(b2Api('/api/mail/webhook-url').then(j => USE.hook = j.url).catch(() => {}));
+    jobs.push(b2Api('/api/engine/status').then(j => USE.engine = j).catch(e => USE.engine = {error:e.message})); // page build 57.0
   }
   jobs.push(b2Api('/api/spec/sends').then(j => USE.spec = j.data || []).catch(() => USE.spec = []));
   await Promise.all(jobs);
@@ -18742,9 +19326,52 @@ function useMailHtml(admin){
     h += '<div class="b46-row"><div style="flex:1;min-width:160px;"><label>Daily first-contact limit per person</label><input type="number" id="mlCap" min="0" max="200" value="' + esc(m.outreachCap != null ? m.outreachCap : 20) + '"></div><div style="align-self:flex-end;"><button class="b46-btn gold" onclick="useSaveMail()">Save</button></div></div>';
     if(USE.hook) h += '<div class="b46-note"><strong>Delivery tracking (optional):</strong> in Brevo go to Transactional, Settings, Webhook, add a new webhook with this URL and tick Delivered, Opened, Clicked, Soft bounce, Hard bounce, Spam and Unsubscribed. Statuses below then update by themselves, and hard bounces and spam reports go on the suppression list.<div style="margin-top:6px;word-break:break-all;font-family:monospace;font-size:11.5px;background:#fff;padding:6px;border:1px solid var(--border);">' + esc(USE.hook) + '</div><button class="b46-btn" style="margin-top:6px;" onclick="copyToClipboard(USE.hook).then(() => showToast(\'Copied\'))">Copy URL</button></div>';
   }
+  if(admin) h += useEngineHtml();
   h += '<label style="margin-top:14px;">' + (admin ? 'Latest emails (everyone)' : 'Your latest emails') + '</label><table class="b46-tbl"><tr><th>When</th>' + (admin ? '<th>Who</th>' : '') + '<th>To</th><th>Subject</th><th>Type</th><th>Status</th></tr>' +
     ((m.recent || []).map(r => '<tr><td>' + esc(new Date(r.at).toLocaleString('en-GB', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})) + '</td>' + (admin ? '<td>' + esc(userLabel(r.user)) + '</td>' : '') + '<td>' + esc(r.to) + '</td><td>' + esc(r.subject) + '</td><td>' + esc(MAIL_KIND_LABEL[r.kind] || r.kind) + '</td><td>' + esc(String(r.status || '').replace(/_/g, ' ')) + '</td></tr>').join('') || '<tr><td colspan="6" class="b46-sub">No emails sent through the dashboard yet.</td></tr>') + '</table>';
   return h;
+}
+/* ---------------- Page build 57.0: new email engine test panel (Brevo above is unchanged) ---------------- */
+function useEngineHtml(){
+  const e = USE.engine || {};
+  let h = '<div style="margin-top:18px;padding:14px;border:1px solid var(--border);border-top:3px solid #C9A84C;border-radius:6px;background:#fbfaf6;">' +
+    '<div class="b46-k">NEW EMAIL ENGINE (BUILD 57.0)</div><div class="b46-sub" style="margin:4px 0 10px;">Runs alongside Brevo. Everything above still sends through Brevo. These tests prove the new routes before anything moves across.</div>';
+  if(e.error) return h + '<div class="b46-err">' + esc(e.error) + '</div></div>';
+  const m = e.m365 || {}, s = e.ses || {}, lt = e.lastTests || {};
+  const pill = ok => '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;' + (ok ? 'background:#e3f4e8;color:#1d6b35;">Set up' : 'background:#fbe9e9;color:#9b2222;">Not set up') + '</span>';
+  const last = t => !t ? '<div class="b46-sub">No test yet.</div>' :
+    '<div class="b46-sub" style="color:' + (t.ok ? '#1d6b35' : '#9b2222') + ';">Last test ' + esc(new Date(t.at).toLocaleString('en-GB', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})) + ': ' + (t.ok ? 'worked' : 'failed') + ' (' + esc(t.from) + ' to ' + esc(t.to) + ')' + (t.ok ? '' : '<br>' + esc(t.message)) + '</div>';
+  const me = (signedInUser && signedInUser.email) || ((USE.mail || {}).sender || {}).email || '';
+  const senders = (e.senders || []).map(p => '<option value="' + esc(p.key) + '">' + esc(p.fullName + ' (' + p.email + ')') + '</option>').join('');
+  h += '<div style="display:flex;gap:12px;flex-wrap:wrap;">';
+  h += '<div style="flex:1;min-width:260px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:12px;">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;"><strong>Microsoft 365</strong>' + pill(m.configured) + '</div>' +
+    '<div class="b46-sub" style="margin:4px 0 8px;">One-to-one emails from each person\'s own mailbox. Today: ' + (m.today || 0) + ' sent. Limit ' + (m.dailyLimit || 2000) + ' a day and ' + (m.perMinute || 30) + ' a minute per mailbox. Secret expires ' + esc(m.secretExpires || '') + ' (' + (m.secretDaysLeft != null ? m.secretDaysLeft : '?') + ' days).</div>' +
+    '<label>Send from</label><select id="engFrom" style="width:100%;">' + senders + '</select>' +
+    '<label style="margin-top:6px;">Send test to</label><input id="engToM" type="email" style="width:100%;" value="' + esc(me) + '" placeholder="your email">' +
+    '<button class="b46-btn gold" style="margin-top:8px;" onclick="useEngineTest(\'m365\', this)">Send test</button>' + last(lt.m365) + '</div>';
+  h += '<div style="flex:1;min-width:260px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:12px;">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;"><strong>Amazon SES (bulk)</strong>' + pill(s.configured) + '</div>' +
+    '<div class="b46-sub" style="margin:4px 0 8px;">Gap Briefs and the Hiring Pulse. Sends from ' + esc(s.from || '') + ' (' + esc(s.region || '') + '). Today: ' + (s.today || 0) + ' of ' + (s.dailyLimit || 200) + '. While SES is in sandbox it only sends to verified addresses.</div>' +
+    '<label>Send test to</label><input id="engToS" type="email" style="width:100%;" value="' + esc(me) + '" placeholder="a verified address">' +
+    '<button class="b46-btn gold" style="margin-top:8px;" onclick="useEngineTest(\'ses\', this)">Send test</button>' + last(lt.ses) + '</div>';
+  h += '</div>';
+  if((e.recent || []).length){
+    h += '<label style="margin-top:12px;">Latest new-engine emails</label><table class="b46-tbl"><tr><th>When</th><th>Route</th><th>From</th><th>To</th><th>Subject</th><th>Status</th></tr>' +
+      e.recent.map(r => '<tr><td>' + esc(new Date(r.at).toLocaleString('en-GB', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})) + '</td><td>' + (r.route === 'ses' ? 'SES' : 'Microsoft 365') + '</td><td>' + esc(r.from) + '</td><td>' + esc(r.to) + '</td><td>' + esc(r.subject) + '</td><td title="' + esc(r.error || '') + '">' + esc(r.status) + '</td></tr>').join('') + '</table>';
+  }
+  return h + '</div>';
+}
+async function useEngineTest(route, btn){
+  const to = (document.getElementById(route === 'ses' ? 'engToS' : 'engToM') || {}).value || '';
+  const from = route === 'ses' ? '' : ((document.getElementById('engFrom') || {}).value || '');
+  btn.disabled = true; const was = btn.textContent; btn.textContent = 'Sending...';
+  let msg = '';
+  try{ const j = await b2Post('/api/engine/test', {route, from, to}); msg = j.message || 'Sent'; }
+  catch(e){ msg = e.message; }
+  try{ USE.engine = await b2Api('/api/engine/status'); }catch(e){}
+  showToast(msg); useRender();
+  btn.disabled = false; btn.textContent = was;
 }
 async function useSaveMail(){
   try{ await b2Post('/api/mail/settings', {outreachCap: document.getElementById('mlCap').value}); showToast('Saved'); USE.mail = await b2Api('/api/mail/stats'); useRender(); }
@@ -19431,18 +20058,66 @@ function c47AfterLog(){
 const C47_CAT = {lead:'Lead', client:'Client', candidate:'Candidate'};
 // Which templates show first for each kind of contact
 const C47_ORDER = {
-  lead: ['tpl-lead-live-advert', 'tpl-lead-intro', 'tpl-lead-after-call', 'tpl-lead-chase', 'tpl-lead-spec', 'tpl-lead-talent-suite'],
-  client: ['tpl-client-new-role', 'tpl-client-follow-up', 'tpl-client-feedback-chase', 'tpl-client-placement', 'tpl-client-rejection', 'tpl-client-invoice-chase'],
+  lead: ['tpl-lead-live-advert', 'tpl-lead-intro', 'tpl-lead-after-call', 'tpl-lead-rates-prospectus', 'tpl-lead-chase', 'tpl-lead-spec', 'tpl-lead-talent-suite'],
+  client: ['tpl-client-new-role', 'tpl-lead-rates-prospectus', 'tpl-client-follow-up', 'tpl-client-feedback-chase', 'tpl-client-placement', 'tpl-client-rejection', 'tpl-client-invoice-chase'],
   candidate: ['tpl-candidate-availability', 'tpl-interview-confirmation', 'tpl-offer-cover', 'tpl-information-request', 'tpl-references-request', 'tpl-start-reminder', 'tpl-day-one', 'tpl-week-one', 'tpl-month-one', 'tpl-candidate-rejection'],
 };
 // Templates that only make sense when the dashboard builds them with attachments elsewhere
-const C47_SKIP = ['tpl-client-submission'];
+const C47_SKIP = ['tpl-client-submission', 'tpl-snippet-partnership'];
+// Build 52: templates that also show for another kind of contact
+const C47_ALSO = {client: ['tpl-lead-rates-prospectus']};
+// Build 52: rates and prospectus email - the links it sends and its 3 working day follow-up
+const C47_RATES_TPL = 'tpl-lead-rates-prospectus';
+const L2H_DOC_LINKS = {
+  prospectus: 'https://careers.live2helprecruitment.co.uk/prospectus/',
+  pricing: 'https://careers.live2helprecruitment.co.uk/docs/live2help-pricing-2026.pdf',
+};
+/* Build 52.1: the documents linked from emails, hosted by the workspace. Dan replaces the prospectus on the Email templates page. */
+{ const _tplPane = renderTplPane; renderTplPane = function(){ _tplPane.apply(this, arguments); if(document.getElementById('pdocBox')) pdocRender(); }; }
+async function pdocRender(msg){
+  const box = document.getElementById('pdocBox'); if(!box) return;
+  let docs = [];
+  try{ docs = b2List(await b2Api('/api/public-docs')); }catch(e){ box.innerHTML = '<div class="b46-err">Could not load the linked documents: ' + esc(e.message) + '</div>'; return; }
+  const admin = !!(signedInUser && signedInUser.admin);
+  const row = (name, link, info, act) => '<div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--border);border-radius:6px;margin-top:8px;background:var(--white);">' +
+    '<div><strong>' + esc(name) + '</strong><div style="font-size:12px;color:#777;margin-top:2px;">' + info + '</div></div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;">' + (link ? '<a class="ghost-btn" href="' + esc(link) + '" target="_blank" rel="noopener">Open</a>' : '') + (act || '') + '</div></div>';
+  box.innerHTML = '<div class="section-title">Documents linked in this email</div>' +
+    docs.map(d => row(d.name, d.missing ? '' : (L2H_DOC_LINKS[d.key] || d.url),
+      d.missing ? '<span style="color:var(--danger);">Not uploaded yet - the link will not work until it is</span>' : esc(d.filename) + ' · ' + Math.round(d.size / 1024) + ' KB · updated ' + esc(c47Fmt(d.updated_at)) + (d.updated_by ? ' by ' + esc(userLabel(d.updated_by)) : ''),
+      admin ? '<label class="ghost-btn" style="cursor:pointer;margin:0;">' + (d.missing ? 'Upload PDF' : 'Replace PDF') + '<input type="file" accept="application/pdf,.pdf" style="display:none;" onchange="pdocUpload(\'' + esc(d.key) + '\', this)"></label>' : '')).join('') +
+    row('Recruitment Pricing 2026', L2H_DOC_LINKS.pricing, 'Built from the onboarding pricing document, so it always matches what clients sign') +
+    '<div style="font-size:12px;color:#777;margin-top:8px;">Clients open these on careers.live2helprecruitment.co.uk. Replacing a PDF keeps the same link, so emails already sent open the new version.</div>' +
+    (msg ? '<div style="margin-top:8px;font-size:13px;">' + esc(msg) + '</div>' : '');
+}
+async function pdocUpload(key, input){
+  const f = input.files && input.files[0]; if(!f) return;
+  if(!/\.pdf$/i.test(f.name)){ pdocRender('Only PDF files can be used.'); return; }
+  if(f.size > 12 * 1024 * 1024){ pdocRender('That file is over 12 MB.'); return; }
+  pdocRender('Uploading ' + f.name + '...');
+  try{
+    const base64 = await new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = () => bad(new Error('Could not read the file')); r.readAsDataURL(f); });
+    await b2Post('/api/public-docs/' + encodeURIComponent(key), {filename: f.name, base64});
+    showToast('Uploaded - the link now opens the new version');
+    pdocRender();
+  }catch(e){ pdocRender('Upload failed: ' + e.message); }
+}
+
+function c47WorkingDays(n){ const d = new Date(); let left = n; while(left > 0){ d.setDate(d.getDate() + 1); if(d.getDay() !== 0 && d.getDay() !== 6) left--; } return d.toISOString().slice(0, 10); }
+// The newest call logged with this company in the last 14 days (shown on the review screen for the rates email)
+function c47RecentCall(ctx){
+  const co = c47n(ctx.company); if(!co) return null;
+  const cutoff = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);
+  const hit = c47History(ctx).find(i => i.ch === 'call' && String(i.d).slice(0, 10) >= cutoff && i.x && !/^call attempt/i.test(i.x));
+  return hit || null;
+}
 
 function c47Templates(type){
   const cat = c47n(C47_CAT[type] || 'General');
   const all = (B2.templates || []).filter(t => t && t.id && t.id.indexOf('__') !== 0 && !C47_SKIP.includes(t.id));
-  const mine = all.filter(t => c47n(t.category) === cat);
-  const general = all.filter(t => c47n(t.category) === 'general' || !t.category);
+  const also = C47_ALSO[type] || [];
+  const mine = all.filter(t => c47n(t.category) === cat || also.includes(t.id));
+  const general = all.filter(t => (c47n(t.category) === 'general' || !t.category) && !also.includes(t.id));
   const order = C47_ORDER[type] || [];
   mine.sort((a, b) => { const ia = order.indexOf(a.id), ib = order.indexOf(b.id); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || String(a.name).localeCompare(String(b.name)); });
   return {mine, general};
@@ -19486,6 +20161,8 @@ function c47EmailDefaults(m){
 function c47EmailRender(err){
   const m = C47.mail; if(!m) return;
   const ctx = m.ctx, t = ctx.type || 'lead';
+  // Build 52: the rates email books its own 3 working day follow-up (Dan can still change or untick it)
+  if(m.tpl === C47_RATES_TPL && !m.ratesSet){ m.ratesSet = true; if(!m.fu) m.fu = c47WorkingDays(3); m.task = true; }
   const box = b46Shell('c47MailOv');
   const tp = c47Templates(t);
   const opt = x => '<option value="' + c47Attr(x.id) + '"' + (m.tpl === x.id ? ' selected' : '') + '>' + esc(x.name) + '</option>';
@@ -19515,6 +20192,7 @@ function c47EmailRender(err){
       (tp.general.length ? '<optgroup label="General">' + tp.general.map(opt).join('') + '</optgroup>' : '') +
       '<option value=""' + (m.tpl === '' ? ' selected' : '') + '>Blank email</option></select>' +
     extra +
+    (m.tpl === C47_RATES_TPL ? '<label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;margin:12px 0 0;"><input type="checkbox" id="c47mPartner"' + (m.partner ? ' checked' : '') + ' style="margin-top:3px;"> <span>Include the Talent Partnership option<br><span class="b46-sub">Adds a short paragraph with a savings calculator link made just for ' + esc(ctx.company || 'this company') + ', so you can see when they open it. Private offer: only for leads who asked for our rates.</span></span></label>' : '') +
     '<div class="c47-grid"><div><label>Follow-up date (optional)</label><input type="date" id="c47mFu" value="' + c47Attr(m.fu || '') + '"></div>' +
     '<div><label>&nbsp;</label><label style="display:flex;gap:8px;align-items:center;font-weight:400;margin:6px 0 0;"><input type="checkbox" id="c47mTask"' + (m.task ? ' checked' : '') + '> Add a follow-up task</label></div></div>' +
     (t === 'lead' ? '<div class="b46-sub" style="margin-top:8px;">Emails to leads go out as first-contact emails: the branded Talent Suite footer and opt-out are added, and they count towards your daily first-contact limit.</div>' : '') +
@@ -19525,7 +20203,7 @@ function c47EmailRender(err){
   const typeSel = document.getElementById('c47mType');
   if(typeSel) typeSel.onchange = () => { c47EmailCollect(); m.ctx.type = typeSel.value; m.tpl = undefined; c47EmailRender(); };
   const tplSel = document.getElementById('c47mTpl');
-  if(tplSel) tplSel.addEventListener('change', () => { m.tplUser = true; });
+  if(tplSel) tplSel.addEventListener('change', () => { m.tplUser = true; c47EmailCollect(); if(m.tpl === C47_RATES_TPL) c47EmailRender(); });
 }
 
 function c47EmailCollect(){
@@ -19537,6 +20215,7 @@ function c47EmailCollect(){
   if(g('c47mCand') !== undefined) m.candId = g('c47mCand');
   m.fu = (g('c47mFu') || '').trim();
   const tk = document.getElementById('c47mTask'); m.task = !!(tk && tk.checked);
+  const pt = document.getElementById('c47mPartner'); if(pt) m.partner = !!pt.checked;
 }
 function c47EmailClose(){ C47.mail = null; b46Close('c47MailOv'); }
 
@@ -19598,6 +20277,18 @@ function c47Vars(ctx, m){
       if(!v.role) v.role = a.role || '';
     }
   }
+  // Build 52: rates and prospectus email
+  v.prospectus_link = L2H_DOC_LINKS.prospectus;
+  v.pricing_link = L2H_DOC_LINKS.pricing;
+  if(ctx.type !== 'candidate'){
+    if(c47RecentCall(ctx)) v.call_point_line = ' [ONE LINE ON WHAT YOU DISCUSSED]';
+    if(m.role) v.role_line = ' We already have your ' + m.role + ' role in mind and can start sourcing as soon as onboarding is complete.';
+    if(m.partner && m.partnerUrl){
+      const sn = (B2.templates || []).find(x => x.id === 'tpl-snippet-partnership');
+      v.partnership_link = m.partnerUrl;
+      if(sn && sn.body) v.partnership_line = '\n\n' + tplMerge(sn.body, v).text;
+    }
+  }
   return v;
 }
 
@@ -19613,7 +20304,7 @@ function c47Compose(ctx, m){
   const vars = c47Vars(ctx, m);
   const subject = tpl ? c47Fill(tpl.subject, vars) : '';
   const body = tpl ? c47Fill(tpl.body, vars) : ('Hi ' + (ctx.type === 'candidate' ? (vars.first_name || '') : (vars.contact_first_name || '')) + ',\n\n\n\n' + vars.signature);
-  const purpose = tpl ? tpl.name : 'Email';
+  const purpose = tpl ? tpl.name + (tpl.id === C47_RATES_TPL && m.partner && m.partnerUrl ? ' + Talent Partnership' : '') : 'Email';
   const kind = ctx.type === 'lead' ? 'outreach' : (ctx.type === 'candidate' ? 'candidate' : 'email');
   const fu = m.fu || '', task = !!m.task, snapshot = Object.assign({}, ctx), rfxId = m.rfxId || '';
   const role = vars.role || ctx.role || '';
@@ -19622,6 +20313,11 @@ function c47Compose(ctx, m){
   const warn = c47WarnText(ctx.email, m.emailStatus);
   if(warn) notes.push('<strong>' + esc(warn) + '</strong>');
   if(missing.length) notes.push('Fill in the highlighted [BRACKETS] before sending: ' + esc([...new Set(missing)].join(', ')));
+  if(tpl && tpl.id === C47_RATES_TPL){
+    const rc = c47RecentCall(ctx);
+    if(rc) notes.push('Your call note (' + esc(c47Fmt(rc.d)) + '): ' + esc(rc.x));
+    if(fu) notes.push('Follow-up booked for ' + esc(c47Fmt(fu)) + (task ? ', with a task to send the Gentle follow-up (no reply) email if they have not come back.' : '.'));
+  }
   return {
     to: ctx.email, subject, body, kind,
     meta: {entityType: ctx.type === 'candidate' ? 'candidate' : 'client', contactName: ctx.name || ctx.company, entity: ctx.type === 'candidate' ? ctx.name : '', company: ctx.company || vars.company || '', role, purpose, followUp: fu, ref: rfxId, c47type: ctx.type},
@@ -19629,11 +20325,25 @@ function c47Compose(ctx, m){
     onSent: async (j) => {
       if(j && j.comm) B2.comms.push(j.comm);
       await c47AfterEmailHooks(snapshot, rfxId, purpose + ': ' + (MAIL.d && MAIL.d.subject || subject), fu);
-      if(task) await c47Task(snapshot, purpose, purpose + ': ' + subject, fu);
+      if(task) await c47Task(snapshot, purpose, purpose + ': ' + subject + (tpl && tpl.id === C47_RATES_TPL ? '. No reply yet? Send the Gentle follow-up (no reply) email.' : ''), fu);
+      if(tpl && tpl.id === C47_RATES_TPL) await c47RatesSent(snapshot);
       logActivity('contact_logged', {candidate: snapshot.type === 'candidate' ? snapshot.name : '', role, company: snapshot.company, detail: 'email'});
       c47AfterLog();
     },
   };
+}
+
+// Build 52: a lead who asked for our rates is at least Interested on the Lead Pipeline (never moved back, never to Terms)
+async function c47RatesSent(ctx){
+  if(ctx.type !== 'lead' || !ctx.company) return;
+  const cur = (C47.pipe || []).find(l => c47n(l.company) === c47n(ctx.company));
+  const stage = cur ? cur.stage : 'identified';
+  if(!['identified', 'contacted'].includes(stage)) return;
+  try{
+    const j = await b2Post('/api/lead-pipeline', {company: ctx.company, stage: 'interested'});
+    if(cur) cur.stage = 'interested';
+    if(j && j.ok) showToast(ctx.company + ' moved to Interested on the Lead Pipeline');
+  }catch(e){ /* a stage gate (for example no named contact) leaves the stage as it is */ }
 }
 
 // After an email to a lead: adverts found through Role Finder move on (with a follow-up in the Cold Call Tracker); other leads get a tracker entry
@@ -19647,12 +20357,20 @@ async function c47AfterEmailHooks(ctx, rfxId, summary, fu){
   }
 }
 
-function c47EmailNext(){
+async function c47EmailNext(){
   c47EmailCollect();
   const m = C47.mail; if(!m) return;
   const ctx = m.ctx;
   if(!ctx.type) ctx.type = 'lead';
   if(m.fu && !/^\d{4}-\d{2}-\d{2}$/.test(m.fu)){ c47EmailRender('Enter the follow-up date as YYYY-MM-DD, or pick it from the calendar.'); return; }
+  // build 52.2: a fresh tracked calculator link for this company and this email
+  if(m.tpl === C47_RATES_TPL && m.partner && !m.partnerUrl){
+    try{
+      const j = await b2Post('/api/tracked-links', {kind:'partnership', company: ctx.company || '', contactName: ctx.name || '', contactEmail: ctx.email || ''});
+      m.partnerUrl = j.url;
+    }catch(e){ c47EmailRender('Could not make the Talent Partnership link: ' + e.message + '. Untick it to send without.'); return; }
+    if(C47.mail !== m) return;
+  }
   const data = c47Compose(ctx, m);
   C47.mail = null; b46Close('c47MailOv');
   mailOpen(data);
@@ -20128,6 +20846,152 @@ var BG47 = {missed:{}, lastOps:Date.now()};
   const _si = signIn;
   signIn = function(user){ _si(user); };
 })();
+</script>
+
+<script>
+/* ============================================================
+   Build 55: every email is read before it is sent.
+   rvOpen shows emails the server prepared (onboarding pack, signed copies, scheduled reminders and
+   re-consent emails). Each one must be looked at, then a tick unlocks Send. The server checks the
+   same content again, so what is sent is exactly what was shown.
+   ============================================================ */
+var RV = {cfg:null, items:[], i:0, viewed:{}, checked:false, busy:false, err:''};
+function rvShowText(t){ return String(t || '').split('{{PORTAL_LINK}}').join('[their personal secure link is added when it is sent]'); }
+function rvOpen(cfg){
+  RV.cfg = cfg; RV.items = cfg.items || []; RV.i = 0; RV.viewed = {0:true}; RV.checked = false; RV.busy = false; RV.err = '';
+  rvRender();
+}
+function rvAllViewed(){ return RV.items.every((_, i) => RV.viewed[i]); }
+function rvGo(i){ RV.i = i; RV.viewed[i] = true; rvRender(); }
+function rvTick(on){ RV.checked = !!on; const b = document.getElementById('rvSend'); if(b) b.disabled = !RV.checked || RV.busy; }
+function rvRender(){
+  const box = b46Shell('rvOv'), c = RV.cfg, it = RV.items[RV.i] || {}, many = RV.items.length > 1, ready = rvAllViewed();
+  const tabs = many ? '<div class="b46-tabs">' + RV.items.map((x, i) => '<button class="' + (i === RV.i ? 'on' : '') + '" onclick="rvGo(' + i + ')">' + (i + 1) + '. ' + esc(x.label || ('Email ' + (i + 1))) + (RV.viewed[i] ? ' &#10003;' : '') + '</button>').join('') + '</div>' : '';
+  const atts = (it.attachmentNames || []).map(n => '<span class="rv-att">' + esc(n) + '</span>').join('');
+  box.innerHTML =
+    '<div style="display:flex;justify-content:space-between;gap:10px;"><div><div class="b46-k">REVIEW BEFORE SENDING</div><h3>' + esc(c.title || 'Review email') + '</h3>' +
+    (c.intro ? '<div class="b46-sub">' + esc(c.intro) + '</div>' : '') + '</div>' +
+    '<button onclick="rvClose()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;align-self:flex-start;">&times;</button></div>' +
+    tabs +
+    '<div class="rv-meta"><div><b>From</b>' + esc(it.from || '') + '</div><div><b>To</b>' + esc(it.to || '') + '</div><div><b>Subject</b><strong>' + esc(it.subject || '') + '</strong></div>' +
+    '<div><b>Attached</b>' + (atts || '<span class="b46-sub">Nothing attached</span>') + '</div></div>' +
+    '<div class="rv-body">' + esc(rvShowText(it.text)) + '</div>' +
+    (RV.err ? '<div class="b46-err">' + esc(RV.err) + '</div>' : '') +
+    '<label class="rv-check' + (ready ? '' : ' off') + '"><input type="checkbox" ' + (RV.checked ? 'checked ' : '') + (ready ? '' : 'disabled ') + 'onchange="rvTick(this.checked)"><span>' +
+      (many ? 'I have read all ' + RV.items.length + ' emails and they are correct.' : 'I have read this email and it is correct.') +
+      (ready ? '' : ' <span class="b46-sub">Open each tab first.</span>') + '</span></label>' +
+    '<div class="b46-row" style="justify-content:flex-end;margin-top:14px;">' +
+      (c.onSkip ? '<button class="b46-btn" onclick="rvSkip()" ' + (RV.busy ? 'disabled' : '') + ' style="margin-right:auto;">Skip, do not send</button>' : '') +
+      '<button class="b46-btn" onclick="rvClose()" ' + (RV.busy ? 'disabled' : '') + '>Cancel</button>' +
+      '<button class="b46-btn gold" id="rvSend" onclick="rvSend()" ' + ((RV.busy || !RV.checked) ? 'disabled' : '') + '>' + (RV.busy ? 'Sending...' : esc(c.sendLabel || 'Send now')) + '</button></div>';
+}
+function rvClose(){ if(RV.busy) return; b46Close('rvOv'); }
+async function rvSend(){
+  if(!RV.checked || !rvAllViewed()) return;
+  RV.busy = true; RV.err = ''; rvRender();
+  try{ await RV.cfg.onSend(RV.cfg.token); RV.busy = false; b46Close('rvOv'); }
+  catch(e){ RV.busy = false; RV.err = e.message; rvRender(); }
+}
+async function rvSkip(){
+  if(RV.busy || !RV.cfg.onSkip) return;
+  if(!confirm('Skip this email? It will not be sent.')) return;
+  RV.busy = true; rvRender();
+  try{ await RV.cfg.onSkip(); RV.busy = false; b46Close('rvOv'); }
+  catch(e){ RV.busy = false; RV.err = e.message; rvRender(); }
+}
+
+/* ---------- Emails to review (scheduled emails waiting for a person) ---------- */
+var OBX = {d:null, at:0};
+async function obxLoad(force){
+  if(!force && OBX.d && Date.now() - OBX.at < 30000) return OBX.d;
+  try{ OBX.d = await b2Api('/api/outbox'); OBX.at = Date.now(); }catch(e){ /* optional */ }
+  return OBX.d;
+}
+const OBX_KIND = {onboarding_reminder:'Onboarding reminder', reconsent:'Talent pool re-consent', retention_request:'Request to keep records'};
+async function outboxOpen(){
+  const box = b46Shell('obOv');
+  box.innerHTML = '<div class="b46-sub">Loading...</div>';
+  const d = await obxLoad(true);
+  if(!d){ box.innerHTML = '<div class="b46-err">Could not load the list. Try again.</div><div class="b46-row" style="justify-content:flex-end;"><button class="b46-btn" onclick="b46Close(\'obOv\')">Close</button></div>'; return; }
+  const row = o => '<tr><td>' + esc(OBX_KIND[o.kind] || o.kind) + '</td><td><strong>' + esc(o.company || o.name || '') + '</strong><div class="b46-sub">' + esc(o.name || '') + ' &lt;' + esc(o.to) + '&gt;</div></td><td>' + esc(String(o.created_at || '').slice(0, 10)) + '</td><td style="text-align:right;">' +
+    (o.status === 'pending' ? '<button class="b46-btn gold" onclick="outboxReview(\'' + esc(o.id) + '\')">Review</button>' : '<span class="b46-pill ' + (o.status === 'sent' ? 'yes' : '') + '">' + esc(o.status) + (o.handled_by ? ' by ' + esc(o.handled_by) : '') + '</span>') + '</td></tr>';
+  box.innerHTML = '<div style="display:flex;justify-content:space-between;"><div><div class="b46-k">EMAILS TO REVIEW</div><h3>' + (d.pending.length ? d.pending.length + ' waiting for you' : 'Nothing waiting') + '</h3>' +
+    '<div class="b46-sub">These used to send on their own. Now nothing goes out until you read it and press Send, or skip it.</div></div>' +
+    '<button onclick="b46Close(\'obOv\')" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;align-self:flex-start;">&times;</button></div>' +
+    (d.pending.length ? '<table class="b46-tbl"><tr><th>Type</th><th>Who</th><th>Queued</th><th></th></tr>' + d.pending.map(row).join('') + '</table>' : '<div class="b46-ok">All clear.</div>') +
+    (d.recent.length ? '<label>Recently handled</label><table class="b46-tbl">' + d.recent.map(row).join('') + '</table>' : '') +
+    '<div class="b46-row" style="justify-content:flex-end;margin-top:14px;"><button class="b46-btn" onclick="b46Close(\'obOv\')">Close</button></div>';
+}
+async function outboxReview(id){
+  try{
+    const j = await b2Api('/api/outbox/' + encodeURIComponent(id));
+    b46Close('obOv');
+    rvOpen({title: (j.item.label || 'Email') + ' to ' + j.item.to, intro: 'Read it exactly as they will get it.', items: [j.item], token: j.token, sendLabel: 'Send now',
+      onSend: async tok => { await b2Post('/api/outbox/' + encodeURIComponent(id) + '/send', {reviewToken: tok}); showToast('Email sent'); await obxLoad(true); if(typeof renderHome === 'function') renderHome(); outboxOpen(); },
+      onSkip: async () => { await b2Post('/api/outbox/' + encodeURIComponent(id) + '/skip', {}); showToast('Skipped'); await obxLoad(true); if(typeof renderHome === 'function') renderHome(); outboxOpen(); }});
+  }catch(e){ showToast(e.message); outboxOpen(); }
+}
+
+/* ---------- Retention review (records past their retention period, L2H-POL-004) ---------- */
+var RT = {d:null, at:0, form:'', mode:'', busy:false, err:''};
+async function rtLoad(force){
+  if(!force && RT.d && Date.now() - RT.at < 300000) return RT.d;
+  try{ RT.d = await b2Api('/api/retention'); RT.at = Date.now(); }catch(e){ if(force) RT.err = e.message; }
+  return RT.d;
+}
+function rtUk(iso){ const p = String(iso || '').slice(0, 10).split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : ''; }
+async function retentionOpen(force){
+  const box = b46Shell('rtOv');
+  if(!RT.d || force) box.innerHTML = '<div class="b46-sub">Checking your records...</div>';
+  const d = await rtLoad(true);
+  if(!d){ box.innerHTML = '<div class="b46-err">Could not load the list. ' + esc(RT.err || '') + '</div><div class="b46-row" style="justify-content:flex-end;"><button class="b46-btn" onclick="b46Close(\'rtOv\')">Close</button></div>'; return; }
+  const row = x => {
+    const due = x.due_date <= d.today;
+    const open = RT.form === x.id;
+    let actions = '<button class="b46-btn" onclick="rtForm(\'' + esc(x.id) + '\',\'keep\')">Keep</button> ' +
+      (x.category === 'Staff' ? '' : '<button class="b46-btn" onclick="rtForm(\'' + esc(x.id) + '\',\'request\')">Request to keep</button> ') +
+      '<button class="b46-btn" onclick="rtForm(\'' + esc(x.id) + '\',\'delete\')">Delete</button>';
+    let form = '';
+    if(open && RT.mode === 'keep') form = '<div class="b46-row" style="margin-top:8px;gap:8px;flex-wrap:wrap;"><input id="rtReason" placeholder="Why are we keeping it?" style="flex:1;min-width:220px;padding:7px;border:1px solid var(--border);">' +
+      '<select id="rtMonths" style="padding:7px;border:1px solid var(--border);"><option value="12">Review in 12 months</option><option value="6">Review in 6 months</option><option value="24">Review in 24 months</option><option value="72">Review in 6 years</option></select>' +
+      '<button class="b46-btn gold" ' + (RT.busy ? 'disabled' : '') + ' onclick="rtKeep(\'' + esc(x.id) + '\')">Save</button></div>';
+    if(open && RT.mode === 'request') form = '<div class="b46-row" style="margin-top:8px;gap:8px;flex-wrap:wrap;"><input id="rtTo" value="' + esc(x.email || '') + '" placeholder="Email address to ask" style="flex:1;min-width:220px;padding:7px;border:1px solid var(--border);">' +
+      '<button class="b46-btn gold" ' + (RT.busy ? 'disabled' : '') + ' onclick="rtRequest(\'' + esc(x.id) + '\')">Write the email</button></div><div class="b46-sub">It goes to Emails to review. Nothing is sent until you read it and press Send.</div>';
+    if(open && RT.mode === 'delete') form = '<div class="b46-row" style="margin-top:8px;gap:8px;flex-wrap:wrap;"><div class="b46-sub" style="flex:1;min-width:220px;">' + (x.category === 'Candidate'
+        ? 'This permanently erases the candidate, their CV and their pipeline records.'
+        : 'This records that it is approved for deletion. Remove the files, sheet rows and emails yourself first, then confirm.') + '</div>' +
+      '<button class="b46-btn gold" ' + (RT.busy ? 'disabled' : '') + ' onclick="rtDelete(\'' + esc(x.id) + '\',\'' + esc(x.category) + '\',\'' + esc(x.record_id) + '\')">' + (x.category === 'Candidate' ? 'Erase now' : 'Confirmed deleted') + '</button></div>';
+    return '<tr><td><span class="b46-pill">' + esc(x.category) + '</span></td><td><strong>' + esc(x.subject) + '</strong><div class="b46-sub">' + esc(x.rule) + '</div>' + (x.note ? '<div class="b46-sub">' + esc(x.note) + '</div>' : '') + form + '</td>' +
+      '<td>' + esc(rtUk(x.basis_date)) + '</td><td style="' + (due ? 'color:#b3261e;font-weight:600;' : '') + '">' + esc(rtUk(x.due_date)) + (due ? '<div class="b46-sub" style="color:#b3261e;">Due now</div>' : '<div class="b46-sub">Due soon</div>') + '</td><td style="text-align:right;white-space:nowrap;">' + actions + '</td></tr>';
+  };
+  const wrow = x => '<tr><td><span class="b46-pill">' + esc(x.category) + '</span></td><td><strong>' + esc(x.subject) + '</strong><div class="b46-sub">' + esc(x.note || '') + '</div></td><td colspan="2">Reply wanted by ' + esc(rtUk(x.request_deadline)) + '</td><td style="text-align:right;white-space:nowrap;"><button class="b46-btn" onclick="rtForm(\'' + esc(x.id) + '\',\'keep\')">They want it kept</button> <button class="b46-btn" onclick="rtForm(\'' + esc(x.id) + '\',\'delete\')">Delete</button></td></tr>' +
+    (RT.form === x.id ? '<tr><td></td><td colspan="4">' + (RT.mode === 'keep' ? '<div class="b46-row" style="gap:8px;flex-wrap:wrap;"><input id="rtReason" placeholder="Why are we keeping it? (for example: asked in writing)" style="flex:1;min-width:220px;padding:7px;border:1px solid var(--border);"><select id="rtMonths" style="padding:7px;border:1px solid var(--border);"><option value="12">Review in 12 months</option><option value="24">Review in 24 months</option></select><button class="b46-btn gold" onclick="rtKeep(\'' + esc(x.id) + '\')">Save</button></div>'
+      : '<div class="b46-row" style="gap:8px;"><div class="b46-sub" style="flex:1;">' + (x.category === 'Candidate' ? 'This permanently erases the candidate, their CV and their pipeline records.' : 'Remove the files, sheet rows and emails yourself first, then confirm.') + '</div><button class="b46-btn gold" onclick="rtDelete(\'' + esc(x.id) + '\',\'' + esc(x.category) + '\',\'' + esc(x.record_id) + '\')">' + (x.category === 'Candidate' ? 'Erase now' : 'Confirmed deleted') + '</button></div>') + '</td></tr>' : '');
+  const drow = x => '<tr><td><span class="b46-pill ' + (x.status === 'kept' ? 'yes' : '') + '">' + esc(x.status) + '</span></td><td>' + esc(x.subject) + '<div class="b46-sub">' + esc(x.keep_reason || x.note || '') + '</div></td><td>' + esc(rtUk(x.decided_at)) + '</td><td>' + (x.next_review ? 'Review ' + esc(rtUk(x.next_review)) : '') + '</td><td>' + esc(x.decided_by || '') + '</td></tr>';
+  box.innerHTML = '<div style="display:flex;justify-content:space-between;"><div><div class="b46-k">RETENTION REVIEW</div><h3>' + (d.counts.open ? d.counts.open + ' to decide' : 'Nothing to decide') + '</h3>' +
+    '<div class="b46-sub">Records at the end of their retention period (Data Retention and Deletion Policy). Nothing is deleted or sent until you choose. Candidates 24 months after last contact; clients, placed candidates and staff 6 years.</div></div>' +
+    '<button onclick="b46Close(\'rtOv\')" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;align-self:flex-start;">&times;</button></div>' +
+    (RT.err ? '<div class="b46-err">' + esc(RT.err) + '</div>' : '') +
+    (d.open.length ? '<table class="b46-tbl"><tr><th>Type</th><th>Record</th><th>Last contact</th><th>Retention date</th><th></th></tr>' + d.open.map(row).join('') + '</table>' : '<div class="b46-ok">All clear.</div>') +
+    (d.waiting.length ? '<label>Waiting for a reply</label><table class="b46-tbl">' + d.waiting.map(wrow).join('') + '</table>' : '') +
+    (d.done.length ? '<label>Recently decided</label><table class="b46-tbl">' + d.done.map(drow).join('') + '</table>' : '') +
+    '<div class="b46-row" style="justify-content:flex-end;margin-top:14px;"><button class="b46-btn" onclick="b46Close(\'rtOv\')">Close</button></div>';
+}
+function rtForm(id, mode){ RT.form = RT.form === id && RT.mode === mode ? '' : id; RT.mode = mode; RT.err = ''; retentionOpen(); }
+async function rtDo(fn){
+  if(RT.busy) return; RT.busy = true; RT.err = '';
+  try{ await fn(); RT.form = ''; await rtLoad(true); }catch(e){ RT.err = e.message; }
+  RT.busy = false; if(typeof renderHome === 'function') renderHome(); retentionOpen();
+}
+function rtKeep(id){ return rtDo(async () => { await b2Post('/api/retention/' + encodeURIComponent(id) + '/keep', {reason: ($('rtReason') || {}).value || '', months: ($('rtMonths') || {}).value || 12}); showToast('Kept, reason recorded'); }); }
+function rtRequest(id){ return rtDo(async () => { await b2Post('/api/retention/' + encodeURIComponent(id) + '/request', {to: ($('rtTo') || {}).value || ''}); showToast('Email written. Open Emails to review to send it'); if(typeof obxLoad === 'function') await obxLoad(true); }); }
+function rtDelete(id, category, recordId){
+  return rtDo(async () => {
+    if(category === 'Candidate') await b2Post('/api/gdpr/erase/' + encodeURIComponent(recordId), {confirm: 'ERASE'});
+    await b2Post('/api/retention/' + encodeURIComponent(id) + '/deleted', {note: category === 'Candidate' ? 'Erased from the workspace' : 'Deleted by Daniel Brown'});
+    showToast('Recorded as deleted');
+  });
+}
 </script>
 </body>
 </html>

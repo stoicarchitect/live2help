@@ -16966,7 +16966,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '9 Nov 2026 - build 56.9 (BMS registers)';
+var PAGE_BUILD = '9 Nov 2026 - build 57.0 (new email engine test panel)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -19225,6 +19225,7 @@ async function useOpen(tab){
   if(signedInUser && signedInUser.admin){
     jobs.push(b2Api('/api/ai-spend').then(j => USE.ai = j).catch(e => USE.ai = {error:e.message}));
     jobs.push(b2Api('/api/mail/webhook-url').then(j => USE.hook = j.url).catch(() => {}));
+    jobs.push(b2Api('/api/engine/status').then(j => USE.engine = j).catch(e => USE.engine = {error:e.message})); // page build 57.0
   }
   jobs.push(b2Api('/api/spec/sends').then(j => USE.spec = j.data || []).catch(() => USE.spec = []));
   await Promise.all(jobs);
@@ -19289,9 +19290,52 @@ function useMailHtml(admin){
     h += '<div class="b46-row"><div style="flex:1;min-width:160px;"><label>Daily first-contact limit per person</label><input type="number" id="mlCap" min="0" max="200" value="' + esc(m.outreachCap != null ? m.outreachCap : 20) + '"></div><div style="align-self:flex-end;"><button class="b46-btn gold" onclick="useSaveMail()">Save</button></div></div>';
     if(USE.hook) h += '<div class="b46-note"><strong>Delivery tracking (optional):</strong> in Brevo go to Transactional, Settings, Webhook, add a new webhook with this URL and tick Delivered, Opened, Clicked, Soft bounce, Hard bounce, Spam and Unsubscribed. Statuses below then update by themselves, and hard bounces and spam reports go on the suppression list.<div style="margin-top:6px;word-break:break-all;font-family:monospace;font-size:11.5px;background:#fff;padding:6px;border:1px solid var(--border);">' + esc(USE.hook) + '</div><button class="b46-btn" style="margin-top:6px;" onclick="copyToClipboard(USE.hook).then(() => showToast(\'Copied\'))">Copy URL</button></div>';
   }
+  if(admin) h += useEngineHtml();
   h += '<label style="margin-top:14px;">' + (admin ? 'Latest emails (everyone)' : 'Your latest emails') + '</label><table class="b46-tbl"><tr><th>When</th>' + (admin ? '<th>Who</th>' : '') + '<th>To</th><th>Subject</th><th>Type</th><th>Status</th></tr>' +
     ((m.recent || []).map(r => '<tr><td>' + esc(new Date(r.at).toLocaleString('en-GB', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})) + '</td>' + (admin ? '<td>' + esc(userLabel(r.user)) + '</td>' : '') + '<td>' + esc(r.to) + '</td><td>' + esc(r.subject) + '</td><td>' + esc(MAIL_KIND_LABEL[r.kind] || r.kind) + '</td><td>' + esc(String(r.status || '').replace(/_/g, ' ')) + '</td></tr>').join('') || '<tr><td colspan="6" class="b46-sub">No emails sent through the dashboard yet.</td></tr>') + '</table>';
   return h;
+}
+/* ---------------- Page build 57.0: new email engine test panel (Brevo above is unchanged) ---------------- */
+function useEngineHtml(){
+  const e = USE.engine || {};
+  let h = '<div style="margin-top:18px;padding:14px;border:1px solid var(--border);border-top:3px solid #C9A84C;border-radius:6px;background:#fbfaf6;">' +
+    '<div class="b46-k">NEW EMAIL ENGINE (BUILD 57.0)</div><div class="b46-sub" style="margin:4px 0 10px;">Runs alongside Brevo. Everything above still sends through Brevo. These tests prove the new routes before anything moves across.</div>';
+  if(e.error) return h + '<div class="b46-err">' + esc(e.error) + '</div></div>';
+  const m = e.m365 || {}, s = e.ses || {}, lt = e.lastTests || {};
+  const pill = ok => '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;' + (ok ? 'background:#e3f4e8;color:#1d6b35;">Set up' : 'background:#fbe9e9;color:#9b2222;">Not set up') + '</span>';
+  const last = t => !t ? '<div class="b46-sub">No test yet.</div>' :
+    '<div class="b46-sub" style="color:' + (t.ok ? '#1d6b35' : '#9b2222') + ';">Last test ' + esc(new Date(t.at).toLocaleString('en-GB', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})) + ': ' + (t.ok ? 'worked' : 'failed') + ' (' + esc(t.from) + ' to ' + esc(t.to) + ')' + (t.ok ? '' : '<br>' + esc(t.message)) + '</div>';
+  const me = (signedInUser && signedInUser.email) || ((USE.mail || {}).sender || {}).email || '';
+  const senders = (e.senders || []).map(p => '<option value="' + esc(p.key) + '">' + esc(p.fullName + ' (' + p.email + ')') + '</option>').join('');
+  h += '<div style="display:flex;gap:12px;flex-wrap:wrap;">';
+  h += '<div style="flex:1;min-width:260px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:12px;">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;"><strong>Microsoft 365</strong>' + pill(m.configured) + '</div>' +
+    '<div class="b46-sub" style="margin:4px 0 8px;">One-to-one emails from each person\'s own mailbox. Today: ' + (m.today || 0) + ' sent. Limit ' + (m.dailyLimit || 2000) + ' a day and ' + (m.perMinute || 30) + ' a minute per mailbox. Secret expires ' + esc(m.secretExpires || '') + ' (' + (m.secretDaysLeft != null ? m.secretDaysLeft : '?') + ' days).</div>' +
+    '<label>Send from</label><select id="engFrom" style="width:100%;">' + senders + '</select>' +
+    '<label style="margin-top:6px;">Send test to</label><input id="engToM" type="email" style="width:100%;" value="' + esc(me) + '" placeholder="your email">' +
+    '<button class="b46-btn gold" style="margin-top:8px;" onclick="useEngineTest(\'m365\', this)">Send test</button>' + last(lt.m365) + '</div>';
+  h += '<div style="flex:1;min-width:260px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:12px;">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;"><strong>Amazon SES (bulk)</strong>' + pill(s.configured) + '</div>' +
+    '<div class="b46-sub" style="margin:4px 0 8px;">Gap Briefs and the Hiring Pulse. Sends from ' + esc(s.from || '') + ' (' + esc(s.region || '') + '). Today: ' + (s.today || 0) + ' of ' + (s.dailyLimit || 200) + '. While SES is in sandbox it only sends to verified addresses.</div>' +
+    '<label>Send test to</label><input id="engToS" type="email" style="width:100%;" value="' + esc(me) + '" placeholder="a verified address">' +
+    '<button class="b46-btn gold" style="margin-top:8px;" onclick="useEngineTest(\'ses\', this)">Send test</button>' + last(lt.ses) + '</div>';
+  h += '</div>';
+  if((e.recent || []).length){
+    h += '<label style="margin-top:12px;">Latest new-engine emails</label><table class="b46-tbl"><tr><th>When</th><th>Route</th><th>From</th><th>To</th><th>Subject</th><th>Status</th></tr>' +
+      e.recent.map(r => '<tr><td>' + esc(new Date(r.at).toLocaleString('en-GB', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})) + '</td><td>' + (r.route === 'ses' ? 'SES' : 'Microsoft 365') + '</td><td>' + esc(r.from) + '</td><td>' + esc(r.to) + '</td><td>' + esc(r.subject) + '</td><td title="' + esc(r.error || '') + '">' + esc(r.status) + '</td></tr>').join('') + '</table>';
+  }
+  return h + '</div>';
+}
+async function useEngineTest(route, btn){
+  const to = (document.getElementById(route === 'ses' ? 'engToS' : 'engToM') || {}).value || '';
+  const from = route === 'ses' ? '' : ((document.getElementById('engFrom') || {}).value || '');
+  btn.disabled = true; const was = btn.textContent; btn.textContent = 'Sending...';
+  let msg = '';
+  try{ const j = await b2Post('/api/engine/test', {route, from, to}); msg = j.message || 'Sent'; }
+  catch(e){ msg = e.message; }
+  try{ USE.engine = await b2Api('/api/engine/status'); }catch(e){}
+  showToast(msg); useRender();
+  btn.disabled = false; btn.textContent = was;
 }
 async function useSaveMail(){
   try{ await b2Post('/api/mail/settings', {outreachCap: document.getElementById('mlCap').value}); showToast('Saved'); USE.mail = await b2Api('/api/mail/stats'); useRender(); }
