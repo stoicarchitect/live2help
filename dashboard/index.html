@@ -17095,7 +17095,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '10 Nov 2026 - build 58.1 (Polish Independence Day celebration for Ella)';
+var PAGE_BUILD = '10 Nov 2026 - build 58.2 (Celebration title colour fix)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -21767,19 +21767,20 @@ function rtDelete(id, category, recordId){
   background:linear-gradient(180deg,#F4DC92 0%,#C9A84C 55%,#9C7A25 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:#C9A84C;font-variant-numeric:tabular-nums;}
 #celOverlay .cel-year.in{opacity:1;}
 #celOverlay .cel-year.small{font-size:clamp(34px,6vw,52px);}
-#celOverlay .cel-lat{font-family:Arial,Helvetica,sans-serif;font-size:clamp(11px,1.6vw,14px);letter-spacing:4px;text-transform:uppercase;color:#E8D9A6;opacity:0;max-height:0;transition:opacity .9s ease,max-height .9s ease;margin-top:6px;}
+#celOverlay .cel-lat{font-family:Arial,Helvetica,sans-serif;font-size:clamp(11px,1.6vw,14px);letter-spacing:4px;text-transform:uppercase;color:#E8D9A6!important;opacity:0;max-height:0;transition:opacity .9s ease,max-height .9s ease;margin-top:6px;}
 #celOverlay .cel-lat.in{opacity:1;max-height:40px;}
 #celOverlay .cel-eagle{max-height:0;opacity:0;overflow:hidden;transition:max-height 1s ease,opacity 1s ease,transform 1s cubic-bezier(.2,.8,.2,1);transform:translateY(28px) scale(.92);margin-top:0;}
 #celOverlay .cel-eagle.in{max-height:210px;opacity:1;transform:none;margin-top:14px;}
-#celOverlay .cel-eagle svg{height:clamp(120px,21vh,190px);width:auto;display:block;filter:drop-shadow(0 8px 22px rgba(0,0,0,.45));}
-#celOverlay .cel-title{font-size:clamp(24px,4.6vw,44px);font-weight:700;margin:16px 0 0;opacity:0;transform:translateY(14px);transition:opacity .9s ease,transform .9s ease;text-shadow:0 2px 18px rgba(0,0,0,.4);}
-#celOverlay .cel-title span{color:#E8C766;}
-#celOverlay .cel-sub{font-family:Arial,Helvetica,sans-serif;font-size:clamp(13px,2vw,17px);color:#cfd8ea;margin-top:8px;opacity:0;transition:opacity .9s ease;letter-spacing:.5px;}
+#celOverlay .cel-eagle svg{height:clamp(120px,21vh,190px);width:auto;display:block;}
+#celOverlay h1,#celOverlay h2,#celOverlay p,#celOverlay div,#celOverlay span{color:inherit;}
+#celOverlay .cel-title{color:#FFFFFF!important;font-family:Georgia,'Times New Roman',serif!important;letter-spacing:0!important;text-transform:none!important;font-size:clamp(24px,4.6vw,44px);font-weight:700;margin:16px 0 0;opacity:0;transform:translateY(14px);transition:opacity .9s ease,transform .9s ease;text-shadow:0 2px 18px rgba(0,0,0,.4);}
+#celOverlay .cel-title span{color:#E8C766!important;}
+#celOverlay .cel-sub{font-family:Arial,Helvetica,sans-serif;font-size:clamp(13px,2vw,17px);color:#cfd8ea!important;margin-top:8px;opacity:0;transition:opacity .9s ease;letter-spacing:.5px;}
 #celOverlay .cel-card{max-width:560px;width:100%;max-height:0;opacity:0;overflow:hidden;transition:max-height 1s ease,opacity 1s ease,margin .8s ease;margin-top:0;}
 #celOverlay .cel-card.in{max-height:260px;opacity:1;margin-top:20px;}
 #celOverlay .cel-card-in{border:1px solid rgba(201,168,76,.55);border-left:4px solid #C9A84C;background:rgba(255,255,255,.07);backdrop-filter:blur(4px);border-radius:10px;padding:16px 20px;text-align:left;font-family:Arial,Helvetica,sans-serif;}
-#celOverlay .cel-card p{margin:0;font-size:clamp(13.5px,1.9vw,16px);line-height:1.55;color:#f2f5fb;}
-#celOverlay .cel-sign{margin-top:10px;font-size:13px;color:#E8C766;font-weight:600;letter-spacing:.3px;}
+#celOverlay .cel-card p{margin:0;font-size:clamp(13.5px,1.9vw,16px);line-height:1.55;color:#f2f5fb!important;}
+#celOverlay .cel-sign{margin-top:10px;font-size:13px;color:#E8C766!important;font-weight:600;letter-spacing:.3px;}
 #celOverlay .cel-go{margin-top:20px;opacity:0;pointer-events:none;transition:opacity .8s ease,transform .2s ease;background:linear-gradient(180deg,#E3BE5C,#C9A84C);color:#0F1F3D;border:0;border-radius:999px;padding:12px 28px;font:700 15px Arial,Helvetica,sans-serif;cursor:pointer;letter-spacing:.3px;box-shadow:0 6px 18px rgba(0,0,0,.35);}
 #celOverlay .cel-go.in{opacity:1;pointer-events:auto;}
 #celOverlay .cel-go:hover{transform:translateY(-1px);}
