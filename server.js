@@ -17557,6 +17557,11 @@ setTimeout(async () => {
     const BMS_LIVE_ICO = {"1to-C4Y2d5UY_TaXDYwfnJQ80gqNsPjKdJaLUL7eBTeY": "1IwFtdeQf2NeXWan5QZWgvEu7m69WxyN8U4-Um5IWmXo", "1U0Ond4_dEVwKr3yPTvxLuZPxvbDvbtS2JeLq5gLd5AQ": "18ho3Y9kH7oHUnoOQkQwiWk3HVHTnm_keLrYwg9aElSc", "1WXfL40qc7sw3WYCZStQufYCVxULEg2fxiaWz3PmkL10": "1KW8JcVRZtg-tUkqHn2AI51eUvZtWddr-xpqedSAeGfY"};
     for (const d of await bmsDocs.list()) { const nf = BMS_LIVE_ICO[d.file_id]; if (nf) await bmsDocs.upsert({ ...d, file_id: nf, status: 'Live', version: '1.0', effective_date: '2026-11-10', next_review: bmsAddMonths('2026-11-10', d.review_months), updated_by: 'Daniel Brown (approved in chat)', updated_at: '2026-11-10' }); }
   } catch (e) { console.error('BMS go-live ICO:', e.message); }
+  // BMS ICO go-live, header fix (10 Nov 2026): the three Live policies were re-issued because the header ran 'LTD' and 'Business Management System' together. Swap to the corrected files (runs once, only where the first v1.0 file ID is still held).
+  try {
+    const BMS_SWAP_ICO2 = {"1IwFtdeQf2NeXWan5QZWgvEu7m69WxyN8U4-Um5IWmXo": "1PZbv_wgQkgUxJNy9yKbrwuy50a_anSm2_bvcgzw9a3c", "18ho3Y9kH7oHUnoOQkQwiWk3HVHTnm_keLrYwg9aElSc": "127xE99c4cwR91YZYZTn5Lo6_qLcHyPWrbwB6tXLDAD8", "1KW8JcVRZtg-tUkqHn2AI51eUvZtWddr-xpqedSAeGfY": "1397M_V9i7rICxwudOfBBSUxSSAZxcrbFCs6vLrUD5lk"};
+    for (const d of await bmsDocs.list()) { const nf = BMS_SWAP_ICO2[d.file_id]; if (nf) await bmsDocs.upsert({ ...d, file_id: nf, updated_by: 'Daniel Brown (approved in chat)', updated_at: '2026-11-10' }); }
+  } catch (e) { console.error('BMS ICO swap 2:', e.message); }
 }, 18000);
 
 /* ---------- build 42: planning and marketing records (tracker sheet) ---------- */
