@@ -16966,7 +16966,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '10 Nov 2026 - build 57.3 (Cold Outreach)';
+var PAGE_BUILD = '10 Nov 2026 - build 57.3.1 (Cold Outreach tab button)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -17146,7 +17146,7 @@ function buildTagApply(){
 
   // tab buttons for the new views, and friendlier labels on existing ones
   const tabsBar = $('tabs');
-  [['crmAccounts','Accounts','clients'], ['audience','Audience','clients'], ['hr','People',null], ['library','Documents','templates'], ['week','This week',null], ['roadmap','Roadmap',null], ['marketing','Marketing',null], ['gapBriefs','Gap Briefs',null]].forEach(([key, label, before]) => {
+  [['crmAccounts','Accounts','clients'], ['audience','Audience','clients'], ['hr','People',null], ['library','Documents','templates'], ['week','This week',null], ['roadmap','Roadmap',null], ['marketing','Marketing',null], ['gapBriefs','Gap Briefs',null], ['coldOutreach','Cold Outreach',null]].forEach(([key, label, before]) => {
     if(!tabsBar || tabsBar.querySelector('.tab-btn[data-tab="' + key + '"]')) return;
     const b = document.createElement('button');
     b.className = 'tab-btn'; b.dataset.tab = key; b.textContent = label;
