@@ -17131,7 +17131,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '10 Nov 2026 - build 58 (Hourly pay: rate x basic hours x 52 sets the fee band) preview';
+var PAGE_BUILD = '10 Nov 2026 - build 57.3.4 (Gap Briefs and Cold Outreach laid out like Marketing) preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -17339,7 +17339,7 @@ function buildTagApply(){
   addView('roadmapView', `<div class="view-head"><div><h2>Roadmap</h2><div class="sub">Bigger pieces of work and when they are planned. Move them from Later to Now to Done.</div></div><div class="p41-bar"><button class="gold-btn" data-rec-new="road">+ Add to roadmap</button></div></div><div class="view-body" id="rd41Body"><div class="p41-empty">Loading...</div></div>`);
   addView('audienceView', `<div class="view-head"><div><h2>Audience</h2><div class="sub">Who owns each account, which sector it is in, and who has agreed to hear from us. This drives who gets each Gap Brief and who sends it.</div></div></div><div class="view-body" id="aud57Body"><div class="p41-empty">Loading...</div></div>`);
   addView('marketingView', `<div class="view-head"><div><h2>Marketing</h2><div class="sub">LinkedIn posts, Brevo outreach workflows, lead magnets and events in one place.</div></div><div class="p41-bar" id="mk41Add"></div></div><div class="view-body"><div class="p41-tabs" id="mk41Tabs"></div><div id="mk41Body"><div class="p41-empty">Loading...</div></div></div>`);
-  addView('gapBriefsView', `<div class="view-head"><div><h2>Gap Briefs</h2><div class="sub">The fortnightly briefs for each sector: draft on Sunday, approve on Monday, send on Tuesday at 10:00. Nothing sends without approval.</div></div></div><div class="view-body" id="gb57Body"><div class="p41-empty">Loading...</div></div>`);
+  addView('gapBriefsView', `<div class="view-head"><div><h2>Gap Briefs</h2><div class="sub">The fortnightly briefs for each sector: draft on Sunday, approve on Monday, send on Tuesday at 10:00. Nothing sends without approval.</div></div></div><div class="p41-bar" id="gb57Add"></div></div><div class="view-body" id="gb57Body"><div class="p41-empty">Loading...</div></div>`);
   addView('coldOutreachView', `<div class="view-head"><div><h2>Cold Outreach</h2><div class="sub">One to one emails to Cold contacts from your own mailbox: day 0, day 4, day 9, then stop for 90 days. You approve each day's batch.</div></div></div><div class="view-body" id="co57Body"><div class="p41-empty">Loading...</div></div>`);
   if(!$('viewer41')){ const v = document.createElement('div'); v.id = 'viewer41'; v.innerHTML = '<div class="bk" data-vw41="close"></div><div class="vw" role="dialog" aria-modal="true"><div class="vh"><b id="vw41Title"></b><span class="sp"></span><button class="p41-btn sm" id="vw41Dl">Download</button><button class="p41-btn sm" data-vw41="close">Close</button></div><div class="vb" id="vw41Body"></div></div>'; document.body.appendChild(v); }
   if(!$('rec41')){ const v = document.createElement('div'); v.id = 'rec41'; v.innerHTML = '<div class="bk" data-rec41="close"></div><div class="rp" role="dialog" aria-modal="true" id="rec41Body"></div>'; document.body.appendChild(v); }
@@ -19720,7 +19720,7 @@ function audPickEm(el, email){
 }
 
 /* ---------------- Page build 57.2: Marketing > Gap Briefs (problem chart, approval, archive, pop-up) ---------------- */
-var GB = { tab:'fortnight', data:null, problems:null, err:'', poppedUp:false };
+var GB = { tab:'fortnight', data:null, problems:null, err:'', poppedUp:false, st:'', sec:'', q:'', pq:'' };
 var GB_STATUS = { Draft:['Waiting for approval','warn'], Approved:['Approved','ok'], Held:['Held back','bad'], Sent:['Sent','ok'], Missed:['Not sent (not approved in time)',''] };
 function gbDate(iso){ const d = new Date(String(iso || '').slice(0, 10) + 'T12:00:00Z'); return isNaN(d) ? '' : d.toLocaleDateString('en-GB', {weekday:'short', day:'numeric', month:'short', year:'numeric', timeZone:'UTC'}); }
 function gbModal(html, wide){
@@ -19738,13 +19738,47 @@ async function gb57Load(force){
   }catch(e){ GB.err = e.message; }
   gb57Render();
 }
+/* ---- Shared look (same as the Marketing tab): cards, filter bar, one table ---- */
+function mk57Css(){
+  if(document.getElementById('mk57css')) return;
+  const st = document.createElement('style'); st.id = 'mk57css';
+  st.textContent = `.mk51-acts{display:flex;gap:6px;flex-wrap:wrap}.mk51-acts .p41-btn{white-space:nowrap}
+    .mk51-prev{white-space:pre-wrap;font-size:12.5px;line-height:1.45;color:var(--grey);max-height:3.1em;overflow:hidden;margin-top:3px}
+    .mk51-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 10px}.mk51-bar .p41-in{max-width:260px}
+    .mk51-cards{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+    .mk51-card{text-align:left;background:#fff;border:1px solid var(--border);border-left:3px solid var(--gold);padding:9px 13px;min-width:170px;cursor:pointer;display:flex;flex-direction:column;gap:2px;font:inherit}
+    .mk51-card b{font-size:13.5px;color:var(--dark)}.mk51-card span{font-size:12px;color:var(--grey)}
+    .mk51-card[aria-pressed="true"]{background:var(--navy,#0F1F3D);border-color:var(--navy,#0F1F3D);border-left-color:var(--gold)}
+    .mk51-card[aria-pressed="true"] b{color:#fff}.mk51-card[aria-pressed="true"] span{color:rgba(255,255,255,.75)}
+    .mk51-tip{font-size:12.5px;color:var(--grey);background:var(--gold-soft,#F4EAD3);border-left:3px solid var(--gold);padding:8px 12px;margin:0 0 10px;line-height:1.45}
+    .mk57-sub{font-size:12px;color:var(--grey);margin-top:3px;line-height:1.4}.mk57-warn{font-size:12px;color:var(--danger);margin-top:3px;line-height:1.4}`;
+  document.head.appendChild(st);
+}
+function mk57Cards(list, cur, js){
+  return '<div class="mk51-cards">' + list.map(c => '<button class="mk51-card" aria-pressed="' + (String(cur) === String(c.k)) + '" onclick="' + js.replace('%K', c.k) + '"><b>' + esc(c.t) + '</b><span>' + esc(c.s) + '</span></button>').join('') + '</div>';
+}
+function mk57Table(heads, rows, empty){
+  if(!rows.length) return '<div class="p41-panel"><div class="p41-empty">' + empty + '</div></div>';
+  return '<div class="p41-tw"><table><thead><tr>' + heads.map(x => '<th>' + x + '</th>').join('') + '</tr></thead><tbody>' + rows.map(r => '<tr>' + r.map(c => '<td>' + c + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>';
+}
 function gb57Tab(t){ GB.tab = t; gb57Render(); }
 function gb57Render(){
+  mk57Css();
   const body = document.getElementById('gb57Body'); if(!body) return;
-  if(GB.err){ body.innerHTML = '<div class="p41-note">Gap Briefs could not be loaded. ' + esc(GB.err) + '</div>'; return; }
-  const tab = (k, l) => '<button class="p41-chip" aria-pressed="' + (GB.tab === k) + '" onclick="gb57Tab(\'' + k + '\')">' + l + '</button>';
-  body.innerHTML = '<div class="p41-tabs">' + tab('fortnight', 'This fortnight') + tab('chart', 'Problem chart') + tab('archive', 'Archive') + '</div>' +
+  const add = document.getElementById('gb57Add');
+  if(GB.err){ body.innerHTML = '<div class="p41-note">Gap Briefs could not be loaded. ' + esc(GB.err) + '</div>'; if(add) add.innerHTML = ''; return; }
+  const d = GB.data, edit = d.canEdit;
+  const tab = (k, l, n) => '<button class="p41-chip" aria-pressed="' + (GB.tab === k) + '" onclick="gb57Tab(\'' + k + '\')">' + l + ' &middot; ' + n + '</button>';
+  const arch = GB.data.data.filter(b => ['Sent', 'Missed'].includes(b.status) || (b.status === 'Held' && b.sendDate < GB.data.today) || (b.status === 'Approved' && b.sendDate < GB.data.today)).length;
+  body.innerHTML = '<div class="p41-tabs">' + tab('fortnight', 'This fortnight', gb57Current().length) + tab('chart', 'Problem chart', GB.problems.data.length) + tab('archive', 'Archive', arch) + '</div>' +
     (GB.tab === 'fortnight' ? gb57Fortnight() : GB.tab === 'chart' ? gb57Chart() : gb57Archive());
+  if(add){
+    const rows = gb57Current();
+    add.innerHTML = !edit ? '' : GB.tab === 'fortnight'
+      ? '<button class="gold-btn" onclick="gb57Github(this)">Check for new drafts</button><button class="p41-btn" onclick="gb57Paste()">Paste drafts</button>' + (d.canSend && rows.some(b => b.status === 'Approved' && b.sendDate <= d.today) ? '<button class="p41-btn pri" onclick="gb57SendNow(this)">Send approved briefs now</button>' : '')
+      : GB.tab === 'chart' ? '<button class="gold-btn" onclick="gb57ProblemEdit()">+ Add problem</button><button class="p41-btn" onclick="gb57Seed(this)">' + (GB.problems.data.length ? 'Add missing starter problems' : 'Load the starter chart') + '</button>' : '';
+  }
+  if(GB.tab === 'fortnight') gb57Rows(); else if(GB.tab === 'chart') gb57ChartRows();
 }
 /* ---- This fortnight ---- */
 function gb57Current(){
@@ -19755,37 +19789,35 @@ function gb57Current(){
   return open.filter(b => b.issue === issue).sort((a, b) => a.sector.localeCompare(b.sector));
 }
 function gb57Fortnight(){
-  const d = GB.data, edit = d.canEdit, rows = gb57Current();
-  let h = '<div class="p41-bar" style="gap:8px;flex-wrap:wrap;">' +
-    (edit ? '<button class="p41-btn sm" onclick="gb57Github(this)">Check for new drafts</button><button class="p41-btn sm" onclick="gb57Paste()">Paste drafts</button>' : '') +
-    (d.canSend && rows.some(b => b.status === 'Approved' && b.sendDate <= d.today) ? '<button class="p41-btn pri sm" onclick="gb57SendNow(this)">Send approved briefs now</button>' : '') + '</div>' +
-    (GB.checkNote ? '<div class="p41-note" style="margin-top:8px;">' + esc(GB.checkNote) + '</div>' : '');
-  if(d.preview) h += '<div class="p41-note">This is the preview workspace. Nothing is ever sent from here.</div>';
-  if(!rows.length) return h + '<div class="p41-empty">No briefs are waiting. The Sunday task drafts the next issue, or use Check for new drafts or Paste drafts.</div>';
+  const d = GB.data, rows = gb57Current();
+  let h = (GB.checkNote ? '<div class="mk51-tip">' + esc(GB.checkNote) + '</div>' : '') + (d.preview ? '<div class="p41-note">This is the preview workspace. Nothing is ever sent from here.</div>' : '');
+  if(!rows.length) return h + '<div class="mk51-tip">Draft on Sunday, review and approve on Monday, sent Tuesday at ' + d.sendHour + ':00. Nothing sends without approval.</div><div class="p41-panel"><div class="p41-empty">No briefs are waiting. The Sunday task drafts the next issue, or use Check for new drafts or Paste drafts.</div></div>';
   const n = s => rows.filter(b => b.status === s).length;
-  h += '<div class="p41-panel" style="margin-top:10px;"><b>Issue ' + rows[0].issue + '</b> &middot; sends ' + esc(gbDate(rows[0].sendDate)) + ' at ' + d.sendHour + ':00 from each contact\'s account owner &middot; ' +
-    n('Approved') + ' approved, ' + n('Draft') + ' waiting, ' + n('Held') + ' held back' + (n('Sent') ? ', ' + n('Sent') + ' sent' : '') +
-    '<div class="b46-sub" style="margin-top:4px;">Nothing sends without approval. A brief that is not approved simply does not go this fortnight.</div></div>';
-  h += rows.map(b => gb57Card(b, edit)).join('');
-  return h;
+  h += '<div class="mk51-tip"><b>Issue ' + rows[0].issue + '</b> sends ' + esc(gbDate(rows[0].sendDate)) + ' at ' + d.sendHour + ':00 from each contact\'s account owner. Nothing sends without approval: a brief that is not approved simply does not go this fortnight.</div>';
+  h += mk57Cards([{k:'', t:'All briefs', s:rows.length + ' sectors'}, {k:'Draft', t:'Waiting for approval', s:n('Draft') + ' brief' + (n('Draft') === 1 ? '' : 's')}, {k:'Approved', t:'Approved', s:n('Approved') + ' brief' + (n('Approved') === 1 ? '' : 's')}, {k:'Held', t:'Held back', s:n('Held') + ' brief' + (n('Held') === 1 ? '' : 's')}, {k:'Sent', t:'Sent', s:n('Sent') + ' brief' + (n('Sent') === 1 ? '' : 's')}], GB.st, "GB.st='%K';gb57Render()");
+  h += '<div class="mk51-bar"><select class="p41-in" onchange="GB.sec=this.value;gb57Rows()"><option value="">All sectors</option>' + rows.map(b => '<option' + (GB.sec === b.sector ? ' selected' : '') + '>' + esc(b.sector) + '</option>').join('') + '</select><input class="p41-in" placeholder="Search briefs" value="' + esc(GB.q) + '" oninput="GB.q=this.value;gb57Rows()"></div>';
+  return h + '<div id="gb57Rows"></div>';
 }
-function gb57Card(b, edit){
-  const st = GB_STATUS[b.status] || [b.status, ''];
-  const reach = b.reach ? 'Reaches <b>' + b.reach + '</b> ' + (b.reach === 1 ? 'person' : 'people') + ': ' + b.reachBy.map(r => esc(r.name) + ' ' + r.n).join(', ') : '<span style="color:var(--danger);">Reaches nobody yet (no Warm contacts with consent recorded have this as their next sector)</span>';
-  const id = esc(b.id);
-  return '<div class="p41-panel" style="margin-top:10px;"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><b style="font-size:15px;">' + esc(b.sector) + '</b><span class="p41-pill ' + st[1] + '">' + esc(st[0]) + '</span></div>' +
-    '<div style="margin:4px 0;">' + esc(b.subject || '(no subject)') + '</div><div class="b46-sub">' + reach + '</div>' +
-    (b.status === 'Held' && b.heldReason ? '<div class="b46-sub">Held back: ' + esc(b.heldReason) + '</div>' : '') +
-    (b.status === 'Approved' && b.approvedBy ? '<div class="b46-sub">Approved by ' + esc(userLabel(b.approvedBy)) + '</div>' : '') +
-    (b.lastError ? '<div class="p41-note" style="margin-top:6px;">' + esc(b.lastError) + '</div>' : '') +
-    (b.problems.length && ['Draft', 'Held'].includes(b.status) ? '<div class="b46-sub" style="margin-top:6px;color:var(--warn);">To fix before approving: ' + b.problems.map(esc).join('; ') + '</div>' : '') +
-    '<div class="p41-bar" style="margin-top:10px;gap:8px;flex-wrap:wrap;"><button class="p41-btn sm" onclick="gb57Preview(\'' + id + '\')">Preview</button>' +
+function gb57Rows(){
+  const el = document.getElementById('gb57Rows'); if(!el) return;
+  const edit = GB.data.canEdit, q = GB.q.toLowerCase().trim();
+  const rows = gb57Current().filter(b => (!GB.st || b.status === GB.st) && (!GB.sec || b.sector === GB.sec) && (!q || (b.sector + ' ' + b.subject).toLowerCase().includes(q)));
+  el.innerHTML = mk57Table(['Sector', 'Subject', 'Reach', 'Status', 'Actions'], rows.map(b => gb57Row(b, edit)), 'No briefs match.');
+}
+function gb57Row(b, edit){
+  const st = GB_STATUS[b.status] || [b.status, ''], id = esc(b.id);
+  const pill = '<span class="p41-pill ' + (b.status === 'Draft' ? 'gold' : st[1]) + '">' + esc(st[0]) + '</span>';
+  const reach = b.reach ? '<b>' + b.reach + '</b> ' + (b.reach === 1 ? 'person' : 'people') + '<div class="mk57-sub">' + b.reachBy.map(r => esc(r.name) + ' ' + r.n).join(', ') + '</div>' : '<span class="mk57-warn">Nobody yet: no Warm contacts with consent recorded have this as their next sector</span>';
+  const notes = (b.status === 'Held' && b.heldReason ? '<div class="mk57-sub">Held back: ' + esc(b.heldReason) + '</div>' : '') + (b.status === 'Approved' && b.approvedBy ? '<div class="mk57-sub">Approved by ' + esc(userLabel(b.approvedBy)) + '</div>' : '') +
+    (b.lastError ? '<div class="mk57-warn">' + esc(b.lastError) + '</div>' : '') + (b.problems.length && ['Draft', 'Held'].includes(b.status) ? '<div class="mk57-warn">To fix before approving: ' + b.problems.map(esc).join('; ') + '</div>' : '');
+  const acts = '<div class="mk51-acts"><button class="p41-btn sm" onclick="gb57Preview(\'' + id + '\')">Preview</button>' +
     (edit && ['Draft', 'Held'].includes(b.status) ? '<button class="p41-btn sm" onclick="gb57Edit(\'' + id + '\')">Edit</button>' : '') +
     (edit ? '<button class="p41-btn sm" onclick="gb57Test(\'' + id + '\')">Send me a test</button>' : '') +
     (edit && ['Draft', 'Held'].includes(b.status) ? '<button class="p41-btn pri sm" onclick="gb57Approve(\'' + id + '\',this)">Approve</button>' : '') +
     (edit && ['Draft', 'Approved'].includes(b.status) ? '<button class="p41-btn sm" onclick="gb57Hold(\'' + id + '\')">Hold back</button>' : '') +
     (edit && ['Approved', 'Held'].includes(b.status) ? '<button class="p41-btn sm" onclick="gb57Reopen(\'' + id + '\')">Back to draft</button>' : '') +
-    (b.viewUrl ? '<a class="p41-btn sm" href="' + esc(b.viewUrl) + '" target="_blank" rel="noopener">View in browser</a>' : '') + '</div></div>';
+    (b.viewUrl ? '<a class="p41-btn sm" href="' + esc(b.viewUrl) + '" target="_blank" rel="noopener">View in browser</a>' : '') + '</div>';
+  return ['<b>' + esc(b.sector) + '</b>', esc(b.subject || '(no subject)') + notes, reach, pill, acts];
 }
 async function gb57Act(path, body, ok, btn){
   if(btn) btn.disabled = true;
@@ -19883,24 +19915,25 @@ async function gb57SendNow(btn){
 /* ---- Archive ---- */
 function gb57Archive(){
   const rows = GB.data.data.filter(b => ['Sent', 'Missed'].includes(b.status) || (b.status === 'Held' && b.sendDate < GB.data.today) || (b.status === 'Approved' && b.sendDate < GB.data.today));
-  if(!rows.length) return '<div class="p41-empty">Nothing has gone out yet. Sent issues are kept here with their numbers.</div>';
-  return '<table class="b46-tbl"><tr><th>Issue</th><th>Sector</th><th>Subject</th><th>Send date</th><th>Status</th><th>Sent</th><th>Skipped</th><th></th></tr>' +
-    rows.map(b => { const st = GB_STATUS[b.status] || [b.status, '']; return '<tr><td>' + b.issue + '</td><td>' + esc(b.sector) + '</td><td>' + esc(b.subject) + '</td><td>' + esc(gbDate(b.sendDate)) + '</td><td><span class="p41-pill ' + st[1] + '">' + esc(st[0]) + '</span></td><td>' + b.sentCount + '</td><td>' + b.skippedCount + '</td><td>' + (b.viewUrl ? '<a href="' + esc(b.viewUrl) + '" target="_blank" rel="noopener">View</a>' : '') + '</td></tr>'; }).join('') + '</table>';
+  return '<div class="mk51-tip">Sent issues are kept here with their numbers.</div>' + mk57Table(['Issue', 'Sector', 'Subject', 'Send date', 'Status', 'Sent', 'Skipped', ''], rows.map(b => { const st = GB_STATUS[b.status] || [b.status, '']; return [b.issue, '<b>' + esc(b.sector) + '</b>', esc(b.subject), esc(gbDate(b.sendDate)), '<span class="p41-pill ' + st[1] + '">' + esc(st[0]) + '</span>', b.sentCount, b.skippedCount, b.viewUrl ? '<a href="' + esc(b.viewUrl) + '" target="_blank" rel="noopener">View</a>' : '']; }), 'Nothing has gone out yet.');
 }
 /* ---- Problem chart ---- */
 function gb57Chart(){
-  const p = GB.problems, edit = p.canEdit, rows = p.data;
-  let h = '<div class="b46-sub" style="margin:6px 0 10px;">For each sector: the problems, what each costs, and why it happens. Each issue uses the problem that was used longest ago, so a sector\'s brief changes every issue (six problems means a new angle for about three months). These give Ella the questions that open the conversation with a reader who replies. Figures never go here; they go in a brief, with a source.</div>' +
-    (edit ? '<div class="p41-bar"><button class="p41-btn pri sm" onclick="gb57ProblemEdit()">Add a problem</button>' + '<button class="p41-btn sm" onclick="gb57Seed(this)">' + (rows.length ? 'Add missing starter problems' : 'Load the starter chart') + '</button>' + '</div>' : '');
-  if(!rows.length) return h + '<div class="p41-empty">The chart is empty. Load the starter chart (one problem per sector, written without figures) and edit it.</div>';
-  h += '<table class="b46-tbl"><tr><th>Sector</th><th>Problem</th><th>Impact</th><th>Root cause</th><th>Discovery questions</th><th>Last used</th><th></th></tr>';
+  const rows = GB.problems.data;
+  let h = '<div class="mk51-tip">For each sector: the problems, what each costs, and why it happens. Each issue uses the problem that was used longest ago, so a sector\'s brief changes every issue (six problems means a new angle for about three months). These give Ella the questions that open the conversation with a reader who replies. Figures never go here; they go in a brief, with a source.</div>';
+  if(!rows.length) return h + '<div class="p41-panel"><div class="p41-empty">The chart is empty. Load the starter chart (one problem per sector, written without figures) and edit it.</div></div>';
+  h += '<div class="mk51-bar"><select class="p41-in" onchange="GB.sec=this.value;gb57ChartRows()"><option value="">All sectors</option>' + GB.problems.sectors.map(s => '<option' + (GB.sec === s.name ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') + '</select><input class="p41-in" placeholder="Search problems" value="' + esc(GB.pq || '') + '" oninput="GB.pq=this.value;gb57ChartRows()"></div>';
+  return h + '<div id="gb57ChartRows"></div>';
+}
+function gb57ChartRows(){
+  const el = document.getElementById('gb57ChartRows'); if(!el) return;
+  const p = GB.problems, edit = p.canEdit, q = (GB.pq || '').toLowerCase().trim();
   const used = {}; GB.data.data.filter(b => ['Draft', 'Approved', 'Sent'].includes(b.status)).forEach(b => b.problemIds.forEach(id => { used[id] = Math.max(used[id] || 0, b.issue); }));
-  p.sectors.forEach(s => {
-    const mine = rows.filter(r => r.sector === s.name);
-    if(!mine.length) h += '<tr><td><b>' + esc(s.name) + '</b></td><td colspan="6" class="b46-sub">No problem recorded yet</td></tr>';
-    mine.forEach((r, i) => { h += '<tr><td>' + (i ? '' : '<b>' + esc(s.name) + '</b>') + '</td><td>' + esc(r.problem) + '</td><td>' + esc(r.impact) + '</td><td>' + esc(r.root_cause) + '</td><td class="b46-sub">' + esc(r.questions).replace(/\n/g, '<br>') + '</td><td class="b46-sub">' + (used[r.id] ? 'Issue ' + used[r.id] : 'Not used yet') + '</td><td style="white-space:nowrap;">' + (edit ? '<button class="p41-btn sm" onclick="gb57ProblemEdit(\'' + esc(r.id) + '\')">Edit</button> <button class="p41-btn sm" onclick="gb57ProblemDel(\'' + esc(r.id) + '\')">Remove</button>' : '') + '</td></tr>'; });
-  });
-  return h + '</table>';
+  const order = p.sectors.map(s => s.name);
+  const rows = p.data.filter(r => (!GB.sec || r.sector === GB.sec) && (!q || (r.sector + ' ' + r.problem + ' ' + r.impact + ' ' + r.root_cause + ' ' + r.questions).toLowerCase().includes(q)))
+    .sort((a, b) => order.indexOf(a.sector) - order.indexOf(b.sector));
+  el.innerHTML = mk57Table(['Sector', 'Problem', 'Impact', 'Root cause', 'Discovery questions', 'Last used', ''], rows.map(r => ['<b>' + esc(r.sector) + '</b>', esc(r.problem), esc(r.impact), esc(r.root_cause), '<span class="mk57-sub">' + esc(r.questions).replace(/\n/g, '<br>') + '</span>',
+    used[r.id] ? 'Issue ' + used[r.id] : '<span class="mk57-sub">Not used yet</span>', edit ? '<div class="mk51-acts"><button class="p41-btn sm" onclick="gb57ProblemEdit(\'' + esc(r.id) + '\')">Edit</button><button class="p41-btn sm" style="color:var(--danger)" onclick="gb57ProblemDel(\'' + esc(r.id) + '\')">Remove</button></div>' : '']), 'No problems match.');
 }
 function gb57ProblemEdit(id){
   const r = id ? GB.problems.data.find(x => x.id === id) : {sector:'', problem:'', impact:'', root_cause:'', questions:'', sources:''};
@@ -19928,7 +19961,7 @@ async function gb57Popup(){
   }catch(e){ /* the pop-up is a convenience; the Gap Briefs tab still works */ }
 }
 /* ---------------- Page build 57.3: Marketing > Cold Outreach (one to one, approve the day's batch) ---------------- */
-var CO = { tab:'choose', batch:null, seqs:null, list:null, err:'', owner:'', busy:false, q:'', sec:'', show:'ready' };
+var CO = { tab:'choose', batch:null, seqs:null, list:null, err:'', owner:'', busy:false, q:'', sec:'', show:'ready', off:{}, edits:{}, sst:'' };
 async function co57Load(force){
   const body = document.getElementById('co57Body'); if(!body) return;
   if(!CO.batch || force) body.innerHTML = '<div class="p41-empty">Loading...</div>';
@@ -19942,49 +19975,71 @@ async function co57Load(force){
 }
 function co57Tab(t){ CO.tab = t; co57Render(); }
 function co57Owner(v){ CO.owner = v; co57Load(true); }
-function co57Render(){
-  const body = document.getElementById('co57Body'); if(!body) return;
-  if(CO.err){ body.innerHTML = '<div class="p41-note">Cold Outreach could not be loaded. ' + esc(CO.err) + '</div>'; return; }
-  const tab = (k, l) => '<button class="p41-chip" aria-pressed="' + (CO.tab === k) + '" onclick="co57Tab(\'' + k + '\')">' + l + '</button>';
-  body.innerHTML = '<div class="p41-tabs">' + tab('choose', 'Choose contacts') + tab('batch', "Today's batch") + tab('seqs', 'Sequences') + tab('how', 'How it works') + '</div>' +
-    (CO.tab === 'choose' ? co57Choose() : CO.tab === 'batch' ? co57Batch() : CO.tab === 'seqs' ? co57Seqs() : co57How());
+function co57OwnerSel(L){
+  return L.owners && L.owners.length > 1 ? '<select class="p41-in" onchange="co57Owner(this.value)">' + L.owners.map(o => '<option value="' + esc(o.key) + '"' + (o.key === L.owner ? ' selected' : '') + '>Mailbox: ' + esc(o.name) + '</option>').join('') + '</select>' : '';
 }
-function co57StepLabel(n){ return n === 1 ? 'First email' : n === 2 ? 'Follow-up (day 4)' : 'Last email: Gap Brief offer (day 9)'; }
+function co57Render(){
+  mk57Css();
+  const body = document.getElementById('co57Body'); if(!body) return;
+  const add = document.getElementById('co57Add');
+  if(CO.err){ body.innerHTML = '<div class="p41-note">Cold Outreach could not be loaded. ' + esc(CO.err) + '</div>'; if(add) add.innerHTML = ''; return; }
+  const L = CO.list, b = CO.batch, s = CO.seqs;
+  const tab = (k, l, n) => '<button class="p41-chip" aria-pressed="' + (CO.tab === k) + '" onclick="co57Tab(\'' + k + '\')">' + l + (n == null ? '' : ' &middot; ' + n) + '</button>';
+  body.innerHTML = '<div class="p41-tabs">' + tab('choose', 'Choose contacts', L.data.filter(r => r.ready).length) + tab('batch', "Today's batch", b.items.length) + tab('seqs', 'Sequences', s.data.length) + tab('how', 'How it works', null) + '</div>' +
+    (CO.tab === 'choose' ? co57Choose() : CO.tab === 'batch' ? co57Batch() : CO.tab === 'seqs' ? co57Seqs() : co57How());
+  if(add){
+    add.innerHTML = CO.tab === 'choose' && L.canAct ? '<button class="gold-btn" onclick="co57Pick(this,false)">Add ticked to the batch</button><button class="p41-btn" onclick="co57Pick(this,true)">Remove ticked from the batch</button>'
+      : CO.tab === 'batch' && b.canAct && !b.preview && b.items.length ? '<button class="gold-btn" ' + (CO.busy ? 'disabled' : '') + ' onclick="co57Send(this)">Approve and send the ticked emails</button>' : '';
+  }
+  if(CO.tab === 'choose') co57ChooseRows();
+}
+function co57StepLabel(n){ return n === 1 ? 'First email' : n === 2 ? 'Follow-up (day 4)' : 'Gap Brief offer (day 9)'; }
+function co57Key(i){ return i.email + '|' + i.step; }
+/* ---- Today's batch ---- */
 function co57Batch(){
   const b = CO.batch, u = b.usage;
-  let h = '<div class="p41-bar" style="gap:10px;flex-wrap:wrap;align-items:center;">';
-  if(b.owners && b.owners.length > 1) h += '<label class="b46-sub">Batch for <select onchange="co57Owner(this.value)">' + b.owners.map(o => '<option value="' + esc(o.key) + '"' + (o.key === b.owner ? ' selected' : '') + '>' + esc(o.name) + '</option>').join('') + '</select></label>';
-  h += '<span class="b46-sub">New first emails today: <b>' + u.used + ' of ' + u.cap + '</b> (warm-up day ' + u.dayNumber + (u.cap < u.maxCap ? ', rising to ' + u.maxCap + ' a day' : '') + ')</span></div>';
+  let h = '';
   if(b.preview) h += '<div class="p41-note">This is the preview workspace. Nothing is ever sent from here.</div>';
   if(b.note) h += '<div class="p41-note">' + esc(b.note) + '</div>';
-  if(b.pickedBlocked && b.pickedBlocked.length) h += '<div class="p41-note" style="margin:6px 0;">' + b.pickedBlocked.length + ' chosen contact' + (b.pickedBlocked.length === 1 ? ' cannot' : 's cannot') + ' be emailed: ' + esc(b.pickedBlocked.map(x => x.email + ' (' + x.why + ')').join('; ')) + '</div>';
-  if(b.waitingForTomorrow) h += '<div class="b46-sub" style="margin:6px 0;">' + b.waitingForTomorrow + ' more chosen contact' + (b.waitingForTomorrow === 1 ? ' waits' : 's wait') + ' for tomorrow because of today\'s limit.</div>';
-  if(!b.items.length) return h + '<div class="p41-empty">' + (u.remaining <= 0 && b.weekday ? 'Today\'s limit of new first emails has been reached and no follow-ups are due.' : 'Nothing is ready to send today. Choose who to contact on the Choose contacts tab.') + '</div>';
+  if(b.pickedBlocked && b.pickedBlocked.length) h += '<div class="p41-note">' + b.pickedBlocked.length + ' chosen contact' + (b.pickedBlocked.length === 1 ? ' cannot' : 's cannot') + ' be emailed: ' + esc(b.pickedBlocked.map(x => x.email + ' (' + x.why + ')').join('; ')) + '</div>';
   const nNew = b.items.filter(i => i.step === 1).length;
-  h += '<div class="p41-panel" style="margin:8px 0;"><b>' + b.items.length + ' email' + (b.items.length === 1 ? '' : 's') + ' ready</b> (' + nNew + ' new, ' + (b.items.length - nNew) + ' follow-up). Read them, untick any you do not want, edit if you like, then approve. Each goes one to one from <b>' + esc(b.owner) + '</b>\'s own mailbox. The footer with company details and the opt-out line is always added.</div>';
-  b.items.forEach((i, n) => {
-    h += '<div class="p41-panel" style="margin:8px 0;"><label style="display:flex;gap:8px;align-items:center;"><input type="checkbox" id="co57C' + n + '" checked> <b>' + esc(i.company || i.email) + '</b> &middot; ' + esc(i.name || i.email) + ' &middot; ' + esc(i.sector) + ' &middot; <span class="b46-sub">' + co57StepLabel(i.step) + '</span></label>' +
-      '<div class="b46-sub" style="margin:4px 0;">' + esc(i.email) + '</div>' +
-      '<input id="co57S' + n + '" style="width:100%;margin-bottom:6px;" value="' + esc(i.subject) + '">' +
-      '<textarea id="co57T' + n + '" rows="11" style="width:100%;font-size:13px;">' + esc(i.text) + '</textarea>' +
-      '<details style="margin-top:4px;"><summary class="b46-sub">Line added automatically at the end</summary><pre style="white-space:pre-wrap;font-size:12px;color:#555;">' + esc(i.footer.trim()) + '</pre></details></div>';
+  h += '<div class="mk51-cards"><button class="mk51-card"><b>' + b.items.length + ' email' + (b.items.length === 1 ? '' : 's') + ' ready</b><span>' + nNew + ' new, ' + (b.items.length - nNew) + ' follow-up</span></button>' +
+    '<button class="mk51-card"><b>' + u.used + ' of ' + u.cap + ' new today</b><span>Warm-up day ' + u.dayNumber + (u.cap < u.maxCap ? ', rising to ' + u.maxCap + ' a day' : '') + '</span></button>' +
+    (b.waitingForTomorrow ? '<button class="mk51-card"><b>' + b.waitingForTomorrow + ' waiting</b><span>Held until tomorrow by the daily limit</span></button>' : '') + '</div>';
+  h += '<div class="mk51-tip">Read each email, untick any you do not want, and use Edit to change the wording. Nothing sends until you click Approve and send. Each goes one to one from <b>' + esc(b.owner) + '</b>\'s own mailbox, Monday to Friday between ' + b.sendHours[0] + ':00 and ' + b.sendHours[1] + ':00. The company details and opt-out line are always added at the end.</div>';
+  if(b.owners && b.owners.length > 1) h += '<div class="mk51-bar">' + co57OwnerSel(b) + '</div>';
+  if(!b.canAct) h += '<div class="p41-note">You are viewing someone else\'s batch. Only they can send it.</div>';
+  const rows = b.items.map((i, n) => {
+    const e = CO.edits[co57Key(i)] || {}, subj = e.subject != null ? e.subject : i.subject, txt = e.text != null ? e.text : i.text;
+    return ['<input type="checkbox" class="co57Tk" ' + (CO.off[co57Key(i)] ? '' : 'checked') + ' onchange="co57Tick(' + n + ',this.checked)">',
+      '<b>' + esc(i.name || i.email) + '</b><div class="mk57-sub">' + esc(i.email) + '</div>', esc(i.company || ''), esc(i.sector || ''),
+      '<span class="p41-pill ' + (i.step === 1 ? 'gold' : 'ok') + '">' + esc(co57StepLabel(i.step)) + '</span>',
+      '<b>' + esc(subj) + '</b>' + (e.subject != null || e.text != null ? ' <span class="p41-pill">Edited</span>' : '') + '<div class="mk51-prev">' + esc(txt) + '</div>',
+      '<div class="mk51-acts"><button class="p41-btn sm" onclick="co57Edit(' + n + ')">' + (b.canAct ? 'Edit' : 'Read') + '</button></div>'];
   });
-  if(b.canAct && !b.preview) h += '<div class="p41-bar" style="margin-top:12px;"><button class="p41-btn pri" ' + (CO.busy ? 'disabled' : '') + ' onclick="co57Send(this)">Approve and send the ticked emails</button><span class="b46-sub">Sends now, Monday to Friday between ' + b.sendHours[0] + ':00 and ' + b.sendHours[1] + ':00.</span></div>';
-  else if(!b.canAct) h += '<div class="p41-note">You are viewing someone else\'s batch. Only they can send it.</div>';
-  return h;
+  return h + mk57Table(['<input type="checkbox" checked onclick="document.querySelectorAll(\'.co57Tk\').forEach((x,n)=>{x.checked=this.checked;co57Tick(n,this.checked)})">', 'Contact', 'Company', 'Sector', 'Email', 'Subject and start of the email', ''], rows,
+    u.remaining <= 0 && b.weekday ? 'Today\'s limit of new first emails has been reached and no follow-ups are due.' : 'Nothing is ready to send today. Choose who to contact on the Choose contacts tab.');
 }
+function co57Tick(n, on){ const i = CO.batch.items[n]; if(i){ if(on) delete CO.off[co57Key(i)]; else CO.off[co57Key(i)] = 1; } }
+function co57Edit(n){
+  const i = CO.batch.items[n], e = CO.edits[co57Key(i)] || {}, can = CO.batch.canAct;
+  gbModal('<h3 style="margin:0 0 4px;">' + esc(i.name || i.email) + ' &middot; ' + esc(i.company || '') + '</h3><div class="mk57-sub" style="margin-bottom:10px;">' + esc(co57StepLabel(i.step)) + ' &middot; ' + esc(i.email) + '</div>' +
+    '<label>Subject</label><input class="p41-in" id="co57ES" style="width:100%;margin-bottom:8px;" value="' + esc(e.subject != null ? e.subject : i.subject) + '"' + (can ? '' : ' disabled') + '>' +
+    '<label>Email</label><textarea class="p41-in" id="co57ET" rows="12" style="width:100%;font-size:13px;"' + (can ? '' : ' disabled') + '>' + esc(e.text != null ? e.text : i.text) + '</textarea>' +
+    '<details style="margin-top:6px;"><summary class="mk57-sub">Line added automatically at the end</summary><pre style="white-space:pre-wrap;font-size:12px;color:#555;">' + esc(i.footer.trim()) + '</pre></details>' +
+    '<div class="p41-bar" style="margin-top:14px;">' + (can ? '<button class="p41-btn pri" onclick="co57EditGo(' + n + ')">Save</button><button class="p41-btn" onclick="co57EditReset(' + n + ')">Back to the original</button>' : '') + '<button class="p41-btn" onclick="gbClose()">Close</button></div>', 680);
+}
+function co57EditGo(n){ const i = CO.batch.items[n]; CO.edits[co57Key(i)] = { subject:b2Val('co57ES'), text:b2Val('co57ET') }; gbClose(); co57Render(); }
+function co57EditReset(n){ delete CO.edits[co57Key(CO.batch.items[n])]; gbClose(); co57Render(); }
+/* ---- Choose contacts ---- */
 function co57Choose(){
-  const L = CO.list, u = L.usage;
-  let h = '<div class="p41-bar" style="gap:10px;flex-wrap:wrap;align-items:center;">';
-  if(L.owners && L.owners.length > 1) h += '<label class="b46-sub">Mailbox <select onchange="co57Owner(this.value)">' + L.owners.map(o => '<option value="' + esc(o.key) + '"' + (o.key === L.owner ? ' selected' : '') + '>' + esc(o.name) + '</option>').join('') + '</select></label>';
-  h += '<input placeholder="Search name, company or email" value="' + esc(CO.q) + '" oninput="CO.q=this.value;co57ChooseRows()" style="min-width:240px;">' +
-    '<select onchange="CO.sec=this.value;co57ChooseRows()"><option value="">All sectors</option>' + L.sectors.map(x => '<option' + (x === CO.sec ? ' selected' : '') + '>' + esc(x) + '</option>').join('') + '</select>' +
-    '<select onchange="CO.show=this.value;co57ChooseRows()">' + [['ready','Can be emailed'],['all','Everyone'],['blocked','Cannot be emailed'],['picked','Chosen']].map(o => '<option value="' + o[0] + '"' + (CO.show === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></div>';
-  h += '<div class="b46-sub" style="margin:6px 0;">Tick who you want to contact, then add them to the batch. New first emails today: <b>' + u.used + ' of ' + u.cap + '</b> (warm-up day ' + u.dayNumber + '). Anyone beyond today\'s limit waits for the next day. The reason column says why a contact cannot be chosen.</div>';
-  h += '<div id="co57Rows"></div>';
-  if(L.canAct) h += '<div class="p41-bar" style="margin-top:10px;"><button class="p41-btn pri" onclick="co57Pick(this,false)">Add ticked to the batch</button><button class="p41-btn" onclick="co57Pick(this,true)">Remove ticked from the batch</button></div>';
-  setTimeout(co57ChooseRows, 0);
-  return h;
+  const L = CO.list, u = L.usage, d = L.data;
+  const n = { ready:d.filter(r => r.ready).length, picked:d.filter(r => r.picked).length, blocked:d.filter(r => !r.ready).length, all:d.length };
+  let h = mk57Cards([{k:'ready', t:'Can be emailed', s:n.ready + ' contact' + (n.ready === 1 ? '' : 's')}, {k:'picked', t:'Chosen for the batch', s:n.picked + ' contact' + (n.picked === 1 ? '' : 's')}, {k:'blocked', t:'Cannot be emailed', s:n.blocked + ' (the reason is shown)'}, {k:'all', t:'Everyone', s:n.all + ' Cold contacts'}], CO.show, "CO.show='%K';co57Render()");
+  h += '<div class="mk51-tip">Tick who you want to contact, then click Add ticked to the batch. New first emails today: <b>' + u.used + ' of ' + u.cap + '</b> (warm-up day ' + u.dayNumber + '). Anyone beyond today\'s limit waits for the next day.</div>';
+  h += '<div class="mk51-bar">' + co57OwnerSel(L) + '<input class="p41-in" placeholder="Search name, company or email" value="' + esc(CO.q) + '" oninput="CO.q=this.value;co57ChooseRows()">' +
+    '<select class="p41-in" onchange="CO.sec=this.value;co57ChooseRows()"><option value="">All sectors</option>' + L.sectors.map(x => '<option' + (x === CO.sec ? ' selected' : '') + '>' + esc(x) + '</option>').join('') + '</select></div>';
+  return h + '<div id="co57Rows"></div>';
 }
 function co57ChooseRows(){
   const el = document.getElementById('co57Rows'); if(!el || !CO.list) return;
@@ -19992,12 +20047,14 @@ function co57ChooseRows(){
   const rows = CO.list.data.filter(r => (!CO.sec || r.sector === CO.sec) &&
     (CO.show === 'all' || (CO.show === 'ready' && r.ready) || (CO.show === 'blocked' && !r.ready) || (CO.show === 'picked' && r.picked)) &&
     (!q || (r.name + ' ' + r.company + ' ' + r.email).toLowerCase().includes(q)));
-  if(!rows.length){ el.innerHTML = '<div class="p41-empty">No contacts match. Try Everyone to see contacts that cannot be emailed and why.</div>'; return; }
   const src = k => k === 'prospect' ? 'Role Finder' : k === 'lead' ? 'Lead Clients' : k;
-  el.innerHTML = '<table class="b46-tbl"><tr><th><input type="checkbox" onclick="document.querySelectorAll(\'.co57Pk\').forEach(x=>{if(!x.disabled)x.checked=this.checked})"></th><th>Contact</th><th>Company</th><th>Sector</th><th>Source</th><th>Role advertised</th><th>Status</th></tr>' +
-    rows.slice(0, 400).map(r => '<tr><td><input type="checkbox" class="co57Pk" value="' + esc(r.email) + '"' + (r.ready || r.picked ? '' : ' disabled') + '></td><td>' + esc(r.name || '') + '<div class="b46-sub">' + esc(r.email) + '</div></td><td>' + esc(r.company) + '</td><td>' + esc(r.sector || '') + '</td><td>' + esc(src(r.kind)) + '</td><td>' + esc(r.roleSeen || '') + '</td><td>' +
-      (r.picked ? '<b>Chosen</b>' + (r.ready ? '' : '<div class="b46-sub">' + esc(r.why) + '</div>') : r.ready ? 'Can be emailed' : '<span class="b46-sub">' + esc(r.why) + '</span>') + '</td></tr>').join('') + '</table>' +
-    (rows.length > 400 ? '<div class="b46-sub">Showing the first 400. Search to narrow it down.</div>' : '');
+  const head = '<input type="checkbox" onclick="document.querySelectorAll(\'.co57Pk\').forEach(x=>{if(!x.disabled)x.checked=this.checked})">';
+  el.innerHTML = mk57Table([head, 'Contact', 'Company', 'Sector', 'Source', 'Role advertised', 'Status'], rows.slice(0, 400).map(r => [
+    '<input type="checkbox" class="co57Pk" value="' + esc(r.email) + '"' + (r.ready || r.picked ? '' : ' disabled') + '>',
+    '<b>' + esc(r.name || r.email) + '</b><div class="mk57-sub">' + esc(r.email) + '</div>', esc(r.company), esc(r.sector || ''), esc(src(r.kind)), esc(r.roleSeen || ''),
+    r.picked ? '<span class="p41-pill gold">Chosen</span>' + (r.ready ? '' : '<div class="mk57-warn">' + esc(r.why) + '</div>') : r.ready ? '<span class="p41-pill ok">Can be emailed</span>' : '<span class="p41-pill bad">Cannot</span><div class="mk57-sub">' + esc(r.why) + '</div>']),
+    'No contacts match. Choose Everyone above to see contacts that cannot be emailed and why.') +
+    (rows.length > 400 ? '<div class="mk57-sub">Showing the first 400. Search to narrow it down.</div>' : '');
 }
 async function co57Pick(btn, remove){
   const emails = [...document.querySelectorAll('.co57Pk:checked')].map(x => x.value);
@@ -20012,7 +20069,7 @@ async function co57Pick(btn, remove){
 }
 async function co57Send(btn){
   const b = CO.batch, items = [];
-  b.items.forEach((i, n) => { const c = document.getElementById('co57C' + n); if(c && c.checked) items.push({ email:i.email, step:i.step, subject:b2Val('co57S' + n), text:b2Val('co57T' + n) }); });
+  b.items.forEach(i => { if(CO.off[co57Key(i)]) return; const e = CO.edits[co57Key(i)] || {}; items.push({ email:i.email, step:i.step, subject:e.subject != null ? e.subject : i.subject, text:e.text != null ? e.text : i.text }); });
   if(!items.length){ showToast('Tick at least one email.'); return; }
   if(!confirm('Send ' + items.length + ' email' + (items.length === 1 ? '' : 's') + ' now, one to one from ' + b.owner + '\'s mailbox?')) return;
   btn.disabled = true; CO.busy = true;
@@ -20020,19 +20077,23 @@ async function co57Send(btn){
     const r = await b2Post('/api/cold/send', { owner:b.owner, items });
     showToast(r.preview ? r.note : r.sent + ' sent, ' + r.skipped + ' skipped, ' + r.failed + ' failed' + (r.stopped ? '. Stopped: ' + r.stopped : '') + (r.errors && r.errors.length ? '. ' + r.errors[0] : ''));
   }catch(e){ showToast(e.message); }
-  CO.busy = false; await co57Load(true);
+  CO.busy = false; CO.edits = {}; CO.off = {}; await co57Load(true);
 }
 function co57Seqs(){
-  const s = CO.seqs, d = s.data;
-  let h = '<div class="b46-sub" style="margin:6px 0 10px;">' + s.summary.active + ' active &middot; ' + s.summary.finished + ' finished &middot; ' + s.summary.replied + ' replied &middot; ' + s.summary.yes + ' said yes &middot; ' + s.summary.no + ' not interested. Record replies here so nobody gets another email after they have answered.</div>';
-  if(!d.length) return h + '<div class="p41-empty">No sequences yet. They start when the first batch is sent.</div>';
-  h += '<table class="b46-tbl"><tr><th>Contact</th><th>Company</th>' + (s.admin ? '<th>Owner</th>' : '') + '<th>Sector</th><th>Stage</th><th>Emails sent</th><th>Next</th><th></th></tr>';
-  d.forEach(x => {
-    const open = x.stage === 'Active' || x.stage === 'Finished';
-    h += '<tr><td>' + esc(x.name || '') + '<div class="b46-sub">' + esc(x.email) + '</div></td><td>' + esc(x.company) + '</td>' + (s.admin ? '<td>' + esc(x.owner) + '</td>' : '') + '<td>' + esc(x.sector) + '</td><td>' + esc(x.stage) + (x.note && !open ? '<div class="b46-sub">' + esc(x.note) + '</div>' : '') + '</td><td>' + esc(x.step) + ' of 3</td><td>' + (x.stage === 'Active' ? esc(gbDate(x.next_due)) : x.stage === 'Finished' ? 'Again after ' + esc(gbDate(x.next_due)) : '') + '</td><td>' +
-      (open ? '<button class="p41-btn sm" onclick="co57Outcome(\'' + esc(x.id) + '\',\'replied\')">Replied</button> <button class="p41-btn sm" onclick="co57Outcome(\'' + esc(x.id) + '\',\'yes\')">Yes, add me</button> <button class="p41-btn sm" onclick="co57Outcome(\'' + esc(x.id) + '\',\'no\')">Not interested</button>' : '') + '</td></tr>';
-  });
-  return h + '</table>';
+  const s = CO.seqs, d = s.data, S = s.summary;
+  const open = x => x.stage === 'Active' || x.stage === 'Finished';
+  let h = mk57Cards([{k:'', t:'All sequences', s:d.length + ' contact' + (d.length === 1 ? '' : 's')}, {k:'Active', t:'Active', s:S.active + ' in progress'}, {k:'Finished', t:'Finished', s:S.finished + ' waiting 90 days'}, {k:'closed', t:'Answered', s:S.replied + ' replied, ' + S.yes + ' yes, ' + S.no + ' no'}], CO.sst, "CO.sst='%K';co57Render()");
+  h += '<div class="mk51-tip">Record replies here so nobody gets another email after they have answered. Yes makes them Warm with consent recorded. Not interested puts them on the Do not email list.</div>';
+  const rows = d.filter(x => !CO.sst || (CO.sst === 'closed' ? !open(x) : x.stage === CO.sst));
+  return h + mk57Table(['Contact', 'Company', s.admin ? 'Owner' : null, 'Sector', 'Stage', 'Emails sent', 'Next', ''].filter(x => x !== null), rows.map(x => {
+    const cls = x.stage === 'Active' ? 'gold' : x.stage === 'Finished' ? '' : /yes/i.test(x.stage) ? 'ok' : /no|suppress/i.test(x.stage) ? 'bad' : 'ok';
+    const r = ['<b>' + esc(x.name || x.email) + '</b><div class="mk57-sub">' + esc(x.email) + '</div>', esc(x.company)];
+    if(s.admin) r.push(esc(x.owner));
+    r.push(esc(x.sector), '<span class="p41-pill ' + cls + '">' + esc(x.stage) + '</span>' + (x.note && !open(x) ? '<div class="mk57-sub">' + esc(x.note) + '</div>' : ''), esc(x.step) + ' of 3',
+      x.stage === 'Active' ? esc(gbDate(x.next_due)) : x.stage === 'Finished' ? 'Again after ' + esc(gbDate(x.next_due)) : '',
+      open(x) ? '<div class="mk51-acts"><button class="p41-btn sm" onclick="co57Outcome(\'' + esc(x.id) + '\',\'replied\')">Replied</button><button class="p41-btn sm" onclick="co57Outcome(\'' + esc(x.id) + '\',\'yes\')">Yes, add me</button><button class="p41-btn sm" onclick="co57Outcome(\'' + esc(x.id) + '\',\'no\')">Not interested</button></div>' : '');
+    return r;
+  }), 'No sequences yet. They start when the first batch is sent.');
 }
 async function co57Outcome(id, outcome){
   const msg = outcome === 'yes' ? 'Record that they said yes? They become Warm with consent recorded and join the fortnightly Gap Brief.' : outcome === 'no' ? 'Record not interested? They go on the Do not email list.' : 'Record that they replied? No more automatic emails go to them.';
@@ -20041,14 +20102,15 @@ async function co57Outcome(id, outcome){
   catch(e){ showToast(e.message); }
 }
 function co57How(){
-  return '<div class="p41-panel"><ul style="margin:0;padding-left:18px;line-height:1.6;">' +
-    '<li>Who: only the contacts you choose on the Choose contacts tab. They must be Cold (Lead Clients and Role Finder prospects), have a sector and a company email address, and not be on the Do not email list. Personal addresses such as Gmail cannot be chosen. Follow-ups for people already in a sequence come up on their own.</li>' +
-    '<li>What: three plain text emails, one to one, from the contact\'s account owner\'s own mailbox. Day 0: if they came from Role Finder, it opens with the role they are advertising and how long it has been live; otherwise with the sector problem. Day 4: a short nudge with the usual cause and a second question. Day 9: a polite last note offering the fortnightly Gap Brief. Then nothing for 90 days. No AI is used: the wording is filled from the contact, Role Finder and the Problem chart.</li>' +
-    '<li>The problem comes from the Problem chart, the one used longest ago for that sector.</li>' +
-    '<li>Volume: starts at 5 new first emails a day per mailbox, rising over two weeks to the normal daily limit. Follow-ups do not count towards it.</li>' +
-    '<li>You approve each day\'s batch. Nothing sends without your click, and you can edit or untick any email.</li>' +
-    '<li>Replies are recorded by hand under Sequences. Yes moves the contact to Warm with consent recorded. Not interested puts them on the Do not email list. Anyone who unsubscribes, replies "no" or becomes Warm is dropped automatically.</li>' +
-    '<li>Every email ends with the company details, where we found their details, and "just reply no" to opt out. There is no link in the email.</li></ul></div>';
+  const rows = [
+    ['Who', 'Only the contacts you choose on the Choose contacts tab. They must be Cold (Lead Clients and Role Finder prospects), have a sector and a company email address, and not be on the Do not email list. Personal addresses such as Gmail cannot be chosen. Follow-ups for people already in a sequence come up on their own.'],
+    ['What', 'Three plain text emails, one to one, from the contact\'s account owner\'s own mailbox. Day 0: if they came from Role Finder it opens with the role they are advertising and how long it has been live, otherwise with the sector problem. Day 4: a short nudge with the usual cause and a second question. Day 9: a polite last note offering the fortnightly Gap Brief. Then nothing for 90 days. No AI is used: the wording is filled from the contact, Role Finder and the Problem chart.'],
+    ['Problem', 'Comes from the Problem chart: the one used longest ago for that sector.'],
+    ['Volume', 'Starts at 5 new first emails a day per mailbox, rising over two weeks to the normal daily limit. Follow-ups do not count towards it.'],
+    ['Approval', 'You approve each day\'s batch. Nothing sends without your click, and you can edit or untick any email.'],
+    ['Replies', 'Recorded by hand under Sequences. Yes moves the contact to Warm with consent recorded. Not interested puts them on the Do not email list. Anyone who unsubscribes, replies "no" or becomes Warm is dropped automatically.'],
+    ['Footer', 'Every email ends with the company details, where we found their details, and "just reply no" to opt out. There is no link in the email.']];
+  return mk57Table(['Topic', 'How it works'], rows.map(r => ['<b>' + r[0] + '</b>', esc(r[1])]), '');
 }
 
 /* ---------------- Page build 57.0: new email engine test panel (Brevo above is unchanged) ---------------- */
