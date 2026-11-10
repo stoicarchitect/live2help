@@ -16285,7 +16285,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '10 Nov 2026 - build 57.3.2 (Cold Outreach: choose who to contact)';
+const SERVER_BUILD = '10 Nov 2026 - build 57.3.3 (Cold Outreach: better emails, no link in footer)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -19743,6 +19743,19 @@ async function audMarkSent(email, sector) {
 const audCompanyKey = c => rfxNormCompany(c);
 const audIsEmail = e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(e || '').trim());
 
+// 57.3.3: the advertised role a Role Finder contact was found through, for the cold email opener
+function audRoleFromNotes(notes) {
+  const m = /Found by Role Finder:\s*([^.]*?),\s*advertised since\s*(\d{4}-\d{2}-\d{2})/i.exec(String(notes || ''));
+  if (!m) return {};
+  const parts = m[1].split(/,\s*/);
+  return { roleSeen: parts[0].trim(), roleWhere: parts.slice(1).join(', ').trim(), roleSince: m[2] };
+}
+function audRoleFromSeen(seen) {
+  const v = String(seen || '').trim();
+  if (!v) return {};
+  const i = v.lastIndexOf(' - ');
+  return i > 0 ? { roleSeen: v.slice(0, i).trim(), roleWhere: v.slice(i + 3).trim() } : { roleSeen: v };
+}
 // Everyone we could email, from every source, de-duplicated by address. Earlier sources win.
 async function audSourceContacts() {
   const safe = p => p.catch(() => []);
@@ -19753,9 +19766,10 @@ async function audSourceContacts() {
   const add = (kind, o) => {
     const email = lc(o.email);
     if (!audIsEmail(email)) return;
-    if (out.has(email)) { out.get(email).alsoIn.push(kind); return; }
+    if (out.has(email)) { const ex = out.get(email); ex.alsoIn.push(kind); if (!ex.roleSeen && o.roleSeen) Object.assign(ex, { roleSeen: o.roleSeen, roleWhere: o.roleWhere || '', roleSince: o.roleSince || ex.roleSince || '' }); return; }
     out.set(email, {
       email, name: o.name || '', company: o.company || '', jobTitle: o.jobTitle || '', kind, alsoIn: [],
+      roleSeen: o.roleSeen || '', roleWhere: o.roleWhere || '', roleSince: o.roleSince || '',
       baseStatus: o.status || 'Cold', baseSource: o.source || '', baseDate: o.date || '',
     });
   };
@@ -19763,8 +19777,8 @@ async function audSourceContacts() {
   funnel.filter(f => lc(f.consent) === 'yes' && !/^website enquiry/i.test(f.notes || '')).forEach(f => add('toolkit', { email: f.email, name: f.name, company: f.company, jobTitle: f.role, status: 'Warm', source: 'Hiring Toolkit opt-in', date: String(f.date || f.created_at || '').slice(0, 10) }));
   ts.filter(u => lc(u.marketing) === 'yes').forEach(u => add('talent', { email: u.email, name: u.name, company: '', jobTitle: u.target_role, status: 'Warm', source: 'Talent Suite marketing', date: String(u.marketing_at || '').slice(0, 10) }));
   const activeCos = new Set(clientRows.map(r => audCompanyKey(r[1])).filter(Boolean));
-  leadRows.filter(r => r[1] && !activeCos.has(audCompanyKey(r[1]))).map(rowToClient).forEach(c => add('lead', { email: c.email, name: c.contactName, company: c.company, jobTitle: c.jobTitle }));
-  pipeline.filter(l => l.email && !['lost', 'archived'].includes(l.stage)).forEach(l => add('prospect', { email: l.email, name: l.contact_name, company: l.company, jobTitle: l.job_title }));
+  leadRows.filter(r => r[1] && !activeCos.has(audCompanyKey(r[1]))).map(rowToClient).forEach(c => add('lead', { email: c.email, name: c.contactName, company: c.company, jobTitle: c.jobTitle, ...audRoleFromNotes(c.notes) }));
+  pipeline.filter(l => l.email && !['lost', 'archived'].includes(l.stage)).forEach(l => add('prospect', { email: l.email, name: l.contact_name, company: l.company, jobTitle: l.job_title, ...audRoleFromSeen(l.role_seen) }));
   return out;
 }
 
@@ -19796,7 +19810,7 @@ async function audResolve() {
       : (suppEmail.get(b.email) || suppCo.get(audCompanyKey(b.company)) || '');
     const route = suppressed ? '' : (status === 'Warm' && !needsRecording ? 'ses' : 'm365');
     rows.push({
-      email: b.email, name: b.name, company: b.company, jobTitle: b.jobTitle, kind: b.kind, alsoIn: b.alsoIn,
+      email: b.email, name: b.name, company: b.company, jobTitle: b.jobTitle, kind: b.kind, alsoIn: b.alsoIn, roleSeen: b.roleSeen || '', roleWhere: b.roleWhere || '', roleSince: b.roleSince || '',
       owner, ownerFrom, sector, sectors, sectorFrom, lastSector: a.last_sector || '', status, consentSource, consentDate, consentNote: a.consent_note || '',
       needsRecording, suppressed, unsubscribedAt: a.unsubscribed_at || '', route, hasRow: !!a.id,
     });
@@ -21032,39 +21046,53 @@ function coldRamp(dayNumber, maxCap) {
   return Math.max(0, Math.min(r, maxCap));
 }
 
-const COLD_HOW = {
-  prospect: sector => `I came across your company while looking at businesses that are hiring in ${sector}.`,
-  lead: sector => `I found your details from public business information, such as your company website and LinkedIn, and your business looks relevant to ${sector} hiring.`,
-  other: sector => `I found your details from public business information, and your business looks relevant to ${sector} hiring.`,
-};
-function coldFirst(name) { return gapFirstName(name); }
 function coldFooterText(email, sector) {
-  return `\n\n--\nLive 2 Help Recruitment Ltd, registered in England and Wales, company number 11731080. 20 Chester Street, Wolverhampton, WV6 0PY. ${GAP_CLIENT_PHONE}\n` +
-    `I am writing to you one to one because hiring in ${String(sector).toLowerCase()} may be relevant to your role. If you would rather not hear from me, reply "no" or use this link and I will remove you straight away: ${unsubUrl(email)}`;
+  // 57.3.3: no link in the visible text (it looked like a scam); a one to one email only needs "reply no"
+  return `\n\nLive 2 Help Recruitment Ltd, company number 11731080, 20 Chester Street, Wolverhampton WV6 0PY. I found your details through public business sources such as your company website, job adverts or LinkedIn. If you would rather not hear from me, just reply "no" and I will not contact you again.`;
 }
-// Builds the plain text of one email in the sequence (without the footer, which the server always adds)
-function coldBuild(step, c, owner, prob) {
-  const sec = String(c.sector).toLowerCase();
-  const first = coldFirst(c.name);
+const coldLow = s => String(s || '').charAt(0).toLowerCase() + String(s || '').slice(1);
+const coldSentence = s => { const t = String(s || '').trim().replace(/\s+/g, ' '); return t ? (/[.!?]$/.test(t) ? t : t + '.') : ''; };
+function coldWeeks(since) {
+  if (!since) return '';
+  const d = coldDaysBetween(since, rfxToday());
+  if (!(d >= 14)) return '';
+  const w = Math.round(d / 7);
+  return w >= 8 ? ' for over two months' : ` for about ${w} weeks`;
+}
+// Builds the plain text of one email in the sequence (without the footer, which the server always adds). No AI: filled from the contact, Role Finder and the Problem chart.
+function coldBuild(step, c, owner, prob, firstSubject) {
+  const sec = String(c.sector || '').toLowerCase();
+  const first = gapFirstName(c.name);
   const o = profileOf(owner);
   const ownerFirst = String(o.fullName || owner).split(/\s+/)[0];
+  const co = c.company || 'your business';
   const qs = String(prob.questions || '').split(/\n+/).map(x => x.trim()).filter(Boolean);
   const hi = first ? `Hi ${first},` : 'Hello,';
-  const sign = `Kind regards,\n${o.fullName || ownerFirst}\nLive 2 Help Recruitment\n${GAP_CLIENT_PHONE}`;
+  const sign = `Kind regards,\n\n${o.fullName || ownerFirst}\n${o.title ? o.title + '\n' : ''}Live 2 Help Recruitment\n${GAP_CLIENT_PHONE} | live2helprecruitment.co.uk`;
+  const role = String(c.roleSeen || '').trim();
   let subject, body;
   if (step === 1) {
-    subject = `A quick question about hiring at ${c.company || 'your business'}`;
-    body = `${hi}\n\nI am ${ownerFirst} from Live 2 Help Recruitment. ${(COLD_HOW[c.kind] || COLD_HOW.other)(sec)}\n\n` +
-      `One thing we keep hearing from ${sec} employers: ${prob.problem} ${prob.impact}\n\n` +
-      (qs[0] ? `${qs[0]}\n\nA one line reply is all I need.` : 'Is that something you are seeing too? A one line reply is all I need.') + `\n\n${sign}`;
+    if (role) {
+      subject = `${role} at ${co}`;
+      body = `${hi}\n\nI noticed ${co} has been advertising for a ${role}${c.roleWhere ? ' in ' + c.roleWhere : ''}${coldWeeks(c.roleSince)}.\n\n` +
+        `${coldSentence(prob.problem)} We find, screen and interview candidates before you see them, so you only spend time on people who genuinely fit.\n\n` +
+        `Would it be worth a quick chat about the role, or is someone else looking after it?\n\n${sign}`;
+    } else {
+      subject = `Hiring at ${co}`;
+      body = `${hi}\n\nI'm ${ownerFirst} from Live 2 Help Recruitment. We help ${sec} employers fill permanent roles with people who have already been screened and interviewed.\n\n` +
+        `${coldSentence(prob.problem)} ${coldSentence(prob.impact)}\n\n` +
+        `${qs[0] || 'Is that something you are seeing at ' + co + '?'}\n\nIf recruitment sits with someone else, could you point me in the right direction?\n\n${sign}`;
+    }
   } else if (step === 2) {
-    subject = `Following up: hiring at ${c.company || 'your business'}`;
-    body = `${hi}\n\nI wrote a few days ago about hiring in ${sec}. In our experience the cause is usually this: ${prob.root_cause}\n\n` +
-      (qs[1] ? `${qs[1]}\n\nA one line reply is all I need.` : 'Does that sound familiar? A one line reply is all I need.') + `\n\n${sign}`;
+    subject = 'Re: ' + (firstSubject || (role ? `${role} at ${co}` : `Hiring at ${co}`)).replace(/^Re:\s*/i, '');
+    body = `${hi}\n\nJust bringing this back to the top of your inbox.${role ? ` Is the ${role} role still open?` : ''}\n\n` +
+      `When we talk to ${sec} employers, the cause is usually the same: ${coldLow(coldSentence(prob.root_cause))}\n\n` +
+      `${qs[1] || 'Does that sound familiar?'} A one line reply is plenty.\n\n${sign}`;
   } else {
-    subject = `Last note from me: a short ${sec} hiring brief`;
-    body = `${hi}\n\nThis is my last note for now. Every fortnight I send ${sec} employers a short Gap Brief: one current UK hiring figure, what the best employers do about it, and a 60 second check you can run on your own hiring.\n\n` +
-      `If that would be useful, reply "yes" and I will add you. If not, I will not contact you again for a while.\n\n${sign}`;
+    subject = 'Re: ' + (firstSubject || (role ? `${role} at ${co}` : `Hiring at ${co}`)).replace(/^Re:\s*/i, '');
+    body = `${hi}\n\nI won't keep filling your inbox, so this is my last note for now.\n\n` +
+      `Every fortnight I send ${sec} employers a short Gap Brief: one current UK hiring figure, what the best employers are doing about it, and a 60 second check you can run on your own hiring. No sales pitch.\n\n` +
+      `If you would like it, just reply "yes". And if a role ever needs filling, my number is below.\n\n${sign}`;
   }
   return { subject: coldDash(subject), text: coldDash(body) };
 }
@@ -21150,7 +21178,8 @@ async function coldBatch(owner) {
     const c = by.get(lc(s.email)); if (!c || c.suppressed || c.status !== 'Cold') continue;
     const prob = problems.find(p => p.id === s.problem_id) || coldPickProblem(s.sector, problems, seqs); if (!prob) continue;
     const step = Number(s.step) + 1;
-    const mail = coldBuild(step, { name: s.name || c.name, company: s.company || c.company, sector: s.sector, kind: c.kind }, owner, prob);
+    const firstSent = sends.find(x => x.seq_id === s.id && String(x.step) === '1' && x.status === 'sent');
+    const mail = coldBuild(step, { ...c, name: s.name || c.name, company: s.company || c.company, sector: s.sector }, owner, prob, firstSent && firstSent.subject);
     out.items.push({ key: lc(s.email) + '|' + step, email: lc(s.email), name: s.name || c.name, company: s.company || c.company, sector: s.sector, step, newSeq: false, seqId: s.id, problemId: prob.id, ...mail });
   }
   // new first-touch: only the contacts this owner has chosen (57.3.2: nothing is picked automatically)
@@ -21258,7 +21287,7 @@ app.get('/api/cold/contacts', async (req, res) => {
     const picked = new Set(picks.filter(x => lc(x.owner) === owner).map(x => lc(x.email)));
     const rows = contacts.filter(c => c.status === 'Cold' || seqBy.has(c.email)).map(c => {
       const why = coldWhyNot(c, seqBy.get(c.email), owner, today);
-      return { email: c.email, name: c.name, company: c.company, jobTitle: c.jobTitle, kind: c.kind, owner: c.owner, sector: c.sector, status: c.status, picked: picked.has(c.email), ready: !why, why };
+      return { email: c.email, name: c.name, company: c.company, jobTitle: c.jobTitle, kind: c.kind, roleSeen: c.roleSeen || '', owner: c.owner, sector: c.sector, status: c.status, picked: picked.has(c.email), ready: !why, why };
     });
     const usage = await coldUsage(owner, seqs, sends);
     res.json({ owner, me, owners: isAdmin(req) ? audOwners() : [], canAct: coldCanAct(req, owner), usage, sectors: SECTORS.map(x => x.name), data: rows });

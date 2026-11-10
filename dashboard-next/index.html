@@ -17002,7 +17002,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '10 Nov 2026 - build 57.3.2 (Cold Outreach: choose who to contact) preview';
+var PAGE_BUILD = '10 Nov 2026 - build 57.3.3 (Cold Outreach: better emails) preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -19838,7 +19838,7 @@ function co57Batch(){
       '<div class="b46-sub" style="margin:4px 0;">' + esc(i.email) + '</div>' +
       '<input id="co57S' + n + '" style="width:100%;margin-bottom:6px;" value="' + esc(i.subject) + '">' +
       '<textarea id="co57T' + n + '" rows="11" style="width:100%;font-size:13px;">' + esc(i.text) + '</textarea>' +
-      '<details style="margin-top:4px;"><summary class="b46-sub">Footer added automatically</summary><pre style="white-space:pre-wrap;font-size:12px;color:#555;">' + esc(i.footer.trim()) + '</pre></details></div>';
+      '<details style="margin-top:4px;"><summary class="b46-sub">Line added automatically at the end</summary><pre style="white-space:pre-wrap;font-size:12px;color:#555;">' + esc(i.footer.trim()) + '</pre></details></div>';
   });
   if(b.canAct && !b.preview) h += '<div class="p41-bar" style="margin-top:12px;"><button class="p41-btn pri" ' + (CO.busy ? 'disabled' : '') + ' onclick="co57Send(this)">Approve and send the ticked emails</button><span class="b46-sub">Sends now, Monday to Friday between ' + b.sendHours[0] + ':00 and ' + b.sendHours[1] + ':00.</span></div>';
   else if(!b.canAct) h += '<div class="p41-note">You are viewing someone else\'s batch. Only they can send it.</div>';
@@ -19865,8 +19865,8 @@ function co57ChooseRows(){
     (!q || (r.name + ' ' + r.company + ' ' + r.email).toLowerCase().includes(q)));
   if(!rows.length){ el.innerHTML = '<div class="p41-empty">No contacts match. Try Everyone to see contacts that cannot be emailed and why.</div>'; return; }
   const src = k => k === 'prospect' ? 'Role Finder' : k === 'lead' ? 'Lead Clients' : k;
-  el.innerHTML = '<table class="b46-tbl"><tr><th><input type="checkbox" onclick="document.querySelectorAll(\'.co57Pk\').forEach(x=>{if(!x.disabled)x.checked=this.checked})"></th><th>Contact</th><th>Company</th><th>Sector</th><th>Source</th><th>Status</th></tr>' +
-    rows.slice(0, 400).map(r => '<tr><td><input type="checkbox" class="co57Pk" value="' + esc(r.email) + '"' + (r.ready || r.picked ? '' : ' disabled') + '></td><td>' + esc(r.name || '') + '<div class="b46-sub">' + esc(r.email) + '</div></td><td>' + esc(r.company) + '</td><td>' + esc(r.sector || '') + '</td><td>' + esc(src(r.kind)) + '</td><td>' +
+  el.innerHTML = '<table class="b46-tbl"><tr><th><input type="checkbox" onclick="document.querySelectorAll(\'.co57Pk\').forEach(x=>{if(!x.disabled)x.checked=this.checked})"></th><th>Contact</th><th>Company</th><th>Sector</th><th>Source</th><th>Role advertised</th><th>Status</th></tr>' +
+    rows.slice(0, 400).map(r => '<tr><td><input type="checkbox" class="co57Pk" value="' + esc(r.email) + '"' + (r.ready || r.picked ? '' : ' disabled') + '></td><td>' + esc(r.name || '') + '<div class="b46-sub">' + esc(r.email) + '</div></td><td>' + esc(r.company) + '</td><td>' + esc(r.sector || '') + '</td><td>' + esc(src(r.kind)) + '</td><td>' + esc(r.roleSeen || '') + '</td><td>' +
       (r.picked ? '<b>Chosen</b>' + (r.ready ? '' : '<div class="b46-sub">' + esc(r.why) + '</div>') : r.ready ? 'Can be emailed' : '<span class="b46-sub">' + esc(r.why) + '</span>') + '</td></tr>').join('') + '</table>' +
     (rows.length > 400 ? '<div class="b46-sub">Showing the first 400. Search to narrow it down.</div>' : '');
 }
@@ -19914,12 +19914,12 @@ async function co57Outcome(id, outcome){
 function co57How(){
   return '<div class="p41-panel"><ul style="margin:0;padding-left:18px;line-height:1.6;">' +
     '<li>Who: only the contacts you choose on the Choose contacts tab. They must be Cold (Lead Clients and Role Finder prospects), have a sector and a company email address, and not be on the Do not email list. Personal addresses such as Gmail cannot be chosen. Follow-ups for people already in a sequence come up on their own.</li>' +
-    '<li>What: three plain text emails, one to one, from the contact\'s account owner\'s own mailbox. Day 0 a problem and one question, day 4 the cause and a second question, day 9 the offer of the fortnightly Gap Brief. Then nothing for 90 days.</li>' +
+    '<li>What: three plain text emails, one to one, from the contact\'s account owner\'s own mailbox. Day 0: if they came from Role Finder, it opens with the role they are advertising and how long it has been live; otherwise with the sector problem. Day 4: a short nudge with the usual cause and a second question. Day 9: a polite last note offering the fortnightly Gap Brief. Then nothing for 90 days. No AI is used: the wording is filled from the contact, Role Finder and the Problem chart.</li>' +
     '<li>The problem comes from the Problem chart, the one used longest ago for that sector.</li>' +
     '<li>Volume: starts at 5 new first emails a day per mailbox, rising over two weeks to the normal daily limit. Follow-ups do not count towards it.</li>' +
     '<li>You approve each day\'s batch. Nothing sends without your click, and you can edit or untick any email.</li>' +
     '<li>Replies are recorded by hand under Sequences. Yes moves the contact to Warm with consent recorded. Not interested puts them on the Do not email list. Anyone who unsubscribes, replies "no" or becomes Warm is dropped automatically.</li>' +
-    '<li>Every email carries the company details and a one-click opt-out.</li></ul></div>';
+    '<li>Every email ends with the company details, where we found their details, and "just reply no" to opt out. There is no link in the email.</li></ul></div>';
 }
 
 /* ---------------- Page build 57.0: new email engine test panel (Brevo above is unchanged) ---------------- */
