@@ -2482,9 +2482,14 @@ h1,h2,.view-head h2,#leadClientsHeader h2,#clientsHeader h2,.modal h2{font-famil
         <input id="rmContact" list="rmContactList" placeholder="Contact name">
         <datalist id="rmContactList"></datalist>
         <div class="two-col">
-          <div><label>Salary band</label><input id="rmSalary" placeholder="e.g. 35,000 - 40,000" oninput="rmUpdateAutoFee()"></div>
-          <div><label>Fee % <span style="color:#999;">(automatic from salary, confirmed at invoicing)</span></label><input id="rmFee" readonly tabindex="-1" placeholder="Fills in from the salary" style="background:#f4f2ec;color:#555;cursor:default;"></div>
+          <div><label>Salary band</label><input id="rmSalary" placeholder="e.g. 35,000 - 40,000" oninput="rmPayFromTyping()"></div>
+          <div><label>Fee % <span style="color:#999;">(automatic from the pay, confirmed at invoicing)</span></label><input id="rmFee" readonly tabindex="-1" placeholder="Fills in from the salary" style="background:#f4f2ec;color:#555;cursor:default;"></div>
         </div>
+        <div class="two-col">
+          <div><label>Pay basis</label><select id="rmPayBasis" onchange="this.dataset.touched='1';rmUpdateAutoFee()"><option value="annual">Annual salary</option><option value="hourly">Hourly rate</option></select></div>
+          <div id="rmHoursRow" style="display:none;"><label>Basic hours per week <span style="color:#999;">(not overtime)</span></label><input id="rmHours" type="number" min="8" max="60" step="0.5" placeholder="e.g. 37.5" oninput="this.dataset.touched='1';rmUpdateAutoFee()"></div>
+        </div>
+        <div id="rmPayNote" class="note-line" style="margin:2px 0 8px;"></div>
         <div class="two-col">
           <div><label>Status</label>
             <select id="rmStatus" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13.5px;">
@@ -3143,7 +3148,7 @@ function renderBoard(){
             <div class="cname">${formatCandidateName(c.name)}</div>
             <div class="cdays">${d} day${d===1?'':'s'} in stage</div>
             ${subFlagHtml(c, currentRole)}
-            ${c.salary ? `<div class="csal">${esc(salaryLabel(c.salary))}</div>` : ''}
+            ${c.salary ? `<div class="csal">${esc(salaryLabel(c.salary, payCtx(c)))}</div>` : ''}
             <div class="mob-action">View &rsaquo;</div>
           </div>
         `;
@@ -3225,7 +3230,7 @@ function renderAggregateBoard(){
             <div class="csub">${where.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>
             <div class="cdays">${d} day${d===1?'':'s'} in stage</div>
             ${subFlagHtml(c, x.role)}
-            ${c.salary ? `<div class="csal">${esc(salaryLabel(c.salary))}</div>` : ''}
+            ${c.salary ? `<div class="csal">${esc(salaryLabel(c.salary, payCtx(c)))}</div>` : ''}
             <div class="mob-action">View &rsaquo;</div>
           </div>`;
         body.appendChild(card);
@@ -4064,6 +4069,11 @@ async function deleteTask(id){
   }
 }
 
+// For an hourly role the invoice is sent the candidate's agreed rate; the server works out the annual figure itself
+function hourlyInvoiceFields(raw, ctx){
+  const i = salaryInfo(raw, ctx);
+  return i.hourly ? {payRate: String(i.rate), payHours: String(i.hours || '')} : {payRate: '', payHours: ''};
+}
 function calculateFeePreview(salary){
   const s = Number(salary) || 0;
   let rate;
@@ -4191,10 +4201,11 @@ function updateInvoicePreview(){
   const eligible = window._invoiceEligible || [];
   const c = eligible[Number(select.value)];
   if(!c) return;
-  const { rate, fee } = calculateFeePreview(parseSalaryNumber(c.salary));
+  const pctx = payCtx(c);
+  const { rate, fee } = calculateFeePreview(parseSalaryNumber(c.salary, pctx));
   document.getElementById('pvCompany').textContent = c.company;
   document.getElementById('pvCandidate').textContent = c.name;
-  document.getElementById('pvSalary').textContent = parseSalaryNumber(c.salary).toLocaleString();
+  document.getElementById('pvSalary').textContent = parseSalaryNumber(c.salary, pctx).toLocaleString();
   document.getElementById('pvRate').textContent = rate * 100;
   document.getElementById('pvFee').textContent = fee.toLocaleString();
   document.getElementById('invoicePreviewBox').style.display = 'block';
@@ -4205,8 +4216,10 @@ async function submitGenerateInvoice(){
   const eligible = window._invoiceEligible || [];
   const c = eligible[Number(select.value)];
   if(!c) return;
-  const singleSalary = singleSalaryOrWarn(c.salary);
+  const pctx = payCtx(c);
+  const singleSalary = singleSalaryOrWarn(c.salary, pctx);
   if(!singleSalary) return;
+  const hourlyPay = hourlyInvoiceFields(c.salary, pctx);
   const pickedConsultant = await pickConsultant();
   if(pickedConsultant === null) return;
 
@@ -4220,6 +4233,7 @@ async function submitGenerateInvoice(){
         role: c.role,
         candidateName: c.name,
         salary: String(singleSalary),
+        payRate: hourlyPay.payRate, payHours: hourlyPay.payHours,
         consultant: pickedConsultant,
         commissionPct: commissionPctFor(pickedConsultant)
       })
@@ -4244,8 +4258,10 @@ async function submitGenerateInvoice(){
 async function generateInvoiceForCandidate(){
   const c = findCandidate(openCandidateId);
   captureFieldsFromModal(c);
-  const singleSalary = singleSalaryOrWarn(c.salary);
+  const pctx = payCtx({company: currentCompany, role: currentRole});
+  const singleSalary = singleSalaryOrWarn(c.salary, pctx);
   if(!singleSalary) return;
+  const hourlyPay = hourlyInvoiceFields(c.salary, pctx);
   const pickedConsultant = await pickConsultant();
   if(pickedConsultant === null) return;
   await saveCandidate(c);
@@ -4259,6 +4275,7 @@ async function generateInvoiceForCandidate(){
         role: currentRole,
         candidateName: c.name,
         salary: String(singleSalary),
+        payRate: hourlyPay.payRate, payHours: hourlyPay.payHours,
         consultant: pickedConsultant,
         commissionPct: commissionPctFor(pickedConsultant)
       })
@@ -6541,7 +6558,7 @@ function renderRoles(){
       <td>${esc(r.company)}${isLeadCompany(r.company) ? '<div><span class="lead-cap" title="Candidates go up to Submitted until they are onboarded">Lead client</span></div>' : ''}</td>
       <td>${r.contact ? esc(r.contact) : '<span style="color:#bbb;">Not set</span>'}</td>
       <td>${r.salary_band ? esc(r.salary_band) : '<span style="color:#bbb;">Not set</span>'}</td>
-      <td>${roleAutoFee(r.salary_band) ? roleAutoFee(r.salary_band) + '%' : '<span style="color:#bbb;" title="Fills in automatically once a salary is added">Awaiting salary</span>'}</td>
+      <td>${roleAutoFee(r.salary_band, rolePayOf(r)) ? roleAutoFee(r.salary_band, rolePayOf(r)) + '%' : '<span style="color:#bbb;" title="' + (r.pay_basis === 'hourly' ? 'Add the basic weekly hours' : 'Fills in automatically once a salary is added') + '">' + (r.pay_basis === 'hourly' ? 'Awaiting hours' : 'Awaiting salary') + '</span>'}</td>
       <td><span class="status-pill ${esc(r.status)}">${esc(roleStatusLabel(r.status))}</span></td>
       <td>${esc(opsFmt(opened))}</td>
       <td>${days === '' ? '' : esc(days)}</td>
@@ -6678,16 +6695,55 @@ function rolesFilter(status){
 
 // Fee % is always worked out from the salary (midpoint of a range) on the standard scale.
 // The final rate is confirmed at invoicing against the candidate's actual basic salary.
-function roleAutoFee(band){
-  const mid = bandMidpoint(band);
+function roleAutoFee(band, pay){
+  const mid = pay ? roleAnnualMid({salary_band: band, pay_basis: pay.basis, hours_per_week: pay.hours}) : bandMidpoint(band);
   return mid > 0 ? feeRateFor(mid) : '';
+}
+// Annual midpoint of a role's pay band. Hourly roles: midpoint rate x basic weekly hours x 52
+function roleAnnualMid(r){
+  const mid = bandMidpoint(r && r.salary_band);
+  if(r && r.pay_basis === 'hourly') return hourlyAnnual(mid, parseFloat(r.hours_per_week) || 0);
+  return mid;
+}
+function rolePayOf(r){ return {basis: r && r.pay_basis === 'hourly' ? 'hourly' : 'annual', hours: r && r.hours_per_week}; }
+// Pay basis and hours: suggested from what is typed or pasted, always editable
+function rmPayFromTyping(){
+  const band = document.getElementById('rmSalary').value;
+  const sel = document.getElementById('rmPayBasis');
+  if(sel && !sel.dataset.touched){
+    const mid = bandMidpoint(band);
+    sel.value = looksHourly(band) || (mid > 0 && mid < 200) ? 'hourly' : 'annual';
+  }
+  rmPickHours();
+  rmUpdateAutoFee();
+}
+function rmPickHours(){
+  const hrs = document.getElementById('rmHours');
+  if(!hrs || hrs.dataset.touched) return;
+  const text = ['rmJobDescription','rmRequirements','rmNotes','rmSalary'].map(id => (document.getElementById(id) || {}).value || '').join(' ');
+  const h = detectWeeklyHours(text);
+  if(h && String(h) !== hrs.value){ hrs.value = String(h); rmUpdateAutoFee(); }
 }
 function rmUpdateAutoFee(){
   const el = document.getElementById('rmFee');
   if(!el) return;
-  const f = roleAutoFee(document.getElementById('rmSalary').value);
+  const basis = (document.getElementById('rmPayBasis') || {}).value === 'hourly' ? 'hourly' : 'annual';
+  const hours = (document.getElementById('rmHours') || {}).value;
+  const band = document.getElementById('rmSalary').value;
+  const hrsRow = document.getElementById('rmHoursRow');
+  if(hrsRow) hrsRow.style.display = basis === 'hourly' ? 'block' : 'none';
+  const f = roleAutoFee(band, {basis, hours});
   el.value = f ? f + '%' : '';
-  el.placeholder = 'Fills in from the salary';
+  el.placeholder = basis === 'hourly' ? 'Needs the hourly rate and weekly hours' : 'Fills in from the salary';
+  const note = document.getElementById('rmPayNote');
+  if(note){
+    if(basis === 'hourly'){
+      const mid = bandMidpoint(band), h = parseFloat(hours) || 0;
+      note.textContent = mid > 0 && h > 0
+        ? f2gbp(mid) + ' an hour (midpoint) x ' + h + ' basic hours x ' + PAY_WEEKS + ' weeks = \u00A3' + hourlyAnnual(mid, h).toLocaleString('en-GB') + ' a year, so the ' + f + '% fee band applies. Fees are on basic hours only, never overtime.'
+        : 'Enter the hourly rate or range and the basic weekly hours, and the fee band works itself out.';
+    }else note.textContent = '';
+  }
 }
 async function rolesCopyFormLink(id){
   const r = mergedRoles().find(x => x.id === id);
@@ -6725,6 +6781,11 @@ function openRoleModal(id){
   document.getElementById('rmRole').value = r ? r.role : '';
   document.getElementById('rmContact').value = r ? r.contact : '';
   document.getElementById('rmSalary').value = r ? r.salary_band : '';
+  const pbSel = document.getElementById('rmPayBasis'), hrsIn = document.getElementById('rmHours');
+  pbSel.value = r && r.pay_basis === 'hourly' ? 'hourly' : 'annual';
+  hrsIn.value = r && r.hours_per_week ? r.hours_per_week : '';
+  if(r && r.pay_basis){ pbSel.dataset.touched = '1'; } else { delete pbSel.dataset.touched; }
+  if(r && r.hours_per_week){ hrsIn.dataset.touched = '1'; } else { delete hrsIn.dataset.touched; }
   rmUpdateAutoFee();
   document.getElementById('rmStatus').value = r ? r.status : 'open';
   document.getElementById('rmOpened').value = r ? opsDateOnly(r.date_opened) : opsToday();
@@ -6753,8 +6814,16 @@ function rmLeadHint(){
   el.textContent = lead ? inp.value.trim() + ' is a lead client. You can source and submit CVs to win the business. Candidates stop at Submitted until they have signed both agreements and moved to Clients.' : '';
 }
 
+// Hourly bands are saved with "per hour" so careers pages and forms read correctly
+function rmSalaryForSave(){
+  const v = document.getElementById('rmSalary').value.trim();
+  return v && document.getElementById('rmPayBasis').value === 'hourly' && !looksHourly(v) ? v + ' per hour' : v;
+}
 async function saveRole(){
   const company = document.getElementById('rmCompany').value.trim();
+  if(document.getElementById('rmPayBasis').value === 'hourly' && !(parseFloat(document.getElementById('rmHours').value) > 0)){
+    showToast('Saved without weekly hours: add them so the fee band can be worked out');
+  }
   const role = document.getElementById('rmRole').value.trim();
   if(!company || !role){ showToast('Enter both a company and a role title'); return; }
   const status = document.getElementById('rmStatus').value;
@@ -6768,8 +6837,10 @@ async function saveRole(){
     id: editingRoleId || opsRoleKey(company, role),
     company, role,
     contact: document.getElementById('rmContact').value.trim(),
-    salary_band: document.getElementById('rmSalary').value.trim(),
-    fee_percent: String(roleAutoFee(document.getElementById('rmSalary').value.trim()) || ''),
+    salary_band: rmSalaryForSave(),
+    fee_percent: String(roleAutoFee(document.getElementById('rmSalary').value.trim(), {basis: document.getElementById('rmPayBasis').value, hours: document.getElementById('rmHours').value}) || ''),
+    pay_basis: document.getElementById('rmPayBasis').value === 'hourly' ? 'hourly' : 'annual',
+    hours_per_week: document.getElementById('rmPayBasis').value === 'hourly' ? String(parseFloat(document.getElementById('rmHours').value) || '') : '',
     status,
     date_opened: document.getElementById('rmOpened').value || opsToday(),
     date_closed: closed,
@@ -8374,12 +8445,12 @@ function tplVars(){
     const c = sel.c;
     v.candidate_name = c.name; v.first_name = String(c.name).split(' ')[0]; v.role = sel.role; v.company = sel.company;
     v.company_address = companyAddress(sel.company);
-    if(parseSalaryNumber(c.salary)) v.salary = opsMoney(parseSalaryNumber(c.salary));
+    if(parseSalaryNumber(c.salary, payCtx(sel))) v.salary = payDisplay(c.salary, payCtx(sel));
     if(c.startDate) v.start_date = fmtDateLong(c.startDate);
     const inv = OPS.invoices.find(i => b2Same(i.candidateName, c.name) && b2Same(i.company, sel.company));
     if(inv){ v.invoice_ref = inv.number; v.fee_amount = opsMoney(inv.amount); }
     else{
-      const sal = parseSalaryNumber(c.salary);
+      const sal = parseSalaryNumber(c.salary, payCtx(sel));
       if(sal && signedInUser && signedInUser.admin) v.fee_amount = opsMoney(sal * feeRateFor(sal) / 100);
     }
   }
@@ -8462,14 +8533,14 @@ function renderForecast(){
     const openPos = Math.max(0, positions - placed);
     const inPlay = [];
     cands.filter(c => FORECAST_STAGES.includes(c.stage)).forEach(c => {
-      const sInfo = salaryInfo(c.salary);
+      const sInfo = salaryInfo(c.salary, roleHourlyCtx(r));
       let salary = sInfo.value, source = sInfo.isRange ? 'range' : 'candidate';
       if(c.salary && !salary) salaryFlags.push({name: c.name, role: r.role, company: r.company, text: String(c.salary)});
-      if(!salary){ salary = bandMidpoint(r.salary_band); source = 'band'; }
+      if(!salary){ salary = roleAnnualMid(r); source = 'band'; }
       if(!salary){ noSalary++; return; }
       const rate = parseFloat(r.fee_percent) > 0 ? parseFloat(r.fee_percent) : feeRateFor(salary);
       const fee = salary * rate / 100;
-      inPlay.push({name:c.name, stage:c.stage, salary, rate, fee, weight: weights[c.stage] || 0, source, rangeText: sInfo.isRange ? salaryLabel(c.salary) : ''});
+      inPlay.push({name:c.name, stage:c.stage, salary, rate, fee, weight: weights[c.stage] || 0, source, rangeText: sInfo.isRange ? salaryLabel(c.salary, roleHourlyCtx(r)) : ''});
     });
     inPlay.sort((a, b) => (b.weight - a.weight) || (b.fee - a.fee));
     inPlay.forEach((c, i) => {
@@ -8486,8 +8557,8 @@ function renderForecast(){
   const totalWeighted = roleRows.reduce((s, r) => s + r.weighted, 0);
   const best = roleRows.reduce((s, r) => s + r.potential, 0);
   const openPositions = roleRows.reduce((s, r) => s + r.openPos, 0);
-  const awaiting = OPS.placements.filter(p => !p.invoiceNumber && parseSalaryNumber(p.salary) > 0).reduce((s, p) => {
-    const sal = parseSalaryNumber(p.salary);
+  const awaiting = OPS.placements.filter(p => !p.invoiceNumber && parseSalaryNumber(p.salary, payCtx(p)) > 0).reduce((s, p) => {
+    const sal = parseSalaryNumber(p.salary, payCtx(p));
     return s + sal * feeRateFor(sal) / 100;
   }, 0);
   const outstanding = OPS.invoices.filter(i => i.status !== 'paid').reduce((s, i) => s + (i.amount || 0), 0);
@@ -9904,11 +9975,11 @@ tplVars = function(){
     const c = sel.c;
     v.candidate_name = c.name; v.first_name = String(c.name).split(' ')[0]; v.role = sel.role; v.company = sel.company;
     v.company_address = companyAddress(sel.company);
-    if(parseSalaryNumber(c.salary)) v.salary = opsMoney(parseSalaryNumber(c.salary));
+    if(parseSalaryNumber(c.salary, payCtx(sel))) v.salary = payDisplay(c.salary, payCtx(sel));
     const inv = OPS.invoices.find(i => b2Same(i.candidateName, c.name) && b2Same(i.company, sel.company));
     if(inv){ v.invoice_ref = inv.number; v.fee_amount = opsMoney(inv.amount); }
     else{
-      const sal = parseSalaryNumber(c.salary);
+      const sal = parseSalaryNumber(c.salary, payCtx(sel));
       if(sal && signedInUser && signedInUser.admin) v.fee_amount = opsMoney(sal * feeRateFor(sal) / 100);
     }
   }
@@ -12398,6 +12469,7 @@ function rmCheckForm(){
   }, 500);
 }
 document.getElementById('rmRole').addEventListener('input', rmCheckForm);
+['rmJobDescription','rmRequirements','rmNotes'].forEach(id => { const el = document.getElementById(id); if(el) el.addEventListener('input', rmPickHours); });
 
 async function rmGenerateCareers(silent){
   const btn = document.getElementById('rmGenBtn');
@@ -14217,13 +14289,13 @@ async function markCommission(number, paid){
 
 /* ---------- Fee preview on the candidate card (Dan only, once a salary is entered) ---------- */
 function commissionPreview(c){
-  const info = salaryInfo(c.salary);
+  const info = salaryInfo(c.salary, payCtx(c));
   if(!(signedInUser && signedInUser.admin) || !info.value) return '';
   const {rate, fee} = calculateFeePreview(info.value);
   const people = payEmployees().filter(e => parseFloat(e.commissionPct) > 0);
   const lines = people.map(e => `${esc(e.name)}'s ${parseFloat(e.commissionPct)}%: ${gbp2(Math.round(fee * parseFloat(e.commissionPct)) / 100)}`);
   return `<div class="field-row"><label>Fee preview (only you can see this)</label>
-    <div class="val" style="font-size:12.5px;">Salary ${gbp(info.value)}${info.isRange ? ' (midpoint of the range)' : ''} falls in the ${rate * 100}% bracket, so the fee is ${gbp2(fee)}.${lines.length ? '<br>If placed by ' + lines.join('<br>') : ''}</div></div>`;
+    <div class="val" style="font-size:12.5px;">${info.hourly ? 'Pay of ' + f2gbp(info.rate) + ' an hour x ' + info.hours + ' basic hours x ' + PAY_WEEKS + ' weeks = ' + gbp(info.value) + ' a year' : 'Salary ' + gbp(info.value)}${info.isRange ? ' (midpoint of the range)' : ''} falls in the ${rate * 100}% bracket, so the fee is ${gbp2(fee)}.${lines.length ? '<br>If placed by ' + lines.join('<br>') : ''}</div></div>`;
 }
 
 /* ---------- Runway: bank balance against forward monthly costs ---------- */
@@ -14346,10 +14418,54 @@ async function saveCandSource(id, val){
    stage, forecast flags, and editing details on the Candidate Pool page
    ============================================================ */
 
-function salaryInfo(raw){
+/* ---------- Hourly pay (build 58) ----------
+   Fees are charged on basic pay only (never overtime or OTE). For an hourly role the annual figure is
+   the agreed hourly rate x the role's basic weekly hours x 52 weeks, and the normal fee bands apply to it. */
+var PAY_WEEKS = 52;
+function looksHourly(text){ return /per\s*hour|an\s*hour|\/\s*h(?:ou)?r\b|\bp\/?h\b|hourly/i.test(String(text || '')); }
+function detectWeeklyHours(text){
+  const t = String(text || '');
+  const m = t.match(/(\d{1,2}(?:\.\d{1,2})?)\s*(?:hours?|hrs?)\s*(?:per|a|each|\/)\s*week/i)
+    || t.match(/(?:hours?|hrs?)\s*(?:per|a|each|\/)\s*week\s*[:\-]?\s*(\d{1,2}(?:\.\d{1,2})?)/i)
+    || t.match(/(?:contracted|basic|working)\s+hours[^\d]{0,20}(\d{1,2}(?:\.\d{1,2})?)/i);
+  const h = m ? parseFloat(m[1]) : 0;
+  return h >= 8 && h <= 60 ? h : 0;
+}
+function hourlyAnnual(rate, hours){ return rate > 0 && hours > 0 ? Math.round(rate * hours * PAY_WEEKS) : 0; }
+// The pay setup of the role a candidate or placement belongs to: {hourly, hours}
+function payCtx(x){
+  if(!x) return {};
+  const r = (typeof mergedRoles === 'function' ? mergedRoles() : []).find(y => b2Same(y.company, x.company) && b2Same(y.role, x.role));
+  return r ? roleHourlyCtx(r) : {};
+}
+function roleHourlyCtx(r){ return {hourly: r && r.pay_basis === 'hourly', hours: parseFloat(r && r.hours_per_week) || 0}; }
+function f2gbp(n){ return '\u00A3' + Number(n).toLocaleString('en-GB', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+function hourlyInfo(text, ctx, out){
+  const nums = [];
+  text.replace(/(\d[\d,]*\.?\d*)/g, function(m, n){ const v = parseFloat(String(n).replace(/,/g, '')); if(isFinite(v)) nums.push(v); return m; });
+  if(!nums.length || Math.min.apply(null, nums.slice(0, 2)) >= 200) return null; // looks like an annual figure, not a rate
+  const lo = Math.min(nums[0], nums.length > 1 ? nums[1] : nums[0]), hi = Math.max(nums[0], nums.length > 1 ? nums[1] : nums[0]);
+  const hours = (ctx && ctx.hours) || detectWeeklyHours(text);
+  out.hourly = true; out.hours = hours; out.needsHours = !hours;
+  out.rateLow = lo; out.rateHigh = hi; out.isRange = lo !== hi;
+  out.rate = (lo + hi) / 2;
+  out.low = hourlyAnnual(lo, hours); out.high = hourlyAnnual(hi, hours);
+  out.value = hourlyAnnual(out.rate, hours);
+  return out;
+}
+function payDisplay(raw, ctx){
+  const i = salaryInfo(raw, ctx);
+  return i.hourly && !i.isRange ? f2gbp(i.rate) + ' per hour' : (i.value ? '\u00A3' + Math.round(i.value).toLocaleString('en-GB') : String(raw || ''));
+}
+
+function salaryInfo(raw, ctx){
   const text = String(raw == null ? '' : raw).trim();
   const out = {text, value: 0, low: 0, high: 0, isRange: false, ote: /\bote\b|on target|package/i.test(text), suspicious: false};
   if(!text) return out;
+  if(looksHourly(text) || (ctx && ctx.hourly)){
+    const h = hourlyInfo(text, ctx, out);
+    if(h) return h;
+  }
   const found = [];
   text.replace(/(\d[\d,]*\.?\d*)\s*(k)?/gi, function(m, n, k, offset){
     let v = parseFloat(String(n).replace(/,/g, ''));
@@ -14372,9 +14488,13 @@ function salaryInfo(raw){
   if(out.value > 300000 || out.value < 1000){ out.suspicious = out.value > 300000; out.value = 0; }
   return out;
 }
-function parseSalaryNumber(s){ return salaryInfo(s).value; }
-function salaryLabel(raw){
-  const i = salaryInfo(raw);
+function parseSalaryNumber(s, ctx){ return salaryInfo(s, ctx).value; }
+function salaryLabel(raw, ctx){
+  const i = salaryInfo(raw, ctx);
+  if(i.hourly){
+    const r = i.isRange ? f2gbp(i.rateLow) + '-' + f2gbp(i.rateHigh) : f2gbp(i.rate);
+    return r + ' per hour' + (i.value ? ' (' + '\u00A3' + Math.round(i.value).toLocaleString('en-GB') + ' a year)' : '');
+  }
   if(!i.value && !i.suspicious) return String(raw || '');
   if(i.suspicious) return String(raw || '').replace(/[\u00A3]+/g, '\u00A3');
   const f = n => '\u00A3' + Math.round(n).toLocaleString('en-GB');
@@ -14383,9 +14503,15 @@ function salaryLabel(raw){
 function tidySalary(raw){
   return String(raw == null ? '' : raw).trim().replace(/\u00A3\s*\u00A3+/g, '\u00A3').replace(/\s+/g, ' ');
 }
-function salaryHintText(raw){
-  const i = salaryInfo(raw);
-  if(!String(raw || '').trim()) return 'Enter the basic salary. Fees are charged on basic salary, not OTE.';
+function salaryHintText(raw, ctx){
+  const i = salaryInfo(raw, ctx);
+  if(!String(raw || '').trim()) return (ctx && ctx.hourly) ? 'Enter the agreed hourly rate for basic hours. Fees are charged on basic pay, not overtime.' : 'Enter the basic salary. Fees are charged on basic salary, not OTE.';
+  if(i.hourly){
+    if(i.needsHours) return 'This is an hourly rate, but the role has no basic weekly hours yet. Add them on the Roles tab so the fee can be worked out.';
+    const a = '\u00A3' + Math.round(i.value).toLocaleString('en-GB');
+    const fee = calculateFeePreview(i.value);
+    return f2gbp(i.rate) + ' an hour x ' + i.hours + ' basic hours x ' + PAY_WEEKS + ' weeks = ' + a + ' a year, so the ' + (fee.rate * 100) + '% fee band applies.' + (i.isRange ? ' Invoicing needs the one agreed rate.' : '');
+  }
   const bits = [];
   if(i.suspicious) return 'This looks too high to be a salary (over \u00A3300,000), so it is left out of forecasts. Please check it.';
   if(!i.value) return 'This could not be read as a salary, so it is left out of forecasts.';
@@ -14397,10 +14523,13 @@ function salaryHintText(raw){
 }
 function salaryHintUpdate(){
   const el = document.getElementById('salaryHint'), inp = document.getElementById('salaryInput');
-  if(el && inp) el.textContent = salaryHintText(inp.value);
+  let cand = null; try{ cand = typeof findCandidate === 'function' && openCandidateId ? findCandidate(openCandidateId) : null; }catch(e){}
+  if(el && inp) el.textContent = salaryHintText(inp.value, payCtx(cand));
 }
-function singleSalaryOrWarn(raw){
-  const i = salaryInfo(raw);
+function singleSalaryOrWarn(raw, ctx){
+  const i = salaryInfo(raw, ctx);
+  if(i.hourly && i.needsHours){ showToast('Add the basic weekly hours for this role on the Roles tab before invoicing'); return 0; }
+  if(i.hourly && i.isRange){ showToast('Enter the one agreed hourly rate on the candidate card before invoicing'); return 0; }
   if(!i.value || i.isRange){ showToast('Enter the agreed basic salary as one figure on the candidate card before invoicing'); return 0; }
   if(i.ote){ showToast('That salary mentions OTE. Fees are charged on basic salary, so enter the basic figure first'); return 0; }
   return i.value;
@@ -14429,8 +14558,8 @@ function poolEditSection(){
         <div class="field-row"><label>Company</label><input id="poeCompany" value="${esc(p.company)}" style="${inp}"></div>
         <div class="field-row"><label>Date added</label><input type="date" id="poeDate" value="${esc(opsDateOnly(p.dateAdded))}" style="${inp}"></div>
       </div>
-      ${card ? `<div class="field-row"><label>Basic salary (on the pipeline card)</label><input id="poeSalary" value="${esc(card.c.salary || '')}" oninput="document.getElementById('poeSalaryHint').textContent = salaryHintText(this.value)" style="${inp}">
-        <div id="poeSalaryHint" class="note-line" style="margin-top:4px;">${esc(salaryHintText(card.c.salary || ''))}</div></div>` : '<div class="note-line">No live pipeline card, so there is no salary to edit here.</div>'}
+      ${card ? `<div class="field-row"><label>Basic salary (on the pipeline card)</label><input id="poeSalary" value="${esc(card.c.salary || '')}" oninput="document.getElementById('poeSalaryHint').textContent = salaryHintText(this.value, payCtx({company: document.getElementById('poeCompany').value, role: document.getElementById('poeRole').value}))" style="${inp}">
+        <div id="poeSalaryHint" class="note-line" style="margin-top:4px;">${esc(salaryHintText(card.c.salary || '', payCtx(card.c)))}</div></div>` : '<div class="note-line">No live pipeline card, so there is no salary to edit here.</div>'}
       <div class="note-line" style="margin:6px 0;">Changes also update the matching pipeline card and form application, so the two stay in step. A role cannot be changed here for people who applied through a role form.</div>
       <div class="stage-buttons" style="margin:0;"><button class="primary" onclick="poolSaveEdit()">Save changes</button><button onclick="poolEditToggle()">Cancel</button></div>
     </div>`);
@@ -17002,7 +17131,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '10 Nov 2026 - build 57.3.3 (Cold Outreach: better emails) preview';
+var PAGE_BUILD = '10 Nov 2026 - build 58 (Hourly pay: rate x basic hours x 52 sets the fee band) preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -20843,7 +20972,7 @@ function c47Vars(ctx, m){
     v.candidate_name = c.name; v.first_name = String(c.name).split(' ')[0];
     v.role = v.role || cand.role;
     if(cand.company && cand.company !== (typeof UNASSIGNED_LABEL !== 'undefined' ? UNASSIGNED_LABEL : '')) v.company = v.company || cand.company;
-    if(typeof parseSalaryNumber === 'function' && parseSalaryNumber(c.salary)) v.salary = opsMoney(parseSalaryNumber(c.salary));
+    if(typeof parseSalaryNumber === 'function' && parseSalaryNumber(c.salary, payCtx(cand))) v.salary = payDisplay(c.salary, payCtx(cand));
     if(c.startDate && typeof fmtDateLong === 'function') v.start_date = fmtDateLong(c.startDate);
     if(ctx.type === 'candidate' && v.company){
       const cc = (typeof resolveClientContact === 'function') ? resolveClientContact(v.company, cand.role, c) : null;

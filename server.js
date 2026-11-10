@@ -2631,7 +2631,7 @@ async function removeLeadRowsForCompany(company) {
   return idx.length;
 }
 const INVOICES_TAB = 'Invoices';
-const INVOICES_RANGE = `${INVOICES_TAB}!A2:Q`; // P payment_method, Q stripe_payment_intent (build 45)
+const INVOICES_RANGE = `${INVOICES_TAB}!A2:R`; // P payment_method, Q stripe_payment_intent (build 45), R pay_note (build 58)
 const KPI_TARGETS_TAB = 'KPI Targets';
 const KPI_TARGETS_RANGE = `${KPI_TARGETS_TAB}!A2:E`;
 
@@ -3038,6 +3038,30 @@ function parseSingleSalary(raw) {
   return v > 0 && v <= 300000 ? v : 0;
 }
 
+/* ---------- Hourly pay (build 58) ----------
+   Fees are charged on basic pay only, never overtime or OTE. For an hourly role the annual figure is
+   the agreed hourly rate x the role's basic weekly hours x 52 weeks, and the normal fee bands apply to it. */
+const PAY_WEEKS_PER_YEAR = 52;
+const ASSUMED_WEEKLY_HOURS = 40; // only used for Role Finder estimates when an advert gives no hours
+function annualFromHourly(rate, hours) {
+  const r = Number(rate) || 0, h = Number(hours) || 0;
+  return r > 0 && h > 0 ? Math.round(r * h * PAY_WEEKS_PER_YEAR) : 0;
+}
+// Weekly hours from free text ("37.5 hours per week", "40 hrs a week"); 0 when none is stated
+function detectWeeklyHours(text) {
+  const t = String(text || '');
+  let m = t.match(/(\d{1,2}(?:\.\d{1,2})?)\s*(?:hours?|hrs?)\s*(?:per|a|each|\/)\s*week/i)
+    || t.match(/(?:hours?|hrs?)\s*(?:per|a|each|\/)\s*week\s*[:\-]?\s*(\d{1,2}(?:\.\d{1,2})?)/i)
+    || t.match(/(?:contracted|basic|working)\s+hours[^\d]{0,20}(\d{1,2}(?:\.\d{1,2})?)/i);
+  const h = m ? parseFloat(m[1]) : 0;
+  return h >= 8 && h <= 60 ? h : 0;
+}
+function looksHourly(text) { return /per\s*hour|an\s*hour|\/\s*h(?:ou)?r\b|\bp\/?h\b|hourly/i.test(String(text || '')); }
+function hourlyPayNote(rate, hours, annual) {
+  const f2 = n => '£' + Number(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${f2(rate)} per hour x ${hours} basic hours x ${PAY_WEEKS_PER_YEAR} weeks = £${Number(annual).toLocaleString('en-GB')} a year`;
+}
+
 function calculatePlacementFee(salary) {
   const s = Number(salary) || 0;
   let rate;
@@ -3093,6 +3117,7 @@ function rowToInvoice(row) {
     commissionPaidDate: row[14] || '',
     paymentMethod: row[15] || '',
     stripePaymentIntent: row[16] || '',
+    payNote: row[17] || '',
   };
 }
 
@@ -3102,7 +3127,7 @@ function invoiceToRow(inv) {
     inv.role || '', inv.candidateName || '', inv.salary || '', inv.feePercentage || '',
     inv.amount || 0, inv.status || 'pending', inv.paymentDate || '', inv.consultant || '',
     inv.commissionPct === undefined ? '' : inv.commissionPct, inv.commissionAmount || '', inv.commissionPaidDate || '',
-    inv.paymentMethod || '', inv.stripePaymentIntent || '',
+    inv.paymentMethod || '', inv.stripePaymentIntent || '', inv.payNote || '',
   ];
 }
 
@@ -3182,6 +3207,13 @@ async function ensureInvoiceHeaders() {
         requestBody: { values: [['Payment method', 'Stripe payment ID']] },
       });
     }
+    const r3 = await sheets.spreadsheets.values.get({ spreadsheetId: CLIENT_SHEET_ID, range: `${INVOICES_TAB}!R1:R1` });
+    if (!((r3.data.values && r3.data.values[0]) || []).some(Boolean)) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: CLIENT_SHEET_ID, range: `${INVOICES_TAB}!R1:R1`, valueInputOption: 'RAW',
+        requestBody: { values: [['Pay basis note']] },
+      });
+    }
   } catch (e) { invoiceHeadersChecked = false; console.warn('Could not check invoice headers:', e.message); }
 }
 
@@ -3226,9 +3258,25 @@ app.post('/api/invoices', requireDan, async (req, res) => {
   auditOnFinish(req, res, () => ({ action: 'invoice_created', type: 'invoice', entity: `${(req.body || {}).candidateName || ''} - ${(req.body || {}).company || ''}`, detail: `salary ${(req.body || {}).salary || ''}` }));
   try {
     const { candidateId, company, role, candidateName, consultant, commissionPct } = req.body;
-    const salary = parseSingleSalary(req.body.salary);
+    let salary = parseSingleSalary(req.body.salary);
+    let payNote = '';
     if (!company || !candidateName) {
       return res.status(400).json({ error: 'company and candidateName are required' });
+    }
+    // Hourly roles: the invoice is always worked out from the candidate's agreed hourly rate, never a midpoint
+    if (req.body.payRate !== undefined && req.body.payRate !== '') {
+      const rate = parseSingleSalary(req.body.payRate);
+      let hours = 0;
+      try {
+        const lc = v => String(v || '').trim().toLowerCase();
+        const rr = (await rolesTable.list()).find(x => lc(x.company) === lc(company) && lc(x.role) === lc(role));
+        if (rr && rr.pay_basis === 'hourly') hours = parseFloat(rr.hours_per_week) || 0; // the role's hours win
+      } catch (e) { /* fall back to the hours sent */ }
+      if (!hours) hours = parseFloat(req.body.payHours) || 0;
+      if (!(rate >= 5 && rate <= 250)) return res.status(400).json({ error: 'The agreed hourly rate must be one figure between 5 and 250. Correct it on the candidate card first.' });
+      if (!(hours >= 8 && hours <= 60)) return res.status(400).json({ error: 'Add the basic weekly hours for this role on the Roles tab before invoicing.' });
+      salary = annualFromHourly(rate, hours);
+      payNote = hourlyPayNote(rate, hours, salary);
     }
     if (!salary) {
       return res.status(400).json({ error: 'The salary must be one agreed basic figure (not a range, and no more than 300,000). Correct it on the candidate card first.' });
@@ -3251,6 +3299,7 @@ app.post('/api/invoices', requireDan, async (req, res) => {
       status: 'pending',
       paymentDate: '',
       consultant: String(consultant || '').trim().slice(0, 60),
+      payNote,
     };
     // The consultant's commission is locked in when the invoice is raised, from the fee calculated here
     const pct = Math.min(100, Math.max(0, parseFloat(commissionPct) || 0));
@@ -3426,6 +3475,7 @@ app.get('/api/invoices/:number/pdf', async (req, res) => {
     doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK)
       .text(`Supply of Permanent Staff - ${inv.candidateName}`, 60, rowY, { width: 260 });
     doc.font('Helvetica').fontSize(8).fillColor(LIGHT_GREY).text('Permanent placement fee', 60, rowY + 14, { width: 260 });
+    if (inv.payNote) doc.font('Helvetica').fontSize(7.5).fillColor(LIGHT_GREY).text(`Basic pay: ${inv.payNote}`, 60, rowY + 25, { width: 260 });
     doc.font('Helvetica').fontSize(10).fillColor(DARK)
       .text('1', 340, rowY)
       .text(formatCurrency(inv.amount), 400, rowY)
@@ -7605,7 +7655,7 @@ async function onbBackupTabs(pool) {
 
 const rolesTable = makeSimpleTable({
   tab: 'Roles',
-  header: ['id', 'company', 'role', 'contact', 'salary_band', 'fee_percent', 'status', 'date_opened', 'date_closed', 'notes', 'positions', 'requirements', 'public_title', 'form_slug', 'show_on_careers', 'location', 'public_content', 'ref'],
+  header: ['id', 'company', 'role', 'contact', 'salary_band', 'fee_percent', 'status', 'date_opened', 'date_closed', 'notes', 'positions', 'requirements', 'public_title', 'form_slug', 'show_on_careers', 'location', 'public_content', 'ref', 'pay_basis', 'hours_per_week'],
   path: '/api/roles',
   label: 'Role',
   auditType: 'role',
@@ -14092,6 +14142,11 @@ function rfxDaysBetween(isoDate, today) {
 }
 function rfxMoney(n) { const v = Math.round(Number(n) || 0); return v ? '£' + v.toLocaleString('en-GB') : ''; }
 function rfxSalary(min, max) {
+  if ((Number(min) || Number(max)) && Math.max(Number(min) || 0, Number(max) || 0) < 100) {
+    const p = n => '£' + Number(n).toFixed(2).replace(/\.00$/, '');
+    const lo = Number(min) || Number(max), hi = Number(max) || Number(min);
+    return (lo !== hi ? `${p(lo)} - ${p(hi)}` : p(lo)) + ' per hour';
+  }
   const a = rfxMoney(min), b = rfxMoney(max);
   if (a && b && a !== b) return `${a} - ${b}`;
   return a || b || '';
@@ -14683,6 +14738,13 @@ function rfxClassify(title, fallback) {
 }
 
 function rfxSalaryNums(o) {
+  const fa = parseFloat(o.sal_min) || 0, fb = parseFloat(o.sal_max) || 0;
+  // Hourly adverts (small figures): annual equivalent = rate x basic weekly hours x 52, using the hours in the advert or 40
+  if ((fa || fb) && Math.max(fa, fb) < 100) {
+    const hours = detectWeeklyHours([o.description, o.role, o.salary].join(' ')) || ASSUMED_WEEKLY_HOURS;
+    const lo = annualFromHourly(fa || fb, hours), hi = annualFromHourly(fb || fa, hours);
+    return { min: Math.min(lo, hi), max: Math.max(lo, hi) };
+  }
   let a = parseInt(o.sal_min, 10) || 0, b = parseInt(o.sal_max, 10) || 0;
   if (!a && !b && o.salary) {
     const nums = (String(o.salary).match(/\d[\d,]*/g) || []).map(n => parseInt(n.replace(/,/g, ''), 10)).filter(n => n >= 1000);
@@ -16285,7 +16347,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '10 Nov 2026 - build 57.3.3 (Cold Outreach: better emails, no link in footer)';
+const SERVER_BUILD = '10 Nov 2026 - build 58 (Hourly pay: invoices, roles and Role Finder use rate x basic hours x 52)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
