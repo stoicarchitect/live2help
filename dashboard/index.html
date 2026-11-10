@@ -16966,7 +16966,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '10 Nov 2026 - build 57.1.2 (Do not email list)';
+var PAGE_BUILD = '10 Nov 2026 - build 57.2 (Gap Briefs)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -17128,7 +17128,7 @@ function buildTagApply(){
     {key:'recruitment', label:'Recruitment', tabs:['candidates','candidatePool','talentSuite','roles','interviews','placements','comms','feedback']},
     {key:'actions', label:'Actions', tabs:['tasks','week','roadmap']},
     {key:'results', label:'Results', tabs:['kpi','forecast','team','sourcing']},
-    {key:'marketing', label:'Marketing', tabs:['marketing']},
+    {key:'marketing', label:'Marketing', tabs:['marketing','gapBriefs']},
     {key:'people', label:'People', sect:'Team', tabs:['hr']},
     {key:'library', label:'Library', tabs:['library','templates']},
     {key:'admin', label:'Admin', tabs:['invoices','gdpr','audit'], adminOnly:true},
@@ -17137,7 +17137,7 @@ function buildTagApply(){
     clientComms:'Client comms', coldCalls:'Cold calls', referrals:'Referrals', funnelLeads:'Funnel leads', roleFinder:'Role Finder', competitors:'Competitors',
     candidates:'Candidate pipeline', candidatePool:'Talent pool', talentSuite:'Talent Suite', roles:'Roles', interviews:'Interviews', placements:'Placements', comms:'Candidate comms',
     feedback:'Client feedback', tasks:'Tasks', kpi:'KPIs and targets', forecast:'Forecast', team:'Team performance', sourcing:'Sourcing and costs',
-    hr:'People', library:'Documents', week:'This week', roadmap:'Roadmap', marketing:'Marketing', templates:'Email templates', invoices:'Invoices', gdpr:'Data and GDPR', audit:'Audit trail', home:'Overview', notifications:'Notifications'};
+    hr:'People', library:'Documents', week:'This week', roadmap:'Roadmap', marketing:'Marketing', gapBriefs:'Gap Briefs', templates:'Email templates', invoices:'Invoices', gdpr:'Data and GDPR', audit:'Audit trail', home:'Overview', notifications:'Notifications'};
 
   if(typeof TAB_GROUPS !== 'undefined'){
     TAB_GROUPS.length = 0;
@@ -17146,7 +17146,7 @@ function buildTagApply(){
 
   // tab buttons for the new views, and friendlier labels on existing ones
   const tabsBar = $('tabs');
-  [['crmAccounts','Accounts','clients'], ['audience','Audience','clients'], ['hr','People',null], ['library','Documents','templates'], ['week','This week',null], ['roadmap','Roadmap',null], ['marketing','Marketing',null]].forEach(([key, label, before]) => {
+  [['crmAccounts','Accounts','clients'], ['audience','Audience','clients'], ['hr','People',null], ['library','Documents','templates'], ['week','This week',null], ['roadmap','Roadmap',null], ['marketing','Marketing',null], ['gapBriefs','Gap Briefs',null]].forEach(([key, label, before]) => {
     if(!tabsBar || tabsBar.querySelector('.tab-btn[data-tab="' + key + '"]')) return;
     const b = document.createElement('button');
     b.className = 'tab-btn'; b.dataset.tab = key; b.textContent = label;
@@ -17174,6 +17174,7 @@ function buildTagApply(){
   addView('roadmapView', `<div class="view-head"><div><h2>Roadmap</h2><div class="sub">Bigger pieces of work and when they are planned. Move them from Later to Now to Done.</div></div><div class="p41-bar"><button class="gold-btn" data-rec-new="road">+ Add to roadmap</button></div></div><div class="view-body" id="rd41Body"><div class="p41-empty">Loading...</div></div>`);
   addView('audienceView', `<div class="view-head"><div><h2>Audience</h2><div class="sub">Who owns each account, which sector it is in, and who has agreed to hear from us. This drives who gets each Gap Brief and who sends it.</div></div></div><div class="view-body" id="aud57Body"><div class="p41-empty">Loading...</div></div>`);
   addView('marketingView', `<div class="view-head"><div><h2>Marketing</h2><div class="sub">LinkedIn posts, Brevo outreach workflows, lead magnets and events in one place.</div></div><div class="p41-bar" id="mk41Add"></div></div><div class="view-body"><div class="p41-tabs" id="mk41Tabs"></div><div id="mk41Body"><div class="p41-empty">Loading...</div></div></div>`);
+  addView('gapBriefsView', `<div class="view-head"><div><h2>Gap Briefs</h2><div class="sub">The fortnightly briefs for each sector: draft on Sunday, approve on Monday, send on Tuesday at 10:00. Nothing sends without approval.</div></div></div><div class="view-body" id="gb57Body"><div class="p41-empty">Loading...</div></div>`);
   if(!$('viewer41')){ const v = document.createElement('div'); v.id = 'viewer41'; v.innerHTML = '<div class="bk" data-vw41="close"></div><div class="vw" role="dialog" aria-modal="true"><div class="vh"><b id="vw41Title"></b><span class="sp"></span><button class="p41-btn sm" id="vw41Dl">Download</button><button class="p41-btn sm" data-vw41="close">Close</button></div><div class="vb" id="vw41Body"></div></div>'; document.body.appendChild(v); }
   if(!$('rec41')){ const v = document.createElement('div'); v.id = 'rec41'; v.innerHTML = '<div class="bk" data-rec41="close"></div><div class="rp" role="dialog" aria-modal="true" id="rec41Body"></div>'; document.body.appendChild(v); }
   if(!$('drawer41')){ const d = document.createElement('div'); d.id = 'drawer41'; d.innerHTML = '<div class="bk" data-x41="close"></div><aside role="dialog" aria-modal="true" id="drawer41Body"></aside>'; document.body.appendChild(d); }
@@ -17250,6 +17251,7 @@ function buildTagApply(){
     if(tab === 'week') weekLoad();
     if(tab === 'roadmap') roadLoad();
     if(tab === 'marketing') mktLoad();
+    if(tab === 'gapBriefs') gb57Load();
     if(tab === 'candidates') roleBar41();
   };
   const _si = signIn;
@@ -17257,11 +17259,12 @@ function buildTagApply(){
     _si(user);
     renderRail();
     hrBadge();
+    setTimeout(() => { if(typeof gb57Popup === 'function') gb57Popup(); }, 2500); // page build 57.2
     // welcome screen, then straight into Today
     const sw = $('splashWelcome'); if(sw) sw.innerHTML = 'Welcome back, <span>' + h(user.name) + '</span>';
     setTimeout(() => { if(!$('app').classList.contains('visible')) chooseHome(); }, 1700);
   };
-  const NEW_VIEWS41 = ['crmAccounts','audience','hr','library','week','roadmap','marketing'];
+  const NEW_VIEWS41 = ['crmAccounts','audience','hr','library','week','roadmap','marketing','gapBriefs'];
   document.title = 'Live 2 Help Workspace';
 
   /* ---------------- CRM: Accounts ---------------- */
@@ -19549,6 +19552,204 @@ function audPickEm(el, email){
   const s = document.getElementById('audPickSum'); if(s) s.innerHTML = audPickSumText(sel, ses, one, cap, one > cap);
 }
 
+/* ---------------- Page build 57.2: Marketing > Gap Briefs (problem chart, approval, archive, pop-up) ---------------- */
+var GB = { tab:'fortnight', data:null, problems:null, err:'', poppedUp:false };
+var GB_STATUS = { Draft:['Waiting for approval','warn'], Approved:['Approved','ok'], Held:['Held back','bad'], Sent:['Sent','ok'], Missed:['Not sent (not approved in time)',''] };
+function gbDate(iso){ const d = new Date(String(iso || '').slice(0, 10) + 'T12:00:00Z'); return isNaN(d) ? '' : d.toLocaleDateString('en-GB', {weekday:'short', day:'numeric', month:'short', year:'numeric', timeZone:'UTC'}); }
+function gbModal(html, wide){
+  let el = document.getElementById('gb57Modal'); if(!el){ el = document.createElement('div'); el.id = 'gb57Modal'; document.body.appendChild(el); }
+  el.style.cssText = 'position:fixed;inset:0;background:rgba(11,31,58,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+  el.innerHTML = '<div style="background:#fff;border-radius:10px;max-width:' + (wide || 560) + 'px;width:100%;padding:20px;max-height:92vh;overflow:auto;">' + html + '</div>';
+}
+function gbClose(){ const el = document.getElementById('gb57Modal'); if(el) el.remove(); }
+async function gb57Load(force){
+  const body = document.getElementById('gb57Body'); if(!body) return;
+  if(!GB.data || force) body.innerHTML = '<div class="p41-empty">Loading...</div>';
+  try{
+    const [b, p] = await Promise.all([b2Api('/api/gap/briefs'), b2Api('/api/gap/problems')]);
+    GB.data = b; GB.problems = p; GB.err = '';
+  }catch(e){ GB.err = e.message; }
+  gb57Render();
+}
+function gb57Tab(t){ GB.tab = t; gb57Render(); }
+function gb57Render(){
+  const body = document.getElementById('gb57Body'); if(!body) return;
+  if(GB.err){ body.innerHTML = '<div class="p41-note">Gap Briefs could not be loaded. ' + esc(GB.err) + '</div>'; return; }
+  const tab = (k, l) => '<button class="p41-chip" aria-pressed="' + (GB.tab === k) + '" onclick="gb57Tab(\'' + k + '\')">' + l + '</button>';
+  body.innerHTML = '<div class="p41-tabs">' + tab('fortnight', 'This fortnight') + tab('chart', 'Problem chart') + tab('archive', 'Archive') + '</div>' +
+    (GB.tab === 'fortnight' ? gb57Fortnight() : GB.tab === 'chart' ? gb57Chart() : gb57Archive());
+}
+/* ---- This fortnight ---- */
+function gb57Current(){
+  const today = GB.data.today;
+  const open = GB.data.data.filter(b => ['Draft', 'Approved', 'Held'].includes(b.status) || (b.status === 'Sent' && b.sendDate >= today));
+  if(!open.length) return [];
+  const issue = Math.max.apply(null, open.map(b => b.issue));
+  return open.filter(b => b.issue === issue).sort((a, b) => a.sector.localeCompare(b.sector));
+}
+function gb57Fortnight(){
+  const d = GB.data, edit = d.canEdit, rows = gb57Current();
+  let h = '<div class="p41-bar" style="gap:8px;flex-wrap:wrap;">' +
+    (edit ? '<button class="p41-btn sm" onclick="gb57Github(this)">Check for new drafts</button><button class="p41-btn sm" onclick="gb57Paste()">Paste drafts</button>' : '') +
+    (d.canSend && rows.some(b => b.status === 'Approved' && b.sendDate <= d.today) ? '<button class="p41-btn pri sm" onclick="gb57SendNow(this)">Send approved briefs now</button>' : '') + '</div>';
+  if(d.preview) h += '<div class="p41-note">This is the preview workspace. Nothing is ever sent from here.</div>';
+  if(!rows.length) return h + '<div class="p41-empty">No briefs are waiting. The Sunday task drafts the next issue, or use Check for new drafts or Paste drafts.</div>';
+  const n = s => rows.filter(b => b.status === s).length;
+  h += '<div class="p41-panel" style="margin-top:10px;"><b>Issue ' + rows[0].issue + '</b> &middot; sends ' + esc(gbDate(rows[0].sendDate)) + ' at ' + d.sendHour + ':00 from each contact\'s account owner &middot; ' +
+    n('Approved') + ' approved, ' + n('Draft') + ' waiting, ' + n('Held') + ' held back' + (n('Sent') ? ', ' + n('Sent') + ' sent' : '') +
+    '<div class="b46-sub" style="margin-top:4px;">Nothing sends without approval. A brief that is not approved simply does not go this fortnight.</div></div>';
+  h += rows.map(b => gb57Card(b, edit)).join('');
+  return h;
+}
+function gb57Card(b, edit){
+  const st = GB_STATUS[b.status] || [b.status, ''];
+  const reach = b.reach ? 'Reaches <b>' + b.reach + '</b> ' + (b.reach === 1 ? 'person' : 'people') + ': ' + b.reachBy.map(r => esc(r.name) + ' ' + r.n).join(', ') : '<span style="color:var(--danger);">Reaches nobody yet (no Warm contacts with consent recorded have this as their next sector)</span>';
+  const id = esc(b.id);
+  return '<div class="p41-panel" style="margin-top:10px;"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><b style="font-size:15px;">' + esc(b.sector) + '</b><span class="p41-pill ' + st[1] + '">' + esc(st[0]) + '</span></div>' +
+    '<div style="margin:4px 0;">' + esc(b.subject || '(no subject)') + '</div><div class="b46-sub">' + reach + '</div>' +
+    (b.status === 'Held' && b.heldReason ? '<div class="b46-sub">Held back: ' + esc(b.heldReason) + '</div>' : '') +
+    (b.status === 'Approved' && b.approvedBy ? '<div class="b46-sub">Approved by ' + esc(userLabel(b.approvedBy)) + '</div>' : '') +
+    (b.lastError ? '<div class="p41-note" style="margin-top:6px;">' + esc(b.lastError) + '</div>' : '') +
+    (b.problems.length && ['Draft', 'Held'].includes(b.status) ? '<div class="b46-sub" style="margin-top:6px;color:var(--warn);">To fix before approving: ' + b.problems.map(esc).join('; ') + '</div>' : '') +
+    '<div class="p41-bar" style="margin-top:10px;gap:8px;flex-wrap:wrap;"><button class="p41-btn sm" onclick="gb57Preview(\'' + id + '\')">Preview</button>' +
+    (edit && ['Draft', 'Held'].includes(b.status) ? '<button class="p41-btn sm" onclick="gb57Edit(\'' + id + '\')">Edit</button>' : '') +
+    (edit ? '<button class="p41-btn sm" onclick="gb57Test(\'' + id + '\')">Send me a test</button>' : '') +
+    (edit && ['Draft', 'Held'].includes(b.status) ? '<button class="p41-btn pri sm" onclick="gb57Approve(\'' + id + '\',this)">Approve</button>' : '') +
+    (edit && ['Draft', 'Approved'].includes(b.status) ? '<button class="p41-btn sm" onclick="gb57Hold(\'' + id + '\')">Hold back</button>' : '') +
+    (edit && ['Approved', 'Held'].includes(b.status) ? '<button class="p41-btn sm" onclick="gb57Reopen(\'' + id + '\')">Back to draft</button>' : '') +
+    (b.viewUrl ? '<a class="p41-btn sm" href="' + esc(b.viewUrl) + '" target="_blank" rel="noopener">View in browser</a>' : '') + '</div></div>';
+}
+async function gb57Act(path, body, ok, btn){
+  if(btn) btn.disabled = true;
+  try{ const j = await b2Post(path, body || {}); showToast(ok || 'Done'); await gb57Load(true); return j; }
+  catch(e){ showToast(e.message); if(btn) btn.disabled = false; }
+}
+function gb57Approve(id, btn){ gb57Act('/api/gap/briefs/' + id + '/approve', {}, 'Approved. It sends on its send date.', btn); }
+function gb57Reopen(id){ gb57Act('/api/gap/briefs/' + id + '/reopen', {}, 'Moved back to draft'); }
+function gb57Hold(id){
+  gbModal('<h3 style="margin:0 0 8px;">Hold this brief back</h3><div class="b46-sub" style="margin-bottom:8px;">It will not send until it is approved again. Say why, so the next person knows.</div><input id="gbHoldWhy" style="width:100%;" placeholder="For example: figure needs a fresher source">' +
+    '<div class="p41-bar" style="margin-top:14px;"><button class="p41-btn pri" onclick="gb57HoldGo(\'' + id + '\',this)">Hold back</button><button class="p41-btn" onclick="gbClose()">Cancel</button></div>');
+}
+async function gb57HoldGo(id, btn){ const why = b2Val('gbHoldWhy').trim(); if(!why){ showToast('Say why you are holding it back'); return; } await gb57Act('/api/gap/briefs/' + id + '/hold', {reason: why}, 'Held back', btn); gbClose(); }
+async function gb57Test(id){
+  const me = (typeof signedInUser !== 'undefined' && signedInUser) ? signedInUser : {};
+  gbModal('<h3 style="margin:0 0 8px;">Send a test</h3><div class="b46-sub" style="margin-bottom:8px;">The test has [TEST] in the subject and does not touch any contact\'s record.</div><label>Send to</label><input id="gbTestTo" style="width:100%;" value="' + esc(me.email || '') + '" placeholder="Your email address">' +
+    '<label style="margin-top:8px;">Route</label><select id="gbTestRoute" style="width:100%;"><option value="m365">Microsoft 365 (from your own mailbox)</option><option value="ses">Amazon SES (the bulk route, verified addresses only until production access)</option></select>' +
+    '<div class="p41-bar" style="margin-top:14px;"><button class="p41-btn pri" onclick="gb57TestGo(\'' + id + '\',this)">Send test</button><button class="p41-btn" onclick="gbClose()">Cancel</button></div>');
+}
+async function gb57TestGo(id, btn){
+  btn.disabled = true;
+  try{ const j = await b2Post('/api/gap/briefs/' + id + '/test', {to: b2Val('gbTestTo').trim() || undefined, route: b2Val('gbTestRoute')}); showToast(j.message); gbClose(); }
+  catch(e){ showToast(e.message); btn.disabled = false; }
+}
+async function gb57Preview(id, owner){
+  gbModal('<div class="p41-empty">Loading preview...</div>', 760);
+  try{
+    const j = await b2Api('/api/gap/briefs/' + id + '/preview' + (owner ? '?owner=' + encodeURIComponent(owner) : ''));
+    const owners = (GB.data.owners || []);
+    gbModal('<div class="p41-bar" style="gap:10px;flex-wrap:wrap;align-items:center;"><b>Preview as the recipient sees it</b><span class="sp"></span><label style="margin:0;">Sent from</label><select onchange="gb57Preview(\'' + esc(id) + '\', this.value)">' + owners.map(o => '<option value="' + esc(o.key) + '"' + (o.key === j.owner ? ' selected' : '') + '>' + esc(o.name) + '</option>').join('') + '</select><button class="p41-btn sm" onclick="gbClose()">Close</button></div>' +
+      '<div class="b46-sub" style="margin:6px 0;">Subject: <b>' + esc(j.subject) + '</b></div>' +
+      (j.problems.length ? '<div class="p41-note">To fix before approving: ' + j.problems.map(esc).join('; ') + '</div>' : '') +
+      '<iframe style="width:100%;height:68vh;border:1px solid var(--border);border-radius:6px;" sandbox="" srcdoc="' + esc(j.html) + '"></iframe>', 760);
+  }catch(e){ gbClose(); showToast(e.message); }
+}
+var GB_FIELDS = [
+  ['subject', 'Subject line', 'line', 'The email subject'], ['sendDate', 'Send date', 'date', 'A Tuesday, sends at 10:00'],
+  ['headline', 'Headline (white part)', 'line', 'For example: The quiet before the'], ['headlineGold', 'Headline (gold part)', 'line', 'For example: hiring rush'],
+  ['preheader', 'Preview text', 'line', 'The grey line next to the subject in an inbox'], ['intro', 'Opening line (after "Hi first name,")', 'area', ''],
+  ['numberValue', 'Number of the fortnight', 'line', 'For example: +3%'], ['numberText', 'What the number means', 'area', 'Use **bold** for emphasis'],
+  ['stateTitle', '1 Where things stand: heading', 'line', ''], ['statePoints', '1 Where things stand: points (one per line)', 'area', 'Use **bold** for emphasis'],
+  ['futureTitle', '2 What the best employers do: heading', 'line', ''], ['futurePoints', '2 What the best employers do: points (one per line)', 'area', ''],
+  ['gapText', '3 Mind the gap: text', 'area', 'On the dark box **bold** shows white'], ['maths', '3 Quick maths (salary only)', 'area', 'Use **bold** for values and ==gold== for the result'],
+  ['checkTitle', '4 Gap check: heading', 'line', ''], ['questions', '4 Gap check: three questions (one per line)', 'area', 'Exactly three'], ['checkAsk', '4 Gap check: reply request (blank = standard wording)', 'area', ''],
+  ['myth', 'Myth', 'line', 'Without the quote marks'], ['reality', 'Reality', 'line', ''], ['roleType', 'Role type, plural', 'line', 'For example: engineers'],
+  ['sources', 'Sources line', 'area', 'Every figure must be in here. No fees or prices.']
+];
+function gb57Edit(id){
+  const b = GB.data.data.find(x => x.id === id); if(!b) return;
+  const val = k => k === 'subject' ? b.subject : k === 'sendDate' ? b.sendDate : (Array.isArray(b.content[k]) ? b.content[k].join('\n') : b.content[k]);
+  gbModal('<h3 style="margin:0 0 4px;">Edit: ' + esc(b.sector) + ' (issue ' + b.issue + ')</h3><div class="b46-sub" style="margin-bottom:8px;">Saved changes go back to the review list. Approve again afterwards.</div>' +
+    GB_FIELDS.map(f => '<label style="margin-top:8px;">' + esc(f[1]) + '</label>' + (f[3] ? '<div class="b46-sub">' + esc(f[3]) + '</div>' : '') +
+      (f[2] === 'area' ? '<textarea id="gbf_' + f[0] + '" rows="' + (/points|questions|text|sources|intro/i.test(f[0]) ? 4 : 3) + '" style="width:100%;">' + esc(val(f[0]) || '') + '</textarea>' : '<input id="gbf_' + f[0] + '" type="' + (f[2] === 'date' ? 'date' : 'text') + '" style="width:100%;" value="' + esc(val(f[0]) || '') + '">')).join('') +
+    '<div class="p41-bar" style="margin-top:14px;"><button class="p41-btn pri" onclick="gb57EditGo(\'' + esc(id) + '\',this)">Save</button><button class="p41-btn" onclick="gbClose()">Cancel</button></div>', 700);
+}
+async function gb57EditGo(id, btn){
+  btn.disabled = true;
+  const content = {};
+  GB_FIELDS.filter(f => f[0] !== 'subject' && f[0] !== 'sendDate').forEach(f => { content[f[0]] = b2Val('gbf_' + f[0]); });
+  try{ await b2Api('/api/gap/briefs/' + id, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({subject: b2Val('gbf_subject'), sendDate: b2Val('gbf_sendDate'), content})}); showToast('Saved'); gbClose(); await gb57Load(true); }
+  catch(e){ showToast(e.message); btn.disabled = false; }
+}
+async function gb57Github(btn){
+  btn.disabled = true;
+  try{ const j = await b2Post('/api/gap/import-github', {}); showToast(j.created ? j.created + ' new draft' + (j.created === 1 ? '' : 's') + ' found' : 'No new drafts found' + (j.errors && j.errors.length ? ': ' + j.errors[0] : '')); await gb57Load(true); }
+  catch(e){ showToast(e.message); btn.disabled = false; }
+}
+function gb57Paste(){
+  gbModal('<h3 style="margin:0 0 8px;">Paste drafts</h3><div class="b46-sub" style="margin-bottom:8px;">Paste the issue file the drafting task produced (JSON with issue, sendDate and briefs). Briefs already here are left alone unless you tick replace, which only replaces drafts and held briefs.</div>' +
+    '<textarea id="gbPaste" rows="12" style="width:100%;font-family:monospace;font-size:12px;"></textarea><label style="margin-top:8px;display:block;"><input type="checkbox" id="gbPasteRep"> Replace drafts and held briefs that already exist</label>' +
+    '<div class="p41-bar" style="margin-top:14px;"><button class="p41-btn pri" onclick="gb57PasteGo(this)">Import</button><button class="p41-btn" onclick="gbClose()">Cancel</button></div>', 680);
+}
+async function gb57PasteGo(btn){
+  let j; try{ j = JSON.parse(b2Val('gbPaste')); }catch(e){ showToast('That is not valid JSON. Paste the whole file.'); return; }
+  const payload = Array.isArray(j) ? {briefs: j} : j;
+  payload.replace = !!(document.getElementById('gbPasteRep') || {}).checked;
+  btn.disabled = true;
+  try{ const r = await b2Post('/api/gap/import', payload); showToast(r.created + ' new, ' + r.replaced + ' replaced, ' + r.skipped + ' left alone' + (r.errors.length ? '. Problem: ' + r.errors[0] : '')); gbClose(); await gb57Load(true); }
+  catch(e){ showToast(e.message); btn.disabled = false; }
+}
+async function gb57SendNow(btn){
+  if(!confirm('Send every approved brief that is due, now? Each goes one email per person to Warm contacts with consent recorded, and nobody is emailed twice.')) return;
+  btn.disabled = true;
+  try{ const r = await b2Post('/api/gap/send-now', {}); showToast(r.preview ? r.note : r.sent + ' sent, ' + r.skipped + ' skipped, ' + r.failed + ' failed' + (r.stoppedForQuota ? '. Stopped at the daily limit; the rest go on the next run.' : '')); await gb57Load(true); }
+  catch(e){ showToast(e.message); btn.disabled = false; }
+}
+/* ---- Archive ---- */
+function gb57Archive(){
+  const rows = GB.data.data.filter(b => ['Sent', 'Missed'].includes(b.status) || (b.status === 'Held' && b.sendDate < GB.data.today) || (b.status === 'Approved' && b.sendDate < GB.data.today));
+  if(!rows.length) return '<div class="p41-empty">Nothing has gone out yet. Sent issues are kept here with their numbers.</div>';
+  return '<table class="b46-tbl"><tr><th>Issue</th><th>Sector</th><th>Subject</th><th>Send date</th><th>Status</th><th>Sent</th><th>Skipped</th><th></th></tr>' +
+    rows.map(b => { const st = GB_STATUS[b.status] || [b.status, '']; return '<tr><td>' + b.issue + '</td><td>' + esc(b.sector) + '</td><td>' + esc(b.subject) + '</td><td>' + esc(gbDate(b.sendDate)) + '</td><td><span class="p41-pill ' + st[1] + '">' + esc(st[0]) + '</span></td><td>' + b.sentCount + '</td><td>' + b.skippedCount + '</td><td>' + (b.viewUrl ? '<a href="' + esc(b.viewUrl) + '" target="_blank" rel="noopener">View</a>' : '') + '</td></tr>'; }).join('') + '</table>';
+}
+/* ---- Problem chart ---- */
+function gb57Chart(){
+  const p = GB.problems, edit = p.canEdit, rows = p.data;
+  let h = '<div class="b46-sub" style="margin:6px 0 10px;">For each sector: the problem, what it costs, and why it happens. These drive the briefs and give Ella the questions that open the conversation with a reader who replies. Figures never go here; they go in a brief, with a source.</div>' +
+    (edit ? '<div class="p41-bar"><button class="p41-btn pri sm" onclick="gb57ProblemEdit()">Add a problem</button>' + (rows.length ? '' : '<button class="p41-btn sm" onclick="gb57Seed(this)">Load the starter chart</button>') + '</div>' : '');
+  if(!rows.length) return h + '<div class="p41-empty">The chart is empty. Load the starter chart (one problem per sector, written without figures) and edit it.</div>';
+  h += '<table class="b46-tbl"><tr><th>Sector</th><th>Problem</th><th>Impact</th><th>Root cause</th><th>Discovery questions</th><th></th></tr>';
+  p.sectors.forEach(s => {
+    const mine = rows.filter(r => r.sector === s.name);
+    if(!mine.length) h += '<tr><td><b>' + esc(s.name) + '</b></td><td colspan="5" class="b46-sub">No problem recorded yet</td></tr>';
+    mine.forEach((r, i) => { h += '<tr><td>' + (i ? '' : '<b>' + esc(s.name) + '</b>') + '</td><td>' + esc(r.problem) + '</td><td>' + esc(r.impact) + '</td><td>' + esc(r.root_cause) + '</td><td class="b46-sub">' + esc(r.questions).replace(/\n/g, '<br>') + '</td><td style="white-space:nowrap;">' + (edit ? '<button class="p41-btn sm" onclick="gb57ProblemEdit(\'' + esc(r.id) + '\')">Edit</button> <button class="p41-btn sm" onclick="gb57ProblemDel(\'' + esc(r.id) + '\')">Remove</button>' : '') + '</td></tr>'; });
+  });
+  return h + '</table>';
+}
+function gb57ProblemEdit(id){
+  const r = id ? GB.problems.data.find(x => x.id === id) : {sector:'', problem:'', impact:'', root_cause:'', questions:'', sources:''};
+  gbModal('<h3 style="margin:0 0 8px;">' + (id ? 'Edit problem' : 'Add a problem') + '</h3><label>Sector</label><select id="gpS" style="width:100%;">' + GB.problems.sectors.map(s => '<option' + (s.name === r.sector ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') + '</select>' +
+    [['gpP', 'Problem', r.problem], ['gpI', 'Impact', r.impact], ['gpR', 'Root cause', r.root_cause], ['gpQ', 'Discovery questions for Ella (one per line)', r.questions], ['gpSrc', 'Source for any figure used (optional)', r.sources]].map(f => '<label style="margin-top:8px;">' + f[1] + '</label><textarea id="' + f[0] + '" rows="3" style="width:100%;">' + esc(f[2] || '') + '</textarea>').join('') +
+    '<div class="p41-bar" style="margin-top:14px;"><button class="p41-btn pri" onclick="gb57ProblemGo(\'' + esc(id || '') + '\',this)">Save</button><button class="p41-btn" onclick="gbClose()">Cancel</button></div>');
+}
+async function gb57ProblemGo(id, btn){
+  btn.disabled = true;
+  try{ await b2Api('/api/gap/problems', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id: id || undefined, sector: b2Val('gpS'), problem: b2Val('gpP'), impact: b2Val('gpI'), root_cause: b2Val('gpR'), questions: b2Val('gpQ'), sources: b2Val('gpSrc')})}); showToast('Saved'); gbClose(); await gb57Load(true); }
+  catch(e){ showToast(e.message); btn.disabled = false; }
+}
+async function gb57ProblemDel(id){ if(!confirm('Remove this problem from the chart?')) return; try{ await b2Del('/api/gap/problems', id); showToast('Removed'); await gb57Load(true); }catch(e){ showToast(e.message); } }
+async function gb57Seed(btn){ btn.disabled = true; try{ const j = await b2Post('/api/gap/problems/seed', {}); showToast(j.added + ' problems added. Review them.'); await gb57Load(true); }catch(e){ showToast(e.message); btn.disabled = false; } }
+/* ---- Pop-up when the dashboard opens ---- */
+async function gb57Popup(){
+  if(GB.poppedUp) return;
+  try{
+    const j = await b2Api('/api/gap/pending');
+    if(!j.canApprove || !j.count) return;
+    GB.poppedUp = true;
+    gbModal('<h3 style="margin:0 0 4px;">' + j.count + ' Gap Brief' + (j.count === 1 ? '' : 's') + ' ready for approval</h3><div class="b46-sub" style="margin-bottom:10px;">Sending ' + esc(gbDate(j.sendDate)) + ' at ' + j.sendHour + ':00. Anything not approved does not go this fortnight.</div>' +
+      j.briefs.map(b => '<div style="padding:6px 0;border-top:1px solid var(--border);"><b>' + esc(b.sector) + '</b><div class="b46-sub">' + (b.reach ? b.reach + ' ' + (b.reach === 1 ? 'person' : 'people') + ' &middot; from ' + b.reachBy.map(r => esc(r.name) + ' (' + r.n + ')').join(', ') : 'Reaches nobody yet') + (b.problems ? ' &middot; needs fixing before approval' : '') + '</div></div>').join('') +
+      '<div class="p41-bar" style="margin-top:14px;"><button class="p41-btn pri" onclick="gbClose();switchTab(\'gapBriefs\')">Review now</button><button class="p41-btn" onclick="gbClose()">Later</button></div>');
+  }catch(e){ /* the pop-up is a convenience; the Gap Briefs tab still works */ }
+}
 /* ---------------- Page build 57.0: new email engine test panel (Brevo above is unchanged) ---------------- */
 function useEngineHtml(){
   const e = USE.engine || {};

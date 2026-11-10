@@ -1,0 +1,73 @@
+name: L2H Gap Brief send
+
+# Tuesday reminder (07:30 UK) and send (10:00 UK). Each time has a winter and a summer line because GitHub schedules in UTC;
+# the server only sends from 10:00 UK on the send day and never emails anyone twice, so the extra line does nothing.
+# Briefs that did not finish (daily limit, a failure) are carried over by the morning job each day.
+on:
+  schedule:
+    - cron: '30 6 * * 2'   # 07:30 UK in summer time (reminder)
+    - cron: '30 7 * * 2'   # 07:30 UK in winter (reminder)
+    - cron: '0 9 * * 2'    # 10:00 UK in summer time (send)
+    - cron: '0 10 * * 2'   # 10:00 UK in winter (send)
+  workflow_dispatch:
+    inputs:
+      step:
+        description: 'remind or send'
+        type: choice
+        options: [send, remind]
+        default: send
+
+env:
+  BASE_URL: https://l2h-api.onrender.com
+  CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Work out the step
+        run: |
+          step="${{ inputs.step }}"
+          if [ -z "$step" ]; then
+            case "${{ github.event.schedule }}" in
+              "30 6 * * 2"|"30 7 * * 2") step=remind ;;
+              *) step=send ;;
+            esac
+          fi
+          echo "STEP=$step" >> "$GITHUB_ENV"
+
+      - name: Wake the server
+        run: |
+          for i in $(seq 1 40); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 "$BASE_URL/api/health" || true)
+            echo "Attempt $i: HTTP $code"
+            if [ "$code" = "200" ]; then exit 0; fi
+            sleep 5
+          done
+          echo "The server did not wake up within about 4 minutes"
+          exit 1
+
+      - name: Start the job
+        run: |
+          echo "START=$(date -u -d '60 seconds ago' +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_ENV"
+          curl -sS --fail-with-body --max-time 60 --retry 3 --retry-all-errors --retry-delay 10 \
+            -H "x-cron-key: $CRON_SECRET" "$BASE_URL/api/cron/gap-send?step=$STEP"
+
+      - name: Check the result
+        run: |
+          for i in $(seq 1 200); do
+            out=$(curl -sS --max-time 30 --retry 3 --retry-all-errors --retry-delay 5 \
+              -H "x-cron-key: $CRON_SECRET" "$BASE_URL/api/cron/status")
+            fin=$(echo "$out" | jq -r '.gapSend.finishedAt // ""')
+            if [ -n "$fin" ] && [[ "$fin" > "$START" ]]; then
+              echo "$out" | jq '.gapSend'
+              if [ "$(echo "$out" | jq -r '.gapSend.ok')" = "true" ]; then exit 0; fi
+              echo "::error title=gap-send::The Gap Brief job reported a problem. See the details above."
+              exit 1
+            fi
+            echo "Waiting for the job to finish ($i)"
+            sleep 10
+          done
+          echo "The job did not report a result within about 33 minutes"
+          exit 1

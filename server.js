@@ -123,6 +123,7 @@ const TABLE_GROUPS = {
   'Interviews': 'records', 'Templates': 'records', 'Activity': 'records', 'Invoice Charges': 'records',
   'Audit Log': 'system', 'Retention Reviews': 'system', 'Email Log': 'system', 'Engine Log': 'system', 'AI Usage': 'system', 'Settings': 'system', 'Suppression List': 'system',
   'Company Settings': 'clients', 'Contact Audience': 'clients',
+  'Gap Problems': 'clients', 'Gap Briefs': 'clients', 'Gap Sends': 'clients',
   'Users': 'auth',
 };
 const SIMPLE_TABLES = []; // every makeSimpleTable table, for import, copy back and the nightly backup
@@ -11103,7 +11104,7 @@ app.get('/api/cron/status', cronOnly, async (req, res) => {
   try {
     const rows = await settingsTable.list();
     const get = id => { const r = rows.find(o => o.id === id); if (!r) return null; try { return JSON.parse(r.value); } catch (e) { return null; } };
-    res.json({ now: new Date().toISOString(), build: SERVER_BUILD, backup: get('backup_last'), backupJob: get('cron_backup'), daily: get('cron_daily'), roleFinder: get('cron_roleFinder'), morning: get('cron_morning'), morningLastDate: (rows.find(o => o.id === 'morning_last_date') || {}).value || '' });
+    res.json({ now: new Date().toISOString(), build: SERVER_BUILD, backup: get('backup_last'), backupJob: get('cron_backup'), daily: get('cron_daily'), roleFinder: get('cron_roleFinder'), morning: get('cron_morning'), gapSend: get('cron_gapSend'), morningLastDate: (rows.find(o => o.id === 'morning_last_date') || {}).value || '' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/backup/run', requireAdmin, async (req, res) => {
@@ -12093,6 +12094,8 @@ async function runDailyJob(skipBackup) {
     await addAutoTasks([{ key: 'ms-secret-renew-' + msSecretExpires(), user: 'dan', title: 'Renew the Microsoft 365 email secret', priority: 'High', dueDate: msSecretExpires(), context: 'Entra, App registrations, Live 2 Help Workspace Mail, Certificates and secrets. New secret Value goes in MS_CLIENT_SECRET on Render; update MS_SECRET_EXPIRES.' }]);
     return d;
   });
+  // build 57.2: pick up new Gap Brief drafts from the repo, and carry over any approved brief that did not finish sending
+  await step('gapBriefs', async () => ({ imported: await gapImportFromGithub('system').catch(e => ({ error: e.message })), ...(await gapSendDue()) }));
   await step('outboxTask', async () => {
     const n = (await emailOutboxTable.list()).filter(o => o.status === 'pending').length;
     if (!n) return 0;
@@ -16281,7 +16284,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '9 Nov 2026 - build 57.0 (new email engine: Microsoft 365 and Amazon SES, alongside Brevo)';
+const SERVER_BUILD = '10 Nov 2026 - build 57.2 (Gap Briefs: problem chart, approval, Tuesday send)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -20460,6 +20463,533 @@ app.post('/api/outreach/sent', async (req, res) => {
     } catch (e) { console.error('Cold call log from outreach failed:', e.message); }
     res.json({ ok: true, followUp: due, logged });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ======================================================================
+   Build 57.2: Gap Briefs (Marketing > Gap Briefs)
+   - Gap Problems: the problem identification chart per sector (problem, impact, root cause, discovery questions)
+   - Gap Briefs: one drafted brief per sector per issue. Draft -> Approved (or Held) -> Sent (or Missed)
+   - Gap Sends: one row per recipient per issue, so a brief can never go to the same person twice
+   Drafts arrive from the Sunday scheduled task (gap-drafts/issue-N.json in the repo, imported here) or pasted in by hand.
+   Every brief is approved by Dan or Ella before anything sends. Sending goes one email per recipient through the
+   Amazon SES route of the 57.0 engine, from the contact's account owner, to Warm contacts with consent recorded.
+   ====================================================================== */
+const gapProblemsTable = makeSimpleTable({
+  tab: 'Gap Problems',
+  header: ['id', 'sector', 'problem', 'impact', 'root_cause', 'questions', 'sources', 'active', 'updated_by', 'updated_at'],
+  path: null,
+  label: 'Gap problem',
+});
+const gapBriefsTable = makeSimpleTable({
+  tab: 'Gap Briefs',
+  header: ['id', 'issue', 'sector', 'status', 'send_date', 'subject', 'content', 'problem_ids', 'drafted_by', 'approved_by', 'approved_at', 'held_reason', 'sent_at', 'sent_count', 'skipped_count', 'last_error', 'updated_by', 'updated_at'],
+  path: null,
+  label: 'Gap Brief',
+});
+const gapSendsTable = makeSimpleTable({
+  tab: 'Gap Sends',
+  header: ['id', 'brief_id', 'issue', 'email', 'sector', 'owner', 'status', 'reason', 'message_id', 'at'],
+  path: null,
+  label: 'Gap Brief send',
+});
+
+const GAP_APPROVERS = ['dan', 'ella'];
+const GAP_CLIENT_PHONE = '01902 945444'; // client-facing number, not the mobile
+const GAP_SEND_HOUR = 10; // UK time on the send day
+const gapCanEdit = req => isAdmin(req) || GAP_APPROVERS.includes(lc(actorOf(req)));
+const gapNeedEdit = (req, res, next) => (gapCanEdit(req) ? next() : res.status(403).json({ error: 'Only Dan or Ella can do this' }));
+const gbEsc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const gbDash = s => String(s == null ? '' : s).replace(/[–—]/g, '-');
+function gbFmt(s, dark) {
+  // **bold** and ==gold bold== (gold only reads on the dark box); everything else is escaped
+  let t = gbEsc(s);
+  t = t.replace(/\*\*(.+?)\*\*/g, (m, x) => (dark ? `<b style="color:#FFFFFF">${x}</b>` : `<b>${x}</b>`));
+  t = t.replace(/==(.+?)==/g, (m, x) => `<b style="color:${dark ? '#C9A84C' : '#A8862F'}">${x}</b>`);
+  return t;
+}
+const gbPlain = s => gbDash(String(s == null ? '' : s)).replace(/\*\*|==/g, '');
+const gapTodayUK = () => rfxToday();
+const gapHourUK = () => parseInt(new Date().toLocaleString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', hour12: false }), 10) % 24;
+const gapFmtDate = iso => { const d = new Date(String(iso || '').slice(0, 10) + 'T12:00:00Z'); return isNaN(d) ? '' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }); };
+const gapSectorOf = name => SECTORS.find(s => s.name === name);
+// Anchors on live2helprecruitment.co.uk/sectors/ (checked against the website repo, 10 Nov 2026). Sales is "commercial" on the site.
+const GAP_ANCHORS = {
+  'Engineering and Technical': 'engineering', 'Manufacturing and Industrial': 'manufacturing', 'Procurement and Supply Chain': 'procurement', 'Sales and Business Development': 'commercial',
+  'Accountancy and Finance': 'finance', 'IT and Technology': 'it', 'Construction and Infrastructure': 'construction', 'Health and Social Care': 'health',
+  'AI and Emerging Technologies': 'ai', 'HR and People Management': 'hr', 'Corporate and Executive': 'executive', 'Driving and Logistics': 'logistics',
+};
+const gapViewToken = id => crypto.createHmac('sha256', AUTH_SECRET).update('gap|' + id).digest('base64url').slice(0, 22);
+const gapViewUrl = id => `${tpPublicBase()}/gap/${encodeURIComponent(id)}.${gapViewToken(id)}`;
+
+const GAP_STR = ['preheader', 'headline', 'headlineGold', 'intro', 'numberValue', 'numberText', 'stateTitle', 'futureTitle', 'gapText', 'maths', 'checkTitle', 'checkAsk', 'myth', 'reality', 'roleType', 'sources'];
+const GAP_ARR = ['statePoints', 'futurePoints', 'questions'];
+function gapNormContent(c) {
+  c = c && typeof c === 'object' ? c : {};
+  const o = {};
+  GAP_STR.forEach(k => { o[k] = gbDash(c[k]).trim(); });
+  GAP_ARR.forEach(k => { o[k] = (Array.isArray(c[k]) ? c[k] : String(c[k] || '').split('\n')).map(x => gbDash(x).trim()).filter(Boolean); });
+  return o;
+}
+function gapContentOf(b) { try { return gapNormContent(JSON.parse(b.content || '{}')); } catch (e) { return gapNormContent({}); } }
+
+// What must be true before a brief can be approved
+function gapCheck(b, c) {
+  const err = [];
+  if (!gapSectorOf(b.sector)) err.push('The sector is not one of the twelve sectors');
+  if (!String(b.subject || '').trim()) err.push('Add a subject line');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(b.send_date || ''))) err.push('Add a send date');
+  [['headline', 'headline'], ['intro', 'opening line'], ['numberValue', 'number of the fortnight'], ['numberText', 'number explanation'], ['stateTitle', 'section 1 heading'],
+    ['futureTitle', 'section 2 heading'], ['gapText', 'section 3 text'], ['maths', 'quick maths'], ['checkTitle', 'gap check heading'], ['myth', 'myth'], ['reality', 'reality'],
+    ['roleType', 'role type (for example engineers)'], ['sources', 'sources line']].forEach(([k, l]) => { if (!c[k]) err.push('Add the ' + l); });
+  if (!c.statePoints.length) err.push('Add at least one point to section 1');
+  if (!c.futurePoints.length) err.push('Add at least one point to section 2');
+  if (c.questions.length !== 3) err.push('The gap check needs exactly three questions');
+  const all = [b.subject, ...GAP_STR.map(k => c[k]), ...GAP_ARR.flatMap(k => c[k])].join(' \n ');
+  if (/\b(fees?|pricing|price list|per cent of salary|% of (the )?salary)\b/i.test(all)) err.push('Remove any mention of fees or prices (a Gap Brief never quotes them)');
+  if (/\{\{|\}\}/.test(all)) err.push('There is a placeholder left in the text');
+  if (/[–—]/.test(all)) err.push('Remove dashes that look like em dashes');
+  return err;
+}
+
+const GAP_SECTOR_STRIP = 'Engineering &middot; Manufacturing &middot; Procurement &middot; Sales and Business Development &middot; Finance &middot; IT &middot; Construction &middot; Health and Care &middot; AI &middot; HR &middot; Executive &middot; Logistics';
+const GAP_LOGO = 'https://live2helprecruitment.co.uk/assets/logo-wide.png';
+
+// Renders the approved template. opts: { email, firstName, owner, web }
+function gapRender(b, c, opts = {}) {
+  const sec = gapSectorOf(b.sector) || { name: b.sector, slug: '' };
+  const owner = profileOf(opts.owner || AUD_DEFAULT_OWNER);
+  const first = gbEsc(opts.firstName || 'there');
+  const sFirst = gbEsc(owner.fullName.split(' ')[0]);
+  const rt = c.roleType || 'candidates';
+  const rtCap = rt.charAt(0).toUpperCase() + rt.slice(1);
+  const link = `https://live2helprecruitment.co.uk/sectors/#${GAP_ANCHORS[sec.name] || ''}`;
+  const dot = '<td width="22" valign="top" style="color:#C9A84C;font-size:18px;line-height:23px">&#9632;</td>';
+  const pts = arr => arr.map(p => `<tr>${dot}<td style="padding-bottom:8px">${gbFmt(p)}</td></tr>`).join('');
+  const sectionHead = (n, label) => `<div style="font-family:Arial,sans-serif;font-size:12px;font-weight:bold;letter-spacing:3px;color:#A8862F;text-transform:uppercase">${n} &middot; ${label}</div>`;
+  const h2 = t => `<h2 style="margin:8px 0 12px;font-family:Georgia,serif;font-size:22px;line-height:29px;font-weight:normal;color:#0B0B18">${gbEsc(t)}</h2>`;
+  const num = n => `<div style="width:26px;height:26px;line-height:26px;text-align:center;background:#C9A84C;color:#0B0B18;font-weight:bold;font-family:Georgia,serif;font-size:14px">${n}</div>`;
+  const card = (title, body) => `<td class="col" width="48%" valign="top" style="background:#F7F6F3;border-top:3px solid #C9A84C;padding:16px 16px 18px;font-family:Arial,sans-serif;font-size:14px;line-height:21px;color:#333333"><div style="font-family:Georgia,serif;font-size:17px;color:#0B0B18;margin-bottom:6px">${title}</div>${body}</td>`;
+  const gutter = '<td class="col" width="4%" style="font-size:0;line-height:0">&nbsp;</td>';
+  const unsub = opts.email && !opts.web ? unsubUrl(opts.email) : '';
+  const viewUrl = b.id ? gapViewUrl(b.id) : '#';
+  const footLinks = opts.web
+    ? 'You are reading the web version of The Gap Brief. To stop receiving it, use the unsubscribe link in the email we sent you, or reply and ask us to stop.'
+    : `<a href="${unsub}" style="color:#C9A84C;text-decoration:underline">Unsubscribe in one click</a> &middot; <a href="${unsub}" style="color:#C9A84C;text-decoration:underline">Change my sector</a> &middot; <a href="${viewUrl}" style="color:#C9A84C;text-decoration:underline">View in browser</a>`;
+  const head = c.headlineGold ? `${gbEsc(c.headline)} <span style="color:#C9A84C">${gbEsc(c.headlineGold)}</span>` : gbEsc(c.headline);
+  const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${gbEsc(b.subject || 'The Gap Brief')}</title>
+<style>body{margin:0;padding:0;background:#ECEAE4}@media (max-width:620px){.wrap{width:100% !important}.pad{padding-left:22px !important;padding-right:22px !important}.h1{font-size:28px !important;line-height:34px !important}.num{font-size:52px !important}.col{display:block !important;width:100% !important}}</style></head>
+<body style="margin:0;padding:0;background:#ECEAE4">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0">${gbEsc(c.preheader || '')}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ECEAE4"><tr><td align="center" style="padding:0 0 32px">
+<table role="presentation" class="wrap" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;background:#FFFFFF">
+<tr><td style="background:#0B0B18;padding:28px 40px 22px" class="pad"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+<td><img src="${GAP_LOGO}" width="200" height="56" alt="Live 2 Help Recruitment" style="display:block;border:0;width:200px;height:auto"></td>
+<td align="right" style="font-family:Arial,sans-serif;font-size:11px;letter-spacing:2px;color:#B4B8C4;text-transform:uppercase">Issue ${gbEsc(b.issue)}<br>${gbEsc(gapFmtDate(b.send_date))}</td></tr></table></td></tr>
+<tr><td style="background:#0B0B18;padding:0 40px" class="pad"><div style="height:3px;background:#C9A84C;line-height:3px;font-size:0">&nbsp;</div></td></tr>
+<tr><td style="background:#0B0B18;padding:26px 40px 34px" class="pad">
+<div style="font-family:Arial,sans-serif;font-size:12px;font-weight:bold;letter-spacing:3px;color:#C9A84C;text-transform:uppercase">The Gap Brief &middot; ${gbEsc(sec.name)}</div>
+<h1 class="h1" style="margin:12px 0 0;font-family:Georgia,'Times New Roman',serif;font-size:34px;line-height:40px;font-weight:normal;color:#FFFFFF">${head}</h1>
+<p style="margin:16px 0 0;font-family:Arial,sans-serif;font-size:16px;line-height:25px;color:#D4D6DE">Hi ${first}, ${gbEsc(c.intro)}</p></td></tr>
+<tr><td style="padding:30px 40px 6px" class="pad"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F7F6F3;border-left:4px solid #C9A84C"><tr>
+<td class="col" width="160" style="padding:20px 0 20px 22px;vertical-align:middle"><div style="font-family:Arial,sans-serif;font-size:11px;font-weight:bold;letter-spacing:2px;color:#A8862F;text-transform:uppercase">Number of the fortnight</div><div class="num" style="font-family:Georgia,serif;font-size:58px;line-height:62px;color:#0B0B18">${gbEsc(c.numberValue)}</div></td>
+<td class="col" style="padding:20px 22px;vertical-align:middle;font-family:Arial,sans-serif;font-size:15px;line-height:23px;color:#333333">${gbFmt(c.numberText)}</td></tr></table></td></tr>
+<tr><td style="padding:28px 40px 0" class="pad">${sectionHead(1, 'Where things stand')}${h2(c.stateTitle)}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,sans-serif;font-size:15px;line-height:23px;color:#333333">${pts(c.statePoints)}</table></td></tr>
+<tr><td style="padding:24px 40px 0" class="pad">${sectionHead(2, 'What the best employers do')}${h2(c.futureTitle)}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,sans-serif;font-size:15px;line-height:23px;color:#333333">${pts(c.futurePoints)}</table></td></tr>
+<tr><td style="padding:28px 40px 0" class="pad"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0B0B18"><tr><td style="padding:26px 26px 24px">
+<div style="font-family:Arial,sans-serif;font-size:12px;font-weight:bold;letter-spacing:3px;color:#C9A84C;text-transform:uppercase">3 &middot; Mind the gap</div>
+<p style="margin:10px 0 14px;font-family:Arial,sans-serif;font-size:15px;line-height:24px;color:#D4D6DE">${gbFmt(c.gapText, true)}</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#1A1A36;border:1px solid #2A2A48"><tr><td style="padding:14px 16px;font-family:Arial,sans-serif;font-size:14px;line-height:22px;color:#D4D6DE"><span style="color:#C9A84C;font-weight:bold;letter-spacing:1px;text-transform:uppercase;font-size:11px">Quick maths</span><br>${gbFmt(c.maths, true)}</td></tr></table>
+</td></tr></table></td></tr>
+<tr><td style="padding:28px 40px 0" class="pad"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:2px solid #C9A84C"><tr><td style="padding:24px 26px 22px">
+${sectionHead(4, 'Your 60-second gap check')}${h2(c.checkTitle).replace('margin:8px 0 12px', 'margin:8px 0 14px')}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,sans-serif;font-size:15px;line-height:23px;color:#333333">${c.questions.map((q, i) => `<tr><td width="40" valign="top">${num(i + 1)}</td><td style="padding-bottom:10px">${gbEsc(q)}</td></tr>`).join('')}</table>
+<p style="margin:8px 0 0;font-family:Arial,sans-serif;font-size:15px;line-height:23px;color:#0B0B18">${gbFmt(c.checkAsk || '**Reply with your three answers,** even just numbers. I will send back your own gap: what it is costing you and how long it would realistically take to close.')}</p>
+</td></tr></table></td></tr>
+<tr><td style="padding:18px 40px 0" class="pad"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F7F6F3"><tr><td style="padding:16px 20px;font-family:Arial,sans-serif;font-size:15px;line-height:23px;color:#333333"><span style="font-size:11px;font-weight:bold;letter-spacing:2px;color:#A8862F;text-transform:uppercase">Hiring myth of the fortnight</span><br><b style="color:#0B0B18">Myth:</b> &ldquo;${gbEsc(c.myth)}&rdquo; <b style="color:#0B0B18">Reality:</b> ${gbEsc(c.reality)}</td></tr></table></td></tr>
+<tr><td style="padding:30px 40px 0" class="pad">${sectionHead(5, 'How we close the gap for you')}${h2(`Better ${rt}, faster decisions, less of your time`).replace('margin:8px 0 12px', 'margin:8px 0 14px')}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>${card('Same-day shortlists', `Suitable ${gbEsc(rt)} are with you <b>the day we speak to them</b>, already screened in depth against your brief. Not a CV pass-through.`)}${gutter}${card('Submissions that do the thinking', 'Every candidate arrives with a <b>detailed submission</b>: your requirements matched line by line to their evidence, notice, salary and motivations. Anonymised first, so you judge on ability.')}</tr>
+<tr><td colspan="3" style="height:12px;font-size:0;line-height:0">&nbsp;</td></tr>
+<tr>${card('Decide in one click', '<b>Yes, no or tell me more</b>, straight from the email. Pick your interview times in the same click. No chasing, no back-and-forth.')}${gutter}${card('Ready on day one', 'A <b>tailored interview prep pack</b> for every candidate, a site pack so they arrive right, check-ins at week one and month one, and a <b>3-month replacement guarantee</b>.')}</tr>
+</table></td></tr>
+<tr><td style="padding:20px 40px 0" class="pad" align="center"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="background:#C9A84C"><a href="mailto:${gbEsc(owner.email)}?subject=My%20gap%20check" style="display:inline-block;padding:14px 26px;font-family:Arial,sans-serif;font-size:14px;font-weight:bold;letter-spacing:1px;color:#0B0B18;text-decoration:none;text-transform:uppercase">Email ${sFirst}</a></td></tr></table>
+<p style="margin:14px 0 0;font-family:Arial,sans-serif;font-size:14px;line-height:22px;color:#6B6B6B">Or see how we work: <a href="${link}" style="color:#0B0B18;font-weight:bold;text-decoration:none;border-bottom:2px solid #C9A84C">live2helprecruitment.co.uk</a></p></td></tr>
+<tr><td style="padding:28px 40px 0" class="pad"><p style="margin:0;font-family:Arial,sans-serif;font-size:15px;line-height:24px;color:#333333">Speak soon,</p><p style="margin:6px 0 0;font-family:Georgia,serif;font-size:19px;color:#0B0B18">${gbEsc(owner.fullName)}</p><p style="margin:2px 0 0;font-family:Arial,sans-serif;font-size:13px;line-height:20px;color:#6B6B6B">${gbEsc(owner.title)}, Live 2 Help Recruitment &middot; ${GAP_CLIENT_PHONE}</p></td></tr>
+<tr><td style="padding:26px 40px 30px" class="pad"><div style="border-top:1px solid #E6E2D6;padding-top:14px;font-family:Arial,sans-serif;font-size:11px;line-height:17px;color:#8A8A8A">Sources: ${gbEsc(c.sources)}</div></td></tr>
+<tr><td style="background:#12122A;padding:24px 40px" class="pad" align="center"><div style="font-family:Arial,sans-serif;font-size:11px;font-weight:bold;letter-spacing:3px;color:#C9A84C;text-transform:uppercase">Twelve sectors. One standard.</div><div style="margin-top:10px;font-family:Arial,sans-serif;font-size:12px;line-height:21px;color:#B4B8C4">${GAP_SECTOR_STRIP}</div></td></tr>
+<tr><td style="background:#0B0B18;padding:24px 40px 28px" class="pad" align="center"><p style="margin:0;font-family:Arial,sans-serif;font-size:11px;line-height:18px;color:#8A8EA0">You are receiving The Gap Brief because you work with Live 2 Help or asked for our hiring updates.<br>${footLinks}</p>
+<p style="margin:12px 0 0;font-family:Arial,sans-serif;font-size:11px;line-height:18px;color:#6B6F80">Live 2 Help Recruitment Ltd &middot; Registered in England and Wales &middot; Company number 11731080<br>20 Chester Street, Wolverhampton, WV6 0PY &middot; ${GAP_CLIENT_PHONE}</p></td></tr>
+</table></td></tr></table></body></html>`;
+  const lines = [
+    `THE GAP BRIEF - ${sec.name.toUpperCase()}`, `Issue ${b.issue}, ${gapFmtDate(b.send_date)}`, '',
+    `Hi ${opts.firstName || 'there'}, ${gbPlain(c.intro)}`, '',
+    `NUMBER OF THE FORTNIGHT: ${gbPlain(c.numberValue)}`, gbPlain(c.numberText), '',
+    `1. WHERE THINGS STAND - ${gbPlain(c.stateTitle)}`, ...c.statePoints.map(p => '- ' + gbPlain(p)), '',
+    `2. WHAT THE BEST EMPLOYERS DO - ${gbPlain(c.futureTitle)}`, ...c.futurePoints.map(p => '- ' + gbPlain(p)), '',
+    '3. MIND THE GAP', gbPlain(c.gapText), `Quick maths: ${gbPlain(c.maths)}`, '',
+    `4. YOUR 60-SECOND GAP CHECK - ${gbPlain(c.checkTitle)}`, ...c.questions.map((q, i) => `${i + 1}. ${q}`),
+    gbPlain(c.checkAsk || 'Reply with your three answers, even just numbers. I will send back your own gap: what it is costing you and how long it would realistically take to close.'), '',
+    `HIRING MYTH OF THE FORTNIGHT: "${c.myth}" Reality: ${c.reality}`, '',
+    `5. HOW WE CLOSE THE GAP FOR YOU - Better ${rt}, faster decisions, less of your time`,
+    `- Same-day shortlists: suitable ${rt} are with you the day we speak to them, screened in depth against your brief.`,
+    '- Submissions that do the thinking: your requirements matched line by line to their evidence, notice, salary and motivations. Anonymised first.',
+    '- Decide in one click: yes, no or tell me more, straight from the email, with interview times picked in the same click.',
+    '- Ready on day one: a tailored interview prep pack for every candidate, a site pack, check-ins at week one and month one, and a 3-month replacement guarantee.', '',
+    `Email ${owner.fullName.split(' ')[0]}: ${owner.email} or see ${link}`, '', 'Speak soon,', owner.fullName, `${owner.title}, Live 2 Help Recruitment, ${GAP_CLIENT_PHONE}`, '',
+    `Sources: ${c.sources}`, '',
+    opts.web ? '' : `Unsubscribe or change your sector: ${unsub}\nView in browser: ${viewUrl}`,
+    'Live 2 Help Recruitment Ltd, Registered in England and Wales, Company number 11731080, 20 Chester Street, Wolverhampton, WV6 0PY, ' + GAP_CLIENT_PHONE,
+  ];
+  return { html, text: lines.join('\n'), subject: gbDash(b.subject) };
+}
+
+// Recipients for a brief: Warm, consent recorded, not suppressed, sent by SES, and this brief is their next sector
+function gapRecipients(contacts, sector) {
+  return contacts.filter(c => c.status === 'Warm' && !c.needsRecording && !c.suppressed && c.route === 'ses' && c.sector === sector && audIsEmail(c.email));
+}
+const gapFirstName = n => { const t = String(n || '').trim().split(/\s+/)[0] || ''; return /^[A-Za-z][A-Za-z'-]{0,30}$/.test(t) ? t : ''; };
+
+async function gapView(b, contacts, sendsByIssue) {
+  const c = gapContentOf(b);
+  const recips = gapRecipients(contacts, b.sector).filter(r => !(sendsByIssue.get(String(b.issue)) || new Set()).has(r.email));
+  const by = {};
+  recips.forEach(r => { by[r.owner] = (by[r.owner] || 0) + 1; });
+  return {
+    id: b.id, issue: Number(b.issue) || 0, sector: b.sector, status: b.status, sendDate: b.send_date, subject: b.subject, content: c,
+    problemIds: String(b.problem_ids || '').split(',').map(x => x.trim()).filter(Boolean),
+    draftedBy: b.drafted_by, approvedBy: b.approved_by, approvedAt: b.approved_at, heldReason: b.held_reason,
+    sentAt: b.sent_at, sentCount: Number(b.sent_count) || 0, skippedCount: Number(b.skipped_count) || 0, lastError: b.last_error,
+    reach: recips.length, reachBy: Object.entries(by).map(([k, n]) => ({ owner: k, name: profileOf(k).fullName, n })),
+    problems: gapCheck(b, c), viewUrl: ['Approved', 'Sent'].includes(b.status) ? gapViewUrl(b.id) : '',
+  };
+}
+async function gapSendsIndex() {
+  const rows = await gapSendsTable.list().catch(() => []);
+  const by = new Map(); // issue -> Set of emails already handled (sent or skipped)
+  const fails = new Map(); // issue|email -> failed attempts
+  rows.forEach(r => {
+    const k = String(r.issue);
+    if (r.status === 'sent' || r.status === 'skipped') { if (!by.has(k)) by.set(k, new Set()); by.get(k).add(lc(r.email)); }
+    else if (r.status === 'failed') fails.set(k + '|' + lc(r.email), (fails.get(k + '|' + lc(r.email)) || 0) + 1);
+  });
+  fails.forEach((n, key) => { if (n >= 2) { const [k, e] = key.split('|'); if (!by.has(k)) by.set(k, new Set()); by.get(k).add(e); } });
+  return by;
+}
+
+/* ---------- Problem chart ---------- */
+app.get('/api/gap/problems', async (req, res) => {
+  try { res.json({ data: (await gapProblemsTable.list()).filter(p => lc(p.active) !== 'false'), sectors: SECTORS, canEdit: gapCanEdit(req) }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/api/gap/problems', gapNeedEdit, async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!gapSectorOf(b.sector)) return res.status(400).json({ error: 'Choose one of the twelve sectors' });
+    const problem = gbDash(b.problem).trim();
+    if (!problem) return res.status(400).json({ error: 'Describe the problem' });
+    const row = { id: b.id || rfxId('gp'), sector: b.sector, problem, impact: gbDash(b.impact).trim(), root_cause: gbDash(b.root_cause).trim(), questions: gbDash(b.questions).trim(), sources: String(b.sources || '').trim(), active: 'TRUE', updated_by: actorOf(req), updated_at: rfxNow() };
+    await gapProblemsTable.upsert(row);
+    auditLog(auditActorOf(req), b.id ? 'updated' : 'created', 'gap_problem', b.sector, problem.slice(0, 80));
+    res.json({ ok: true, row });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/api/gap/problems/:id', gapNeedEdit, async (req, res) => {
+  try {
+    const ex = (await gapProblemsTable.list()).find(p => p.id === req.params.id);
+    if (!ex) return res.status(404).json({ error: 'Not found' });
+    await gapProblemsTable.upsert({ ...ex, active: 'FALSE', updated_by: actorOf(req), updated_at: rfxNow() });
+    auditLog(auditActorOf(req), 'deleted', 'gap_problem', ex.sector, String(ex.problem).slice(0, 80));
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/gap/problems/seed', gapNeedEdit, async (req, res) => {
+  try {
+    const have = (await gapProblemsTable.list()).filter(p => lc(p.active) !== 'false');
+    if (have.length) return res.status(409).json({ error: 'The chart already has entries, so the starter chart was not loaded' });
+    const seed = JSON.parse(fs.readFileSync(path.join(__dirname, 'gap-seed-problems.json'), 'utf8')).problems;
+    let n = 0;
+    for (const p of seed) {
+      if (!gapSectorOf(p.sector)) continue;
+      await gapProblemsTable.upsert({ id: rfxId('gp'), sector: p.sector, problem: p.problem, impact: p.impact, root_cause: p.root_cause, questions: p.questions, sources: '', active: 'TRUE', updated_by: actorOf(req), updated_at: rfxNow() });
+      n++;
+    }
+    auditLog(auditActorOf(req), 'created', 'gap_problem', 'starter chart', n + ' entries');
+    res.json({ ok: true, added: n });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ---------- Briefs ---------- */
+app.get('/api/gap/briefs', async (req, res) => {
+  try {
+    const [briefs, contacts, sends] = await Promise.all([gapBriefsTable.list(), audResolve(), gapSendsIndex()]);
+    const rows = [];
+    for (const b of briefs) rows.push(await gapView(b, contacts, sends));
+    rows.sort((a, b) => b.issue - a.issue || a.sector.localeCompare(b.sector));
+    res.json({ data: rows, canEdit: gapCanEdit(req), canSend: isAdmin(req), preview: isPreview(), sendHour: GAP_SEND_HOUR, owners: audOwners(), today: gapTodayUK() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// For the pop-up when the dashboard opens
+app.get('/api/gap/pending', async (req, res) => {
+  try {
+    if (!gapCanEdit(req)) return res.json({ canApprove: false, count: 0, briefs: [] });
+    const today = gapTodayUK();
+    const draft = (await gapBriefsTable.list()).filter(b => b.status === 'Draft' && String(b.send_date) >= today);
+    if (!draft.length) return res.json({ canApprove: true, count: 0, briefs: [] });
+    const [contacts, sends] = await Promise.all([audResolve(), gapSendsIndex()]);
+    const briefs = [];
+    for (const b of draft) { const v = await gapView(b, contacts, sends); briefs.push({ id: v.id, issue: v.issue, sector: v.sector, sendDate: v.sendDate, reach: v.reach, reachBy: v.reachBy, problems: v.problems.length }); }
+    briefs.sort((a, b) => String(a.sendDate).localeCompare(String(b.sendDate)) || a.sector.localeCompare(b.sector));
+    res.json({ canApprove: true, count: briefs.length, sendDate: briefs[0].sendDate, sendHour: GAP_SEND_HOUR, briefs });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/gap/briefs/:id/preview', async (req, res) => {
+  try {
+    const b = (await gapBriefsTable.list()).find(x => x.id === req.params.id);
+    if (!b) return res.status(404).json({ error: 'Not found' });
+    const owner = lc(req.query.owner) && audOwnerOk(req.query.owner) ? lc(req.query.owner) : AUD_DEFAULT_OWNER;
+    const email = String(req.query.email || '').trim();
+    const c = gapContentOf(b);
+    const r = gapRender(b, c, { email: audIsEmail(email) ? email : 'preview@example.com', firstName: gapFirstName(req.query.first) || 'Alex', owner });
+    res.json({ html: r.html, subject: r.subject, text: r.text, owner, problems: gapCheck(b, c) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/gap/briefs/:id', gapNeedEdit, async (req, res) => {
+  try {
+    const b = (await gapBriefsTable.list()).find(x => x.id === req.params.id);
+    if (!b) return res.status(404).json({ error: 'Not found' });
+    if (!['Draft', 'Held'].includes(b.status)) return res.status(409).json({ error: `A brief that is ${b.status.toLowerCase()} cannot be edited. Move it back to draft first.` });
+    const body = req.body || {};
+    const row = { ...b };
+    if (body.subject != null) row.subject = gbDash(body.subject).trim().slice(0, 200);
+    if (body.sendDate != null) { if (!/^\d{4}-\d{2}-\d{2}$/.test(body.sendDate)) return res.status(400).json({ error: 'Send date must be a date' }); row.send_date = body.sendDate; }
+    if (body.content) row.content = JSON.stringify(gapNormContent(body.content));
+    row.updated_by = actorOf(req); row.updated_at = rfxNow();
+    await gapBriefsTable.upsert(row);
+    auditLog(auditActorOf(req), 'updated', 'gap_brief', `${b.sector} issue ${b.issue}`, 'edited');
+    res.json({ ok: true, problems: gapCheck(row, gapContentOf(row)) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+async function gapSetStatus(req, res, from, to, patch, auditNote) {
+  const b = (await gapBriefsTable.list()).find(x => x.id === req.params.id);
+  if (!b) return res.status(404).json({ error: 'Not found' });
+  if (!from.includes(b.status)) return res.status(409).json({ error: `This brief is ${b.status.toLowerCase()}, so that cannot be done now.` });
+  const row = { ...b, status: to, ...patch(b), updated_by: actorOf(req), updated_at: rfxNow() };
+  await gapBriefsTable.upsert(row);
+  auditLog(auditActorOf(req), 'updated', 'gap_brief', `${b.sector} issue ${b.issue}`, auditNote);
+  return res.json({ ok: true, status: to });
+}
+app.post('/api/gap/briefs/:id/approve', gapNeedEdit, async (req, res) => {
+  try {
+    const b = (await gapBriefsTable.list()).find(x => x.id === req.params.id);
+    if (!b) return res.status(404).json({ error: 'Not found' });
+    const probs = gapCheck(b, gapContentOf(b));
+    if (probs.length) return res.status(400).json({ error: 'Not ready to approve: ' + probs.join('; ') });
+    await gapSetStatus(req, res, ['Draft', 'Held'], 'Approved', () => ({ approved_by: actorOf(req), approved_at: rfxNow(), held_reason: '' }), 'approved');
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/gap/briefs/:id/hold', gapNeedEdit, async (req, res) => {
+  try {
+    const why = gbDash((req.body || {}).reason).trim();
+    if (!why) return res.status(400).json({ error: 'Say why you are holding it back' });
+    await gapSetStatus(req, res, ['Draft', 'Approved'], 'Held', () => ({ held_reason: why.slice(0, 300), approved_by: '', approved_at: '' }), 'held: ' + why.slice(0, 100));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/gap/briefs/:id/reopen', gapNeedEdit, async (req, res) => {
+  try { await gapSetStatus(req, res, ['Held', 'Approved', 'Missed'], 'Draft', () => ({ approved_by: '', approved_at: '', held_reason: '' }), 'moved back to draft'); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// A test goes to one address you choose (default: your own), through Microsoft 365 or the bulk route
+app.post('/api/gap/briefs/:id/test', gapNeedEdit, async (req, res) => {
+  try {
+    const b = (await gapBriefsTable.list()).find(x => x.id === req.params.id);
+    if (!b) return res.status(404).json({ error: 'Not found' });
+    const me = actorOf(req), prof = profileOf(me);
+    const to = String((req.body || {}).to || prof.email).trim();
+    if (!audIsEmail(to)) return res.status(400).json({ error: 'That is not a valid email address' });
+    const route = (req.body || {}).route === 'ses' ? 'ses' : 'm365';
+    const r = gapRender(b, gapContentOf(b), { email: to, firstName: gapFirstName(prof.fullName), owner: me });
+    const out = await engineMail.send({
+      route, from: route === 'ses' ? undefined : prof.email, fromName: route === 'ses' ? prof.fullName : prof.fullName, replyTo: prof.email,
+      to, subject: '[TEST] ' + r.subject, html: r.html, text: r.text, kind: 'gap-test', user: me, skipSuppression: true, meta: { ref: b.id },
+    });
+    res.json({ ok: true, preview: !!out.preview, message: out.preview ? 'Preview workspace: nothing was sent' : `Test sent to ${to}` });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+
+/* ---------- Import drafts (scheduled task, GitHub, or pasted) ---------- */
+async function gapImportDrafts(list, by, opts = {}) {
+  const existing = await gapBriefsTable.list();
+  const out = { created: 0, replaced: 0, skipped: 0, errors: [] };
+  for (const d of Array.isArray(list) ? list : []) {
+    const sec = gapSectorOf(d.sector);
+    const issue = parseInt(d.issue, 10);
+    if (!sec) { out.errors.push(`"${d.sector}" is not one of the twelve sectors`); continue; }
+    if (!issue || issue < 1) { out.errors.push(`${d.sector}: the issue number is missing`); continue; }
+    const sendDate = String(d.sendDate || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(sendDate)) { out.errors.push(`${d.sector}: the send date is missing`); continue; }
+    const id = `gb-${issue}-${sec.slug}`;
+    const ex = existing.find(b => b.id === id);
+    if (ex && !(opts.replace && ['Draft', 'Held'].includes(ex.status))) { out.skipped++; continue; }
+    await gapBriefsTable.upsert({
+      id, issue: String(issue), sector: sec.name, status: 'Draft', send_date: sendDate, subject: gbDash(d.subject).trim().slice(0, 200),
+      content: JSON.stringify(gapNormContent(d.content)), problem_ids: Array.isArray(d.problemIds) ? d.problemIds.join(',') : String(d.problemIds || ''),
+      drafted_by: by, approved_by: '', approved_at: '', held_reason: '', sent_at: '', sent_count: '0', skipped_count: '0', last_error: '', updated_by: by, updated_at: rfxNow(),
+    });
+    if (ex) out.replaced++; else out.created++;
+  }
+  return out;
+}
+app.post('/api/gap/import', gapNeedEdit, async (req, res) => {
+  try {
+    const b = req.body || {};
+    let list = b.briefs;
+    if (!list && Array.isArray(b.drafts)) list = b.drafts;
+    if (list && b.issue) list = list.map(x => ({ issue: b.issue, sendDate: b.sendDate, ...x }));
+    if (!Array.isArray(list) || !list.length) return res.status(400).json({ error: 'No briefs found in what was pasted' });
+    const out = await gapImportDrafts(list, actorOf(req), { replace: !!b.replace });
+    auditLog(auditActorOf(req), 'created', 'gap_brief', 'import', `${out.created} new, ${out.replaced} replaced, ${out.skipped} skipped`);
+    res.json({ ok: true, ...out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// The Sunday scheduled task commits gap-drafts/issue-N.json to the repo; this picks up any new ones. Never overwrites an existing brief.
+async function gapImportFromGithub(by) {
+  const repo = process.env.GAP_DRAFTS_REPO || 'stoicarchitect/live2help';
+  const hdr = { 'User-Agent': 'l2h-workspace', Accept: 'application/vnd.github+json', ...(process.env.GITHUB_TOKEN ? { Authorization: 'Bearer ' + process.env.GITHUB_TOKEN } : {}) };
+  const r = await fetch(`https://api.github.com/repos/${repo}/contents/gap-drafts?ref=main`, { headers: hdr });
+  if (r.status === 404) return { files: 0, created: 0, skipped: 0, errors: [] };
+  if (!r.ok) throw new Error(`GitHub answered ${r.status} when looking for new drafts`);
+  const files = (await r.json()).filter(f => /^issue-\d+\.json$/.test(f.name));
+  const total = { files: files.length, created: 0, skipped: 0, errors: [] };
+  for (const f of files) {
+    try {
+      const fr = await fetch(f.download_url, { headers: hdr });
+      if (!fr.ok) throw new Error(`could not read ${f.name} (${fr.status})`);
+      const j = await fr.json();
+      const out = await gapImportDrafts((j.briefs || []).map(x => ({ issue: j.issue, sendDate: j.sendDate, ...x })), by || 'system');
+      total.created += out.created; total.skipped += out.skipped; total.errors.push(...out.errors.map(e => `${f.name}: ${e}`));
+    } catch (e) { total.errors.push(`${f.name}: ${e.message}`); }
+  }
+  return total;
+}
+app.post('/api/gap/import-github', gapNeedEdit, async (req, res) => {
+  try {
+    const out = await gapImportFromGithub(actorOf(req));
+    auditLog(auditActorOf(req), 'created', 'gap_brief', 'github import', `${out.created} new, ${out.skipped} already there`);
+    res.json({ ok: true, ...out });
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+/* ---------- Sending ---------- */
+async function gapSendDue(opts = {}) {
+  if (isPreview()) return { preview: true, note: 'Preview workspace: nothing is sent from here' };
+  const today = gapTodayUK();
+  const all = await gapBriefsTable.list();
+  const result = { today, sent: 0, skipped: 0, failed: 0, briefs: [], missed: 0, stoppedForQuota: false };
+  // an unapproved brief simply does not go that fortnight
+  for (const b of all.filter(x => x.status === 'Draft' && String(x.send_date) < today)) {
+    await gapBriefsTable.upsert({ ...b, status: 'Missed', updated_by: 'system', updated_at: rfxNow() }); result.missed++;
+  }
+  let due = all.filter(b => b.status === 'Approved' && String(b.send_date) <= today);
+  if (!opts.force) due = due.filter(b => String(b.send_date) < today || gapHourUK() >= GAP_SEND_HOUR);
+  if (!due.length) return result;
+  const [contacts, handled] = await Promise.all([audResolve(), gapSendsIndex()]);
+  due.sort((a, b) => (Number(a.issue) - Number(b.issue)) || a.sector.localeCompare(b.sector));
+  // one snapshot: every contact has exactly one next sector, so they get one brief per issue
+  outer: for (const b of due) {
+    const c = gapContentOf(b);
+    if (gapCheck(b, c).length) { result.briefs.push({ id: b.id, sector: b.sector, error: 'not ready: ' + gapCheck(b, c)[0] }); continue; }
+    const k = String(b.issue);
+    if (!handled.has(k)) handled.set(k, new Set());
+    const done = handled.get(k);
+    const recips = gapRecipients(contacts, b.sector).filter(r => !done.has(r.email));
+    let sent = 0, skipped = 0, failed = 0, lastError = '', stopped = false;
+    for (const r of recips) {
+      const base = { id: rfxId('gs'), brief_id: b.id, issue: k, email: r.email, sector: b.sector, owner: r.owner, at: rfxNow() };
+      try {
+        const rendered = gapRender(b, c, { email: r.email, firstName: gapFirstName(r.name), owner: r.owner });
+        const sender = profileOf(r.owner);
+        const out = await engineMail.send({
+          route: 'ses', fromName: sender.fullName, replyTo: sender.email, to: r.email, subject: rendered.subject, html: rendered.html, text: rendered.text,
+          kind: 'gap-brief', user: 'system', unsubscribeUrl: unsubUrl(r.email), meta: { ref: b.id, company: r.company },
+        });
+        await gapSendsTable.upsert({ ...base, status: 'sent', reason: '', message_id: out.messageId || '' });
+        await audMarkSent(r.email, b.sector).catch(e => console.error('audMarkSent failed:', e.message));
+        done.add(r.email); sent++;
+      } catch (e) {
+        if (e.status === 429) { lastError = e.message; stopped = true; break; }
+        if (e.status === 409) { await gapSendsTable.upsert({ ...base, status: 'skipped', reason: e.message.slice(0, 200), message_id: '' }); done.add(r.email); skipped++; continue; }
+        await gapSendsTable.upsert({ ...base, status: 'failed', reason: String(e.message).slice(0, 200), message_id: '' }).catch(() => {});
+        lastError = e.message; failed++;
+      }
+    }
+    const sentTotal = (Number(b.sent_count) || 0) + sent, skippedTotal = (Number(b.skipped_count) || 0) + skipped;
+    const complete = !stopped && failed === 0;
+    await gapBriefsTable.upsert({
+      ...b, status: complete ? 'Sent' : 'Approved', sent_at: complete ? rfxNow() : b.sent_at, sent_count: String(sentTotal), skipped_count: String(skippedTotal),
+      last_error: complete ? '' : lastError.slice(0, 300), updated_by: 'system', updated_at: rfxNow(),
+    });
+    result.sent += sent; result.skipped += skipped; result.failed += failed;
+    result.briefs.push({ id: b.id, sector: b.sector, sent, skipped, failed, complete, error: lastError });
+    if (stopped) { result.stoppedForQuota = true; await alertDan('gap-quota', 'Live 2 Help: Gap Brief sending paused at the daily limit', `${lastError}\n\nThe rest will go on the next run. Anything not sent is carried over; nobody is emailed twice.`); break outer; }
+  }
+  if (result.failed) await alertDan('gap-failed', 'Live 2 Help: some Gap Briefs failed to send', `${result.failed} emails failed. Each is retried once on the next run. Details are on Marketing > Gap Briefs and in the Engine Log.`);
+  return result;
+}
+
+// Tuesday morning: tell Dan and Ella if any brief is still waiting for approval
+async function gapRemind() {
+  if (isPreview()) return { preview: true };
+  const today = gapTodayUK();
+  const waiting = (await gapBriefsTable.list()).filter(b => b.status === 'Draft' && String(b.send_date) === today);
+  if (!waiting.length) return { waiting: 0 };
+  const list = waiting.map(b => `- ${b.sector}`).join('\n');
+  const text = `${waiting.length} Gap Brief${waiting.length > 1 ? 's are' : ' is'} still waiting for approval and ${waiting.length > 1 ? 'are' : 'is'} due to send today at ${GAP_SEND_HOUR}:00:\n\n${list}\n\nOpen Marketing > Gap Briefs in the workspace to approve or hold ${waiting.length > 1 ? 'them' : 'it'}. Anything not approved simply does not go this fortnight.`;
+  let n = 0;
+  for (const k of GAP_APPROVERS) {
+    const p = profileOf(k);
+    try {
+      await engineMail.send({ route: 'm365', from: profileOf('dan').email, fromName: 'Live 2 Help Workspace', to: p.email, subject: `${waiting.length} Gap Brief${waiting.length > 1 ? 's' : ''} still waiting for approval`, text, kind: 'gap-reminder', user: 'system', skipSuppression: true });
+      n++;
+    } catch (e) { console.error('Gap reminder failed for', k, e.message); }
+  }
+  return { waiting: waiting.length, reminded: n };
+}
+
+app.get('/api/cron/gap-send', cronOnly, async (req, res) => {
+  const step = req.query.step === 'remind' ? 'remind' : 'send';
+  const force = req.query.force === '1' && isAdmin(req);
+  res.json(await runCronJob('gapSend', async () => {
+    if (step === 'remind') return { step, ...(await gapRemind()) };
+    const imported = await gapImportFromGithub('system').catch(e => ({ error: e.message }));
+    return { step, imported, ...(await gapSendDue({ force })) };
+  }));
+});
+// Admin only: send the approved briefs that are due right now (also picks up late approvals on send day)
+app.post('/api/gap/send-now', requireAdmin, async (req, res) => {
+  try {
+    const out = await gapSendDue({ force: true });
+    auditLog(auditActorOf(req), 'sent', 'gap_brief', 'send now', out.preview ? 'preview' : `${out.sent} sent, ${out.skipped} skipped, ${out.failed} failed`);
+    res.json({ ok: true, ...out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// View in browser (no sign-in; the link carries a signed token and only approved or sent briefs show)
+app.get('/gap/:token', async (req, res) => {
+  try {
+    const m = /^(.+)\.([A-Za-z0-9_-]{22})$/.exec(decodeURIComponent(req.params.token));
+    if (!m || gapViewToken(m[1]) !== m[2]) return res.status(404).send('Not found');
+    const b = (await gapBriefsTable.list()).find(x => x.id === m[1]);
+    if (!b || !['Approved', 'Sent'].includes(b.status)) return res.status(404).send('Not found');
+    res.set({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' });
+    res.send(gapRender(b, gapContentOf(b), { web: true, owner: AUD_DEFAULT_OWNER }).html);
+  } catch (e) { res.status(404).send('Not found'); }
 });
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

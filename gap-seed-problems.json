@@ -1,0 +1,89 @@
+{
+  "note": "Starter problem chart for the Gap Briefs section. Qualitative only: no figures. Add a current source before a number from any of these goes into a brief.",
+  "problems": [
+    {
+      "sector": "Engineering and Technical",
+      "problem": "Skilled engineers are scarce and the good ones are off the market within days.",
+      "impact": "Projects and contracts slip, overtime and agency spend rise, and the team left behind carries the load.",
+      "root_cause": "Multi-stage hiring processes that move slower than the candidate, and no pipeline built ahead of demand.",
+      "questions": "How long has your longest open technical role been open?\nHow many engineers will you need to hire before March?\nIf a key engineer resigned tomorrow, how long would it take to replace them?"
+    },
+    {
+      "sector": "Manufacturing and Industrial",
+      "problem": "Production and shop-floor roles stay unfilled while orders grow.",
+      "impact": "Lost output, constant overtime, and quality and safety risk from stretched shifts.",
+      "root_cause": "Generic adverts that do not sell shift patterns, training or progression, and limited reach beyond the immediate area.",
+      "questions": "How many production roles are open right now, and for how long?\nHow much of your shift cover is agency, and what does it cost you?\nHow many starters in the last year left within three months?"
+    },
+    {
+      "sector": "Procurement and Supply Chain",
+      "problem": "Buyers who combine commercial skill with supply chain resilience experience are hard to find.",
+      "impact": "Supplier risk goes unmanaged, savings are missed and negotiations are weaker.",
+      "root_cause": "A small candidate pool in which the strongest people are passive and never see a job board.",
+      "questions": "Which buying or supply chain role has been hardest to fill?\nWhat did the last supplier disruption cost you in time or money?\nWho covers if your lead buyer is away for a month?"
+    },
+    {
+      "sector": "Sales and Business Development",
+      "problem": "Strong sellers are hard to tell apart from polished interviewees, and a mis-hire is expensive and visible.",
+      "impact": "Quota gaps, a long ramp-up and lost pipeline when a hire does not work out.",
+      "root_cause": "Hiring on interview performance rather than evidence of results, with no structured check of track record.",
+      "questions": "How long does a new seller take to reach full quota here?\nHow many sales hires in the last two years did not work out?\nWhat happens to a territory while the seat is empty?"
+    },
+    {
+      "sector": "Accountancy and Finance",
+      "problem": "Qualified and part-qualified finance staff are in short supply, most of all around year end.",
+      "impact": "Late closes and audits, costly interim cover, and a team close to burnout.",
+      "root_cause": "Hiring starts too late against the finance calendar, and offers lose on flexibility rather than pay.",
+      "questions": "Which finance seat is the one you can least afford to leave empty?\nWhen is your next close or audit, and is the team ready for it?\nHave you lost a finance candidate in the last year to a faster offer?"
+    },
+    {
+      "sector": "IT and Technology",
+      "problem": "Good IT candidates hold several offers at once and decide quickly.",
+      "impact": "Offers declined, roles reopened and delivery dates that move.",
+      "root_cause": "Slow feedback between interview stages and long technical tests that candidates will not wait for.",
+      "questions": "How many days pass between first interview and offer?\nHow many IT offers have you had turned down in the last year?\nWhat is waiting on the next IT hire?"
+    },
+    {
+      "sector": "Construction and Infrastructure",
+      "problem": "Project-driven demand makes it hard to staff site and commercial roles at the right moment.",
+      "impact": "Programme delays, premium subcontractor rates and pressure on site safety.",
+      "root_cause": "Hiring reacts to awarded contracts instead of planning ahead, and travel or location puts candidates off.",
+      "questions": "Which upcoming project is short of people right now?\nHow far ahead of a start date do you begin hiring for it?\nHow often does a vacancy hold up a programme milestone?"
+    },
+    {
+      "sector": "Health and Social Care",
+      "problem": "Persistent vacancies and high turnover in care and clinical teams.",
+      "impact": "Agency cost, broken continuity of care and compliance exposure.",
+      "root_cause": "Slow compliance checks between offer and start, so candidates take another job while they wait.",
+      "questions": "How many care or clinical shifts went to agency last month?\nHow long between offer and start date for a new starter?\nHow many starters have you lost during the compliance stage?"
+    },
+    {
+      "sector": "AI and Emerging Technologies",
+      "problem": "Demand for AI skills runs well ahead of supply, and role titles and skills are poorly defined.",
+      "impact": "Projects stall, the wrong people get hired and salary expectations climb.",
+      "root_cause": "Unclear role definitions and must-have lists that no real candidate matches.",
+      "questions": "What exactly do you need this hire to build or own in their first six months?\nHow many of your must-haves would you drop for the right person?\nWhat is on hold until this seat is filled?"
+    },
+    {
+      "sector": "HR and People Management",
+      "problem": "HR teams are asked to hire quickly while still holding policy and compliance standards.",
+      "impact": "Time lost chasing, inconsistent process and slow hires.",
+      "root_cause": "Limited capacity and reactive hiring, with no consistent shortlist standard across hiring managers.",
+      "questions": "How much of your week goes on chasing hiring managers and candidates?\nHow consistent is the process across your hiring managers?\nWhich vacancy is causing you the most pressure?"
+    },
+    {
+      "sector": "Corporate and Executive",
+      "problem": "Senior hires are confidential, slow and costly when they go wrong.",
+      "impact": "Leadership gaps stall strategy and push work onto interim cover.",
+      "root_cause": "Reliance on personal networks and visible adverts that miss passive leaders, and a brief that is not yet clear.",
+      "questions": "Which leadership seat is open or likely to open this year?\nHow confidential does the search need to be?\nWhat would a wrong hire at this level cost you?"
+    },
+    {
+      "sector": "Driving and Logistics",
+      "problem": "Drivers and warehouse staff are scarce, and licence, CPC and ADR requirements narrow the pool further.",
+      "impact": "Missed deliveries, expensive agency drivers and vehicles standing idle.",
+      "root_cause": "Licence and compliance checks late in the process, and pay or shift patterns that do not compete.",
+      "questions": "How many vehicles are standing because there is no driver?\nWhat do you pay for agency driver cover?\nHow long does it take to get a new driver compliant and on the road?"
+    }
+  ]
+}
