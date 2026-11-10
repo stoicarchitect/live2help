@@ -17095,7 +17095,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '10 Nov 2026 - build 57.3.4 (Gap Briefs and Cold Outreach laid out like Marketing)';
+var PAGE_BUILD = '10 Nov 2026 - build 57.3.5 (Cold Outreach and Gap Briefs header buttons)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -17303,8 +17303,8 @@ function buildTagApply(){
   addView('roadmapView', `<div class="view-head"><div><h2>Roadmap</h2><div class="sub">Bigger pieces of work and when they are planned. Move them from Later to Now to Done.</div></div><div class="p41-bar"><button class="gold-btn" data-rec-new="road">+ Add to roadmap</button></div></div><div class="view-body" id="rd41Body"><div class="p41-empty">Loading...</div></div>`);
   addView('audienceView', `<div class="view-head"><div><h2>Audience</h2><div class="sub">Who owns each account, which sector it is in, and who has agreed to hear from us. This drives who gets each Gap Brief and who sends it.</div></div></div><div class="view-body" id="aud57Body"><div class="p41-empty">Loading...</div></div>`);
   addView('marketingView', `<div class="view-head"><div><h2>Marketing</h2><div class="sub">LinkedIn posts, Brevo outreach workflows, lead magnets and events in one place.</div></div><div class="p41-bar" id="mk41Add"></div></div><div class="view-body"><div class="p41-tabs" id="mk41Tabs"></div><div id="mk41Body"><div class="p41-empty">Loading...</div></div></div>`);
-  addView('gapBriefsView', `<div class="view-head"><div><h2>Gap Briefs</h2><div class="sub">The fortnightly briefs for each sector: draft on Sunday, approve on Monday, send on Tuesday at 10:00. Nothing sends without approval.</div></div></div><div class="p41-bar" id="gb57Add"></div></div><div class="view-body" id="gb57Body"><div class="p41-empty">Loading...</div></div>`);
-  addView('coldOutreachView', `<div class="view-head"><div><h2>Cold Outreach</h2><div class="sub">One to one emails to Cold contacts from your own mailbox: day 0, day 4, day 9, then stop for 90 days. You approve each day's batch.</div></div></div><div class="view-body" id="co57Body"><div class="p41-empty">Loading...</div></div>`);
+  addView('gapBriefsView', `<div class="view-head"><div><h2>Gap Briefs</h2><div class="sub">The fortnightly briefs for each sector: draft on Sunday, approve on Monday, send on Tuesday at 10:00. Nothing sends without approval.</div></div><div class="p41-bar" id="gb57Add"></div></div><div class="view-body" id="gb57Body"><div class="p41-empty">Loading...</div></div>`);
+  addView('coldOutreachView', `<div class="view-head"><div><h2>Cold Outreach</h2><div class="sub">One to one emails to Cold contacts from your own mailbox: day 0, day 4, day 9, then stop for 90 days. You approve each day's batch.</div></div><div class="p41-bar" id="co57Add"></div></div><div class="view-body" id="co57Body"><div class="p41-empty">Loading...</div></div>`);
   if(!$('viewer41')){ const v = document.createElement('div'); v.id = 'viewer41'; v.innerHTML = '<div class="bk" data-vw41="close"></div><div class="vw" role="dialog" aria-modal="true"><div class="vh"><b id="vw41Title"></b><span class="sp"></span><button class="p41-btn sm" id="vw41Dl">Download</button><button class="p41-btn sm" data-vw41="close">Close</button></div><div class="vb" id="vw41Body"></div></div>'; document.body.appendChild(v); }
   if(!$('rec41')){ const v = document.createElement('div'); v.id = 'rec41'; v.innerHTML = '<div class="bk" data-rec41="close"></div><div class="rp" role="dialog" aria-modal="true" id="rec41Body"></div>'; document.body.appendChild(v); }
   if(!$('drawer41')){ const d = document.createElement('div'); d.id = 'drawer41'; d.innerHTML = '<div class="bk" data-x41="close"></div><aside role="dialog" aria-modal="true" id="drawer41Body"></aside>'; document.body.appendChild(d); }
@@ -19952,10 +19952,15 @@ function co57Render(){
   body.innerHTML = '<div class="p41-tabs">' + tab('choose', 'Choose contacts', L.data.filter(r => r.ready).length) + tab('batch', "Today's batch", b.items.length) + tab('seqs', 'Sequences', s.data.length) + tab('how', 'How it works', null) + '</div>' +
     (CO.tab === 'choose' ? co57Choose() : CO.tab === 'batch' ? co57Batch() : CO.tab === 'seqs' ? co57Seqs() : co57How());
   if(add){
-    add.innerHTML = CO.tab === 'choose' && L.canAct ? '<button class="gold-btn" onclick="co57Pick(this,false)">Add ticked to the batch</button><button class="p41-btn" onclick="co57Pick(this,true)">Remove ticked from the batch</button>'
+    add.innerHTML = CO.tab === 'choose' && L.canAct ? '<button class="gold-btn" id="co57AddBtn" onclick="co57Pick(this,false)">Add ticked to the batch</button><button class="p41-btn" id="co57RemBtn" onclick="co57Pick(this,true)">Remove ticked from the batch</button>'
       : CO.tab === 'batch' && b.canAct && !b.preview && b.items.length ? '<button class="gold-btn" ' + (CO.busy ? 'disabled' : '') + ' onclick="co57Send(this)">Approve and send the ticked emails</button>' : '';
   }
   if(CO.tab === 'choose') co57ChooseRows();
+}
+function co57Cnt(){
+  const n = document.querySelectorAll('.co57Pk:checked').length, a = document.getElementById('co57AddBtn'), r = document.getElementById('co57RemBtn');
+  if(a) a.textContent = n ? 'Add ' + n + ' ticked to the batch' : 'Add ticked to the batch';
+  if(r) r.textContent = n ? 'Remove ' + n + ' ticked from the batch' : 'Remove ticked from the batch';
 }
 function co57StepLabel(n){ return n === 1 ? 'First email' : n === 2 ? 'Follow-up (day 4)' : 'Gap Brief offer (day 9)'; }
 function co57Key(i){ return i.email + '|' + i.step; }
@@ -20012,13 +20017,14 @@ function co57ChooseRows(){
     (CO.show === 'all' || (CO.show === 'ready' && r.ready) || (CO.show === 'blocked' && !r.ready) || (CO.show === 'picked' && r.picked)) &&
     (!q || (r.name + ' ' + r.company + ' ' + r.email).toLowerCase().includes(q)));
   const src = k => k === 'prospect' ? 'Role Finder' : k === 'lead' ? 'Lead Clients' : k;
-  const head = '<input type="checkbox" onclick="document.querySelectorAll(\'.co57Pk\').forEach(x=>{if(!x.disabled)x.checked=this.checked})">';
+  const head = '<input type="checkbox" onclick="document.querySelectorAll(\'.co57Pk\').forEach(x=>{if(!x.disabled)x.checked=this.checked});co57Cnt()">';
   el.innerHTML = mk57Table([head, 'Contact', 'Company', 'Sector', 'Source', 'Role advertised', 'Status'], rows.slice(0, 400).map(r => [
-    '<input type="checkbox" class="co57Pk" value="' + esc(r.email) + '"' + (r.ready || r.picked ? '' : ' disabled') + '>',
+    '<input type="checkbox" class="co57Pk" value="' + esc(r.email) + '" onchange="co57Cnt()"' + (r.ready || r.picked ? '' : ' disabled') + '>',
     '<b>' + esc(r.name || r.email) + '</b><div class="mk57-sub">' + esc(r.email) + '</div>', esc(r.company), esc(r.sector || ''), esc(src(r.kind)), esc(r.roleSeen || ''),
     r.picked ? '<span class="p41-pill gold">Chosen</span>' + (r.ready ? '' : '<div class="mk57-warn">' + esc(r.why) + '</div>') : r.ready ? '<span class="p41-pill ok">Can be emailed</span>' : '<span class="p41-pill bad">Cannot</span><div class="mk57-sub">' + esc(r.why) + '</div>']),
     'No contacts match. Choose Everyone above to see contacts that cannot be emailed and why.') +
     (rows.length > 400 ? '<div class="mk57-sub">Showing the first 400. Search to narrow it down.</div>' : '');
+  co57Cnt();
 }
 async function co57Pick(btn, remove){
   const emails = [...document.querySelectorAll('.co57Pk:checked')].map(x => x.value);
