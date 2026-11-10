@@ -122,6 +122,7 @@ const TABLE_GROUPS = {
   'Roles': 'records', 'Role Notes': 'records', 'Role Briefs': 'records', 'Placements': 'records',
   'Interviews': 'records', 'Templates': 'records', 'Activity': 'records', 'Invoice Charges': 'records',
   'Audit Log': 'system', 'Retention Reviews': 'system', 'Email Log': 'system', 'Engine Log': 'system', 'AI Usage': 'system', 'Settings': 'system', 'Suppression List': 'system',
+  'Company Settings': 'clients', 'Contact Audience': 'clients',
   'Users': 'auth',
 };
 const SIMPLE_TABLES = []; // every makeSimpleTable table, for import, copy back and the nightly backup
@@ -810,6 +811,7 @@ const PUBLIC_API = [
   { method: 'POST', re: /^\/api\/website-enquiry$/ },
   { method: 'POST', re: /^\/api\/claude$/ },
   { method: 'POST', re: /^\/api\/brevo\/webhook$/ },
+  { method: 'POST', re: /^\/api\/ses\/sns$/ }, // build 57.1: Amazon SNS (signature checked in the route)
   { method: 'POST', re: /^\/api\/talent-suite\/(start|verify|me|tool|cv-docx|review-request|orders|checkout|credits\/checkout|booking)$/ },
   { method: 'GET', re: /^\/api\/talent-suite\/booking$/ },
   { method: 'POST', re: /^\/api\/stripe\/webhook$/ },
@@ -19595,7 +19597,7 @@ const engineLogTable = makeSimpleTable({
   path: null,
   label: 'Engine email',
 });
-const engineMail = createMailEngine({ fetch, isPreview, logTable: engineLogTable, isSuppressed, today: rfxToday });
+const engineMail = createMailEngine({ fetch, isPreview, logTable: engineLogTable, isSuppressed, today: rfxToday, unsubUrl });
 
 function engineSenders() {
   const seen = new Set(), out = [];
@@ -19613,8 +19615,22 @@ async function engineLastTests() {
 
 app.get('/api/engine/status', requireAdmin, async (req, res) => {
   try {
-    const recent = (await engineLogTable.list().catch(() => [])).slice(-20).reverse();
-    res.json({ ...(await engineMail.status()), senders: engineSenders(), lastTests: await engineLastTests(), recent, preview: isPreview() });
+    const all = await engineLogTable.list().catch(() => []);
+    const recent = all.filter(o => o.kind !== 'ses-event').slice(-20).reverse();
+    // build 57.1: SES bounce and complaint events received through Amazon SNS (last 30 days)
+    const since = Date.now() - 30 * 86400000;
+    const evs = all.filter(o => o.kind === 'ses-event' && Date.parse(o.at) >= since);
+    const events = {
+      topicSet: !!String(process.env.SES_SNS_TOPIC_ARN || '').trim(),
+      confirmed: all.some(o => o.kind === 'ses-event' && o.status === 'sns-confirmed'),
+      hardBounces: evs.filter(o => o.status === 'bounce-permanent').length,
+      softBounces: evs.filter(o => /^bounce-/.test(o.status) && o.status !== 'bounce-permanent').length,
+      complaints: evs.filter(o => o.status === 'complaint').length,
+      last: (evs.filter(o => /^(bounce|complaint)/.test(o.status)).slice(-1)[0] || {}).at || '',
+    };
+    const st = await engineMail.status();
+    st.ses.sentLast30 = all.filter(o => o.kind !== 'ses-event' && o.route === 'ses' && o.status === 'sent' && Date.parse(o.at) >= since).reduce((n, o) => n + (Number(o.recipients) || 1), 0);
+    res.json({ ...st, senders: engineSenders(), lastTests: await engineLastTests(), recent, events, preview: isPreview() });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -19658,21 +19674,422 @@ app.post('/api/engine/test', requireAdmin, async (req, res) => {
   res.status(result.ok ? 200 : 502).json(result);
 });
 
-// One-click opt out from first-contact emails
-app.get('/u/:token', async (req, res) => {
-  const page = (title, msg) => `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${title}</title></head>
-<body style="margin:0;background:#0B1F3A;font-family:Calibri,'Segoe UI',Arial,sans-serif;color:#fff;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px;">
-<div style="max-width:460px;border-top:3px solid #C9A84C;background:#13294B;padding:28px 26px;"><div style="color:#C9A84C;font-size:12px;letter-spacing:1px;font-weight:bold;">LIVE 2 HELP RECRUITMENT</div><h1 style="font-size:21px;margin:8px 0 10px;">${title}</h1><p style="line-height:1.5;margin:0;color:#e6e6ea;">${msg}</p></div></body></html>`;
+/* ======================================================================
+   Build 57.1: Audience, consent and the AWS commitments
+
+   - Company Settings: account owner and sector per company (contacts inherit them)
+   - Contact Audience: per-email overrides (owner, sector) and consent (Cold or Warm, source, date, unsubscribed)
+   - Existing client contacts default to Warm (source "Client"); leads, Role Finder prospects stay Cold
+   - Recipient picker data: every contact with its owner, sector, status and the route it would send by
+   - SES bounces and complaints arrive by Amazon SNS (/api/ses/sns, signature checked) and go on the Suppression List
+   - Personal unsubscribe pages: /u/:token (one click POST for mail apps, confirm page for people)
+   Nothing here sends an email.
+   ====================================================================== */
+const SECTORS = [
+  'Engineering and Technical', 'Manufacturing and Industrial', 'Procurement and Supply Chain', 'Sales and Business Development',
+  'Accountancy and Finance', 'IT and Technology', 'Construction and Infrastructure', 'Health and Social Care',
+  'AI and Emerging Technologies', 'HR and People Management', 'Corporate and Executive', 'Driving and Logistics',
+].map(name => ({ name, slug: name.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') }));
+const CONSENT_SOURCES = ['Client', 'Hiring Toolkit opt-in', 'Talent Suite marketing', 'Replied yes to cold email', 'Manual'];
+const AUD_DEFAULT_OWNER = 'dan';
+
+const companySettingsTable = makeSimpleTable({
+  tab: 'Company Settings',
+  header: ['id', 'company', 'owner', 'sector', 'updated_by', 'updated_at'],
+  path: null,
+  label: 'Company setting',
+});
+const contactAudienceTable = makeSimpleTable({
+  tab: 'Contact Audience',
+  header: ['id', 'email', 'company', 'owner', 'sector', 'status', 'consent_source', 'consent_date', 'consent_note', 'unsubscribed_at', 'updated_by', 'updated_at'],
+  path: null,
+  label: 'Audience contact',
+});
+
+function audOwners() {
+  // every user who can sign in is active (there is no disabled flag); without sign in, the two team defaults
+  const keys = (AUTH_USERS && AUTH_USERS.length) ? AUTH_USERS.map(u => u.key) : Object.keys(TEAM_DEFAULTS);
+  return [...new Set(keys)].map(k => ({ key: k, name: profileOf(k).fullName }));
+}
+const audOwnerOk = k => audOwners().some(o => o.key === lc(k));
+const audSectorOk = s => SECTORS.some(x => x.name === s);
+const audCompanyKey = c => rfxNormCompany(c);
+const audIsEmail = e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(e || '').trim());
+
+// Everyone we could email, from every source, de-duplicated by address. Earlier sources win.
+async function audSourceContacts() {
+  const safe = p => p.catch(() => []);
+  const [clientRows, leadRows, pipeline, funnel, ts] = await Promise.all([
+    safe(readClientRows()), safe(readLeadClientRows()), safe(lpxTable.list()), safe(funnelLeadsTable.list()), safe(tsUsersTable.list()),
+  ]);
+  const out = new Map();
+  const add = (kind, o) => {
+    const email = lc(o.email);
+    if (!audIsEmail(email)) return;
+    if (out.has(email)) { out.get(email).alsoIn.push(kind); return; }
+    out.set(email, {
+      email, name: o.name || '', company: o.company || '', jobTitle: o.jobTitle || '', kind, alsoIn: [],
+      baseStatus: o.status || 'Cold', baseSource: o.source || '', baseDate: o.date || '',
+    });
+  };
+  clientRows.filter(r => r[1]).map(rowToClient).forEach(c => add('client', { email: c.email, name: c.contactName, company: c.company, jobTitle: c.jobTitle, status: 'Warm', source: 'Client' }));
+  funnel.filter(f => lc(f.consent) === 'yes' && !/^website enquiry/i.test(f.notes || '')).forEach(f => add('toolkit', { email: f.email, name: f.name, company: f.company, jobTitle: f.role, status: 'Warm', source: 'Hiring Toolkit opt-in', date: String(f.date || f.created_at || '').slice(0, 10) }));
+  ts.filter(u => lc(u.marketing) === 'yes').forEach(u => add('talent', { email: u.email, name: u.name, company: '', jobTitle: u.target_role, status: 'Warm', source: 'Talent Suite marketing', date: String(u.marketing_at || '').slice(0, 10) }));
+  const activeCos = new Set(clientRows.map(r => audCompanyKey(r[1])).filter(Boolean));
+  leadRows.filter(r => r[1] && !activeCos.has(audCompanyKey(r[1]))).map(rowToClient).forEach(c => add('lead', { email: c.email, name: c.contactName, company: c.company, jobTitle: c.jobTitle }));
+  pipeline.filter(l => l.email && !['lost', 'archived'].includes(l.stage)).forEach(l => add('prospect', { email: l.email, name: l.contact_name, company: l.company, jobTitle: l.job_title }));
+  return out;
+}
+
+async function audResolve() {
+  const [base, comps, auds, supp] = await Promise.all([
+    audSourceContacts(), companySettingsTable.list().catch(() => []), contactAudienceTable.list().catch(() => []), suppressionTable.list().catch(() => []),
+  ]);
+  const compBy = new Map(comps.map(c => [audCompanyKey(c.company), c]));
+  const audBy = new Map(auds.map(a => [lc(a.email), a]));
+  const suppEmail = new Map(supp.filter(s => s.email).map(s => [lc(s.email), s.reason || 'On the suppression list']));
+  const suppCo = new Map(supp.filter(s => !s.email && s.company).map(s => [audCompanyKey(s.company), s.reason || 'Company opted out']));
+  // overrides for addresses that are not in any source list still show (for example after an unsubscribe)
+  auds.forEach(a => { const e = lc(a.email); if (!base.has(e) && audIsEmail(e)) base.set(e, { email: e, name: '', company: a.company || '', jobTitle: '', kind: 'other', alsoIn: [], baseStatus: 'Cold', baseSource: '', baseDate: '' }); });
+  const rows = [];
+  for (const b of base.values()) {
+    const a = audBy.get(b.email) || {};
+    const co = compBy.get(audCompanyKey(b.company)) || {};
+    const owner = lc(a.owner) || lc(co.owner) || AUD_DEFAULT_OWNER;
+    const ownerFrom = lc(a.owner) ? 'contact' : lc(co.owner) ? 'company' : 'default';
+    const sector = a.sector || co.sector || '';
+    const sectorFrom = a.sector ? 'contact' : co.sector ? 'company' : '';
+    const status = a.status || b.baseStatus;
+    const consentSource = a.consent_source || b.baseSource;
+    const consentDate = a.consent_date || b.baseDate;
+    const needsRecording = status === 'Warm' && (!consentSource || !consentDate);
+    const suppressed = a.unsubscribed_at ? 'Unsubscribed ' + String(a.unsubscribed_at).slice(0, 10)
+      : (suppEmail.get(b.email) || suppCo.get(audCompanyKey(b.company)) || '');
+    const route = suppressed ? '' : (status === 'Warm' && !needsRecording ? 'ses' : 'm365');
+    rows.push({
+      email: b.email, name: b.name, company: b.company, jobTitle: b.jobTitle, kind: b.kind, alsoIn: b.alsoIn,
+      owner, ownerFrom, sector, sectorFrom, status, consentSource, consentDate, consentNote: a.consent_note || '',
+      needsRecording, suppressed, unsubscribedAt: a.unsubscribed_at || '', route, hasRow: !!a.id,
+    });
+  }
+  rows.sort((x, y) => (x.company || '~').localeCompare(y.company || '~') || x.email.localeCompare(y.email));
+  return rows;
+}
+
+function audCompanies(contacts, comps) {
+  const compBy = new Map(comps.map(c => [audCompanyKey(c.company), c]));
+  const by = new Map();
+  contacts.forEach(c => {
+    if (!c.company) return;
+    const k = audCompanyKey(c.company);
+    if (!by.has(k)) by.set(k, { company: c.company, contacts: 0, warm: 0, kinds: new Set() });
+    const o = by.get(k); o.contacts++; if (c.status === 'Warm') o.warm++; o.kinds.add(c.kind);
+  });
+  comps.forEach(c => { const k = audCompanyKey(c.company); if (k && !by.has(k)) by.set(k, { company: c.company, contacts: 0, warm: 0, kinds: new Set() }); });
+  return [...by.entries()].map(([k, o]) => {
+    const s = compBy.get(k) || {};
+    return { company: o.company, owner: lc(s.owner), ownerShown: lc(s.owner) || AUD_DEFAULT_OWNER, sector: s.sector || '', contacts: o.contacts, warm: o.warm,
+      isClient: o.kinds.has('client'), kinds: [...o.kinds] };
+  }).sort((a, b) => a.company.localeCompare(b.company));
+}
+
+app.get('/api/audience/meta', async (req, res) => {
   try {
-    const [enc, tok] = String(req.params.token || '').split('.');
-    const email = lc(Buffer.from(String(enc || ''), 'base64url').toString());
-    if (!email || !tok || tok !== unsubToken(email)) return res.status(400).send(page('Link not recognised', 'This opt-out link is not valid. Reply to the email and ask us to stop, and we will.'));
-    if (!(await suppressionTable.list()).some(s => lc(s.email) === email)) {
-      await suppressionTable.upsert({ id: rfxId('sp'), email, company: '', reason: 'Opted out from email link', added_by: 'system', added_at: rfxNow() });
-      auditLog('system', 'created', 'suppression', email, 'Opted out from email link');
+    const me = actorOf(req);
+    const st = await mailSettings().catch(() => ({ outreachCap: 20 }));
+    const counts = await mailCounts(me).catch(() => ({ mineCold: 0 }));
+    const engToday = (await engineLogTable.list().catch(() => [])).filter(o => o.day === rfxToday() && o.status === 'sent' && o.route === 'm365' && lc(o.from) === lc(profileOf(me).email) && /cold/i.test(o.kind || '')).length;
+    res.json({ sectors: SECTORS, consentSources: CONSENT_SOURCES, owners: audOwners(), defaultOwner: AUD_DEFAULT_OWNER,
+      me, coldCap: st.outreachCap, coldUsedToday: (counts.mineCold || 0) + engToday });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/audience', async (req, res) => {
+  try {
+    const [contacts, comps] = await Promise.all([audResolve(), companySettingsTable.list().catch(() => [])]);
+    const companies = audCompanies(contacts, comps);
+    const sum = f => contacts.filter(f).length;
+    res.json({ contacts, companies, totals: {
+      contacts: contacts.length, warm: sum(c => c.status === 'Warm' && !c.needsRecording), cold: sum(c => c.status !== 'Warm'),
+      needsRecording: sum(c => c.needsRecording), suppressed: sum(c => c.suppressed), noSector: sum(c => !c.sector),
+      companiesNoSector: companies.filter(c => !c.sector).length,
+    } });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+async function audSaveCompany(company, patch, actor) {
+  const key = audCompanyKey(company);
+  if (!key) throw Object.assign(new Error('Company is required'), { status: 400 });
+  const ex = (await companySettingsTable.list()).find(c => audCompanyKey(c.company) === key);
+  const row = { id: ex ? ex.id : 'cs-' + key.replace(/\s+/g, '-').slice(0, 60), company: ex ? ex.company : String(company).trim(),
+    owner: ex ? ex.owner : '', sector: ex ? ex.sector : '', updated_by: actor, updated_at: rfxNow() };
+  if (patch.owner !== undefined) {
+    const o = lc(patch.owner);
+    if (o && !audOwnerOk(o)) throw Object.assign(new Error('That owner is not an active user'), { status: 400 });
+    row.owner = o;
+  }
+  if (patch.sector !== undefined) {
+    if (patch.sector && !audSectorOk(patch.sector)) throw Object.assign(new Error('That is not one of the 12 sectors'), { status: 400 });
+    row.sector = patch.sector || '';
+  }
+  await companySettingsTable.upsert(row);
+  return row;
+}
+
+app.put('/api/audience/company', requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const row = await audSaveCompany(b.company, { owner: b.owner, sector: b.sector }, actorOf(req));
+    auditLog(auditActorOf(req), 'updated', 'audience_company', row.company, `owner ${row.owner || 'default (dan)'}, sector ${row.sector || 'none'}`);
+    res.json({ ok: true, company: row });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+
+// Change the owner and/or sector for several companies at once
+app.post('/api/audience/companies/bulk', requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const list = (Array.isArray(b.companies) ? b.companies : []).map(c => String(c || '').trim()).filter(Boolean).slice(0, 500);
+    if (!list.length) return res.status(400).json({ error: 'Choose at least one company' });
+    if (b.owner === undefined && b.sector === undefined) return res.status(400).json({ error: 'Choose an owner or a sector to apply' });
+    const patch = {}; if (b.owner !== undefined) patch.owner = b.owner; if (b.sector !== undefined) patch.sector = b.sector;
+    if (patch.owner && !audOwnerOk(patch.owner)) return res.status(400).json({ error: 'That owner is not an active user' });
+    if (patch.sector && !audSectorOk(patch.sector)) return res.status(400).json({ error: 'That is not one of the 12 sectors' });
+    for (const c of list) await audSaveCompany(c, patch, actorOf(req));
+    auditLog(auditActorOf(req), 'updated', 'audience_company', `${list.length} companies`, `bulk: ${patch.owner !== undefined ? 'owner ' + (patch.owner || 'default') : ''} ${patch.sector !== undefined ? 'sector ' + (patch.sector || 'none') : ''}`.trim());
+    res.json({ ok: true, changed: list.length });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+
+async function audSaveContact(email, patch, actor) {
+  const e = lc(email);
+  if (!audIsEmail(e)) throw Object.assign(new Error('That is not a valid email address'), { status: 400 });
+  const ex = (await contactAudienceTable.list()).find(a => lc(a.email) === e);
+  const row = { id: ex ? ex.id : 'ca-' + crypto.createHash('sha1').update(e).digest('hex').slice(0, 14), email: e,
+    company: ex ? ex.company : '', owner: ex ? ex.owner : '', sector: ex ? ex.sector : '', status: ex ? ex.status : '',
+    consent_source: ex ? ex.consent_source : '', consent_date: ex ? ex.consent_date : '', consent_note: ex ? ex.consent_note : '',
+    unsubscribed_at: ex ? ex.unsubscribed_at : '', updated_by: actor, updated_at: rfxNow() };
+  if (patch.company !== undefined) row.company = String(patch.company || '').trim();
+  if (patch.owner !== undefined) {
+    const o = lc(patch.owner);
+    if (o && !audOwnerOk(o)) throw Object.assign(new Error('That owner is not an active user'), { status: 400 });
+    row.owner = o;
+  }
+  if (patch.sector !== undefined) {
+    if (patch.sector && !audSectorOk(patch.sector)) throw Object.assign(new Error('That is not one of the 12 sectors'), { status: 400 });
+    row.sector = patch.sector || '';
+  }
+  if (patch.status !== undefined) {
+    if (patch.status && !['Cold', 'Warm'].includes(patch.status)) throw Object.assign(new Error('Status must be Cold or Warm'), { status: 400 });
+    row.status = patch.status || '';
+  }
+  if (patch.consentSource !== undefined) {
+    if (patch.consentSource && !CONSENT_SOURCES.includes(patch.consentSource)) throw Object.assign(new Error('Choose a consent source from the list'), { status: 400 });
+    row.consent_source = patch.consentSource || '';
+  }
+  if (patch.consentDate !== undefined) {
+    if (patch.consentDate && !/^\d{4}-\d{2}-\d{2}$/.test(patch.consentDate)) throw Object.assign(new Error('The consent date must be a date'), { status: 400 });
+    row.consent_date = patch.consentDate || '';
+  }
+  if (patch.consentNote !== undefined) row.consent_note = String(patch.consentNote || '').slice(0, 300);
+  // Warm needs a recorded source and date, and Manual needs a note saying what the consent was
+  if (row.status === 'Warm') {
+    if (!row.consent_source) throw Object.assign(new Error('Choose where the consent came from before marking someone Warm'), { status: 400 });
+    if (!row.consent_date) throw Object.assign(new Error('Add the date of the consent before marking someone Warm'), { status: 400 });
+    if (row.consent_source === 'Manual' && !row.consent_note.trim()) throw Object.assign(new Error('For a Manual source, add a note saying what the person agreed to'), { status: 400 });
+  }
+  await contactAudienceTable.upsert(row);
+  return row;
+}
+
+app.put('/api/audience/contact', requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const row = await audSaveContact(b.email, { company: b.company, owner: b.owner, sector: b.sector, status: b.status,
+      consentSource: b.consentSource, consentDate: b.consentDate, consentNote: b.consentNote }, actorOf(req));
+    auditLog(auditActorOf(req), 'updated', 'audience_contact', row.email, `status ${row.status || 'unchanged'}${row.consent_source ? ', source ' + row.consent_source : ''}${row.owner ? ', owner ' + row.owner : ''}${row.sector ? ', sector ' + row.sector : ''}`);
+    res.json({ ok: true, contact: row });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+
+// One click: record Warm consent (source "Client", today's date) for every client contact that has none yet
+app.post('/api/audience/apply-defaults', requireAdmin, async (req, res) => {
+  try {
+    const rows = (await audResolve()).filter(c => c.kind === 'client' && c.status === 'Warm' && c.needsRecording);
+    const day = rfxToday();
+    for (const c of rows) await audSaveContact(c.email, { company: c.company, status: 'Warm', consentSource: 'Client', consentDate: day }, actorOf(req));
+    auditLog(auditActorOf(req), 'updated', 'audience_contact', `${rows.length} client contacts`, 'recorded Warm, source Client, dated ' + day);
+    res.json({ ok: true, recorded: rows.length });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+
+// Suggest a sector for companies that have none, from the company name and any adverts or roles we have seen.
+// Nothing is saved: Dan reviews the list and applies it.
+const AUD_SECTOR_WORDS = {
+  'Engineering and Technical': ['engineer', 'engineering', 'cad', 'design engineer', 'technician', 'mechanical', 'electrical', 'fire', 'safety', 'test engineer'],
+  'Manufacturing and Industrial': ['manufactur', 'production', 'factory', 'fabrication', 'machin', 'plastics', 'packaging', 'foundry', 'industrial'],
+  'Procurement and Supply Chain': ['procurement', 'buyer', 'supply chain', 'purchasing', 'planner', 'stock control', 'sourcing'],
+  'Sales and Business Development': ['sales', 'business development', 'account manager', 'bdm', 'commercial manager'],
+  'Accountancy and Finance': ['account', 'finance', 'financial', 'audit', 'tax', 'payroll', 'bookkeep'],
+  'IT and Technology': ['software', 'developer', 'it support', 'network', 'cyber', 'cloud', 'data ', 'systems', 'technology', 'digital'],
+  'Construction and Infrastructure': ['construction', 'building', 'civil', 'contractor', 'quantity surveyor', 'site manager', 'infrastructure', 'groundwork', 'roofing'],
+  'Health and Social Care': ['care', 'nurs', 'health', 'clinic', 'medical', 'support worker', 'dental', 'pharma'],
+  'AI and Emerging Technologies': ['artificial intelligence', ' ai ', 'machine learning', 'robotic', 'automation', 'emerging'],
+  'HR and People Management': ['human resources', ' hr ', 'people', 'talent', 'recruit', 'learning and development'],
+  'Corporate and Executive': ['director', 'chief', 'executive', 'managing director', 'board', 'ceo', 'cfo', 'coo'],
+  'Driving and Logistics': ['driver', 'logistics', 'haulage', 'transport', 'warehouse', 'hgv', 'courier', 'distribution', 'freight'],
+};
+app.post('/api/audience/suggest-sectors', requireAdmin, async (req, res) => {
+  try {
+    const [contacts, comps, results, pipeline] = await Promise.all([audResolve(), companySettingsTable.list().catch(() => []),
+      rfxResultsTable.list().catch(() => []), lpxTable.list().catch(() => [])]);
+    const done = new Set(comps.filter(c => c.sector).map(c => audCompanyKey(c.company)));
+    const text = new Map();
+    const feed = (co, t) => { const k = audCompanyKey(co); if (k) text.set(k, ((text.get(k) || '') + ' ' + String(t || '').toLowerCase())); };
+    contacts.forEach(c => feed(c.company, c.company + ' ' + c.jobTitle));
+    results.forEach(r => feed(r.company, r.role));
+    pipeline.forEach(l => feed(l.company, l.role_seen));
+    const out = [];
+    for (const c of audCompanies(contacts, comps)) {
+      if (c.sector || done.has(audCompanyKey(c.company))) continue;
+      const t = ' ' + (text.get(audCompanyKey(c.company)) || '') + ' ';
+      let best = null;
+      for (const [sector, words] of Object.entries(AUD_SECTOR_WORDS)) {
+        const hits = words.filter(w => t.includes(w));
+        if (hits.length && (!best || hits.length > best.hits.length)) best = { sector, hits };
+      }
+      out.push({ company: c.company, suggested: best ? best.sector : '', reason: best ? 'Matched: ' + best.hits.slice(0, 3).join(', ').trim() : 'No clear match, choose one' });
     }
-    res.send(page('You have been opted out', `We will not send further emails to ${email.replace(/</g, '&lt;')}. Sorry for any bother.`));
-  } catch (e) { res.status(500).send(page('Something went wrong', 'Please reply to the email and ask us to stop, and we will.')); }
+    res.json({ suggestions: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ---------- Amazon SNS: SES bounces and complaints ---------- */
+const snsCertCache = new Map();
+const snsHostOk = u => { try { const x = new URL(u); return x.protocol === 'https:' && /^sns\.[a-z0-9-]+\.amazonaws\.com(\.cn)?$/.test(x.hostname); } catch (e) { return false; } };
+function snsStringToSign(m) {
+  const keys = m.Type === 'Notification'
+    ? ['Message', 'MessageId', 'Subject', 'Timestamp', 'TopicArn', 'Type']
+    : ['Message', 'MessageId', 'SubscribeURL', 'Timestamp', 'Token', 'TopicArn', 'Type'];
+  return keys.filter(k => m[k] !== undefined && m[k] !== null).map(k => `${k}\n${m[k]}\n`).join('');
+}
+async function snsVerify(m) {
+  if (!m || !m.Signature || !m.SigningCertURL || !m.Type) return false;
+  if (!snsHostOk(m.SigningCertURL) || !/\.pem$/i.test(new URL(m.SigningCertURL).pathname)) return false;
+  let pem = snsCertCache.get(m.SigningCertURL);
+  if (!pem) {
+    const r = await fetch(m.SigningCertURL);
+    if (!r.ok) return false;
+    pem = await r.text();
+    if (!/BEGIN CERTIFICATE/.test(pem)) return false;
+    snsCertCache.set(m.SigningCertURL, pem);
+  }
+  const algo = String(m.SignatureVersion) === '2' ? 'RSA-SHA256' : 'RSA-SHA1';
+  const v = crypto.createVerify(algo); v.update(snsStringToSign(m), 'utf8');
+  return v.verify(pem, m.Signature, 'base64');
+}
+function snsLog(row) {
+  const now = new Date().toISOString();
+  return engineLogTable.append({ id: row.id, at: now, day: rfxToday(), route: 'ses', user: 'sns', from: '', to: row.to || '', cc: '', subject: row.subject || '',
+    kind: 'ses-event', recipients: '0', message_id: row.message_id || '', status: row.status, error: row.error || '', ref: row.ref || '' }).catch(e => console.error('SNS log failed:', e.message));
+}
+
+app.post('/api/ses/sns', express.text({ type: '*/*', limit: '512kb' }), async (req, res) => {
+  try {
+    let m = req.body;
+    if (typeof m === 'string') { try { m = JSON.parse(m); } catch (e) { return res.status(400).json({ error: 'Not a valid SNS message' }); } }
+    if (!m || typeof m !== 'object' || !m.Type) return res.status(400).json({ error: 'Not a valid SNS message' });
+    const topic = String(process.env.SES_SNS_TOPIC_ARN || '').trim();
+    if (!topic) { console.warn('SES_SNS_TOPIC_ARN is not set, so SNS messages are ignored'); return res.status(503).json({ error: 'SNS topic is not set up on the server' }); }
+    if (m.TopicArn !== topic) return res.status(403).json({ error: 'Unknown topic' });
+    if (!(await snsVerify(m).catch(() => false))) return res.status(403).json({ error: 'Signature not valid' });
+
+    if (m.Type === 'SubscriptionConfirmation') {
+      if (!snsHostOk(m.SubscribeURL)) return res.status(400).json({ error: 'Bad subscribe URL' });
+      const r = await fetch(m.SubscribeURL);
+      await snsLog({ id: 'ev-' + m.MessageId, status: r.ok ? 'sns-confirmed' : 'sns-confirm-failed', error: r.ok ? '' : 'HTTP ' + r.status, subject: 'SNS subscription confirmation' });
+      return res.status(r.ok ? 200 : 502).json({ ok: r.ok });
+    }
+    if (m.Type !== 'Notification') return res.json({ ok: true, ignored: m.Type });
+
+    let ev = {}; try { ev = JSON.parse(m.Message || '{}'); } catch (e) { return res.json({ ok: true, ignored: 'not json' }); }
+    const type = String(ev.eventType || ev.notificationType || '').toLowerCase();
+    const mail = ev.mail || {};
+    const mid = String(mail.messageId || '');
+    const subject = (mail.commonHeaders && mail.commonHeaders.subject) || '';
+    const seen = new Set((await engineLogTable.list().catch(() => [])).filter(o => o.kind === 'ses-event').map(o => o.id));
+    const handle = async (email, status, reason, why) => {
+      const id = `ev-${m.MessageId}-${lc(email)}`;
+      if (seen.has(id)) return;
+      await snsLog({ id, to: lc(email), subject, message_id: mid, status, error: why || '', ref: m.MessageId });
+      if (reason && audIsEmail(email) && !(await suppressionTable.list()).some(s => lc(s.email) === lc(email))) {
+        await suppressionTable.upsert({ id: rfxId('sp'), email: lc(email), company: '', reason, added_by: 'system', added_at: rfxNow() });
+        auditLog('system', 'created', 'suppression', lc(email), reason);
+      }
+    };
+    if (type === 'bounce' && ev.bounce) {
+      const permanent = ev.bounce.bounceType === 'Permanent';
+      for (const r of (ev.bounce.bouncedRecipients || [])) {
+        await handle(r.emailAddress, permanent ? 'bounce-permanent' : 'bounce-' + String(ev.bounce.bounceType || 'transient').toLowerCase(),
+          permanent ? 'Amazon SES: hard bounce' : '', r.diagnosticCode || ev.bounce.bounceSubType || '');
+      }
+    } else if (type === 'complaint' && ev.complaint) {
+      for (const r of (ev.complaint.complainedRecipients || [])) await handle(r.emailAddress, 'complaint', 'Amazon SES: complaint (marked as spam)', ev.complaint.complaintFeedbackType || '');
+    }
+    res.json({ ok: true });
+  } catch (e) { console.error('SES SNS:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+/* ---------- Personal unsubscribe pages ---------- */
+const unsubPage = (title, msg, extra = '') => `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${title}</title></head>
+<body style="margin:0;background:#0B1F3A;font-family:Calibri,'Segoe UI',Arial,sans-serif;color:#fff;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px;">
+<div style="max-width:460px;width:100%;border-top:3px solid #C9A84C;background:#13294B;padding:28px 26px;"><div style="color:#C9A84C;font-size:12px;letter-spacing:1px;font-weight:bold;">LIVE 2 HELP RECRUITMENT</div><h1 style="font-size:21px;margin:8px 0 10px;">${title}</h1><p style="line-height:1.5;margin:0 0 4px;color:#e6e6ea;">${msg}</p>${extra}</div></body></html>`;
+const unsubEmailOf = token => {
+  const [enc, tok] = String(token || '').split('.');
+  let email = ''; try { email = lc(Buffer.from(String(enc || ''), 'base64url').toString()); } catch (e) { return ''; }
+  return (audIsEmail(email) && tok && tok === unsubToken(email)) ? email : '';
+};
+async function unsubscribeEmail(email, how) {
+  if (!(await suppressionTable.list()).some(s => lc(s.email) === email)) {
+    await suppressionTable.upsert({ id: rfxId('sp'), email, company: '', reason: how, added_by: 'system', added_at: rfxNow() });
+    auditLog('system', 'created', 'suppression', email, how);
+  }
+  await audSaveContact(email, {}, 'system').then(async () => {
+    const ex = (await contactAudienceTable.list()).find(a => lc(a.email) === email);
+    if (ex && !ex.unsubscribed_at) await contactAudienceTable.upsert({ ...ex, unsubscribed_at: rfxNow(), updated_by: 'system', updated_at: rfxNow() });
+  }).catch(e => console.error('Unsubscribe record failed:', e.message));
+}
+
+// People: a confirm page (so link checkers cannot unsubscribe anyone by opening it), with Change my sector
+app.get('/u/:token', async (req, res) => {
+  const email = unsubEmailOf(req.params.token);
+  if (!email) return res.status(400).send(unsubPage('Link not recognised', 'This link is not valid. Reply to the email and ask us to stop, and we will.'));
+  const e = email.replace(/</g, '&lt;');
+  const cur = ((await contactAudienceTable.list().catch(() => [])).find(a => lc(a.email) === email) || {}).sector || '';
+  const btn = 'display:block;width:100%;box-sizing:border-box;padding:12px;border:0;font-size:15px;font-weight:bold;cursor:pointer;';
+  const extra = `<form method="post" style="margin:16px 0 0;"><input type="hidden" name="do" value="unsub"><button style="${btn}background:#C9A84C;color:#0B1F3A;">Unsubscribe ${e}</button></form>
+<form method="post" style="margin:22px 0 0;border-top:1px solid #2c4468;padding-top:16px;"><input type="hidden" name="do" value="sector"><label style="font-size:14px;color:#e6e6ea;">Prefer a different sector? Choose one and keep receiving the Gap Brief:</label>
+<select name="sector" style="display:block;width:100%;box-sizing:border-box;margin:8px 0 10px;padding:10px;font-size:15px;">${SECTORS.map(s => `<option${s.name === cur ? ' selected' : ''}>${s.name}</option>`).join('')}</select>
+<button style="${btn}background:transparent;color:#C9A84C;border:1px solid #C9A84C;">Change my sector</button></form>`;
+  res.send(unsubPage('Email preferences', `Emails to ${e}`, extra));
+});
+
+// Mail apps send a POST with List-Unsubscribe=One-Click; the confirm page's buttons send do=unsub or do=sector
+app.post('/u/:token', express.urlencoded({ extended: false, limit: '10kb' }), async (req, res) => {
+  try {
+    const email = unsubEmailOf(req.params.token);
+    if (!email) return res.status(400).send(unsubPage('Link not recognised', 'This link is not valid. Reply to the email and ask us to stop, and we will.'));
+    const b = req.body || {};
+    if (b.do === 'sector') {
+      const sector = String(b.sector || '');
+      if (!audSectorOk(sector)) return res.status(400).send(unsubPage('Choose a sector', 'Please go back and choose one of the sectors.'));
+      await audSaveContact(email, { sector }, 'system');
+      auditLog('system', 'updated', 'audience_contact', email, 'changed sector to ' + sector + ' from an email link');
+      return res.send(unsubPage('Sector changed', `You will now get the ${sector} Gap Brief.`));
+    }
+    await unsubscribeEmail(email, 'Opted out from email link');
+    res.send(unsubPage('You have been unsubscribed', `We will not send further emails to ${email.replace(/</g, '&lt;')}. Sorry for any bother.`));
+  } catch (e) { res.status(500).send(unsubPage('Something went wrong', 'Please reply to the email and ask us to stop, and we will.')); }
 });
 
 /* ---------------- Phase 2: talent pool matching for Role Finder adverts ---------------- */

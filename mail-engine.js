@@ -43,7 +43,8 @@ export function msSecretDaysLeft(now = new Date()) {
   return Math.floor((new Date(msSecretExpires() + 'T00:00:00Z') - now) / 86400000);
 }
 
-export function createMailEngine({ fetch, isPreview, logTable, isSuppressed, today }) {
+export function createMailEngine({ fetch, isPreview, logTable, isSuppressed, today, unsubUrl }) {
+  const unsubMailto = () => String(process.env.UNSUB_MAILTO || 'info@live2helprecruitment.co.uk').trim();
   /* ---------- Microsoft 365 (Graph) ---------- */
   const msConfigured = () => !!(process.env.MS_TENANT_ID && process.env.MS_CLIENT_ID && process.env.MS_CLIENT_SECRET);
   let msTok = { value: '', exp: 0 };
@@ -175,6 +176,16 @@ export function createMailEngine({ fetch, isPreview, logTable, isSuppressed, tod
     if (!m.html) m.html = '<html><body>' + m.text.split(/\n{2,}/).map(p => `<p style="margin:0 0 12px 0;font-family:Calibri,'Segoe UI',Arial,sans-serif;font-size:11pt;color:#222;">${esc(p).replace(/\n/g, '<br>')}</p>`).join('') + '</body></html>';
     const recipients = m.to.length + m.cc.length + m.bcc.length;
     const bytes = m.attachments.reduce((s, a) => s + String(a.content).length * 0.75, 0);
+
+    // Build 57.1 (commitment to AWS): every bulk email carries a personal one-click unsubscribe.
+    // That means one email per recipient, with List-Unsubscribe and List-Unsubscribe-Post on it.
+    if (route === 'ses') {
+      if (recipients !== 1) throw new Error('Bulk emails through Amazon SES go out one per recipient, so each has its own unsubscribe link.');
+      const url = o.unsubscribeUrl || (unsubUrl ? unsubUrl(m.to[0]) : '');
+      if (!/^https:\/\//i.test(url)) throw new Error('This bulk email has no unsubscribe link, so it was not sent.');
+      m.headers['List-Unsubscribe'] = `<${url}>, <mailto:${unsubMailto()}?subject=Unsubscribe>`;
+      m.headers['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click';
+    }
 
     if (isPreview()) return { ok: true, preview: true, route, messageId: 'preview-not-sent' };
 
