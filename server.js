@@ -17552,6 +17552,11 @@ setTimeout(async () => {
     }
     for (const d of await bmsDocs.list()) { const nf = BMS_BATCH3[d.id]; if (nf && !d.file_id && d.status === 'Planned') await bmsDocs.upsert({ ...d, file_id: nf, status: 'Draft', version: '0.1', updated_by: 'system', updated_at: '2026-11-09' }); }
   } catch (e) { console.error('BMS batch 3 56.9:', e.message); }
+  // BMS ICO go-live (10 Nov 2026): the ICO registration number ZC296949 and registered office were added to POL-001, 002 and 003, and Daniel approved them in chat. Relink the re-issued v1.0 files and make them Live, effective 2026-11-10. Runs once, only where the old file ID is still held.
+  try {
+    const BMS_LIVE_ICO = {"1to-C4Y2d5UY_TaXDYwfnJQ80gqNsPjKdJaLUL7eBTeY": "1IwFtdeQf2NeXWan5QZWgvEu7m69WxyN8U4-Um5IWmXo", "1U0Ond4_dEVwKr3yPTvxLuZPxvbDvbtS2JeLq5gLd5AQ": "18ho3Y9kH7oHUnoOQkQwiWk3HVHTnm_keLrYwg9aElSc", "1WXfL40qc7sw3WYCZStQufYCVxULEg2fxiaWz3PmkL10": "1KW8JcVRZtg-tUkqHn2AI51eUvZtWddr-xpqedSAeGfY"};
+    for (const d of await bmsDocs.list()) { const nf = BMS_LIVE_ICO[d.file_id]; if (nf) await bmsDocs.upsert({ ...d, file_id: nf, status: 'Live', version: '1.0', effective_date: '2026-11-10', next_review: bmsAddMonths('2026-11-10', d.review_months), updated_by: 'Daniel Brown (approved in chat)', updated_at: '2026-11-10' }); }
+  } catch (e) { console.error('BMS go-live ICO:', e.message); }
 }, 18000);
 
 /* ---------- build 42: planning and marketing records (tracker sheet) ---------- */
