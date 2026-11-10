@@ -16966,7 +16966,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '10 Nov 2026 - build 57.1.1 (several sectors per contact, SNS diagnostics)';
+var PAGE_BUILD = '10 Nov 2026 - build 57.1.2 (Do not email list)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -19322,11 +19322,32 @@ function audRender(){
       .map(x => '<div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:8px 14px;min-width:110px;"><div style="font-size:20px;font-weight:600;color:var(--navy);">' + x[1] + '</div><div class="b46-sub">' + x[0] + '</div></div>').join('') +
     '</div>';
   if(t.needsRecording && admin) h += '<div class="p41-note" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;"><span>' + t.needsRecording + ' client contact' + (t.needsRecording === 1 ? ' has' : 's have') + ' no consent recorded yet. Clients are Warm, so record the source "Client" and today\'s date on each.</span><button class="p41-btn pri sm" onclick="audApplyDefaults(this)">Record consent for client contacts</button></div>';
-  h += '<div class="p41-tabs"><button class="p41-chip" aria-pressed="' + (AUD.tab === 'companies') + '" onclick="audTab(\'companies\')">Companies</button><button class="p41-chip" aria-pressed="' + (AUD.tab === 'contacts') + '" onclick="audTab(\'contacts\')">Contacts and consent</button><button class="p41-chip" aria-pressed="' + (AUD.tab === 'picker') + '" onclick="audTab(\'picker\')">Recipient picker</button></div>';
-  h += AUD.tab === 'companies' ? audCompaniesHtml(d, m, admin) : AUD.tab === 'contacts' ? audContactsHtml(d, m, admin) : audPickerHtml(d, m);
+  h += '<div class="p41-tabs"><button class="p41-chip" aria-pressed="' + (AUD.tab === 'companies') + '" onclick="audTab(\'companies\')">Companies</button><button class="p41-chip" aria-pressed="' + (AUD.tab === 'contacts') + '" onclick="audTab(\'contacts\')">Contacts and consent</button><button class="p41-chip" aria-pressed="' + (AUD.tab === 'picker') + '" onclick="audTab(\'picker\')">Recipient picker</button>' + (admin ? '<button class="p41-chip" aria-pressed="' + (AUD.tab === 'blocked') + '" onclick="audTab(\'blocked\')">Do not email</button>' : '') + '</div>';
+  h += AUD.tab === 'companies' ? audCompaniesHtml(d, m, admin) : AUD.tab === 'contacts' ? audContactsHtml(d, m, admin) : AUD.tab === 'blocked' ? audBlockedHtml() : audPickerHtml(d, m);
   body.innerHTML = h;
 }
-function audTab(t){ AUD.tab = t; audRender(); }
+function audTab(t){ AUD.tab = t; if(t === 'blocked') audBlockedLoad(); audRender(); }
+/* Page build 57.1.2: Do not email list (opt-outs, bounces, complaints) with Remove */
+async function audBlockedLoad(){
+  try{ AUD.blocked = (await b2Api('/api/audience/suppressed')).rows; }catch(e){ AUD.blocked = []; showToast(e.message); }
+  if(AUD.tab === 'blocked') audRender();
+}
+function audBlockedHtml(){
+  if(!AUD.blocked) return '<div class="p41-empty">Loading...</div>';
+  const q = AUD.q.trim().toLowerCase();
+  const rows = AUD.blocked.filter(r => !q || [r.email, r.company, r.reason].some(x => String(x || '').toLowerCase().includes(q)));
+  return '<div class="p41-bar"><input placeholder="Search email, company or reason" value="' + esc(AUD.q) + '" oninput="AUD.q=this.value;audRender();this.focus();this.setSelectionRange(this.value.length,this.value.length)" style="min-width:240px;"></div>' +
+    '<div class="b46-sub">Nobody on this list gets any email from the workspace, by any route. Only remove someone if they were added by mistake or have asked to hear from us again; you will be asked why, and it goes in the audit trail.</div>' +
+    '<table class="b46-tbl"><tr><th>Email or company</th><th>Reason</th><th>Added</th><th></th></tr>' +
+    (rows.map(r => '<tr><td><b>' + esc(r.email || r.company) + '</b>' + (r.email && r.company ? '<div class="b46-sub">' + esc(r.company) + '</div>' : '') + '</td><td>' + esc(r.reason || '') + '</td><td class="b46-sub">' + esc(String(r.added_at || '').slice(0, 10)) + ' · ' + esc(r.added_by || '') + '</td>' +
+      '<td><button class="p41-btn sm" onclick="audUnblock(' + esc(JSON.stringify(r.id)).replace(/"/g, '&quot;') + ',' + esc(JSON.stringify(r.email || r.company)).replace(/"/g, '&quot;') + ')">Remove</button></td></tr>').join('') || '<tr><td colspan="4" class="b46-sub">Nobody on the list.</td></tr>') + '</table>';
+}
+async function audUnblock(id, who){
+  const reason = prompt('Why are you removing ' + who + ' from the Do not email list? (for example: test address)');
+  if(reason == null) return;
+  try{ await b2Post('/api/audience/unsuppress', {id, reason}); showToast('Removed ' + who); await audBlockedLoad(); audLoad(); }
+  catch(e){ showToast(e.message); }
+}
 function audFilterBar(m, withStatus){
   return '<div class="p41-bar"><input id="audQ" placeholder="Search company, name or email" value="' + esc(AUD.q) + '" oninput="AUD.q=this.value;audRerunList()" style="min-width:220px;">' +
     '<select onchange="AUD.fSector=this.value;audRender()">' + audOpts(m.sectors.map(s => s.name), AUD.fSector, 'All sectors').replace('</option>', '</option><option value="__none"' + (AUD.fSector === '__none' ? ' selected' : '') + '>No sector</option>') + '</select>' +

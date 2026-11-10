@@ -20014,6 +20014,34 @@ app.post('/api/audience/suggest-sectors', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Build 57.1.2: the Do not email list (suppression list) with a reason it can be lifted
+app.get('/api/audience/suppressed', requireAdmin, async (req, res) => {
+  try {
+    const rows = (await suppressionTable.list()).slice().sort((a, b) => String(b.added_at).localeCompare(String(a.added_at)));
+    res.json({ rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Lift a block: removes every suppression row for the address (or the company row) and clears the unsubscribe on the contact.
+// A reason is required and goes in the audit trail, since we must be able to show why someone who opted out is emailable again.
+app.post('/api/audience/unsuppress', requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const reason = String(b.reason || '').trim();
+    if (reason.length < 4) return res.status(400).json({ error: 'Say why this block is being removed (for example: test address)' });
+    const all = await suppressionTable.list();
+    const hit = b.id ? all.filter(s => s.id === b.id) : all.filter(s => b.email && lc(s.email) === lc(b.email));
+    if (!hit.length) return res.status(404).json({ error: 'Not on the list' });
+    for (const h of hit) await suppressionTable.remove(h.id);
+    const email = lc(hit[0].email || '');
+    if (email) {
+      const ex = (await contactAudienceTable.list()).find(a => lc(a.email) === email);
+      if (ex && ex.unsubscribed_at) await contactAudienceTable.upsert({ ...ex, unsubscribed_at: '', updated_by: actorOf(req), updated_at: rfxNow() });
+    }
+    auditLog(auditActorOf(req), 'deleted', 'suppression', email || hit[0].company, 'block removed: ' + reason);
+    res.json({ ok: true, removed: hit.length });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+
 /* ---------- Amazon SNS: SES bounces and complaints ---------- */
 const snsCertCache = new Map();
 const snsHostOk = u => { try { const x = new URL(u); return x.protocol === 'https:' && /^sns\.[a-z0-9-]+\.amazonaws\.com(\.cn)?$/.test(x.hostname); } catch (e) { return false; } };
