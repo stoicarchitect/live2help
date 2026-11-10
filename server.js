@@ -19627,6 +19627,10 @@ app.get('/api/engine/status', requireAdmin, async (req, res) => {
       softBounces: evs.filter(o => /^bounce-/.test(o.status) && o.status !== 'bounce-permanent').length,
       complaints: evs.filter(o => o.status === 'complaint').length,
       last: (evs.filter(o => /^(bounce|complaint)/.test(o.status)).slice(-1)[0] || {}).at || '',
+      rejected: evs.filter(o => o.status === 'sns-rejected').length,
+      lastRejected: (() => { const r = evs.filter(o => o.status === 'sns-rejected').slice(-1)[0]; return r ? { at: r.at, why: r.error, what: r.subject } : null; })(),
+      lastContact: (evs.slice(-1)[0] || {}).at || '',
+      configSet: String(process.env.SES_CONFIG_SET || '').trim(),
     };
     const st = await engineMail.status();
     st.ses.sentLast30 = all.filter(o => o.kind !== 'ses-event' && o.route === 'ses' && o.status === 'sent' && Date.parse(o.at) >= since).reduce((n, o) => n + (Number(o.recipients) || 1), 0);
@@ -19650,6 +19654,7 @@ app.post('/api/engine/test', requireAdmin, async (req, res) => {
 <p style="margin:0 0 10px;">This is a test from build 57.0.</p>
 <p style="margin:0 0 10px;"><strong>Route:</strong> ${label}<br><strong>From:</strong> ${fromAddr}<br><strong>Sent:</strong> ${when}<br><strong>Pressed by:</strong> ${profileOf(me).fullName}</p>
 <p style="margin:0;">If this arrived in the inbox (not junk), the route works. Nothing needs doing.</p>
+${route === 'ses' ? `<p style="margin:12px 0 0;font-size:10pt;color:#666;">Every bulk email carries a personal unsubscribe link in its headers (List-Unsubscribe). To test it, use your mail app's Unsubscribe option or <a href="${unsubUrl(to)}" style="color:#666;">open this address's unsubscribe page</a>.</p>` : ''}
 </td></tr></table></body></html>`;
   const result = { at: new Date().toISOString(), route, from: fromAddr, to, by: me };
   try {
@@ -19701,7 +19706,9 @@ const companySettingsTable = makeSimpleTable({
 });
 const contactAudienceTable = makeSimpleTable({
   tab: 'Contact Audience',
-  header: ['id', 'email', 'company', 'owner', 'sector', 'status', 'consent_source', 'consent_date', 'consent_note', 'unsubscribed_at', 'updated_by', 'updated_at'],
+  // sector can hold several sectors separated by | (build 57.1.1): the contact gets ONE brief per issue, rotating through them.
+  // last_sector is the sector of the last brief sent, so the next issue moves on to the next one.
+  header: ['id', 'email', 'company', 'owner', 'sector', 'status', 'consent_source', 'consent_date', 'consent_note', 'unsubscribed_at', 'updated_by', 'updated_at', 'last_sector', 'last_sector_at'],
   path: null,
   label: 'Audience contact',
 });
@@ -19713,6 +19720,22 @@ function audOwners() {
 }
 const audOwnerOk = k => audOwners().some(o => o.key === lc(k));
 const audSectorOk = s => SECTORS.some(x => x.name === s);
+// a sector value may be one sector or several joined with |; keeps the 12 sectors' order
+const audSectors = v => { const want = new Set((Array.isArray(v) ? v : String(v || '').split('|')).map(x => String(x).trim()).filter(Boolean)); return SECTORS.map(x => x.name).filter(n => want.has(n)); };
+const audSectorsBad = v => (Array.isArray(v) ? v : String(v || '').split('|')).map(x => String(x).trim()).filter(x => x && !audSectorOk(x));
+// which sector's brief this contact gets next: the one after the last sent, wrapping round
+function audNextSector(list, last) {
+  if (!list.length) return '';
+  const i = list.indexOf(last);
+  return i < 0 ? list[0] : list[(i + 1) % list.length];
+}
+// 57.2 calls this after each brief so a contact with several sectors alternates
+async function audMarkSent(email, sector) {
+  const e = lc(email);
+  const ex = (await contactAudienceTable.list()).find(a => lc(a.email) === e);
+  const base = ex || { id: 'ca-' + crypto.createHash('sha1').update(e).digest('hex').slice(0, 14), email: e };
+  await contactAudienceTable.upsert({ ...base, last_sector: sector, last_sector_at: rfxNow() });
+}
 const audCompanyKey = c => rfxNormCompany(c);
 const audIsEmail = e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(e || '').trim());
 
@@ -19757,8 +19780,10 @@ async function audResolve() {
     const co = compBy.get(audCompanyKey(b.company)) || {};
     const owner = lc(a.owner) || lc(co.owner) || AUD_DEFAULT_OWNER;
     const ownerFrom = lc(a.owner) ? 'contact' : lc(co.owner) ? 'company' : 'default';
-    const sector = a.sector || co.sector || '';
-    const sectorFrom = a.sector ? 'contact' : co.sector ? 'company' : '';
+    const own = audSectors(a.sector), coS = audSectors(co.sector);
+    const sectors = own.length ? own : coS;
+    const sectorFrom = own.length ? 'contact' : coS.length ? 'company' : '';
+    const sector = audNextSector(sectors, a.last_sector || '');
     const status = a.status || b.baseStatus;
     const consentSource = a.consent_source || b.baseSource;
     const consentDate = a.consent_date || b.baseDate;
@@ -19768,7 +19793,7 @@ async function audResolve() {
     const route = suppressed ? '' : (status === 'Warm' && !needsRecording ? 'ses' : 'm365');
     rows.push({
       email: b.email, name: b.name, company: b.company, jobTitle: b.jobTitle, kind: b.kind, alsoIn: b.alsoIn,
-      owner, ownerFrom, sector, sectorFrom, status, consentSource, consentDate, consentNote: a.consent_note || '',
+      owner, ownerFrom, sector, sectors, sectorFrom, lastSector: a.last_sector || '', status, consentSource, consentDate, consentNote: a.consent_note || '',
       needsRecording, suppressed, unsubscribedAt: a.unsubscribed_at || '', route, hasRow: !!a.id,
     });
   }
@@ -19782,14 +19807,15 @@ function audCompanies(contacts, comps) {
   contacts.forEach(c => {
     if (!c.company) return;
     const k = audCompanyKey(c.company);
-    if (!by.has(k)) by.set(k, { company: c.company, contacts: 0, warm: 0, kinds: new Set() });
+    if (!by.has(k)) by.set(k, { company: c.company, contacts: 0, warm: 0, kinds: new Set(), secs: new Set(), own: 0 });
     const o = by.get(k); o.contacts++; if (c.status === 'Warm') o.warm++; o.kinds.add(c.kind);
+    (c.sectors || []).forEach(x => o.secs.add(x)); if (c.sectorFrom === 'contact') o.own++;
   });
-  comps.forEach(c => { const k = audCompanyKey(c.company); if (k && !by.has(k)) by.set(k, { company: c.company, contacts: 0, warm: 0, kinds: new Set() }); });
+  comps.forEach(c => { const k = audCompanyKey(c.company); if (k && !by.has(k)) by.set(k, { company: c.company, contacts: 0, warm: 0, kinds: new Set(), secs: new Set(), own: 0 }); });
   return [...by.entries()].map(([k, o]) => {
     const s = compBy.get(k) || {};
     return { company: o.company, owner: lc(s.owner), ownerShown: lc(s.owner) || AUD_DEFAULT_OWNER, sector: s.sector || '', contacts: o.contacts, warm: o.warm,
-      isClient: o.kinds.has('client'), kinds: [...o.kinds] };
+      isClient: o.kinds.has('client'), kinds: [...o.kinds], contactSectors: audSectors([...o.secs]), mixed: o.secs.size > 1, ownSectorContacts: o.own };
   }).sort((a, b) => a.company.localeCompare(b.company));
 }
 
@@ -19868,7 +19894,8 @@ async function audSaveContact(email, patch, actor) {
   const row = { id: ex ? ex.id : 'ca-' + crypto.createHash('sha1').update(e).digest('hex').slice(0, 14), email: e,
     company: ex ? ex.company : '', owner: ex ? ex.owner : '', sector: ex ? ex.sector : '', status: ex ? ex.status : '',
     consent_source: ex ? ex.consent_source : '', consent_date: ex ? ex.consent_date : '', consent_note: ex ? ex.consent_note : '',
-    unsubscribed_at: ex ? ex.unsubscribed_at : '', updated_by: actor, updated_at: rfxNow() };
+    unsubscribed_at: ex ? ex.unsubscribed_at : '', updated_by: actor, updated_at: rfxNow(),
+    last_sector: ex ? ex.last_sector : '', last_sector_at: ex ? ex.last_sector_at : '' };
   if (patch.company !== undefined) row.company = String(patch.company || '').trim();
   if (patch.owner !== undefined) {
     const o = lc(patch.owner);
@@ -19876,8 +19903,9 @@ async function audSaveContact(email, patch, actor) {
     row.owner = o;
   }
   if (patch.sector !== undefined) {
-    if (patch.sector && !audSectorOk(patch.sector)) throw Object.assign(new Error('That is not one of the 12 sectors'), { status: 400 });
-    row.sector = patch.sector || '';
+    const bad = audSectorsBad(patch.sector);
+    if (bad.length) throw Object.assign(new Error(`${bad[0]} is not one of the 12 sectors`), { status: 400 });
+    row.sector = audSectors(patch.sector).join('|');
   }
   if (patch.status !== undefined) {
     if (patch.status && !['Cold', 'Warm'].includes(patch.status)) throw Object.assign(new Error('Status must be Cold or Warm'), { status: 400 });
@@ -19907,8 +19935,30 @@ app.put('/api/audience/contact', requireAdmin, async (req, res) => {
     const b = req.body || {};
     const row = await audSaveContact(b.email, { company: b.company, owner: b.owner, sector: b.sector, status: b.status,
       consentSource: b.consentSource, consentDate: b.consentDate, consentNote: b.consentNote }, actorOf(req));
-    auditLog(auditActorOf(req), 'updated', 'audience_contact', row.email, `status ${row.status || 'unchanged'}${row.consent_source ? ', source ' + row.consent_source : ''}${row.owner ? ', owner ' + row.owner : ''}${row.sector ? ', sector ' + row.sector : ''}`);
+    auditLog(auditActorOf(req), 'updated', 'audience_contact', row.email, `status ${row.status || 'unchanged'}${row.consent_source ? ', source ' + row.consent_source : ''}${row.owner ? ', owner ' + row.owner : ''}${row.sector ? ', sectors ' + row.sector.replace(/\|/g, ', ') : ''}`);
     res.json({ ok: true, contact: row });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+
+// Build 57.1.1: set the sectors (one or several) or the owner for ticked contacts at once. Empty sectors = use the company's
+app.post('/api/audience/contacts/bulk', requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const emails = [...new Set((Array.isArray(b.emails) ? b.emails : []).map(lc).filter(audIsEmail))].slice(0, 1000);
+    if (!emails.length) return res.status(400).json({ error: 'Tick at least one contact' });
+    if (b.sectors === undefined && b.owner === undefined) return res.status(400).json({ error: 'Choose sectors or an owner to apply' });
+    const patch = {};
+    if (b.sectors !== undefined) {
+      const bad = audSectorsBad(b.sectors);
+      if (bad.length) return res.status(400).json({ error: `${bad[0]} is not one of the 12 sectors` });
+      patch.sector = audSectors(b.sectors);
+    }
+    if (b.owner !== undefined) { if (b.owner && !audOwnerOk(b.owner)) return res.status(400).json({ error: 'That owner is not an active user' }); patch.owner = b.owner; }
+    const known = new Map((await audResolve()).map(c => [c.email, c]));
+    for (const e of emails) await audSaveContact(e, { ...patch, company: (known.get(e) || {}).company }, actorOf(req));
+    auditLog(auditActorOf(req), 'updated', 'audience_contact', `${emails.length} contacts`,
+      `bulk: ${patch.sector ? 'sectors ' + (patch.sector.join(', ') || 'company default') : ''} ${patch.owner !== undefined ? 'owner ' + (patch.owner || 'company default') : ''}`.trim());
+    res.json({ ok: true, changed: emails.length });
   } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
 });
 
@@ -19997,12 +20047,20 @@ function snsLog(row) {
 app.post('/api/ses/sns', express.text({ type: '*/*', limit: '512kb' }), async (req, res) => {
   try {
     let m = req.body;
-    if (typeof m === 'string') { try { m = JSON.parse(m); } catch (e) { return res.status(400).json({ error: 'Not a valid SNS message' }); } }
-    if (!m || typeof m !== 'object' || !m.Type) return res.status(400).json({ error: 'Not a valid SNS message' });
+    const reject = async (code, why, mm) => {
+      console.warn('SES SNS rejected:', why);
+      await snsLog({ id: 'rj-' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), status: 'sns-rejected', error: why,
+        subject: String((mm && mm.Type) || 'unknown') + ' from ' + String((mm && mm.TopicArn) || 'no topic').slice(0, 160) });
+      return res.status(code).json({ error: why });
+    };
+    if (typeof m === 'string') { try { m = JSON.parse(m); } catch (e) { return reject(400, 'Not valid JSON (content type ' + String(req.get('content-type') || 'none') + ')'); } }
+    if (!m || typeof m !== 'object' || !m.Type) return reject(400, 'Not an SNS message', null);
     const topic = String(process.env.SES_SNS_TOPIC_ARN || '').trim();
-    if (!topic) { console.warn('SES_SNS_TOPIC_ARN is not set, so SNS messages are ignored'); return res.status(503).json({ error: 'SNS topic is not set up on the server' }); }
-    if (m.TopicArn !== topic) return res.status(403).json({ error: 'Unknown topic' });
-    if (!(await snsVerify(m).catch(() => false))) return res.status(403).json({ error: 'Signature not valid' });
+    if (!topic) return reject(503, 'SES_SNS_TOPIC_ARN is not set on Render', m);
+    if (m.TopicArn !== topic) return reject(403, `Topic does not match SES_SNS_TOPIC_ARN (Render has ...${topic.slice(-24)})`, m);
+    let sigErr = '';
+    const sigOk = await snsVerify(m).catch(e => { sigErr = e.message; return false; });
+    if (!sigOk) return reject(403, 'Signature not valid' + (sigErr ? ': ' + sigErr : '') + ` (version ${m.SignatureVersion || '?'}, cert ${String(m.SigningCertURL || '').slice(0, 80)})`, m);
 
     if (m.Type === 'SubscriptionConfirmation') {
       if (!snsHostOk(m.SubscribeURL)) return res.status(400).json({ error: 'Bad subscribe URL' });
@@ -20065,7 +20123,7 @@ app.get('/u/:token', async (req, res) => {
   const email = unsubEmailOf(req.params.token);
   if (!email) return res.status(400).send(unsubPage('Link not recognised', 'This link is not valid. Reply to the email and ask us to stop, and we will.'));
   const e = email.replace(/</g, '&lt;');
-  const cur = ((await contactAudienceTable.list().catch(() => [])).find(a => lc(a.email) === email) || {}).sector || '';
+  const cur = audSectors(((await contactAudienceTable.list().catch(() => [])).find(a => lc(a.email) === email) || {}).sector)[0] || '';
   const btn = 'display:block;width:100%;box-sizing:border-box;padding:12px;border:0;font-size:15px;font-weight:bold;cursor:pointer;';
   const extra = `<form method="post" style="margin:16px 0 0;"><input type="hidden" name="do" value="unsub"><button style="${btn}background:#C9A84C;color:#0B1F3A;">Unsubscribe ${e}</button></form>
 <form method="post" style="margin:22px 0 0;border-top:1px solid #2c4468;padding-top:16px;"><input type="hidden" name="do" value="sector"><label style="font-size:14px;color:#e6e6ea;">Prefer a different sector? Choose one and keep receiving the Gap Brief:</label>

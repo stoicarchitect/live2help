@@ -134,7 +134,9 @@ export function createMailEngine({ fetch, isPreview, logTable, isSuppressed, tod
       to: m.to, cc: m.cc.length ? m.cc : undefined, bcc: m.bcc.length ? m.bcc : undefined,
       subject: m.subject, html: m.html || undefined, text: m.text || undefined,
       attachments: m.attachments.map(a => ({ filename: a.filename, content: a.content, encoding: 'base64', contentType: a.contentType, cid: a.cid })),
-      headers: m.headers || {},
+      // SES_CONFIG_SET names the configuration set whose event destination sends bounces and complaints to SNS.
+      // Set it on Render so events are published even if the set is not the identity's default.
+      headers: { ...(m.headers || {}), ...(process.env.SES_CONFIG_SET ? { 'X-SES-CONFIGURATION-SET': String(process.env.SES_CONFIG_SET).trim() } : {}) },
     });
     // SES puts its own message ID in the SMTP reply ("250 Ok <id>"); that is what its events report later
     const sesId = (String(info && info.response || '').match(/Ok\s+(\S+)/i) || [])[1] || '';
