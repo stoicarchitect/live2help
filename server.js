@@ -16284,7 +16284,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '10 Nov 2026 - build 57.2 (Gap Briefs: problem chart, approval, Tuesday send)';
+const SERVER_BUILD = '10 Nov 2026 - build 57.2.2 (Gap Briefs: rotating problem chart)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -20705,16 +20705,17 @@ app.delete('/api/gap/problems/:id', gapNeedEdit, async (req, res) => {
 });
 app.post('/api/gap/problems/seed', gapNeedEdit, async (req, res) => {
   try {
-    const have = (await gapProblemsTable.list()).filter(p => lc(p.active) !== 'false');
-    if (have.length) return res.status(409).json({ error: 'The chart already has entries, so the starter chart was not loaded' });
+    // adds any starter problem that is not already in the chart (matched on id), so it is safe to press again and never overwrites an edit
+    const have = new Set((await gapProblemsTable.list()).map(p => p.id));
     const seed = JSON.parse(fs.readFileSync(path.join(__dirname, 'gap-seed-problems.json'), 'utf8')).problems;
     let n = 0;
     for (const p of seed) {
-      if (!gapSectorOf(p.sector)) continue;
-      await gapProblemsTable.upsert({ id: rfxId('gp'), sector: p.sector, problem: p.problem, impact: p.impact, root_cause: p.root_cause, questions: p.questions, sources: '', active: 'TRUE', updated_by: actorOf(req), updated_at: rfxNow() });
+      const id = 'gp-' + p.id;
+      if (!gapSectorOf(p.sector) || have.has(id)) continue;
+      await gapProblemsTable.upsert({ id, sector: p.sector, problem: p.problem, impact: p.impact, root_cause: p.root_cause, questions: p.questions, sources: '', active: 'TRUE', updated_by: actorOf(req), updated_at: rfxNow() });
       n++;
     }
-    auditLog(auditActorOf(req), 'created', 'gap_problem', 'starter chart', n + ' entries');
+    if (n) auditLog(auditActorOf(req), 'created', 'gap_problem', 'starter chart', n + ' entries');
     res.json({ ok: true, added: n });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

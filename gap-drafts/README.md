@@ -59,5 +59,14 @@ HR and People Management; Corporate and Executive; Driving and Logistics. One br
    rather than inventing one.
 6. The quick maths is salary only, with the assumption stated in `sources`.
 7. Keep it to a two-minute read. Plain, confident, UK English. The reader's gap is the star, not Live 2 Help.
-8. Draw the problem, impact and root cause from `gap-seed-problems.json` (the starting chart; the live chart is edited in the workspace) and turn the
-   sector's discovery questions into the three gap check questions.
+8. Draw the problem, impact and root cause from `gap-seed-problems.json` (the starting chart: six problems per sector, each with an id such as `eng-1`; the
+   live chart is edited in the workspace and its ids are the same with a `gp-` prefix) and turn that problem's discovery questions into the three gap check questions.
+
+## Rotation (briefs must not repeat)
+
+- For each sector, look at every earlier `issue-N.json` in this folder and collect the `problemIds` used for that sector. Pick the problem whose id was used
+  longest ago, or never. With six problems per sector a sector's angle comes round again after about three months, and by then its figures should be re-researched.
+- Put the chosen id in the brief as `"problemIds": ["gp-eng-2"]` (the `gp-` prefix plus the id in the seed file). Always record it: the workspace uses it to show
+  when each problem was last used.
+- A new issue must also differ from the sector's previous issue in headline, number of the fortnight, myth and gap check questions. Never reuse a figure or source
+  line from a previous issue unless the underlying figure has been re-checked and updated.

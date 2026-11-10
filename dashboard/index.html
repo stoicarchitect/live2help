@@ -16966,7 +16966,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '10 Nov 2026 - build 57.2 (Gap Briefs)';
+var PAGE_BUILD = '10 Nov 2026 - build 57.2.2 (rotating problem chart)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -19714,14 +19714,15 @@ function gb57Archive(){
 /* ---- Problem chart ---- */
 function gb57Chart(){
   const p = GB.problems, edit = p.canEdit, rows = p.data;
-  let h = '<div class="b46-sub" style="margin:6px 0 10px;">For each sector: the problem, what it costs, and why it happens. These drive the briefs and give Ella the questions that open the conversation with a reader who replies. Figures never go here; they go in a brief, with a source.</div>' +
-    (edit ? '<div class="p41-bar"><button class="p41-btn pri sm" onclick="gb57ProblemEdit()">Add a problem</button>' + (rows.length ? '' : '<button class="p41-btn sm" onclick="gb57Seed(this)">Load the starter chart</button>') + '</div>' : '');
+  let h = '<div class="b46-sub" style="margin:6px 0 10px;">For each sector: the problems, what each costs, and why it happens. Each issue uses the problem that was used longest ago, so a sector\'s brief changes every issue (six problems means a new angle for about three months). These give Ella the questions that open the conversation with a reader who replies. Figures never go here; they go in a brief, with a source.</div>' +
+    (edit ? '<div class="p41-bar"><button class="p41-btn pri sm" onclick="gb57ProblemEdit()">Add a problem</button>' + '<button class="p41-btn sm" onclick="gb57Seed(this)">' + (rows.length ? 'Add missing starter problems' : 'Load the starter chart') + '</button>' + '</div>' : '');
   if(!rows.length) return h + '<div class="p41-empty">The chart is empty. Load the starter chart (one problem per sector, written without figures) and edit it.</div>';
-  h += '<table class="b46-tbl"><tr><th>Sector</th><th>Problem</th><th>Impact</th><th>Root cause</th><th>Discovery questions</th><th></th></tr>';
+  h += '<table class="b46-tbl"><tr><th>Sector</th><th>Problem</th><th>Impact</th><th>Root cause</th><th>Discovery questions</th><th>Last used</th><th></th></tr>';
+  const used = {}; GB.data.data.filter(b => ['Draft', 'Approved', 'Sent'].includes(b.status)).forEach(b => b.problemIds.forEach(id => { used[id] = Math.max(used[id] || 0, b.issue); }));
   p.sectors.forEach(s => {
     const mine = rows.filter(r => r.sector === s.name);
-    if(!mine.length) h += '<tr><td><b>' + esc(s.name) + '</b></td><td colspan="5" class="b46-sub">No problem recorded yet</td></tr>';
-    mine.forEach((r, i) => { h += '<tr><td>' + (i ? '' : '<b>' + esc(s.name) + '</b>') + '</td><td>' + esc(r.problem) + '</td><td>' + esc(r.impact) + '</td><td>' + esc(r.root_cause) + '</td><td class="b46-sub">' + esc(r.questions).replace(/\n/g, '<br>') + '</td><td style="white-space:nowrap;">' + (edit ? '<button class="p41-btn sm" onclick="gb57ProblemEdit(\'' + esc(r.id) + '\')">Edit</button> <button class="p41-btn sm" onclick="gb57ProblemDel(\'' + esc(r.id) + '\')">Remove</button>' : '') + '</td></tr>'; });
+    if(!mine.length) h += '<tr><td><b>' + esc(s.name) + '</b></td><td colspan="6" class="b46-sub">No problem recorded yet</td></tr>';
+    mine.forEach((r, i) => { h += '<tr><td>' + (i ? '' : '<b>' + esc(s.name) + '</b>') + '</td><td>' + esc(r.problem) + '</td><td>' + esc(r.impact) + '</td><td>' + esc(r.root_cause) + '</td><td class="b46-sub">' + esc(r.questions).replace(/\n/g, '<br>') + '</td><td class="b46-sub">' + (used[r.id] ? 'Issue ' + used[r.id] : 'Not used yet') + '</td><td style="white-space:nowrap;">' + (edit ? '<button class="p41-btn sm" onclick="gb57ProblemEdit(\'' + esc(r.id) + '\')">Edit</button> <button class="p41-btn sm" onclick="gb57ProblemDel(\'' + esc(r.id) + '\')">Remove</button>' : '') + '</td></tr>'; });
   });
   return h + '</table>';
 }
@@ -19737,7 +19738,7 @@ async function gb57ProblemGo(id, btn){
   catch(e){ showToast(e.message); btn.disabled = false; }
 }
 async function gb57ProblemDel(id){ if(!confirm('Remove this problem from the chart?')) return; try{ await b2Del('/api/gap/problems', id); showToast('Removed'); await gb57Load(true); }catch(e){ showToast(e.message); } }
-async function gb57Seed(btn){ btn.disabled = true; try{ const j = await b2Post('/api/gap/problems/seed', {}); showToast(j.added + ' problems added. Review them.'); await gb57Load(true); }catch(e){ showToast(e.message); btn.disabled = false; } }
+async function gb57Seed(btn){ btn.disabled = true; try{ const j = await b2Post('/api/gap/problems/seed', {}); showToast(j.added ? j.added + ' problems added. Review them.' : 'Nothing to add: every starter problem is already there'); await gb57Load(true); }catch(e){ showToast(e.message); btn.disabled = false; } }
 /* ---- Pop-up when the dashboard opens ---- */
 async function gb57Popup(){
   if(GB.poppedUp) return;
