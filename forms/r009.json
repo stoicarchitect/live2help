@@ -1,0 +1,189 @@
+{
+  "slug": "r009",
+  "ref": "R009",
+  "title": "Bench Joiner",
+  "location": "Newton Aycliffe",
+  "employment": "Permanent, full time",
+  "pay": { "basis": "hourly" },
+  "intro": "A specialist manufacturer in Newton Aycliffe is growing its production team and is looking for Bench Joiners, or people with transferable joinery and manufacturing skills. You will make high quality products from solid surface materials and washroom products, using tools and machinery much like those found in a bench joinery workshop.",
+  "bullets": [
+    "Monday to Friday, 8:00am to 4:00pm (37.5 hours a week)",
+    "£14.50 to £17.50 an hour depending on experience",
+    "Regular overtime available on weekdays and weekends",
+    "Mainly factory based, with nationwide installation work when required",
+    "Several positions available"
+  ],
+  "also": "This role would also suit Cabinet Makers, Shopfitters, Joinery Machinists, Fabricators and anyone with a manufacturing or fabrication background who is confident with joinery tools and machinery.",
+  "outro": "This form takes around 8 minutes. The more detail you give, the easier it is for us to put you forward.",
+  "about": [
+    {
+      "key": "location",
+      "label": "Where do you live, and roughly how long would your journey to Newton Aycliffe take?",
+      "sheet": "Home location and journey time to Newton Aycliffe",
+      "type": "text",
+      "hint": "For example: DL5, about 15 minutes by car"
+    },
+    {
+      "key": "commute",
+      "label": "Can you reliably get to the factory for an 8:00am start, Monday to Friday?",
+      "sheet": "Can reliably make an 8am start",
+      "type": "radio",
+      "options": ["Yes, I drive", "Yes, by public transport or lift", "Not sure", "No"]
+    },
+    {
+      "key": "rightToWork",
+      "label": "Do you have the right to work in the UK?",
+      "sheet": "Right to work in the UK",
+      "type": "radio",
+      "options": ["Yes", "No"]
+    },
+    {
+      "key": "drivingLicence",
+      "label": "Do you hold a full UK driving licence?",
+      "sheet": "Full UK driving licence",
+      "type": "radio",
+      "options": ["Yes", "Provisional only", "No"]
+    }
+  ],
+  "sections": [
+    {
+      "legend": "Your joinery and manufacturing background",
+      "questions": [
+        {
+          "key": "currentTitleType",
+          "label": "Which best describes your current or most recent role?",
+          "sheet": "Current role type",
+          "type": "select",
+          "options": [
+            "Bench Joiner",
+            "Site Joiner or Carpenter",
+            "Cabinet Maker",
+            "Shopfitter",
+            "Joinery Machinist or CNC Operator",
+            "Fabricator (solid surface, composite or metal)",
+            "Production or Factory Operative",
+            "Other"
+          ]
+        },
+        {
+          "key": "currentRole",
+          "label": "What is your current or most recent job title and employer?",
+          "sheet": "Current or most recent job title and employer",
+          "type": "text"
+        },
+        {
+          "key": "joineryYears",
+          "label": "How many years of bench joinery or workshop experience do you have?",
+          "sheet": "Years of bench joinery or workshop experience",
+          "type": "select",
+          "options": ["None", "Less than 1 year", "1 - 3 years", "3 - 5 years", "5 - 10 years", "10 years or more"]
+        },
+        {
+          "key": "qualification",
+          "label": "Do you hold a joinery or wood occupations qualification?",
+          "sheet": "Joinery qualification",
+          "type": "select",
+          "options": [
+            "NVQ Level 3 or completed apprenticeship",
+            "NVQ Level 2",
+            "Currently working towards one",
+            "No formal qualification, trained on the job",
+            "Other relevant qualification"
+          ]
+        },
+        {
+          "key": "factory",
+          "label": "Have you worked in a factory, manufacturing or fabrication environment?",
+          "sheet": "Factory, manufacturing or fabrication experience",
+          "type": "radio",
+          "options": ["Yes, for over a year", "Yes, under a year", "No"]
+        }
+      ]
+    },
+    {
+      "legend": "Tools, machinery and materials",
+      "questions": [
+        {
+          "key": "machinery",
+          "label": "Which tools and machinery can you use confidently and safely?",
+          "sheet": "Tools and machinery used confidently",
+          "type": "checkbox",
+          "hint": "Tick all that apply",
+          "options": [
+            "Panel saw or wall saw",
+            "Table or rip saw",
+            "Spindle moulder",
+            "Planer or thicknesser",
+            "Bandsaw",
+            "Hand router and jigs",
+            "CNC router",
+            "Edge bander",
+            "Power hand tools (drills, sanders, biscuit jointers)",
+            "None of these yet"
+          ]
+        },
+        {
+          "key": "solidSurface",
+          "label": "Have you worked with solid surface materials, such as Corian or similar acrylic or mineral sheet?",
+          "sheet": "Solid surface experience",
+          "type": "radio",
+          "options": ["Yes, regularly", "Yes, a little", "No, but I have worked with similar materials", "No"]
+        },
+        {
+          "key": "washroom",
+          "label": "Have you made or installed washroom products, such as cubicles, vanity units, IPS panelling or worktops?",
+          "sheet": "Washroom products experience",
+          "type": "radio",
+          "options": ["Yes, made them", "Yes, installed them", "Both", "No"]
+        },
+        {
+          "key": "materialsDetail",
+          "label": "Which materials and products have you worked with, and what did you make?",
+          "sheet": "Materials and products worked with",
+          "type": "textarea",
+          "hint": "For example: MDF and hardwood kitchens, laminate shopfit counters, solid surface vanity tops"
+        },
+        {
+          "key": "drawings",
+          "label": "Can you read technical drawings and work to tight tolerances?",
+          "sheet": "Reads technical drawings and works to tolerances",
+          "type": "radio",
+          "options": ["Yes, confidently", "Yes, with some support", "No"]
+        }
+      ]
+    },
+    {
+      "legend": "Hours, overtime and travel",
+      "questions": [
+        {
+          "key": "overtime",
+          "label": "Regular overtime is available. When would you be happy to work it?",
+          "sheet": "Overtime availability",
+          "type": "radio",
+          "options": ["Weekdays and weekends", "Weekdays only", "Weekends only", "I would rather not work overtime"]
+        },
+        {
+          "key": "installTravel",
+          "label": "Are you happy to travel nationwide for occasional installation work, including overnight stays?",
+          "sheet": "Happy to travel nationwide for installs (incl. overnight)",
+          "type": "radio",
+          "options": ["Yes", "Yes, but not overnight", "Depends on notice", "No"]
+        },
+        {
+          "key": "installExperience",
+          "label": "Do you have any experience fitting or installing on site?",
+          "sheet": "On-site fitting or installation experience",
+          "type": "radio",
+          "options": ["Yes, regularly", "Yes, occasionally", "No"]
+        },
+        {
+          "key": "proudPiece",
+          "label": "Tell us about a piece you have made or fitted that you are proud of.",
+          "sheet": "Piece of work they are proud of",
+          "type": "textarea",
+          "hint": "What it was, the materials and machinery you used, and your part in it"
+        }
+      ]
+    }
+  ]
+}

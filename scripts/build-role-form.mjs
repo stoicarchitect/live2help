@@ -89,6 +89,13 @@ function buildForm(def, logo) {
     if (['select', 'radio', 'checkbox'].includes(q.type) && !(q.options || []).length) throw new Error(`${q.key} needs options`);
   });
   if (!/^r\d{3,}$/.test(def.slug)) throw new Error('The slug must be the role reference only, e.g. r007, so the job title is never in the link');
+  // Pay wording: annual salary by default; hourly roles set "pay": {"basis": "hourly"} in the form file
+  const hourly = def.pay && def.pay.basis === 'hourly';
+  const pay = {
+    question: (def.pay && def.pay.question) || (hourly ? 'What hourly rate are you looking for?' : 'What basic salary are you looking for?'),
+    hint: (def.pay && def.pay.hint) || (hourly ? 'Your current hourly rate and what you would want to move for both help' : 'Your current basic salary and what you would want to move for both help'),
+    livePrefix: hourly ? 'The rate for this role is ' : 'The salary for this role is ',
+  };
   const qConfig = all.map(q => ({ id: `q_${q.key}`, label: q.sheet || q.label, type: q.type, required: q.required !== false }));
 
   return `<!DOCTYPE html>
@@ -266,8 +273,8 @@ function buildForm(def, logo) {
           <div class="err">Please select an option.</div>
         </div>
         <div class="field" data-f="salaryExpectation">
-          <label class="q" for="salaryExpectation"><span id="salaryQ">What basic salary are you looking for?</span><span class="req">*</span>
-            <span class="hint">Your current basic salary and what you would want to move for both help</span></label>
+          <label class="q" for="salaryExpectation"><span id="salaryQ">${esc(pay.question)}</span><span class="req">*</span>
+            <span class="hint">${esc(pay.hint)}</span></label>
           <input type="text" id="salaryExpectation" name="salaryExpectation" maxlength="200">
           <div class="err">Please tell us your salary expectations.</div>
         </div>
@@ -356,7 +363,7 @@ ${def.sections.map(s => `      <fieldset>
         var sal = money(j.salary);
         if (sal){
           document.getElementById('salaryText').textContent = sal;
-          document.getElementById('salaryQ').textContent = 'The salary for this role is ' + sal + '. What basic salary are you looking for?';
+          document.getElementById('salaryQ').textContent = ${JSON.stringify(pay.livePrefix)} + sal + '. ' + ${JSON.stringify(pay.question)};
         }
       }).catch(function(){ /* keep "Competitive salary" */ });
   } catch (e) {}
