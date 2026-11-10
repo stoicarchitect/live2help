@@ -53,7 +53,7 @@ HR and People Management; Corporate and Executive; Driving and Logistics. One br
 1. No fees, prices or percentages of salary for Live 2 Help. No placement stories. No "book a call". No Hiring Toolkit link.
 2. No em dashes or en dashes anywhere. Use a simple hyphen or reword.
 3. Exactly three gap check questions. `sources` is never empty.
-4. No leftover `{{` placeholders.
+4. No leftover placeholders in double curly brackets.
 5. Every figure comes from a real, current, named source (published within roughly the last two months where possible) and is listed in `sources`.
    If no current figure can be found for a sector, say so in the subject-line notes of your report and use a qualitative number-free angle
    rather than inventing one.
