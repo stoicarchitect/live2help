@@ -16966,7 +16966,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '10 Nov 2026 - build 57.3.1 (Cold Outreach tab button)';
+var PAGE_BUILD = '10 Nov 2026 - build 57.3.2 (Cold Outreach: choose who to contact)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -19763,13 +19763,14 @@ async function gb57Popup(){
   }catch(e){ /* the pop-up is a convenience; the Gap Briefs tab still works */ }
 }
 /* ---------------- Page build 57.3: Marketing > Cold Outreach (one to one, approve the day's batch) ---------------- */
-var CO = { tab:'batch', batch:null, seqs:null, err:'', owner:'', busy:false };
+var CO = { tab:'choose', batch:null, seqs:null, list:null, err:'', owner:'', busy:false, q:'', sec:'', show:'ready' };
 async function co57Load(force){
   const body = document.getElementById('co57Body'); if(!body) return;
   if(!CO.batch || force) body.innerHTML = '<div class="p41-empty">Loading...</div>';
   try{
-    const [b, s] = await Promise.all([b2Api('/api/cold/batch' + (CO.owner ? '?owner=' + encodeURIComponent(CO.owner) : '')), b2Api('/api/cold/sequences')]);
-    CO.batch = b; CO.seqs = s; CO.err = '';
+    const qo = CO.owner ? '?owner=' + encodeURIComponent(CO.owner) : '';
+    const [b, s, l] = await Promise.all([b2Api('/api/cold/batch' + qo), b2Api('/api/cold/sequences'), b2Api('/api/cold/contacts' + qo)]);
+    CO.batch = b; CO.seqs = s; CO.list = l; CO.err = '';
     if(!CO.owner) CO.owner = b.owner;
   }catch(e){ CO.err = e.message; }
   co57Render();
@@ -19780,8 +19781,8 @@ function co57Render(){
   const body = document.getElementById('co57Body'); if(!body) return;
   if(CO.err){ body.innerHTML = '<div class="p41-note">Cold Outreach could not be loaded. ' + esc(CO.err) + '</div>'; return; }
   const tab = (k, l) => '<button class="p41-chip" aria-pressed="' + (CO.tab === k) + '" onclick="co57Tab(\'' + k + '\')">' + l + '</button>';
-  body.innerHTML = '<div class="p41-tabs">' + tab('batch', "Today's batch") + tab('seqs', 'Sequences') + tab('how', 'How it works') + '</div>' +
-    (CO.tab === 'batch' ? co57Batch() : CO.tab === 'seqs' ? co57Seqs() : co57How());
+  body.innerHTML = '<div class="p41-tabs">' + tab('choose', 'Choose contacts') + tab('batch', "Today's batch") + tab('seqs', 'Sequences') + tab('how', 'How it works') + '</div>' +
+    (CO.tab === 'choose' ? co57Choose() : CO.tab === 'batch' ? co57Batch() : CO.tab === 'seqs' ? co57Seqs() : co57How());
 }
 function co57StepLabel(n){ return n === 1 ? 'First email' : n === 2 ? 'Follow-up (day 4)' : 'Last email: Gap Brief offer (day 9)'; }
 function co57Batch(){
@@ -19791,12 +19792,9 @@ function co57Batch(){
   h += '<span class="b46-sub">New first emails today: <b>' + u.used + ' of ' + u.cap + '</b> (warm-up day ' + u.dayNumber + (u.cap < u.maxCap ? ', rising to ' + u.maxCap + ' a day' : '') + ')</span></div>';
   if(b.preview) h += '<div class="p41-note">This is the preview workspace. Nothing is ever sent from here.</div>';
   if(b.note) h += '<div class="p41-note">' + esc(b.note) + '</div>';
-  const skipped = [];
-  if(b.needSector) skipped.push(b.needSector + ' cold contact' + (b.needSector === 1 ? ' has' : 's have') + ' no sector yet (set one under CRM > Audience)');
-  if(b.personal) skipped.push(b.personal + ' personal email address' + (b.personal === 1 ? ' is' : 'es are') + ' left out');
-  if(b.noProblem) skipped.push(b.noProblem + ' have no problem in the chart for their sector');
-  if(skipped.length) h += '<div class="b46-sub" style="margin:6px 0;">Not in this batch: ' + esc(skipped.join('; ')) + '.</div>';
-  if(!b.items.length) return h + '<div class="p41-empty">' + (u.remaining <= 0 && b.weekday ? 'Today\'s limit of new first emails has been reached and no follow-ups are due.' : 'Nothing is ready to send today.') + '</div>';
+  if(b.pickedBlocked && b.pickedBlocked.length) h += '<div class="p41-note" style="margin:6px 0;">' + b.pickedBlocked.length + ' chosen contact' + (b.pickedBlocked.length === 1 ? ' cannot' : 's cannot') + ' be emailed: ' + esc(b.pickedBlocked.map(x => x.email + ' (' + x.why + ')').join('; ')) + '</div>';
+  if(b.waitingForTomorrow) h += '<div class="b46-sub" style="margin:6px 0;">' + b.waitingForTomorrow + ' more chosen contact' + (b.waitingForTomorrow === 1 ? ' waits' : 's wait') + ' for tomorrow because of today\'s limit.</div>';
+  if(!b.items.length) return h + '<div class="p41-empty">' + (u.remaining <= 0 && b.weekday ? 'Today\'s limit of new first emails has been reached and no follow-ups are due.' : 'Nothing is ready to send today. Choose who to contact on the Choose contacts tab.') + '</div>';
   const nNew = b.items.filter(i => i.step === 1).length;
   h += '<div class="p41-panel" style="margin:8px 0;"><b>' + b.items.length + ' email' + (b.items.length === 1 ? '' : 's') + ' ready</b> (' + nNew + ' new, ' + (b.items.length - nNew) + ' follow-up). Read them, untick any you do not want, edit if you like, then approve. Each goes one to one from <b>' + esc(b.owner) + '</b>\'s own mailbox. The footer with company details and the opt-out line is always added.</div>';
   b.items.forEach((i, n) => {
@@ -19809,6 +19807,43 @@ function co57Batch(){
   if(b.canAct && !b.preview) h += '<div class="p41-bar" style="margin-top:12px;"><button class="p41-btn pri" ' + (CO.busy ? 'disabled' : '') + ' onclick="co57Send(this)">Approve and send the ticked emails</button><span class="b46-sub">Sends now, Monday to Friday between ' + b.sendHours[0] + ':00 and ' + b.sendHours[1] + ':00.</span></div>';
   else if(!b.canAct) h += '<div class="p41-note">You are viewing someone else\'s batch. Only they can send it.</div>';
   return h;
+}
+function co57Choose(){
+  const L = CO.list, u = L.usage;
+  let h = '<div class="p41-bar" style="gap:10px;flex-wrap:wrap;align-items:center;">';
+  if(L.owners && L.owners.length > 1) h += '<label class="b46-sub">Mailbox <select onchange="co57Owner(this.value)">' + L.owners.map(o => '<option value="' + esc(o.key) + '"' + (o.key === L.owner ? ' selected' : '') + '>' + esc(o.name) + '</option>').join('') + '</select></label>';
+  h += '<input placeholder="Search name, company or email" value="' + esc(CO.q) + '" oninput="CO.q=this.value;co57ChooseRows()" style="min-width:240px;">' +
+    '<select onchange="CO.sec=this.value;co57ChooseRows()"><option value="">All sectors</option>' + L.sectors.map(x => '<option' + (x === CO.sec ? ' selected' : '') + '>' + esc(x) + '</option>').join('') + '</select>' +
+    '<select onchange="CO.show=this.value;co57ChooseRows()">' + [['ready','Can be emailed'],['all','Everyone'],['blocked','Cannot be emailed'],['picked','Chosen']].map(o => '<option value="' + o[0] + '"' + (CO.show === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></div>';
+  h += '<div class="b46-sub" style="margin:6px 0;">Tick who you want to contact, then add them to the batch. New first emails today: <b>' + u.used + ' of ' + u.cap + '</b> (warm-up day ' + u.dayNumber + '). Anyone beyond today\'s limit waits for the next day. The reason column says why a contact cannot be chosen.</div>';
+  h += '<div id="co57Rows"></div>';
+  if(L.canAct) h += '<div class="p41-bar" style="margin-top:10px;"><button class="p41-btn pri" onclick="co57Pick(this,false)">Add ticked to the batch</button><button class="p41-btn" onclick="co57Pick(this,true)">Remove ticked from the batch</button></div>';
+  setTimeout(co57ChooseRows, 0);
+  return h;
+}
+function co57ChooseRows(){
+  const el = document.getElementById('co57Rows'); if(!el || !CO.list) return;
+  const q = CO.q.toLowerCase().trim();
+  const rows = CO.list.data.filter(r => (!CO.sec || r.sector === CO.sec) &&
+    (CO.show === 'all' || (CO.show === 'ready' && r.ready) || (CO.show === 'blocked' && !r.ready) || (CO.show === 'picked' && r.picked)) &&
+    (!q || (r.name + ' ' + r.company + ' ' + r.email).toLowerCase().includes(q)));
+  if(!rows.length){ el.innerHTML = '<div class="p41-empty">No contacts match. Try Everyone to see contacts that cannot be emailed and why.</div>'; return; }
+  const src = k => k === 'prospect' ? 'Role Finder' : k === 'lead' ? 'Lead Clients' : k;
+  el.innerHTML = '<table class="b46-tbl"><tr><th><input type="checkbox" onclick="document.querySelectorAll(\'.co57Pk\').forEach(x=>{if(!x.disabled)x.checked=this.checked})"></th><th>Contact</th><th>Company</th><th>Sector</th><th>Source</th><th>Status</th></tr>' +
+    rows.slice(0, 400).map(r => '<tr><td><input type="checkbox" class="co57Pk" value="' + esc(r.email) + '"' + (r.ready || r.picked ? '' : ' disabled') + '></td><td>' + esc(r.name || '') + '<div class="b46-sub">' + esc(r.email) + '</div></td><td>' + esc(r.company) + '</td><td>' + esc(r.sector || '') + '</td><td>' + esc(src(r.kind)) + '</td><td>' +
+      (r.picked ? '<b>Chosen</b>' + (r.ready ? '' : '<div class="b46-sub">' + esc(r.why) + '</div>') : r.ready ? 'Can be emailed' : '<span class="b46-sub">' + esc(r.why) + '</span>') + '</td></tr>').join('') + '</table>' +
+    (rows.length > 400 ? '<div class="b46-sub">Showing the first 400. Search to narrow it down.</div>' : '');
+}
+async function co57Pick(btn, remove){
+  const emails = [...document.querySelectorAll('.co57Pk:checked')].map(x => x.value);
+  if(!emails.length){ showToast('Tick at least one contact.'); return; }
+  btn.disabled = true;
+  try{
+    const r = await b2Post('/api/cold/pick', { owner: CO.list.owner, emails, remove });
+    showToast(remove ? r.removed + ' removed from the batch' : r.added + ' added to the batch' + (r.refused && r.refused.length ? '. Not added: ' + r.refused[0].email + ' (' + r.refused[0].why + ')' : ''));
+    if(!remove && r.added) CO.tab = 'batch';
+  }catch(e){ showToast(e.message); }
+  btn.disabled = false; await co57Load(true);
 }
 async function co57Send(btn){
   const b = CO.batch, items = [];
@@ -19842,7 +19877,7 @@ async function co57Outcome(id, outcome){
 }
 function co57How(){
   return '<div class="p41-panel"><ul style="margin:0;padding-left:18px;line-height:1.6;">' +
-    '<li>Who: Cold contacts only (Lead Clients and Role Finder prospects) who have a sector, a company email address and are not on the Do not email list. Personal addresses such as Gmail are left out.</li>' +
+    '<li>Who: only the contacts you choose on the Choose contacts tab. They must be Cold (Lead Clients and Role Finder prospects), have a sector and a company email address, and not be on the Do not email list. Personal addresses such as Gmail cannot be chosen. Follow-ups for people already in a sequence come up on their own.</li>' +
     '<li>What: three plain text emails, one to one, from the contact\'s account owner\'s own mailbox. Day 0 a problem and one question, day 4 the cause and a second question, day 9 the offer of the fortnightly Gap Brief. Then nothing for 90 days.</li>' +
     '<li>The problem comes from the Problem chart, the one used longest ago for that sector.</li>' +
     '<li>Volume: starts at 5 new first emails a day per mailbox, rising over two weeks to the normal daily limit. Follow-ups do not count towards it.</li>' +

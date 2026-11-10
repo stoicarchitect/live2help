@@ -123,7 +123,7 @@ const TABLE_GROUPS = {
   'Interviews': 'records', 'Templates': 'records', 'Activity': 'records', 'Invoice Charges': 'records',
   'Audit Log': 'system', 'Retention Reviews': 'system', 'Email Log': 'system', 'Engine Log': 'system', 'AI Usage': 'system', 'Settings': 'system', 'Suppression List': 'system',
   'Company Settings': 'clients', 'Contact Audience': 'clients',
-  'Gap Problems': 'clients', 'Gap Briefs': 'clients', 'Gap Sends': 'clients', 'Cold Sequences': 'clients', 'Cold Sends': 'clients',
+  'Gap Problems': 'clients', 'Gap Briefs': 'clients', 'Gap Sends': 'clients', 'Cold Sequences': 'clients', 'Cold Sends': 'clients', 'Cold Picks': 'clients',
   'Users': 'auth',
 };
 const SIMPLE_TABLES = []; // every makeSimpleTable table, for import, copy back and the nightly backup
@@ -16285,7 +16285,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '10 Nov 2026 - build 57.3 (Cold one-to-one Gap Brief outreach)';
+const SERVER_BUILD = '10 Nov 2026 - build 57.3.2 (Cold Outreach: choose who to contact)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -21112,6 +21112,28 @@ async function coldUsage(owner, seqs, sends) {
   return { cap, maxCap: Number(st.outreachCap) || 20, dayNumber, used, remaining: Math.max(0, cap - used) };
 }
 
+const coldPicksTable = makeSimpleTable({
+  tab: 'Cold Picks',
+  header: ['id', 'owner', 'email', 'picked_by', 'at'],
+  path: null,
+  label: 'Cold pick',
+});
+// Why a contact cannot start a cold sequence from this owner's mailbox right now ('' = it can)
+function coldWhyNot(c, seq, owner, today) {
+  if (!c) return 'Not found in Lead Clients or Role Finder prospects';
+  if (c.suppressed) return 'Opted out: ' + c.suppressed;
+  if (c.status !== 'Cold') return c.status === 'Warm' ? 'Warm: gets the Gap Brief instead' : 'Status ' + c.status;
+  if (c.route !== 'm365') return 'Cannot be emailed';
+  if (lc(c.owner) !== lc(owner)) return 'Owned by ' + c.owner + ' (change the owner under CRM > Audience)';
+  if (COLD_PERSONAL.test(c.email)) return 'Personal email address (cold email only goes to company addresses)';
+  if (!c.sector) return 'No sector yet (set one under CRM > Audience)';
+  if (seq) {
+    if (seq.stage === 'Active') return 'Already in a sequence (email ' + seq.step + ' of 3 sent)';
+    if (seq.stage === 'Finished' && String(seq.next_due) > today) return 'Sequence finished, can start again from ' + seq.next_due;
+    if (seq.stage !== 'Finished') return 'Sequence closed: ' + seq.stage;
+  }
+  return '';
+}
 // Everything that could go today for one owner: follow-ups that are due, then new first-touch emails up to the cap
 async function coldBatch(owner) {
   owner = lc(owner);
@@ -21131,20 +21153,15 @@ async function coldBatch(owner) {
     const mail = coldBuild(step, { name: s.name || c.name, company: s.company || c.company, sector: s.sector, kind: c.kind }, owner, prob);
     out.items.push({ key: lc(s.email) + '|' + step, email: lc(s.email), name: s.name || c.name, company: s.company || c.company, sector: s.sector, step, newSeq: false, seqId: s.id, problemId: prob.id, ...mail });
   }
-  // new first-touch
-  const rank = k => (k === 'prospect' ? 0 : k === 'lead' ? 1 : 2);
-  const fresh = [];
-  for (const c of contacts) {
-    if (c.status !== 'Cold' || c.suppressed || c.route !== 'm365' || lc(c.owner) !== owner) continue;
-    const s = seqBy.get(c.email);
-    if (s && !(s.stage === 'Finished' && String(s.next_due) <= today)) continue;
-    if (COLD_PERSONAL.test(c.email)) { out.personal++; continue; }
-    if (!c.sector) { out.needSector++; continue; }
-    fresh.push(c);
-  }
-  fresh.sort((a, b) => rank(a.kind) - rank(b.kind) || (a.company || '~').localeCompare(b.company || '~') || a.email.localeCompare(b.email));
-  for (const c of fresh) {
-    if (out.items.filter(i => i.step === 1).length >= usage.remaining) break;
+  // new first-touch: only the contacts this owner has chosen (57.3.2: nothing is picked automatically)
+  const picks = (await coldPicksTable.list().catch(() => [])).filter(x => lc(x.owner) === owner);
+  out.picked = picks.length;
+  out.pickedBlocked = [];
+  for (const pk of picks.sort((x, y) => String(x.at).localeCompare(String(y.at)))) {
+    const c = by.get(lc(pk.email));
+    const why = coldWhyNot(c, seqBy.get(lc(pk.email)), owner, today);
+    if (why) { out.pickedBlocked.push({ email: pk.email, why }); continue; }
+    if (out.items.filter(i => i.step === 1).length >= usage.remaining) { out.waitingForTomorrow = (out.waitingForTomorrow || 0) + 1; continue; }
     const prob = coldPickProblem(c.sector, problems, seqs);
     if (!prob) { out.noProblem++; continue; }
     const mail = coldBuild(1, c, owner, prob);
@@ -21183,6 +21200,7 @@ async function coldSendBatch(owner, wanted, actor) {
       if (item.step === 1) {
         next = { id: item.seqId, email: item.email, name: item.name || '', company: item.company || '', owner, sector: item.sector, problem_id: item.problemId, kind: item.kind || prev.kind || '', stage: 'Active', step: '1', started_at: today, last_sent_at: today, next_due: coldAddDays(today, COLD_DAYS[2]), closed_at: '', note: '' };
         firstTouchLeft--;
+        await coldPicksTable.remove(coldPickId(owner, item.email)).catch(() => {});
       } else if (item.step === 2) {
         next = { ...prev, step: '2', last_sent_at: today, next_due: coldAddDays(String(prev.started_at || today), COLD_DAYS[3]) };
         if (String(next.next_due) <= today) next.next_due = coldAddDays(today, 1);
@@ -21227,6 +21245,46 @@ app.post('/api/cold/send', async (req, res) => {
     if (!out.preview) auditLog(auditActorOf(req), 'sent', 'cold_outreach', owner, `${out.sent} sent, ${out.skipped} skipped, ${out.failed} failed`);
     res.json({ ok: true, ...out });
   } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+const coldPickId = (owner, email) => 'ck-' + crypto.createHash('sha1').update(lc(owner) + '|' + lc(email)).digest('hex').slice(0, 14);
+// Every Cold contact, with whether it can be picked and why not (57.3.2)
+app.get('/api/cold/contacts', async (req, res) => {
+  try {
+    const me = lc(actorOf(req));
+    const owner = isAdmin(req) && req.query.owner ? lc(req.query.owner) : me;
+    const [contacts, seqs, picks, sends] = await Promise.all([audResolve(), coldSeqTable.list().catch(() => []), coldPicksTable.list().catch(() => []), coldSendsTable.list().catch(() => [])]);
+    const today = rfxToday();
+    const seqBy = new Map(seqs.map(x => [lc(x.email), x]));
+    const picked = new Set(picks.filter(x => lc(x.owner) === owner).map(x => lc(x.email)));
+    const rows = contacts.filter(c => c.status === 'Cold' || seqBy.has(c.email)).map(c => {
+      const why = coldWhyNot(c, seqBy.get(c.email), owner, today);
+      return { email: c.email, name: c.name, company: c.company, jobTitle: c.jobTitle, kind: c.kind, owner: c.owner, sector: c.sector, status: c.status, picked: picked.has(c.email), ready: !why, why };
+    });
+    const usage = await coldUsage(owner, seqs, sends);
+    res.json({ owner, me, owners: isAdmin(req) ? audOwners() : [], canAct: coldCanAct(req, owner), usage, sectors: SECTORS.map(x => x.name), data: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Add or remove chosen contacts for an owner's batch
+app.post('/api/cold/pick', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const owner = lc(b.owner || actorOf(req));
+    if (!audOwnerOk(owner)) return res.status(400).json({ error: 'Unknown owner' });
+    if (!coldCanAct(req, owner)) return res.status(403).json({ error: 'You can only choose contacts for your own batch' });
+    const emails = (Array.isArray(b.emails) ? b.emails : []).map(lc).filter(audIsEmail).slice(0, 200);
+    if (!emails.length) return res.status(400).json({ error: 'Choose at least one contact' });
+    if (b.remove) { for (const e of emails) await coldPicksTable.remove(coldPickId(owner, e)).catch(() => {}); return res.json({ ok: true, removed: emails.length }); }
+    const [contacts, seqs] = await Promise.all([audResolve(), coldSeqTable.list().catch(() => [])]);
+    const by = new Map(contacts.map(c => [c.email, c])), seqBy = new Map(seqs.map(x => [lc(x.email), x]));
+    const today = rfxToday(), who = lc(actorOf(req));
+    let added = 0; const refused = [];
+    for (const e of emails) {
+      const why = coldWhyNot(by.get(e), seqBy.get(e), owner, today);
+      if (why) { refused.push({ email: e, why }); continue; }
+      await coldPicksTable.upsert({ id: coldPickId(owner, e), owner, email: e, picked_by: who, at: rfxNow() }); added++;
+    }
+    res.json({ ok: true, added, refused });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.get('/api/cold/sequences', async (req, res) => {
   try {
