@@ -123,7 +123,7 @@ const TABLE_GROUPS = {
   'Interviews': 'records', 'Templates': 'records', 'Activity': 'records', 'Invoice Charges': 'records',
   'Audit Log': 'system', 'Retention Reviews': 'system', 'Email Log': 'system', 'Engine Log': 'system', 'AI Usage': 'system', 'Settings': 'system', 'Suppression List': 'system',
   'Company Settings': 'clients', 'Contact Audience': 'clients',
-  'Gap Problems': 'clients', 'Gap Briefs': 'clients', 'Gap Sends': 'clients',
+  'Gap Problems': 'clients', 'Gap Briefs': 'clients', 'Gap Sends': 'clients', 'Cold Sequences': 'clients', 'Cold Sends': 'clients',
   'Users': 'auth',
 };
 const SIMPLE_TABLES = []; // every makeSimpleTable table, for import, copy back and the nightly backup
@@ -12096,6 +12096,7 @@ async function runDailyJob(skipBackup) {
   });
   // build 57.2: pick up new Gap Brief drafts from the repo, and carry over any approved brief that did not finish sending
   await step('gapBriefs', async () => ({ imported: await gapImportFromGithub('system').catch(e => ({ error: e.message })), ...(await gapSendDue()) }));
+  await step('coldRemind', coldRemind);
   await step('outboxTask', async () => {
     const n = (await emailOutboxTable.list()).filter(o => o.status === 'pending').length;
     if (!n) return 0;
@@ -16284,7 +16285,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '10 Nov 2026 - build 57.2.2 (Gap Briefs: rotating problem chart)';
+const SERVER_BUILD = '10 Nov 2026 - build 57.3 (Cold one-to-one Gap Brief outreach)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -20992,5 +20993,295 @@ app.get('/gap/:token', async (req, res) => {
     res.send(gapRender(b, gapContentOf(b), { web: true, owner: AUD_DEFAULT_OWNER }).html);
   } catch (e) { res.status(404).send('Not found'); }
 });
+
+/* =====================================================================
+   Build 57.3: Cold one-to-one Gap Brief outreach (Marketing > Cold Outreach)
+   Plain text, one to one, from the contact's account owner's own Microsoft 365 mailbox.
+   Day 0, day 4, day 9, then stop for 90 days. The last email offers the Gap Brief.
+   A person clicks "Approve and send" on the day's batch. Nothing goes without that click.
+   ===================================================================== */
+const coldSeqTable = makeSimpleTable({
+  tab: 'Cold Sequences',
+  header: ['id', 'email', 'name', 'company', 'owner', 'sector', 'problem_id', 'kind', 'stage', 'step', 'started_at', 'last_sent_at', 'next_due', 'closed_at', 'note', 'updated_by', 'updated_at'],
+  path: null,
+  label: 'Cold sequence',
+});
+const coldSendsTable = makeSimpleTable({
+  tab: 'Cold Sends',
+  header: ['id', 'seq_id', 'email', 'owner', 'step', 'subject', 'status', 'reason', 'message_id', 'day', 'at'],
+  path: null,
+  label: 'Cold send',
+});
+
+const COLD_GAP = 'cold-gap';
+const COLD_DAYS = { 2: 4, 3: 9 };       // day of the second and third email, counted from the first
+const COLD_LOCK_DAYS = 90;              // after the third email, leave them alone for this long
+const COLD_SEND_FROM_HOUR = 8, COLD_SEND_TO_HOUR = 18; // UK hours when a batch may be sent
+const COLD_PERSONAL = /@(gmail|googlemail|hotmail|outlook|live|msn|yahoo|ymail|icloud|me|mac|aol|btinternet|btopenworld|sky|talktalk|virginmedia|ntlworld|blueyonder|protonmail|proton|gmx|mail)\.[a-z.]+$/i;
+const coldDash = s => String(s || '').replace(/[–—]/g, '-');
+const coldAddDays = (iso, n) => { const d = new Date(String(iso).slice(0, 10) + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const coldDaysBetween = (a, b) => Math.round((new Date(String(b).slice(0, 10) + 'T12:00:00Z') - new Date(String(a).slice(0, 10) + 'T12:00:00Z')) / 86400000);
+const coldIsWeekday = () => { const w = new Date().toLocaleDateString('en-GB', { timeZone: 'Europe/London', weekday: 'short' }); return !['Sat', 'Sun'].includes(w); };
+const coldSeqId = email => 'cs-' + crypto.createHash('sha1').update(lc(email)).digest('hex').slice(0, 14);
+const coldSleep = ms => new Promise(r => setTimeout(r, ms));
+const coldCanAct = (req, owner) => isAdmin(req) || lc(actorOf(req)) === lc(owner);
+
+// Warm-up: 5 a day at the start, rising over two weeks to the normal daily cap (Email settings, default 20)
+function coldRamp(dayNumber, maxCap) {
+  const r = dayNumber <= 4 ? 5 : dayNumber <= 8 ? 8 : dayNumber <= 11 ? 12 : dayNumber <= 14 ? 15 : maxCap;
+  return Math.max(0, Math.min(r, maxCap));
+}
+
+const COLD_HOW = {
+  prospect: sector => `I came across your company while looking at businesses that are hiring in ${sector}.`,
+  lead: sector => `I found your details from public business information, such as your company website and LinkedIn, and your business looks relevant to ${sector} hiring.`,
+  other: sector => `I found your details from public business information, and your business looks relevant to ${sector} hiring.`,
+};
+function coldFirst(name) { return gapFirstName(name); }
+function coldFooterText(email, sector) {
+  return `\n\n--\nLive 2 Help Recruitment Ltd, registered in England and Wales, company number 11731080. 20 Chester Street, Wolverhampton, WV6 0PY. ${GAP_CLIENT_PHONE}\n` +
+    `I am writing to you one to one because hiring in ${String(sector).toLowerCase()} may be relevant to your role. If you would rather not hear from me, reply "no" or use this link and I will remove you straight away: ${unsubUrl(email)}`;
+}
+// Builds the plain text of one email in the sequence (without the footer, which the server always adds)
+function coldBuild(step, c, owner, prob) {
+  const sec = String(c.sector).toLowerCase();
+  const first = coldFirst(c.name);
+  const o = profileOf(owner);
+  const ownerFirst = String(o.fullName || owner).split(/\s+/)[0];
+  const qs = String(prob.questions || '').split(/\n+/).map(x => x.trim()).filter(Boolean);
+  const hi = first ? `Hi ${first},` : 'Hello,';
+  const sign = `Kind regards,\n${o.fullName || ownerFirst}\nLive 2 Help Recruitment\n${GAP_CLIENT_PHONE}`;
+  let subject, body;
+  if (step === 1) {
+    subject = `A quick question about hiring at ${c.company || 'your business'}`;
+    body = `${hi}\n\nI am ${ownerFirst} from Live 2 Help Recruitment. ${(COLD_HOW[c.kind] || COLD_HOW.other)(sec)}\n\n` +
+      `One thing we keep hearing from ${sec} employers: ${prob.problem} ${prob.impact}\n\n` +
+      (qs[0] ? `${qs[0]}\n\nA one line reply is all I need.` : 'Is that something you are seeing too? A one line reply is all I need.') + `\n\n${sign}`;
+  } else if (step === 2) {
+    subject = `Following up: hiring at ${c.company || 'your business'}`;
+    body = `${hi}\n\nI wrote a few days ago about hiring in ${sec}. In our experience the cause is usually this: ${prob.root_cause}\n\n` +
+      (qs[1] ? `${qs[1]}\n\nA one line reply is all I need.` : 'Does that sound familiar? A one line reply is all I need.') + `\n\n${sign}`;
+  } else {
+    subject = `Last note from me: a short ${sec} hiring brief`;
+    body = `${hi}\n\nThis is my last note for now. Every fortnight I send ${sec} employers a short Gap Brief: one current UK hiring figure, what the best employers do about it, and a 60 second check you can run on your own hiring.\n\n` +
+      `If that would be useful, reply "yes" and I will add you. If not, I will not contact you again for a while.\n\n${sign}`;
+  }
+  return { subject: coldDash(subject), text: coldDash(body) };
+}
+
+async function coldProblems() {
+  let rows = await gapProblemsTable.list().catch(() => []);
+  rows = rows.filter(p => p.active !== 'FALSE' && p.sector && p.problem);
+  if (!rows.length) {
+    try { rows = JSON.parse(fs.readFileSync(path.join(__dirname, 'gap-seed-problems.json'), 'utf8')).problems.map(p => ({ ...p, id: 'gp-' + p.id })); } catch (e) { rows = []; }
+  }
+  return rows;
+}
+// the least recently used problem for that sector in cold outreach, so the same company type does not keep seeing one topic
+function coldPickProblem(sector, problems, seqs) {
+  const list = problems.filter(p => p.sector === sector).sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  if (!list.length) return null;
+  const last = new Map();
+  seqs.forEach(s => { if (s.problem_id && s.started_at) last.set(s.problem_id, Math.max(last.get(s.problem_id) || 0, Date.parse(s.started_at) || 0)); });
+  return list.slice().sort((a, b) => (last.get(a.id) || 0) - (last.get(b.id) || 0))[0];
+}
+
+// Closes sequences whose contact has since become Warm or has opted out (idempotent)
+async function coldSweep(contacts, seqs) {
+  const by = new Map(contacts.map(c => [c.email, c]));
+  let closed = 0;
+  for (const s of seqs.filter(x => x.stage === 'Active')) {
+    const c = by.get(lc(s.email));
+    const why = !c ? '' : c.suppressed ? 'Opted out' : c.status === 'Warm' ? 'Moved to Warm' : '';
+    if (!why) continue;
+    Object.assign(s, { stage: why === 'Opted out' ? 'Stopped' : 'Warm', closed_at: rfxToday(), note: why, updated_by: 'system', updated_at: rfxNow() });
+    await coldSeqTable.upsert(s); closed++;
+  }
+  return closed;
+}
+
+async function coldUsage(owner, seqs, sends) {
+  const today = rfxToday();
+  const st = await mailSettings().catch(() => ({ outreachCap: 20 }));
+  const mine = sends.filter(x => lc(x.owner) === lc(owner) && x.status === 'sent');
+  const firsts = mine.filter(x => String(x.step) === '1').map(x => x.day).sort();
+  const dayNumber = firsts.length ? coldDaysBetween(firsts[0], today) + 1 : 1;
+  const cap = coldRamp(dayNumber, Number(st.outreachCap) || 20);
+  const brevo = (await mailCounts(lc(owner)).catch(() => ({ mineCold: 0 }))).mineCold || 0;
+  const used = mine.filter(x => String(x.step) === '1' && x.day === today).length + brevo;
+  return { cap, maxCap: Number(st.outreachCap) || 20, dayNumber, used, remaining: Math.max(0, cap - used) };
+}
+
+// Everything that could go today for one owner: follow-ups that are due, then new first-touch emails up to the cap
+async function coldBatch(owner) {
+  owner = lc(owner);
+  const [contacts, seqs, problems, sends] = await Promise.all([audResolve(), coldSeqTable.list().catch(() => []), coldProblems(), coldSendsTable.list().catch(() => [])]);
+  await coldSweep(contacts, seqs);
+  const today = rfxToday();
+  const usage = await coldUsage(owner, seqs, sends);
+  const out = { owner, today, weekday: coldIsWeekday(), usage, items: [], needSector: 0, noProblem: 0, personal: 0, note: '' };
+  if (!out.weekday) { out.note = 'Cold emails go Monday to Friday only.'; return out; }
+  const by = new Map(contacts.map(c => [c.email, c]));
+  const seqBy = new Map(seqs.map(s => [lc(s.email), s]));
+  // follow-ups
+  for (const s of seqs.filter(x => x.stage === 'Active' && lc(x.owner) === owner && Number(x.step) >= 1 && Number(x.step) < 3 && String(x.next_due) <= today)) {
+    const c = by.get(lc(s.email)); if (!c || c.suppressed || c.status !== 'Cold') continue;
+    const prob = problems.find(p => p.id === s.problem_id) || coldPickProblem(s.sector, problems, seqs); if (!prob) continue;
+    const step = Number(s.step) + 1;
+    const mail = coldBuild(step, { name: s.name || c.name, company: s.company || c.company, sector: s.sector, kind: c.kind }, owner, prob);
+    out.items.push({ key: lc(s.email) + '|' + step, email: lc(s.email), name: s.name || c.name, company: s.company || c.company, sector: s.sector, step, newSeq: false, seqId: s.id, problemId: prob.id, ...mail });
+  }
+  // new first-touch
+  const rank = k => (k === 'prospect' ? 0 : k === 'lead' ? 1 : 2);
+  const fresh = [];
+  for (const c of contacts) {
+    if (c.status !== 'Cold' || c.suppressed || c.route !== 'm365' || lc(c.owner) !== owner) continue;
+    const s = seqBy.get(c.email);
+    if (s && !(s.stage === 'Finished' && String(s.next_due) <= today)) continue;
+    if (COLD_PERSONAL.test(c.email)) { out.personal++; continue; }
+    if (!c.sector) { out.needSector++; continue; }
+    fresh.push(c);
+  }
+  fresh.sort((a, b) => rank(a.kind) - rank(b.kind) || (a.company || '~').localeCompare(b.company || '~') || a.email.localeCompare(b.email));
+  for (const c of fresh) {
+    if (out.items.filter(i => i.step === 1).length >= usage.remaining) break;
+    const prob = coldPickProblem(c.sector, problems, seqs);
+    if (!prob) { out.noProblem++; continue; }
+    const mail = coldBuild(1, c, owner, prob);
+    out.items.push({ key: c.email + '|1', email: c.email, name: c.name, company: c.company, sector: c.sector, step: 1, newSeq: true, seqId: coldSeqId(c.email), problemId: prob.id, kind: c.kind, ...mail });
+    // pretend this problem was just used so the next contact in the same sector gets the next one along
+    seqs.push({ problem_id: prob.id, started_at: rfxNow() });
+  }
+  out.items.forEach(i => { i.footer = coldFooterText(i.email, i.sector); });
+  return out;
+}
+
+async function coldSendBatch(owner, wanted, actor) {
+  if (isPreview()) return { preview: true, note: 'Preview workspace: nothing is sent from here' };
+  const h = gapHourUK();
+  if (!coldIsWeekday() || h < COLD_SEND_FROM_HOUR || h >= COLD_SEND_TO_HOUR) throw Object.assign(new Error(`Cold emails can be sent Monday to Friday between ${COLD_SEND_FROM_HOUR}:00 and ${COLD_SEND_TO_HOUR}:00 UK time.`), { status: 409 });
+  const batch = await coldBatch(owner);
+  const today = rfxToday();
+  const sender = profileOf(owner);
+  if (!sender.email) throw new Error('That person has no mailbox set up');
+  const res = { sent: 0, skipped: 0, failed: 0, stopped: '', errors: [] };
+  const take = (wanted || []).map(w => ({ w, item: batch.items.find(i => i.key === `${lc(w.email)}|${Number(w.step)}`) })).filter(x => x.item);
+  let firstTouchLeft = batch.usage.remaining;
+  for (const { w, item } of take) {
+    if (item.step === 1) { if (firstTouchLeft <= 0) { res.skipped++; continue; } }
+    const subject = coldDash(String(w.subject || item.subject)).trim().slice(0, 200) || item.subject;
+    const text = coldDash(String(w.text || item.text)).trim().slice(0, 4000) + item.footer;
+    const base = { id: rfxId('cx'), seq_id: item.seqId, email: item.email, owner, step: String(item.step), subject, day: today, at: rfxNow() };
+    try {
+      const out = await engineMail.send({
+        route: 'm365', from: sender.email, fromName: sender.fullName, replyTo: sender.email, to: item.email, subject, text,
+        kind: COLD_GAP, user: actor || 'system', meta: { ref: item.seqId, company: item.company },
+      });
+      await coldSendsTable.upsert({ ...base, status: 'sent', reason: '', message_id: out.messageId || '' });
+      const prev = (await coldSeqTable.list()).find(s => s.id === item.seqId) || {};
+      let next;
+      if (item.step === 1) {
+        next = { id: item.seqId, email: item.email, name: item.name || '', company: item.company || '', owner, sector: item.sector, problem_id: item.problemId, kind: item.kind || prev.kind || '', stage: 'Active', step: '1', started_at: today, last_sent_at: today, next_due: coldAddDays(today, COLD_DAYS[2]), closed_at: '', note: '' };
+        firstTouchLeft--;
+      } else if (item.step === 2) {
+        next = { ...prev, step: '2', last_sent_at: today, next_due: coldAddDays(String(prev.started_at || today), COLD_DAYS[3]) };
+        if (String(next.next_due) <= today) next.next_due = coldAddDays(today, 1);
+      } else {
+        next = { ...prev, stage: 'Finished', step: '3', last_sent_at: today, closed_at: today, next_due: coldAddDays(String(prev.started_at || today), COLD_LOCK_DAYS), note: 'Sequence finished' };
+      }
+      await coldSeqTable.upsert({ ...next, updated_by: actor || 'system', updated_at: rfxNow() });
+      res.sent++;
+      await coldSleep(1500);
+    } catch (e) {
+      if (e.status === 429) { res.stopped = e.message; break; }
+      if (e.status === 409) {
+        await coldSendsTable.upsert({ ...base, status: 'skipped', reason: e.message.slice(0, 200), message_id: '' });
+        if (!item.newSeq) { const s = (await coldSeqTable.list()).find(x => x.id === item.seqId); if (s) await coldSeqTable.upsert({ ...s, stage: 'Stopped', closed_at: today, note: 'Opted out', updated_by: 'system', updated_at: rfxNow() }); }
+        res.skipped++; continue;
+      }
+      await coldSendsTable.upsert({ ...base, status: 'failed', reason: String(e.message).slice(0, 200), message_id: '' }).catch(() => {});
+      res.failed++; res.errors.push(`${item.email}: ${e.message}`.slice(0, 200));
+    }
+  }
+  return res;
+}
+
+// ---- Routes ----
+app.get('/api/cold/batch', async (req, res) => {
+  try {
+    const me = lc(actorOf(req));
+    const owner = isAdmin(req) && req.query.owner ? lc(req.query.owner) : me;
+    if (!audOwnerOk(owner)) return res.status(400).json({ error: 'Unknown owner' });
+    const b = await coldBatch(owner);
+    res.json({ ...b, me, canAct: coldCanAct(req, owner), owners: isAdmin(req) ? audOwners() : [], preview: isPreview(), sendHours: [COLD_SEND_FROM_HOUR, COLD_SEND_TO_HOUR] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/cold/send', async (req, res) => {
+  try {
+    const owner = lc((req.body || {}).owner || actorOf(req));
+    if (!audOwnerOk(owner)) return res.status(400).json({ error: 'Unknown owner' });
+    if (!coldCanAct(req, owner)) return res.status(403).json({ error: 'You can only send your own batch' });
+    const items = Array.isArray((req.body || {}).items) ? req.body.items.slice(0, 60) : [];
+    if (!items.length) return res.status(400).json({ error: 'Tick at least one email to send' });
+    const out = await coldSendBatch(owner, items, lc(actorOf(req)));
+    if (!out.preview) auditLog(auditActorOf(req), 'sent', 'cold_outreach', owner, `${out.sent} sent, ${out.skipped} skipped, ${out.failed} failed`);
+    res.json({ ok: true, ...out });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+app.get('/api/cold/sequences', async (req, res) => {
+  try {
+    const me = lc(actorOf(req));
+    const rows = (await coldSeqTable.list()).filter(s => isAdmin(req) || lc(s.owner) === me);
+    const today = rfxToday();
+    const n = st => rows.filter(s => s.stage === st).length;
+    res.json({ today, me, admin: isAdmin(req), summary: { active: n('Active'), finished: n('Finished'), replied: n('Replied'), yes: n('Yes'), no: n('Not interested') },
+      data: rows.sort((a, b) => String(b.last_sent_at || '').localeCompare(String(a.last_sent_at || ''))).slice(0, 500) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Reply handling is manual: the person who gets the reply records it here
+app.post('/api/cold/sequences/:id/outcome', async (req, res) => {
+  try {
+    const s = (await coldSeqTable.list()).find(x => x.id === req.params.id);
+    if (!s) return res.status(404).json({ error: 'Not found' });
+    if (!coldCanAct(req, s.owner)) return res.status(403).json({ error: 'Only the owner or an admin can record this' });
+    const outcome = String((req.body || {}).outcome || '');
+    const who = lc(actorOf(req)), today = rfxToday();
+    if (outcome === 'replied') {
+      await coldSeqTable.upsert({ ...s, stage: 'Replied', closed_at: today, note: 'Replied. No more automatic emails.', updated_by: who, updated_at: rfxNow() });
+    } else if (outcome === 'yes') {
+      const e = lc(s.email);
+      const ex = (await contactAudienceTable.list()).find(a => lc(a.email) === e);
+      const base = ex || { id: 'ca-' + crypto.createHash('sha1').update(e).digest('hex').slice(0, 14), email: e };
+      await contactAudienceTable.upsert({ ...base, company: base.company || s.company, status: 'Warm', consent_source: 'Replied yes to cold email', consent_date: today,
+        consent_note: `Said yes to the Gap Brief offer in a cold email from ${s.owner}. Recorded by ${who}.`, unsubscribed_at: '',
+        sector: audSectors(base.sector).length ? base.sector : s.sector, updated_by: who, updated_at: rfxNow() });
+      await coldSeqTable.upsert({ ...s, stage: 'Yes', closed_at: today, note: 'Said yes. Now Warm with consent recorded.', updated_by: who, updated_at: rfxNow() });
+      auditLog(auditActorOf(req), 'updated', 'cold_outreach', s.email, 'said yes: now Warm, consent recorded');
+    } else if (outcome === 'no') {
+      await suppressionTable.upsert({ id: rfxId('sup'), email: lc(s.email), company: '', reason: 'Cold outreach: not interested', added_by: who, added_at: rfxNow() });
+      await coldSeqTable.upsert({ ...s, stage: 'Not interested', closed_at: today, note: 'Not interested. On the Do not email list.', updated_by: who, updated_at: rfxNow() });
+      auditLog(auditActorOf(req), 'created', 'suppression', s.email, 'cold outreach: not interested');
+    } else return res.status(400).json({ error: 'Unknown outcome' });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Morning reminder (runs inside the daily job): tell Dan and Ella if a batch is waiting
+async function coldRemind() {
+  if (isPreview() || !coldIsWeekday()) return { skipped: true };
+  const out = { sweeps: 0, reminded: [] };
+  for (const k of GAP_APPROVERS) {
+    const b = await coldBatch(k);
+    if (!b.items.length) continue;
+    const p = profileOf(k);
+    const nNew = b.items.filter(i => i.step === 1).length, nFol = b.items.length - nNew;
+    try {
+      await engineMail.send({ route: 'm365', from: profileOf('dan').email, fromName: 'Live 2 Help Workspace', to: p.email, subject: `${b.items.length} cold emails ready for your approval`,
+        text: `${nNew} new and ${nFol} follow-up cold email${b.items.length === 1 ? ' is' : 's are'} ready.\n\nOpen Marketing > Cold Outreach in the workspace, read them, and click Approve and send. Nothing goes without your click.`, kind: 'cold-reminder', user: 'system' });
+      out.reminded.push(k);
+    } catch (e) { console.error('Cold reminder failed for', k, e.message); }
+  }
+  return out;
+}
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

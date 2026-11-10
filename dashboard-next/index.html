@@ -17002,7 +17002,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '10 Nov 2026 - build 57.2.2 (rotating problem chart) preview';
+var PAGE_BUILD = '10 Nov 2026 - build 57.3 (Cold Outreach) preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -17164,7 +17164,7 @@ function buildTagApply(){
     {key:'recruitment', label:'Recruitment', tabs:['candidates','candidatePool','talentSuite','roles','interviews','placements','comms','feedback']},
     {key:'actions', label:'Actions', tabs:['tasks','week','roadmap']},
     {key:'results', label:'Results', tabs:['kpi','forecast','team','sourcing']},
-    {key:'marketing', label:'Marketing', tabs:['marketing','gapBriefs']},
+    {key:'marketing', label:'Marketing', tabs:['marketing','gapBriefs','coldOutreach']},
     {key:'people', label:'People', sect:'Team', tabs:['hr']},
     {key:'library', label:'Library', tabs:['library','templates']},
     {key:'admin', label:'Admin', tabs:['invoices','gdpr','audit'], adminOnly:true},
@@ -17173,7 +17173,7 @@ function buildTagApply(){
     clientComms:'Client comms', coldCalls:'Cold calls', referrals:'Referrals', funnelLeads:'Funnel leads', roleFinder:'Role Finder', competitors:'Competitors',
     candidates:'Candidate pipeline', candidatePool:'Talent pool', talentSuite:'Talent Suite', roles:'Roles', interviews:'Interviews', placements:'Placements', comms:'Candidate comms',
     feedback:'Client feedback', tasks:'Tasks', kpi:'KPIs and targets', forecast:'Forecast', team:'Team performance', sourcing:'Sourcing and costs',
-    hr:'People', library:'Documents', week:'This week', roadmap:'Roadmap', marketing:'Marketing', gapBriefs:'Gap Briefs', templates:'Email templates', invoices:'Invoices', gdpr:'Data and GDPR', audit:'Audit trail', home:'Overview', notifications:'Notifications'};
+    hr:'People', library:'Documents', week:'This week', roadmap:'Roadmap', marketing:'Marketing', gapBriefs:'Gap Briefs', coldOutreach:'Cold Outreach', templates:'Email templates', invoices:'Invoices', gdpr:'Data and GDPR', audit:'Audit trail', home:'Overview', notifications:'Notifications'};
 
   if(typeof TAB_GROUPS !== 'undefined'){
     TAB_GROUPS.length = 0;
@@ -17211,6 +17211,7 @@ function buildTagApply(){
   addView('audienceView', `<div class="view-head"><div><h2>Audience</h2><div class="sub">Who owns each account, which sector it is in, and who has agreed to hear from us. This drives who gets each Gap Brief and who sends it.</div></div></div><div class="view-body" id="aud57Body"><div class="p41-empty">Loading...</div></div>`);
   addView('marketingView', `<div class="view-head"><div><h2>Marketing</h2><div class="sub">LinkedIn posts, Brevo outreach workflows, lead magnets and events in one place.</div></div><div class="p41-bar" id="mk41Add"></div></div><div class="view-body"><div class="p41-tabs" id="mk41Tabs"></div><div id="mk41Body"><div class="p41-empty">Loading...</div></div></div>`);
   addView('gapBriefsView', `<div class="view-head"><div><h2>Gap Briefs</h2><div class="sub">The fortnightly briefs for each sector: draft on Sunday, approve on Monday, send on Tuesday at 10:00. Nothing sends without approval.</div></div></div><div class="view-body" id="gb57Body"><div class="p41-empty">Loading...</div></div>`);
+  addView('coldOutreachView', `<div class="view-head"><div><h2>Cold Outreach</h2><div class="sub">One to one emails to Cold contacts from your own mailbox: day 0, day 4, day 9, then stop for 90 days. You approve each day's batch.</div></div></div><div class="view-body" id="co57Body"><div class="p41-empty">Loading...</div></div>`);
   if(!$('viewer41')){ const v = document.createElement('div'); v.id = 'viewer41'; v.innerHTML = '<div class="bk" data-vw41="close"></div><div class="vw" role="dialog" aria-modal="true"><div class="vh"><b id="vw41Title"></b><span class="sp"></span><button class="p41-btn sm" id="vw41Dl">Download</button><button class="p41-btn sm" data-vw41="close">Close</button></div><div class="vb" id="vw41Body"></div></div>'; document.body.appendChild(v); }
   if(!$('rec41')){ const v = document.createElement('div'); v.id = 'rec41'; v.innerHTML = '<div class="bk" data-rec41="close"></div><div class="rp" role="dialog" aria-modal="true" id="rec41Body"></div>'; document.body.appendChild(v); }
   if(!$('drawer41')){ const d = document.createElement('div'); d.id = 'drawer41'; d.innerHTML = '<div class="bk" data-x41="close"></div><aside role="dialog" aria-modal="true" id="drawer41Body"></aside>'; document.body.appendChild(d); }
@@ -17288,6 +17289,7 @@ function buildTagApply(){
     if(tab === 'roadmap') roadLoad();
     if(tab === 'marketing') mktLoad();
     if(tab === 'gapBriefs') gb57Load();
+    if(tab === 'coldOutreach') co57Load();
     if(tab === 'candidates') roleBar41();
   };
   const _si = signIn;
@@ -17300,7 +17302,7 @@ function buildTagApply(){
     const sw = $('splashWelcome'); if(sw) sw.innerHTML = 'Welcome back, <span>' + h(user.name) + '</span>';
     setTimeout(() => { if(!$('app').classList.contains('visible')) chooseHome(); }, 1700);
   };
-  const NEW_VIEWS41 = ['crmAccounts','audience','hr','library','week','roadmap','marketing','gapBriefs'];
+  const NEW_VIEWS41 = ['crmAccounts','audience','hr','library','week','roadmap','marketing','gapBriefs','coldOutreach'];
   document.title = 'Live 2 Help Workspace';
 
   /* ---------------- CRM: Accounts ---------------- */
@@ -19627,7 +19629,8 @@ function gb57Fortnight(){
   const d = GB.data, edit = d.canEdit, rows = gb57Current();
   let h = '<div class="p41-bar" style="gap:8px;flex-wrap:wrap;">' +
     (edit ? '<button class="p41-btn sm" onclick="gb57Github(this)">Check for new drafts</button><button class="p41-btn sm" onclick="gb57Paste()">Paste drafts</button>' : '') +
-    (d.canSend && rows.some(b => b.status === 'Approved' && b.sendDate <= d.today) ? '<button class="p41-btn pri sm" onclick="gb57SendNow(this)">Send approved briefs now</button>' : '') + '</div>';
+    (d.canSend && rows.some(b => b.status === 'Approved' && b.sendDate <= d.today) ? '<button class="p41-btn pri sm" onclick="gb57SendNow(this)">Send approved briefs now</button>' : '') + '</div>' +
+    (GB.checkNote ? '<div class="p41-note" style="margin-top:8px;">' + esc(GB.checkNote) + '</div>' : '');
   if(d.preview) h += '<div class="p41-note">This is the preview workspace. Nothing is ever sent from here.</div>';
   if(!rows.length) return h + '<div class="p41-empty">No briefs are waiting. The Sunday task drafts the next issue, or use Check for new drafts or Paste drafts.</div>';
   const n = s => rows.filter(b => b.status === s).length;
@@ -19717,9 +19720,17 @@ async function gb57EditGo(id, btn){
   catch(e){ showToast(e.message); btn.disabled = false; }
 }
 async function gb57Github(btn){
-  btn.disabled = true;
-  try{ const j = await b2Post('/api/gap/import-github', {}); showToast(j.created ? j.created + ' new draft' + (j.created === 1 ? '' : 's') + ' found' : 'No new drafts found' + (j.errors && j.errors.length ? ': ' + j.errors[0] : '')); await gb57Load(true); }
-  catch(e){ showToast(e.message); btn.disabled = false; }
+  btn.disabled = true; btn.textContent = 'Checking...';
+  const t = new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+  try{
+    const j = await b2Post('/api/gap/import-github', {});
+    GB.checkNote = j.created ? 'Checked at ' + t + ': ' + j.created + ' new draft' + (j.created === 1 ? '' : 's') + ' imported.'
+      : j.files ? 'Checked at ' + t + ': ' + j.files + ' draft file' + (j.files === 1 ? '' : 's') + ' found and nothing new to import.'
+      : 'Checked at ' + t + ': no draft files in the repo yet. The first drafts arrive after the Sunday task runs (Sun 15 Nov).';
+    if(j.errors && j.errors.length) GB.checkNote += ' Problem: ' + j.errors[0];
+  }catch(e){ GB.checkNote = 'Check failed at ' + t + ': ' + e.message; }
+  showToast(GB.checkNote);
+  await gb57Load(true);
 }
 function gb57Paste(){
   gbModal('<h3 style="margin:0 0 8px;">Paste drafts</h3><div class="b46-sub" style="margin-bottom:8px;">Paste the issue file the drafting task produced (JSON with issue, sendDate and briefs). Briefs already here are left alone unless you tick replace, which only replaces drafts and held briefs.</div>' +
@@ -19787,6 +19798,95 @@ async function gb57Popup(){
       '<div class="p41-bar" style="margin-top:14px;"><button class="p41-btn pri" onclick="gbClose();switchTab(\'gapBriefs\')">Review now</button><button class="p41-btn" onclick="gbClose()">Later</button></div>');
   }catch(e){ /* the pop-up is a convenience; the Gap Briefs tab still works */ }
 }
+/* ---------------- Page build 57.3: Marketing > Cold Outreach (one to one, approve the day's batch) ---------------- */
+var CO = { tab:'batch', batch:null, seqs:null, err:'', owner:'', busy:false };
+async function co57Load(force){
+  const body = document.getElementById('co57Body'); if(!body) return;
+  if(!CO.batch || force) body.innerHTML = '<div class="p41-empty">Loading...</div>';
+  try{
+    const [b, s] = await Promise.all([b2Api('/api/cold/batch' + (CO.owner ? '?owner=' + encodeURIComponent(CO.owner) : '')), b2Api('/api/cold/sequences')]);
+    CO.batch = b; CO.seqs = s; CO.err = '';
+    if(!CO.owner) CO.owner = b.owner;
+  }catch(e){ CO.err = e.message; }
+  co57Render();
+}
+function co57Tab(t){ CO.tab = t; co57Render(); }
+function co57Owner(v){ CO.owner = v; co57Load(true); }
+function co57Render(){
+  const body = document.getElementById('co57Body'); if(!body) return;
+  if(CO.err){ body.innerHTML = '<div class="p41-note">Cold Outreach could not be loaded. ' + esc(CO.err) + '</div>'; return; }
+  const tab = (k, l) => '<button class="p41-chip" aria-pressed="' + (CO.tab === k) + '" onclick="co57Tab(\'' + k + '\')">' + l + '</button>';
+  body.innerHTML = '<div class="p41-tabs">' + tab('batch', "Today's batch") + tab('seqs', 'Sequences') + tab('how', 'How it works') + '</div>' +
+    (CO.tab === 'batch' ? co57Batch() : CO.tab === 'seqs' ? co57Seqs() : co57How());
+}
+function co57StepLabel(n){ return n === 1 ? 'First email' : n === 2 ? 'Follow-up (day 4)' : 'Last email: Gap Brief offer (day 9)'; }
+function co57Batch(){
+  const b = CO.batch, u = b.usage;
+  let h = '<div class="p41-bar" style="gap:10px;flex-wrap:wrap;align-items:center;">';
+  if(b.owners && b.owners.length > 1) h += '<label class="b46-sub">Batch for <select onchange="co57Owner(this.value)">' + b.owners.map(o => '<option value="' + esc(o.key) + '"' + (o.key === b.owner ? ' selected' : '') + '>' + esc(o.name) + '</option>').join('') + '</select></label>';
+  h += '<span class="b46-sub">New first emails today: <b>' + u.used + ' of ' + u.cap + '</b> (warm-up day ' + u.dayNumber + (u.cap < u.maxCap ? ', rising to ' + u.maxCap + ' a day' : '') + ')</span></div>';
+  if(b.preview) h += '<div class="p41-note">This is the preview workspace. Nothing is ever sent from here.</div>';
+  if(b.note) h += '<div class="p41-note">' + esc(b.note) + '</div>';
+  const skipped = [];
+  if(b.needSector) skipped.push(b.needSector + ' cold contact' + (b.needSector === 1 ? ' has' : 's have') + ' no sector yet (set one under CRM > Audience)');
+  if(b.personal) skipped.push(b.personal + ' personal email address' + (b.personal === 1 ? ' is' : 'es are') + ' left out');
+  if(b.noProblem) skipped.push(b.noProblem + ' have no problem in the chart for their sector');
+  if(skipped.length) h += '<div class="b46-sub" style="margin:6px 0;">Not in this batch: ' + esc(skipped.join('; ')) + '.</div>';
+  if(!b.items.length) return h + '<div class="p41-empty">' + (u.remaining <= 0 && b.weekday ? 'Today\'s limit of new first emails has been reached and no follow-ups are due.' : 'Nothing is ready to send today.') + '</div>';
+  const nNew = b.items.filter(i => i.step === 1).length;
+  h += '<div class="p41-panel" style="margin:8px 0;"><b>' + b.items.length + ' email' + (b.items.length === 1 ? '' : 's') + ' ready</b> (' + nNew + ' new, ' + (b.items.length - nNew) + ' follow-up). Read them, untick any you do not want, edit if you like, then approve. Each goes one to one from <b>' + esc(b.owner) + '</b>\'s own mailbox. The footer with company details and the opt-out line is always added.</div>';
+  b.items.forEach((i, n) => {
+    h += '<div class="p41-panel" style="margin:8px 0;"><label style="display:flex;gap:8px;align-items:center;"><input type="checkbox" id="co57C' + n + '" checked> <b>' + esc(i.company || i.email) + '</b> &middot; ' + esc(i.name || i.email) + ' &middot; ' + esc(i.sector) + ' &middot; <span class="b46-sub">' + co57StepLabel(i.step) + '</span></label>' +
+      '<div class="b46-sub" style="margin:4px 0;">' + esc(i.email) + '</div>' +
+      '<input id="co57S' + n + '" style="width:100%;margin-bottom:6px;" value="' + esc(i.subject) + '">' +
+      '<textarea id="co57T' + n + '" rows="11" style="width:100%;font-size:13px;">' + esc(i.text) + '</textarea>' +
+      '<details style="margin-top:4px;"><summary class="b46-sub">Footer added automatically</summary><pre style="white-space:pre-wrap;font-size:12px;color:#555;">' + esc(i.footer.trim()) + '</pre></details></div>';
+  });
+  if(b.canAct && !b.preview) h += '<div class="p41-bar" style="margin-top:12px;"><button class="p41-btn pri" ' + (CO.busy ? 'disabled' : '') + ' onclick="co57Send(this)">Approve and send the ticked emails</button><span class="b46-sub">Sends now, Monday to Friday between ' + b.sendHours[0] + ':00 and ' + b.sendHours[1] + ':00.</span></div>';
+  else if(!b.canAct) h += '<div class="p41-note">You are viewing someone else\'s batch. Only they can send it.</div>';
+  return h;
+}
+async function co57Send(btn){
+  const b = CO.batch, items = [];
+  b.items.forEach((i, n) => { const c = document.getElementById('co57C' + n); if(c && c.checked) items.push({ email:i.email, step:i.step, subject:b2Val('co57S' + n), text:b2Val('co57T' + n) }); });
+  if(!items.length){ showToast('Tick at least one email.'); return; }
+  if(!confirm('Send ' + items.length + ' email' + (items.length === 1 ? '' : 's') + ' now, one to one from ' + b.owner + '\'s mailbox?')) return;
+  btn.disabled = true; CO.busy = true;
+  try{
+    const r = await b2Post('/api/cold/send', { owner:b.owner, items });
+    showToast(r.preview ? r.note : r.sent + ' sent, ' + r.skipped + ' skipped, ' + r.failed + ' failed' + (r.stopped ? '. Stopped: ' + r.stopped : '') + (r.errors && r.errors.length ? '. ' + r.errors[0] : ''));
+  }catch(e){ showToast(e.message); }
+  CO.busy = false; await co57Load(true);
+}
+function co57Seqs(){
+  const s = CO.seqs, d = s.data;
+  let h = '<div class="b46-sub" style="margin:6px 0 10px;">' + s.summary.active + ' active &middot; ' + s.summary.finished + ' finished &middot; ' + s.summary.replied + ' replied &middot; ' + s.summary.yes + ' said yes &middot; ' + s.summary.no + ' not interested. Record replies here so nobody gets another email after they have answered.</div>';
+  if(!d.length) return h + '<div class="p41-empty">No sequences yet. They start when the first batch is sent.</div>';
+  h += '<table class="b46-tbl"><tr><th>Contact</th><th>Company</th>' + (s.admin ? '<th>Owner</th>' : '') + '<th>Sector</th><th>Stage</th><th>Emails sent</th><th>Next</th><th></th></tr>';
+  d.forEach(x => {
+    const open = x.stage === 'Active' || x.stage === 'Finished';
+    h += '<tr><td>' + esc(x.name || '') + '<div class="b46-sub">' + esc(x.email) + '</div></td><td>' + esc(x.company) + '</td>' + (s.admin ? '<td>' + esc(x.owner) + '</td>' : '') + '<td>' + esc(x.sector) + '</td><td>' + esc(x.stage) + (x.note && !open ? '<div class="b46-sub">' + esc(x.note) + '</div>' : '') + '</td><td>' + esc(x.step) + ' of 3</td><td>' + (x.stage === 'Active' ? esc(gbDate(x.next_due)) : x.stage === 'Finished' ? 'Again after ' + esc(gbDate(x.next_due)) : '') + '</td><td>' +
+      (open ? '<button class="p41-btn sm" onclick="co57Outcome(\'' + esc(x.id) + '\',\'replied\')">Replied</button> <button class="p41-btn sm" onclick="co57Outcome(\'' + esc(x.id) + '\',\'yes\')">Yes, add me</button> <button class="p41-btn sm" onclick="co57Outcome(\'' + esc(x.id) + '\',\'no\')">Not interested</button>' : '') + '</td></tr>';
+  });
+  return h + '</table>';
+}
+async function co57Outcome(id, outcome){
+  const msg = outcome === 'yes' ? 'Record that they said yes? They become Warm with consent recorded and join the fortnightly Gap Brief.' : outcome === 'no' ? 'Record not interested? They go on the Do not email list.' : 'Record that they replied? No more automatic emails go to them.';
+  if(!confirm(msg)) return;
+  try{ await b2Post('/api/cold/sequences/' + encodeURIComponent(id) + '/outcome', { outcome }); showToast('Recorded.'); await co57Load(true); }
+  catch(e){ showToast(e.message); }
+}
+function co57How(){
+  return '<div class="p41-panel"><ul style="margin:0;padding-left:18px;line-height:1.6;">' +
+    '<li>Who: Cold contacts only (Lead Clients and Role Finder prospects) who have a sector, a company email address and are not on the Do not email list. Personal addresses such as Gmail are left out.</li>' +
+    '<li>What: three plain text emails, one to one, from the contact\'s account owner\'s own mailbox. Day 0 a problem and one question, day 4 the cause and a second question, day 9 the offer of the fortnightly Gap Brief. Then nothing for 90 days.</li>' +
+    '<li>The problem comes from the Problem chart, the one used longest ago for that sector.</li>' +
+    '<li>Volume: starts at 5 new first emails a day per mailbox, rising over two weeks to the normal daily limit. Follow-ups do not count towards it.</li>' +
+    '<li>You approve each day\'s batch. Nothing sends without your click, and you can edit or untick any email.</li>' +
+    '<li>Replies are recorded by hand under Sequences. Yes moves the contact to Warm with consent recorded. Not interested puts them on the Do not email list. Anyone who unsubscribes, replies "no" or becomes Warm is dropped automatically.</li>' +
+    '<li>Every email carries the company details and a one-click opt-out.</li></ul></div>';
+}
+
 /* ---------------- Page build 57.0: new email engine test panel (Brevo above is unchanged) ---------------- */
 function useEngineHtml(){
   const e = USE.engine || {};
