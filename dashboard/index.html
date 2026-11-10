@@ -16966,7 +16966,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '9 Nov 2026 - build 57.0 (new email engine test panel)';
+var PAGE_BUILD = '10 Nov 2026 - build 57.1 (audience, consent, SNS and unsubscribe)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -17123,7 +17123,7 @@ function buildTagApply(){
   };
   const GROUPS41 = [
     {key:'today', label:'Today', sect:'Work', tabs:['home','notifications']},
-    {key:'crm', label:'CRM', tabs:['crmAccounts','clients','leadClients','leadPipeline','clientHealth','clientComms','coldCalls','referrals','funnelLeads']},
+    {key:'crm', label:'CRM', tabs:['crmAccounts','audience','clients','leadClients','leadPipeline','clientHealth','clientComms','coldCalls','referrals','funnelLeads']},
     {key:'prospecting', label:'Lead Generation', tabs:['roleFinder','competitors']},
     {key:'recruitment', label:'Recruitment', tabs:['candidates','candidatePool','talentSuite','roles','interviews','placements','comms','feedback']},
     {key:'actions', label:'Actions', tabs:['tasks','week','roadmap']},
@@ -17133,7 +17133,7 @@ function buildTagApply(){
     {key:'library', label:'Library', tabs:['library','templates']},
     {key:'admin', label:'Admin', tabs:['invoices','gdpr','audit'], adminOnly:true},
   ];
-  const TAB_LABELS = {crmAccounts:'Accounts', clients:'Clients', leadClients:'Lead clients', leadPipeline:'Pipeline', clientHealth:'Client health',
+  const TAB_LABELS = {crmAccounts:'Accounts', audience:'Audience', clients:'Clients', leadClients:'Lead clients', leadPipeline:'Pipeline', clientHealth:'Client health',
     clientComms:'Client comms', coldCalls:'Cold calls', referrals:'Referrals', funnelLeads:'Funnel leads', roleFinder:'Role Finder', competitors:'Competitors',
     candidates:'Candidate pipeline', candidatePool:'Talent pool', talentSuite:'Talent Suite', roles:'Roles', interviews:'Interviews', placements:'Placements', comms:'Candidate comms',
     feedback:'Client feedback', tasks:'Tasks', kpi:'KPIs and targets', forecast:'Forecast', team:'Team performance', sourcing:'Sourcing and costs',
@@ -17146,7 +17146,7 @@ function buildTagApply(){
 
   // tab buttons for the new views, and friendlier labels on existing ones
   const tabsBar = $('tabs');
-  [['crmAccounts','Accounts','clients'], ['hr','People',null], ['library','Documents','templates'], ['week','This week',null], ['roadmap','Roadmap',null], ['marketing','Marketing',null]].forEach(([key, label, before]) => {
+  [['crmAccounts','Accounts','clients'], ['audience','Audience','clients'], ['hr','People',null], ['library','Documents','templates'], ['week','This week',null], ['roadmap','Roadmap',null], ['marketing','Marketing',null]].forEach(([key, label, before]) => {
     if(!tabsBar || tabsBar.querySelector('.tab-btn[data-tab="' + key + '"]')) return;
     const b = document.createElement('button');
     b.className = 'tab-btn'; b.dataset.tab = key; b.textContent = label;
@@ -17172,6 +17172,7 @@ function buildTagApply(){
     <div class="view-body" id="lib41Body"><div class="p41-empty">Loading...</div></div>`);
   addView('weekView', `<div class="view-head"><div><h2>This week</h2><div class="sub">The plan for each day. Add what you will work on, tick it off when done. Tasks due that day show automatically.</div></div><div class="p41-bar" id="wk41Nav"></div></div><div class="view-body" id="wk41Body"><div class="p41-empty">Loading...</div></div>`);
   addView('roadmapView', `<div class="view-head"><div><h2>Roadmap</h2><div class="sub">Bigger pieces of work and when they are planned. Move them from Later to Now to Done.</div></div><div class="p41-bar"><button class="gold-btn" data-rec-new="road">+ Add to roadmap</button></div></div><div class="view-body" id="rd41Body"><div class="p41-empty">Loading...</div></div>`);
+  addView('audienceView', `<div class="view-head"><div><h2>Audience</h2><div class="sub">Who owns each account, which sector it is in, and who has agreed to hear from us. This drives who gets each Gap Brief and who sends it.</div></div></div><div class="view-body" id="aud57Body"><div class="p41-empty">Loading...</div></div>`);
   addView('marketingView', `<div class="view-head"><div><h2>Marketing</h2><div class="sub">LinkedIn posts, Brevo outreach workflows, lead magnets and events in one place.</div></div><div class="p41-bar" id="mk41Add"></div></div><div class="view-body"><div class="p41-tabs" id="mk41Tabs"></div><div id="mk41Body"><div class="p41-empty">Loading...</div></div></div>`);
   if(!$('viewer41')){ const v = document.createElement('div'); v.id = 'viewer41'; v.innerHTML = '<div class="bk" data-vw41="close"></div><div class="vw" role="dialog" aria-modal="true"><div class="vh"><b id="vw41Title"></b><span class="sp"></span><button class="p41-btn sm" id="vw41Dl">Download</button><button class="p41-btn sm" data-vw41="close">Close</button></div><div class="vb" id="vw41Body"></div></div>'; document.body.appendChild(v); }
   if(!$('rec41')){ const v = document.createElement('div'); v.id = 'rec41'; v.innerHTML = '<div class="bk" data-rec41="close"></div><div class="rp" role="dialog" aria-modal="true" id="rec41Body"></div>'; document.body.appendChild(v); }
@@ -17241,6 +17242,7 @@ function buildTagApply(){
     if(NEW_VIEWS41.includes(tab) && $('candidatesView')) $('candidatesView').style.display = 'none';
     setTitle(tab);
     if(tab === 'crmAccounts') crmLoad();
+    if(tab === 'audience') audLoad();
     if(tab === 'hr') hrLoad();
     if(tab === 'library') libLoad();
     if(tab === 'home') homeGlance();
@@ -17259,7 +17261,7 @@ function buildTagApply(){
     const sw = $('splashWelcome'); if(sw) sw.innerHTML = 'Welcome back, <span>' + h(user.name) + '</span>';
     setTimeout(() => { if(!$('app').classList.contains('visible')) chooseHome(); }, 1700);
   };
-  const NEW_VIEWS41 = ['crmAccounts','hr','library','week','roadmap','marketing'];
+  const NEW_VIEWS41 = ['crmAccounts','audience','hr','library','week','roadmap','marketing'];
   document.title = 'Live 2 Help Workspace';
 
   /* ---------------- CRM: Accounts ---------------- */
@@ -19295,11 +19297,213 @@ function useMailHtml(admin){
     ((m.recent || []).map(r => '<tr><td>' + esc(new Date(r.at).toLocaleString('en-GB', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})) + '</td>' + (admin ? '<td>' + esc(userLabel(r.user)) + '</td>' : '') + '<td>' + esc(r.to) + '</td><td>' + esc(r.subject) + '</td><td>' + esc(MAIL_KIND_LABEL[r.kind] || r.kind) + '</td><td>' + esc(String(r.status || '').replace(/_/g, ' ')) + '</td></tr>').join('') || '<tr><td colspan="6" class="b46-sub">No emails sent through the dashboard yet.</td></tr>') + '</table>';
   return h;
 }
+/* ---------------- Page build 57.1: Audience (account owner, sector, consent, recipient picker) ---------------- */
+var AUD = { meta:null, data:null, tab:'companies', q:'', fSector:'', fOwner:'', fStatus:'', fKind:'', sel:{}, sug:null, err:'', pick:null };
+var AUD_KINDS = {client:'Client', lead:'Lead', prospect:'Role Finder prospect', toolkit:'Hiring Toolkit lead', talent:'Talent Suite user', other:'Other'};
+function audAdmin(){ return !!(typeof signedInUser !== 'undefined' && signedInUser && signedInUser.admin); }
+function audPut(path, body){ return b2Api(path, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); }
+function audOwnerName(k){ const o = ((AUD.meta||{}).owners||[]).find(x => x.key === k); return o ? o.name : k; }
+async function audLoad(force){
+  const body = document.getElementById('aud57Body'); if(!body) return;
+  if(!AUD.data || force) body.innerHTML = '<div class="p41-empty">Loading...</div>';
+  try{
+    const [m, d] = await Promise.all([b2Api('/api/audience/meta'), b2Api('/api/audience')]);
+    AUD.meta = m; AUD.data = d; AUD.err = '';
+  }catch(e){ AUD.err = e.message; }
+  audRender();
+}
+function audOpts(list, cur, blank){ return (blank != null ? '<option value="">' + esc(blank) + '</option>' : '') + list.map(x => { const v = typeof x === 'string' ? x : (x.key || x.name), l = typeof x === 'string' ? x : x.name; return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(l) + '</option>'; }).join(''); }
+function audRender(){
+  const body = document.getElementById('aud57Body'); if(!body) return;
+  if(AUD.err) { body.innerHTML = '<div class="p41-note">The audience could not be loaded. ' + esc(AUD.err) + '</div>'; return; }
+  const d = AUD.data, m = AUD.meta, t = d.totals, admin = audAdmin();
+  let h = '<div class="p41-bar" style="gap:14px;">' +
+    [['Contacts', t.contacts], ['Warm and ready', t.warm], ['Cold', t.cold], ['Need consent recorded', t.needsRecording], ['Opted out or bounced', t.suppressed], ['Companies with no sector', t.companiesNoSector]]
+      .map(x => '<div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:8px 14px;min-width:110px;"><div style="font-size:20px;font-weight:600;color:var(--navy);">' + x[1] + '</div><div class="b46-sub">' + x[0] + '</div></div>').join('') +
+    '</div>';
+  if(t.needsRecording && admin) h += '<div class="p41-note" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;"><span>' + t.needsRecording + ' client contact' + (t.needsRecording === 1 ? ' has' : 's have') + ' no consent recorded yet. Clients are Warm, so record the source "Client" and today\'s date on each.</span><button class="p41-btn pri sm" onclick="audApplyDefaults(this)">Record consent for client contacts</button></div>';
+  h += '<div class="p41-tabs"><button class="p41-chip" aria-pressed="' + (AUD.tab === 'companies') + '" onclick="audTab(\'companies\')">Companies</button><button class="p41-chip" aria-pressed="' + (AUD.tab === 'contacts') + '" onclick="audTab(\'contacts\')">Contacts and consent</button><button class="p41-chip" aria-pressed="' + (AUD.tab === 'picker') + '" onclick="audTab(\'picker\')">Recipient picker</button></div>';
+  h += AUD.tab === 'companies' ? audCompaniesHtml(d, m, admin) : AUD.tab === 'contacts' ? audContactsHtml(d, m, admin) : audPickerHtml(d, m);
+  body.innerHTML = h;
+}
+function audTab(t){ AUD.tab = t; audRender(); }
+function audFilterBar(m, withStatus){
+  return '<div class="p41-bar"><input id="audQ" placeholder="Search company, name or email" value="' + esc(AUD.q) + '" oninput="AUD.q=this.value;audRerunList()" style="min-width:220px;">' +
+    '<select onchange="AUD.fSector=this.value;audRender()">' + audOpts(m.sectors.map(s => s.name), AUD.fSector, 'All sectors').replace('</option>', '</option><option value="__none"' + (AUD.fSector === '__none' ? ' selected' : '') + '>No sector</option>') + '</select>' +
+    '<select onchange="AUD.fOwner=this.value;audRender()">' + audOpts(m.owners, AUD.fOwner, 'All owners') + '</select>' +
+    (withStatus ? '<select onchange="AUD.fStatus=this.value;audRender()">' + audOpts(['Warm', 'Cold'], AUD.fStatus, 'Warm and Cold') + '</select>' +
+    '<select onchange="AUD.fKind=this.value;audRender()">' + audOpts(Object.keys(AUD_KINDS).map(k => ({key:k, name:AUD_KINDS[k]})), AUD.fKind, 'All sources') + '</select>' : '') + '</div>';
+}
+function audRerunList(){ const el = document.getElementById('audList'); if(el){ el.innerHTML = AUD.tab === 'companies' ? audCompanyRows() : AUD.tab === 'contacts' ? audContactRows() : audPickCompanyRows(); } }
+function audMatch(o, fields){
+  const q = AUD.q.trim().toLowerCase();
+  if(q && !fields.some(f => String(o[f] || '').toLowerCase().includes(q))) return false;
+  if(AUD.fSector === '__none' ? o.sector : (AUD.fSector && o.sector !== AUD.fSector)) return false;
+  const own = o.ownerShown || o.owner;
+  if(AUD.fOwner && own !== AUD.fOwner) return false;
+  return true;
+}
+function audCompaniesHtml(d, m, admin){
+  let h = audFilterBar(m, false);
+  if(admin) h += '<div class="p41-bar" id="audBulk" style="background:var(--lightbg);border:1px solid var(--border);border-radius:8px;padding:8px 10px;"><b id="audSelN">' + Object.keys(AUD.sel).length + ' selected</b>' +
+    '<select id="audBulkOwner">' + audOpts(m.owners, '', 'Set owner...') + '</select><button class="p41-btn sm" onclick="audBulk(\'owner\')">Apply owner</button>' +
+    '<select id="audBulkSector">' + audOpts(m.sectors.map(s => s.name), '', 'Set sector...') + '</select><button class="p41-btn sm" onclick="audBulk(\'sector\')">Apply sector</button>' +
+    '<button class="p41-btn sm" onclick="audSelAll(true)">Select shown</button><button class="p41-btn sm" onclick="audSelAll(false)">Clear</button>' +
+    '<span style="flex:1"></span><button class="p41-btn sm" onclick="audSuggest(this)">Suggest sectors for companies with none</button></div>';
+  if(AUD.sug) h += audSuggestHtml(m);
+  h += '<div class="b46-sub">A contact uses its company\'s owner and sector unless it has its own. A blank owner means ' + esc(audOwnerName(m.defaultOwner)) + '.</div><table class="b46-tbl"><tr>' + (admin ? '<th></th>' : '') + '<th>Company</th><th>Owner</th><th>Sector</th><th>Contacts</th><th>Warm</th></tr><tbody id="audList">' + audCompanyRows() + '</tbody></table>';
+  return h;
+}
+function audCompanyRows(){
+  const d = AUD.data, m = AUD.meta, admin = audAdmin();
+  const rows = d.companies.filter(c => audMatch(c, ['company']));
+  return rows.map(c => '<tr>' + (admin ? '<td><input type="checkbox" ' + (AUD.sel[c.company] ? 'checked' : '') + ' onchange="audSel(this,' + esc(JSON.stringify(c.company)).replace(/"/g, '&quot;') + ')"></td>' : '') +
+    '<td><b>' + esc(c.company) + '</b>' + (c.isClient ? ' <span class="p41-pill ok">Client</span>' : '') + '</td>' +
+    '<td>' + (admin ? '<select onchange="audSaveCompany(' + esc(JSON.stringify(c.company)).replace(/"/g, '&quot;') + ',\'owner\',this.value)">' + audOpts(m.owners, c.owner, 'Default (' + audOwnerName(m.defaultOwner) + ')') + '</select>' : esc(audOwnerName(c.ownerShown))) + '</td>' +
+    '<td>' + (admin ? '<select onchange="audSaveCompany(' + esc(JSON.stringify(c.company)).replace(/"/g, '&quot;') + ',\'sector\',this.value)">' + audOpts(m.sectors.map(s => s.name), c.sector, 'No sector') + '</select>' : esc(c.sector || 'No sector')) + '</td>' +
+    '<td>' + c.contacts + '</td><td>' + c.warm + '</td></tr>').join('') || '<tr><td colspan="6" class="b46-sub">No companies match.</td></tr>';
+}
+function audSel(el, company){ if(el.checked) AUD.sel[company] = 1; else delete AUD.sel[company]; const n = document.getElementById('audSelN'); if(n) n.textContent = Object.keys(AUD.sel).length + ' selected'; }
+function audSelAll(on){ AUD.sel = {}; if(on) AUD.data.companies.filter(c => audMatch(c, ['company'])).forEach(c => AUD.sel[c.company] = 1); audRender(); }
+async function audSaveCompany(company, field, value){
+  try{ const body = {company}; body[field] = value; await audPut('/api/audience/company', body); const c = AUD.data.companies.find(x => x.company === company); if(c){ c[field] = value; if(field === 'owner') c.ownerShown = value || AUD.meta.defaultOwner; } showToast('Saved'); await audLoad(); }
+  catch(e){ showToast(e.message); audLoad(); }
+}
+async function audBulk(field){
+  const companies = Object.keys(AUD.sel); if(!companies.length){ showToast('Tick at least one company first'); return; }
+  const v = (document.getElementById(field === 'owner' ? 'audBulkOwner' : 'audBulkSector') || {}).value;
+  if(!v){ showToast('Choose a ' + field + ' to apply'); return; }
+  try{ const body = {companies}; body[field] = v; const j = await b2Post('/api/audience/companies/bulk', body); showToast('Updated ' + j.changed + ' companies'); AUD.sel = {}; await audLoad(true); }
+  catch(e){ showToast(e.message); }
+}
+async function audSuggest(btn){
+  btn.disabled = true; btn.textContent = 'Working...';
+  try{ const j = await b2Post('/api/audience/suggest-sectors', {}); AUD.sug = j.suggestions.map(s => ({...s, pick: s.suggested})); if(!AUD.sug.length) showToast('Every company already has a sector'); }
+  catch(e){ showToast(e.message); }
+  audRender();
+}
+function audSuggestHtml(m){
+  if(!AUD.sug.length) return '';
+  return '<div style="border:1px solid var(--border);border-top:3px solid #C9A84C;border-radius:8px;padding:12px;background:#fbfaf6;"><b>Suggested sectors (nothing is saved until you apply)</b><div class="b46-sub" style="margin-bottom:6px;">Guessed from company names and the roles we have seen. Check each one and change it if it is wrong.</div>' +
+    '<table class="b46-tbl"><tr><th>Company</th><th>Sector</th><th>Why</th></tr>' + AUD.sug.map((s, i) => '<tr><td>' + esc(s.company) + '</td><td><select onchange="AUD.sug[' + i + '].pick=this.value">' + audOpts(m.sectors.map(x => x.name), s.pick, 'Leave blank') + '</select></td><td class="b46-sub">' + esc(s.reason) + '</td></tr>').join('') + '</table>' +
+    '<div class="p41-bar" style="margin-top:8px;"><button class="p41-btn pri sm" onclick="audApplySug(this)">Apply the ones with a sector</button><button class="p41-btn sm" onclick="AUD.sug=null;audRender()">Dismiss</button></div></div>';
+}
+async function audApplySug(btn){
+  btn.disabled = true;
+  try{
+    const by = {}; AUD.sug.filter(s => s.pick).forEach(s => (by[s.pick] = by[s.pick] || []).push(s.company));
+    let n = 0; for(const sec of Object.keys(by)){ const j = await b2Post('/api/audience/companies/bulk', {companies: by[sec], sector: sec}); n += j.changed; }
+    showToast('Applied ' + n + ' sectors'); AUD.sug = null; await audLoad(true);
+  }catch(e){ showToast(e.message); btn.disabled = false; }
+}
+async function audApplyDefaults(btn){
+  btn.disabled = true;
+  try{ const j = await b2Post('/api/audience/apply-defaults', {}); showToast('Recorded consent for ' + j.recorded + ' client contacts'); await audLoad(true); }
+  catch(e){ showToast(e.message); btn.disabled = false; }
+}
+function audStatusPill(c){
+  if(c.suppressed) return '<span class="p41-pill bad" title="' + esc(c.suppressed) + '">Do not email</span>';
+  if(c.needsRecording) return '<span class="p41-pill warn">Warm, consent not recorded</span>';
+  return '<span class="p41-pill ' + (c.status === 'Warm' ? 'ok' : '') + '">' + esc(c.status) + '</span>';
+}
+function audContactsHtml(d, m, admin){
+  return audFilterBar(m, true) + '<div class="b46-sub">Warm means they agreed to hear from us. Every Warm contact needs a consent source and date. Cold contacts only ever get one-to-one emails.</div>' +
+    '<table class="b46-tbl"><tr><th>Contact</th><th>Company</th><th>Owner</th><th>Sector</th><th>Status</th><th>Consent</th><th></th></tr><tbody id="audList">' + audContactRows() + '</tbody></table>';
+}
+function audContactRows(){
+  const rows = AUD.data.contacts.filter(c => audMatch(c, ['email', 'name', 'company']) && (!AUD.fStatus || c.status === AUD.fStatus) && (!AUD.fKind || c.kind === AUD.fKind)).slice(0, 400);
+  const admin = audAdmin();
+  return rows.map(c => '<tr><td><b>' + esc(c.name || c.email) + '</b><div class="b46-sub">' + esc(c.email) + ' · ' + esc(AUD_KINDS[c.kind] || c.kind) + '</div></td><td>' + esc(c.company) + '</td>' +
+    '<td>' + esc(audOwnerName(c.owner)) + (c.ownerFrom === 'contact' ? ' <span class="b46-sub">(own)</span>' : '') + '</td>' +
+    '<td>' + esc(c.sector || '') + (c.sectorFrom === 'contact' ? ' <span class="b46-sub">(own)</span>' : '') + '</td>' +
+    '<td>' + audStatusPill(c) + '</td><td class="b46-sub">' + (c.consentSource ? esc(c.consentSource) + '<br>' + esc(c.consentDate || 'no date') : '') + '</td>' +
+    '<td>' + (admin ? '<button class="p41-btn sm" onclick="audEdit(' + esc(JSON.stringify(c.email)).replace(/"/g, '&quot;') + ')">Edit</button>' : '') + '</td></tr>').join('') +
+    (AUD.data.contacts.length > 400 ? '<tr><td colspan="7" class="b46-sub">Showing the first 400. Use the filters to narrow the list.</td></tr>' : '') || '<tr><td colspan="7" class="b46-sub">No contacts match.</td></tr>';
+}
+function audEdit(email){
+  const c = AUD.data.contacts.find(x => x.email === email), m = AUD.meta; if(!c) return;
+  let el = document.getElementById('aud57Modal'); if(!el){ el = document.createElement('div'); el.id = 'aud57Modal'; document.body.appendChild(el); }
+  el.style.cssText = 'position:fixed;inset:0;background:rgba(11,31,58,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+  el.innerHTML = '<div style="background:#fff;border-radius:10px;max-width:460px;width:100%;padding:20px;max-height:90vh;overflow:auto;"><h3 style="margin:0 0 4px;">' + esc(c.name || c.email) + '</h3><div class="b46-sub" style="margin-bottom:10px;">' + esc(c.email) + (c.company ? ' · ' + esc(c.company) : '') + '</div>' +
+    '<label>Owner (blank = company\'s owner)</label><select id="audEO" style="width:100%;">' + audOpts(m.owners, c.ownerFrom === 'contact' ? c.owner : '', 'Use company owner') + '</select>' +
+    '<label style="margin-top:8px;">Sector (blank = company\'s sector)</label><select id="audES" style="width:100%;">' + audOpts(m.sectors.map(s => s.name), c.sectorFrom === 'contact' ? c.sector : '', 'Use company sector') + '</select>' +
+    '<label style="margin-top:8px;">Status</label><select id="audEST" style="width:100%;" onchange="audEToggle()">' + audOpts(['Cold', 'Warm'], c.status) + '</select>' +
+    '<div id="audEW"><label style="margin-top:8px;">Consent source</label><select id="audESRC" style="width:100%;" onchange="audEToggle()">' + audOpts(m.consentSources, c.consentSource, 'Choose...') + '</select>' +
+    '<label style="margin-top:8px;">Consent date</label><input id="audEDT" type="date" style="width:100%;" value="' + esc(c.consentDate || '') + '">' +
+    '<div id="audENW"><label style="margin-top:8px;">Note (what did they agree to?)</label><input id="audENT" style="width:100%;" value="' + esc(c.consentNote || '') + '"></div></div>' +
+    '<div class="p41-bar" style="margin-top:14px;"><button class="p41-btn pri" onclick="audSaveContactEdit(' + esc(JSON.stringify(email)).replace(/"/g, '&quot;') + ',this)">Save</button><button class="p41-btn" onclick="document.getElementById(\'aud57Modal\').remove()">Cancel</button></div></div>';
+  audEToggle();
+}
+function audEToggle(){
+  const warm = b2Val('audEST') === 'Warm'; const w = document.getElementById('audEW'); if(w) w.style.display = warm ? '' : 'none';
+  const n = document.getElementById('audENW'); if(n) n.style.display = b2Val('audESRC') === 'Manual' ? '' : 'none';
+}
+async function audSaveContactEdit(email, btn){
+  btn.disabled = true;
+  try{
+    const warm = b2Val('audEST') === 'Warm';
+    await audPut('/api/audience/contact', {email, owner: b2Val('audEO'), sector: b2Val('audES'), status: b2Val('audEST'),
+      consentSource: warm ? b2Val('audESRC') : undefined, consentDate: warm ? b2Val('audEDT') : undefined, consentNote: warm ? b2Val('audENT') : undefined});
+    document.getElementById('aud57Modal').remove(); showToast('Saved'); await audLoad(true);
+  }catch(e){ showToast(e.message); btn.disabled = false; }
+}
+
+/* Recipient picker: step 1 choose companies, step 2 choose addresses. 57.2 to 57.4 reuse audPickerSelection(). */
+function audPickerState(){ if(!AUD.pick) AUD.pick = {companies:{}, emails:{}, step:1}; return AUD.pick; }
+function audPickerHtml(d, m){
+  const p = audPickerState();
+  if(p.step === 1) return '<div class="b46-sub">Step 1 of 2: choose the companies.</div>' + audFilterBar(m, false) +
+    '<div class="p41-bar"><button class="p41-btn sm" onclick="audPickAllShown()">Tick all shown</button><button class="p41-btn sm" onclick="audPickClear()">Clear</button><span style="flex:1"></span><b id="audPickN">' + Object.keys(p.companies).length + ' companies chosen</b><button class="p41-btn pri sm" onclick="audPickNext()">Next: choose addresses</button></div>' +
+    '<table class="b46-tbl"><tr><th></th><th>Company</th><th>Sector</th><th>Owner</th><th>Contacts</th><th>Warm</th></tr><tbody id="audList">' + audPickCompanyRows() + '</tbody></table>';
+  return audPickStep2Html(d, m);
+}
+function audPickCompanyRows(){
+  const p = audPickerState();
+  return AUD.data.companies.filter(c => audMatch(c, ['company']) && c.contacts).map(c => '<tr><td><input type="checkbox" ' + (p.companies[c.company] ? 'checked' : '') + ' onchange="audPickCo(this,' + esc(JSON.stringify(c.company)).replace(/"/g, '&quot;') + ')"></td><td><b>' + esc(c.company) + '</b>' + (c.isClient ? ' <span class="p41-pill ok">Client</span>' : '') + '</td><td>' + esc(c.sector || '') + '</td><td>' + esc(audOwnerName(c.ownerShown)) + '</td><td>' + c.contacts + '</td><td>' + c.warm + '</td></tr>').join('') || '<tr><td colspan="6" class="b46-sub">No companies match.</td></tr>';
+}
+function audPickCo(el, co){ const p = audPickerState(); if(el.checked) p.companies[co] = 1; else delete p.companies[co]; const n = document.getElementById('audPickN'); if(n) n.textContent = Object.keys(p.companies).length + ' companies chosen'; }
+function audPickAllShown(){ const p = audPickerState(); AUD.data.companies.filter(c => audMatch(c, ['company']) && c.contacts).forEach(c => p.companies[c.company] = 1); audRender(); }
+function audPickClear(){ AUD.pick = {companies:{}, emails:{}, step:1}; audRender(); }
+function audPickNext(){
+  const p = audPickerState(); const keys = Object.keys(p.companies);
+  if(!keys.length){ showToast('Choose at least one company'); return; }
+  p.step = 2; p.emails = {};
+  AUD.data.contacts.filter(c => keys.includes(c.company) && c.route && c.email).forEach(c => { p.emails[c.email] = 1; });
+  audRender();
+}
+function audPickerSelection(){
+  const p = audPickerState();
+  return AUD.data.contacts.filter(c => p.emails[c.email] && c.route).map(c => ({email:c.email, name:c.name, company:c.company, owner:c.owner, sector:c.sector, route:c.route}));
+}
+function audPickStep2Html(d, m){
+  const p = audPickerState(), keys = Object.keys(p.companies);
+  const sel = audPickerSelection(), ses = sel.filter(c => c.route === 'ses').length, one = sel.length - ses;
+  const cap = m.coldCap - m.coldUsedToday, over = one > cap;
+  let h = '<div class="b46-sub">Step 2 of 2: choose the addresses. Warm contacts go in bulk through Amazon SES, Cold contacts go one-to-one from the sender\'s own mailbox. Opted-out and bounced addresses cannot be ticked.</div>' +
+    '<div class="p41-bar"><button class="p41-btn sm" onclick="AUD.pick.step=1;audRender()">Back</button><span style="flex:1"></span></div>';
+  h += keys.map(co => {
+    const cs = d.contacts.filter(c => c.company === co);
+    return '<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fff;"><b>' + esc(co) + '</b> <span class="b46-sub">' + esc((d.companies.find(x => x.company === co) || {}).sector || 'no sector') + '</span>' +
+      cs.map(c => '<label style="display:flex;gap:8px;align-items:center;padding:4px 0;' + (c.route ? '' : 'opacity:.55;') + '"><input type="checkbox" ' + (c.route ? '' : 'disabled ') + (AUD.pick.emails[c.email] ? 'checked ' : '') + 'onchange="audPickEm(this,' + esc(JSON.stringify(c.email)).replace(/"/g, '&quot;') + ')"> <span><b>' + esc(c.name || c.email) + '</b> ' + esc(c.email) + '</span> ' + audStatusPill(c) + ' <span class="b46-sub">' +
+        (c.suppressed ? esc(c.suppressed) : (c.route === 'ses' ? 'Bulk through SES' : 'One-to-one from ' + esc(audOwnerName(c.owner)))) + '</span></label>').join('') + '</div>';
+  }).join('');
+  h += '<div class="p41-note" id="audPickSum">' + audPickSumText(sel, ses, one, cap, over) + '</div>';
+  return h;
+}
+function audPickSumText(sel, ses, one, cap, over){
+  return '<b>' + sel.length + ' recipients</b>: ' + ses + ' in bulk through SES, ' + one + ' one-to-one. ' + (one ? 'Your daily limit for first-contact emails has ' + Math.max(0, cap) + ' left today' + (over ? ', so ' + (one - cap) + ' of the one-to-one emails would have to wait until tomorrow.' : '.') : '') + ' Nothing is sent from here yet; Gap Briefs (build 57.2) will use this list.';
+}
+function audPickEm(el, email){
+  const p = audPickerState(); if(el.checked) p.emails[email] = 1; else delete p.emails[email];
+  const sel = audPickerSelection(), ses = sel.filter(c => c.route === 'ses').length, one = sel.length - ses, cap = AUD.meta.coldCap - AUD.meta.coldUsedToday;
+  const s = document.getElementById('audPickSum'); if(s) s.innerHTML = audPickSumText(sel, ses, one, cap, one > cap);
+}
+
 /* ---------------- Page build 57.0: new email engine test panel (Brevo above is unchanged) ---------------- */
 function useEngineHtml(){
   const e = USE.engine || {};
   let h = '<div style="margin-top:18px;padding:14px;border:1px solid var(--border);border-top:3px solid #C9A84C;border-radius:6px;background:#fbfaf6;">' +
-    '<div class="b46-k">NEW EMAIL ENGINE (BUILD 57.0)</div><div class="b46-sub" style="margin:4px 0 10px;">Runs alongside Brevo. Everything above still sends through Brevo. These tests prove the new routes before anything moves across.</div>';
+    '<div class="b46-k">NEW EMAIL ENGINE (BUILD 57.1)</div><div class="b46-sub" style="margin:4px 0 10px;">Runs alongside Brevo. Everything above still sends through Brevo. These tests prove the new routes before anything moves across.</div>';
   if(e.error) return h + '<div class="b46-err">' + esc(e.error) + '</div></div>';
   const m = e.m365 || {}, s = e.ses || {}, lt = e.lastTests || {};
   const pill = ok => '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;' + (ok ? 'background:#e3f4e8;color:#1d6b35;">Set up' : 'background:#fbe9e9;color:#9b2222;">Not set up') + '</span>';
@@ -19316,7 +19520,7 @@ function useEngineHtml(){
     '<button class="b46-btn gold" style="margin-top:8px;" onclick="useEngineTest(\'m365\', this)">Send test</button>' + last(lt.m365) + '</div>';
   h += '<div style="flex:1;min-width:260px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:12px;">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;"><strong>Amazon SES (bulk)</strong>' + pill(s.configured) + '</div>' +
-    '<div class="b46-sub" style="margin:4px 0 8px;">Gap Briefs and the Hiring Pulse. Sends from ' + esc(s.from || '') + ' (' + esc(s.region || '') + '). Today: ' + (s.today || 0) + ' of ' + (s.dailyLimit || 200) + '. While SES is in sandbox it only sends to verified addresses.</div>' +
+    '<div class="b46-sub" style="margin:4px 0 8px;">Gap Briefs and the Hiring Pulse. Sends from ' + esc(s.from || '') + ' (' + esc(s.region || '') + '). Today: ' + (s.today || 0) + ' of ' + (s.dailyLimit || 200) + '. While SES is in sandbox it only sends to verified addresses.</div>' + useSnsHtml(e) +
     '<label>Send test to</label><input id="engToS" type="email" style="width:100%;" value="' + esc(me) + '" placeholder="a verified address">' +
     '<button class="b46-btn gold" style="margin-top:8px;" onclick="useEngineTest(\'ses\', this)">Send test</button>' + last(lt.ses) + '</div>';
   h += '</div>';
@@ -19325,6 +19529,14 @@ function useEngineHtml(){
       e.recent.map(r => '<tr><td>' + esc(new Date(r.at).toLocaleString('en-GB', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})) + '</td><td>' + (r.route === 'ses' ? 'SES' : 'Microsoft 365') + '</td><td>' + esc(r.from) + '</td><td>' + esc(r.to) + '</td><td>' + esc(r.subject) + '</td><td title="' + esc(r.error || '') + '">' + esc(r.status) + '</td></tr>').join('') + '</table>';
   }
   return h + '</div>';
+}
+function useSnsHtml(e){
+  const v = e.events || {};
+  const pill = (ok, yes, no) => '<span class="p41-pill ' + (ok ? 'ok' : 'warn') + '">' + (ok ? yes : no) + '</span>';
+  const rate = (n) => (e.ses && e.ses.sentLast30) ? ' (' + (100 * n / e.ses.sentLast30).toFixed(2) + '%)' : '';
+  return '<div style="margin:0 0 8px;padding:8px;border:1px solid var(--border);border-radius:6px;background:#fbfaf6;"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><b style="font-size:12px;">Bounces and complaints (Amazon SNS)</b>' +
+    pill(v.topicSet, 'Topic set', 'SES_SNS_TOPIC_ARN not set') + pill(v.confirmed, 'Subscription confirmed', 'Not confirmed yet') + '</div>' +
+    '<div class="b46-sub" style="margin-top:4px;">Last 30 days: ' + (v.hardBounces || 0) + ' hard bounces' + rate(v.hardBounces || 0) + ', ' + (v.softBounces || 0) + ' temporary bounces, ' + (v.complaints || 0) + ' complaints' + rate(v.complaints || 0) + '. Hard bounces and complaints go straight onto the suppression list.' + (v.last ? ' Latest: ' + esc(new Date(v.last).toLocaleString('en-GB', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})) + '.' : '') + '</div></div>';
 }
 async function useEngineTest(route, btn){
   const to = (document.getElementById(route === 'ses' ? 'engToS' : 'engToM') || {}).value || '';
