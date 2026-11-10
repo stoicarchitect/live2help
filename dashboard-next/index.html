@@ -17131,7 +17131,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '10 Nov 2026 - build 57.3.5 (Cold Outreach and Gap Briefs header buttons) preview';
+var PAGE_BUILD = '10 Nov 2026 - build 58.1 (Polish Independence Day celebration for Ella) preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -21791,5 +21791,274 @@ function rtDelete(id, category, recordId){
   });
 }
 </script>
+<style id="celCss">
+/* Celebrations (page build 58): full-screen moment on a team member's special day */
+#celOverlay{position:fixed;inset:0;z-index:2147483000;display:none;opacity:0;transition:opacity .7s ease;color:#fff;overflow:hidden;
+  background:radial-gradient(120% 90% at 20% 10%,#1d3462 0%,#0F1F3D 55%,#091530 100%);font-family:Georgia,'Times New Roman',serif;}
+#celOverlay.on{display:block;}
+#celOverlay.vis{opacity:1;}
+#celCanvas{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;}
+#celOverlay .cel-col{position:absolute;left:0;right:0;top:19vh;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 22px 22px;}
+#celOverlay .cel-year{font-weight:700;line-height:1;letter-spacing:2px;font-size:clamp(78px,18vw,170px);opacity:0;transition:opacity .9s ease,font-size 1.1s cubic-bezier(.2,.8,.2,1),margin .9s ease;
+  background:linear-gradient(180deg,#F4DC92 0%,#C9A84C 55%,#9C7A25 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:#C9A84C;font-variant-numeric:tabular-nums;}
+#celOverlay .cel-year.in{opacity:1;}
+#celOverlay .cel-year.small{font-size:clamp(34px,6vw,52px);}
+#celOverlay .cel-lat{font-family:Arial,Helvetica,sans-serif;font-size:clamp(11px,1.6vw,14px);letter-spacing:4px;text-transform:uppercase;color:#E8D9A6;opacity:0;max-height:0;transition:opacity .9s ease,max-height .9s ease;margin-top:6px;}
+#celOverlay .cel-lat.in{opacity:1;max-height:40px;}
+#celOverlay .cel-eagle{max-height:0;opacity:0;overflow:hidden;transition:max-height 1s ease,opacity 1s ease,transform 1s cubic-bezier(.2,.8,.2,1);transform:translateY(28px) scale(.92);margin-top:0;}
+#celOverlay .cel-eagle.in{max-height:210px;opacity:1;transform:none;margin-top:14px;}
+#celOverlay .cel-eagle svg{height:clamp(120px,21vh,190px);width:auto;display:block;filter:drop-shadow(0 8px 22px rgba(0,0,0,.45));}
+#celOverlay .cel-title{font-size:clamp(24px,4.6vw,44px);font-weight:700;margin:16px 0 0;opacity:0;transform:translateY(14px);transition:opacity .9s ease,transform .9s ease;text-shadow:0 2px 18px rgba(0,0,0,.4);}
+#celOverlay .cel-title span{color:#E8C766;}
+#celOverlay .cel-sub{font-family:Arial,Helvetica,sans-serif;font-size:clamp(13px,2vw,17px);color:#cfd8ea;margin-top:8px;opacity:0;transition:opacity .9s ease;letter-spacing:.5px;}
+#celOverlay .cel-card{max-width:560px;width:100%;max-height:0;opacity:0;overflow:hidden;transition:max-height 1s ease,opacity 1s ease,margin .8s ease;margin-top:0;}
+#celOverlay .cel-card.in{max-height:260px;opacity:1;margin-top:20px;}
+#celOverlay .cel-card-in{border:1px solid rgba(201,168,76,.55);border-left:4px solid #C9A84C;background:rgba(255,255,255,.07);backdrop-filter:blur(4px);border-radius:10px;padding:16px 20px;text-align:left;font-family:Arial,Helvetica,sans-serif;}
+#celOverlay .cel-card p{margin:0;font-size:clamp(13.5px,1.9vw,16px);line-height:1.55;color:#f2f5fb;}
+#celOverlay .cel-sign{margin-top:10px;font-size:13px;color:#E8C766;font-weight:600;letter-spacing:.3px;}
+#celOverlay .cel-go{margin-top:20px;opacity:0;pointer-events:none;transition:opacity .8s ease,transform .2s ease;background:linear-gradient(180deg,#E3BE5C,#C9A84C);color:#0F1F3D;border:0;border-radius:999px;padding:12px 28px;font:700 15px Arial,Helvetica,sans-serif;cursor:pointer;letter-spacing:.3px;box-shadow:0 6px 18px rgba(0,0,0,.35);}
+#celOverlay .cel-go.in{opacity:1;pointer-events:auto;}
+#celOverlay .cel-go:hover{transform:translateY(-1px);}
+#celOverlay .cel-skip{position:absolute;right:14px;bottom:12px;z-index:3;background:rgba(15,31,61,.75);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:999px;padding:6px 14px;font:600 12px Arial,Helvetica,sans-serif;cursor:pointer;opacity:0;transition:opacity .6s;}
+#celOverlay .cel-skip.in{opacity:.9;}
+#celBadge{position:fixed;right:16px;bottom:16px;z-index:9000;display:none;align-items:center;gap:10px;background:#0F1F3D;color:#fff;border:1px solid #C9A84C;border-radius:999px;padding:7px 8px 7px 14px;font:600 12.5px Arial,Helvetica,sans-serif;box-shadow:0 6px 18px rgba(15,31,61,.35);}
+#celBadge.on{display:flex;}
+#celBadge svg{width:22px;height:14px;border-radius:2px;flex:none;}
+#celBadge button{background:transparent;border:0;color:#E8C766;cursor:pointer;font:700 12px Arial,Helvetica,sans-serif;padding:3px 6px;}
+#celBadge .cel-x{color:#9db0d4;font-size:15px;line-height:1;}
+@media (prefers-reduced-motion:reduce){#celOverlay *{transition:none!important;}}
+</style>
+<script id="celJs">
+/* ============================================================
+   Celebrations (page build 58)
+   Shows a full-screen moment to a team member on their special day.
+   To add another one (a birthday, a work anniversary), add a line to CELEBRATIONS:
+   - id: short name, used to remember that it has been seen
+   - who: the user keys it is for, for example ['ella']
+   - month / day: the date to show it (UK date)
+   - type: 'polish-independence' is the only design so far
+   Dan can replay any of them while signed in: add #celebrate=polish-independence to the page address.
+   ============================================================ */
+(function(){
+  var CELEBRATIONS = [
+    {id:'polish-independence', who:['ella'], month:11, day:11, type:'polish-independence', from:'Daniel Brown, Director', since:1918}
+  ];
+  var st = {open:false, raf:0, timers:[], parts:[], t0:0, burstDone:false, rainUntil:0, last:0, reduce:false};
+
+  function ukParts(){
+    try{
+      var p = new Intl.DateTimeFormat('en-GB', {timeZone:'Europe/London', year:'numeric', month:'numeric', day:'numeric'}).formatToParts(new Date());
+      var o = {}; p.forEach(function(x){ o[x.type] = parseInt(x.value, 10); });
+      return {y:o.year, m:o.month, d:o.day};
+    }catch(e){ var n = new Date(); return {y:n.getFullYear(), m:n.getMonth() + 1, d:n.getDate()}; }
+  }
+  function seenKey(c, user, year){ return 'l2hCel-' + c.id + '-' + user.key + '-' + year; }
+  function wasSeen(c, user, year){ try{ return localStorage.getItem(seenKey(c, user, year)) === '1'; }catch(e){ return false; } }
+  function markSeen(c, user, year){ try{ localStorage.setItem(seenKey(c, user, year), '1'); }catch(e){} }
+  function badgeKey(c, user, year){ return 'l2hCelBadge-' + c.id + '-' + user.key + '-' + year; }
+
+  function flagSvg(){ return '<svg viewBox="0 0 22 14" aria-hidden="true"><rect width="22" height="7" fill="#fff"/><rect y="7" width="22" height="7" fill="#DC143C"/></svg>'; }
+  function eagleSvg(){
+    var wing = '<path d="M86 86C62 74 34 82 14 104C28 99 40 101 49 108C36 112 28 122 26 136C38 128 50 128 60 133C52 141 50 151 52 162C64 148 76 143 90 144Z" fill="#fff" stroke="#C9A84C" stroke-width="2.5" stroke-linejoin="round"/>' +
+      '<path d="M30 112C42 110 52 114 58 122M34 130C44 129 54 132 60 138" fill="none" stroke="#C9A84C" stroke-width="1.6" stroke-linecap="round"/>';
+    return '<svg viewBox="0 0 200 200" role="img" aria-label="Stylised white eagle on a red shield">' +
+      '<defs><linearGradient id="celG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F4DC92"/><stop offset="1" stop-color="#B98A2E"/></linearGradient></defs>' +
+      '<circle cx="100" cy="100" r="94" fill="#C8102E" stroke="url(#celG)" stroke-width="5"/>' +
+      '<circle cx="100" cy="100" r="86" fill="none" stroke="#fff" stroke-opacity=".25" stroke-width="1.5"/>' +
+      '<g>' + wing + '</g><g transform="translate(200,0) scale(-1,1)">' + wing + '</g>' +
+      '<path d="M100 72C80 82 78 120 89 150L100 172L111 150C122 120 120 82 100 72Z" fill="#fff" stroke="#C9A84C" stroke-width="2.5" stroke-linejoin="round"/>' +
+      '<path d="M92 160L100 186L108 160Z" fill="#fff" stroke="#C9A84C" stroke-width="2.5" stroke-linejoin="round"/>' +
+      '<circle cx="100" cy="62" r="11" fill="#fff" stroke="#C9A84C" stroke-width="2.5"/>' +
+      '<path d="M110 59L126 65L110 68Z" fill="#E3BE5C" stroke="#9C7A25" stroke-width="1.5" stroke-linejoin="round"/>' +
+      '<circle cx="104" cy="60" r="1.8" fill="#0F1F3D"/>' +
+      '<path d="M82 46L86 28L94 40L100 24L106 40L114 28L118 46Z" fill="url(#celG)" stroke="#9C7A25" stroke-width="1.5" stroke-linejoin="round"/>' +
+      '</svg>';
+  }
+
+  function clearTimers(){ st.timers.forEach(clearTimeout); st.timers = []; }
+  function later(fn, ms){ st.timers.push(setTimeout(fn, ms)); }
+
+  function close(c, user, year, real){
+    st.open = false; cancelAnimationFrame(st.raf); clearTimers();
+    var o = document.getElementById('celOverlay');
+    if(o){
+      o.classList.remove('vis');
+      setTimeout(function(){ if(o.parentNode) o.parentNode.removeChild(o); }, 750);
+    }
+    document.removeEventListener('keydown', onKey);
+    if(real) markSeen(c, user, year);
+    showBadge(c, user, year);
+  }
+  var onKey = function(e){ if(e.key === 'Escape' && st.cur) close(st.cur.c, st.cur.user, st.cur.year, st.cur.real); };
+
+  function showBadge(c, user, year){
+    var b = document.getElementById('celBadge');
+    if(!b){ b = document.createElement('div'); b.id = 'celBadge'; document.body.appendChild(b); }
+    var dismissed = false;
+    try{ dismissed = localStorage.getItem(badgeKey(c, user, year)) === '1'; }catch(e){}
+    if(dismissed){ b.classList.remove('on'); return; }
+    b.innerHTML = flagSvg() + '<span>Szczęśliwego Święta Niepodległości, ' + (user.name || '').replace(/[<>&]/g, '') + '!</span>' +
+      '<button type="button" id="celReplay">Replay</button><button type="button" class="cel-x" id="celHide" aria-label="Hide">&times;</button>';
+    b.classList.add('on');
+    document.getElementById('celReplay').onclick = function(){ b.classList.remove('on'); play(c, user, year, st.cur ? st.cur.real : true, true); };
+    document.getElementById('celHide').onclick = function(){ b.classList.remove('on'); try{ localStorage.setItem(badgeKey(c, user, year), '1'); }catch(e){} };
+  }
+
+  function play(c, user, year, real, replay){
+    if(st.open) return;
+    st.open = true; st.cur = {c:c, user:user, year:year, real:real}; st.parts = []; st.burstDone = false; st.rainUntil = 0;
+    st.reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    var old = document.getElementById('celOverlay'); if(old && old.parentNode) old.parentNode.removeChild(old);
+    var badge = document.getElementById('celBadge'); if(badge) badge.classList.remove('on');
+    var years = year - c.since;
+    var o = document.createElement('div');
+    o.id = 'celOverlay'; o.className = 'on'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-label', 'Happy Polish Independence Day');
+    o.innerHTML = '<canvas id="celCanvas"></canvas>' +
+      '<div class="cel-col">' +
+        '<div class="cel-year" id="celYear">' + c.since + '</div>' +
+        '<div class="cel-lat" id="celLat">' + years + ' lat niepodległości</div>' +
+        '<div class="cel-eagle" id="celEagle">' + eagleSvg() + '</div>' +
+        '<h1 class="cel-title" id="celTitle" style="margin-bottom:0;">Szczęśliwego Święta Niepodległości, <span id="celName"></span>!</h1>' +
+        '<div class="cel-sub" id="celSub">Happy Polish Independence Day &middot; Niech żyje Polska!</div>' +
+        '<div class="cel-card" id="celCard"><div class="cel-card-in"><p>Live 2 Help celebrates Polish Independence Day with you today. We are extremely happy that you work with us, and grateful for everything you bring to this team.</p><div class="cel-sign" id="celSign"></div></div></div>' +
+        '<button type="button" class="cel-go" id="celGo">Let\'s make it a great day</button>' +
+      '</div>' +
+      '<button type="button" class="cel-skip" id="celSkip">Skip</button>';
+    document.body.appendChild(o);
+    document.getElementById('celName').textContent = user.name || '';
+    document.getElementById('celSign').textContent = c.from;
+    var go = function(){ close(c, user, year, real); };
+    document.getElementById('celGo').onclick = go;
+    document.getElementById('celSkip').onclick = go;
+    document.addEventListener('keydown', onKey);
+    requestAnimationFrame(function(){ o.classList.add('vis'); });
+
+    var $ = function(id){ return document.getElementById(id); };
+    function add(id, cls){ var e = $(id); if(e) e.classList.add(cls); }
+    if(st.reduce){
+      ['celYear','celLat','celEagle','celCard','celGo','celSkip'].forEach(function(i){ add(i, i === 'celYear' ? 'in' : 'in'); });
+      $('celYear').textContent = year; add('celYear', 'small');
+      $('celTitle').style.opacity = 1; $('celTitle').style.transform = 'none'; $('celSub').style.opacity = 1;
+      drawStatic();
+      return;
+    }
+    // timeline (milliseconds)
+    later(function(){ add('celSkip', 'in'); }, 900);
+    later(function(){ add('celYear', 'in'); countUp($('celYear'), c.since, year, 2300); }, 800);
+    later(function(){ add('celYear', 'small'); add('celLat', 'in'); }, 3500);
+    later(function(){ add('celEagle', 'in'); }, 3900);
+    later(function(){ st.burstDone = true; burst(90); st.rainUntil = performance.now() + 3600; var t = $('celTitle'); t.style.opacity = 1; t.style.transform = 'none'; }, 5300);
+    later(function(){ $('celSub').style.opacity = 1; }, 6500);
+    later(function(){ add('celCard', 'in'); }, 7500);
+    later(function(){ add('celGo', 'in'); }, 9000);
+
+    st.t0 = performance.now(); st.last = st.t0;
+    st.raf = requestAnimationFrame(frame);
+  }
+
+  function countUp(el, from, to, ms){
+    var t0 = performance.now();
+    (function step(now){
+      if(!st.open) return;
+      var p = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(from + (to - from) * e);
+      if(p < 1) requestAnimationFrame(step);
+    })(t0);
+  }
+
+  var COLORS = ['#DC143C', '#FFFFFF', '#C9A84C', '#F4DC92', '#FFFFFF', '#DC143C'];
+  function burst(n){
+    var cv = document.getElementById('celCanvas'); if(!cv) return;
+    var W = cv.clientWidth, H = cv.clientHeight;
+    for(var i = 0; i < n; i++){
+      var a = -Math.PI / 2 + (Math.random() - 0.5) * 2.2, sp = 7 + Math.random() * 11;
+      st.parts.push({x:W / 2 + (Math.random() - 0.5) * 80, y:H * 0.55, vx:Math.cos(a) * sp, vy:Math.sin(a) * sp, w:6 + Math.random() * 6, h:4 + Math.random() * 4,
+        r:Math.random() * 6, vr:(Math.random() - 0.5) * 0.4, c:COLORS[(Math.random() * COLORS.length) | 0]});
+    }
+  }
+  function rain(n){
+    var cv = document.getElementById('celCanvas'); if(!cv) return;
+    var W = cv.clientWidth;
+    for(var i = 0; i < n; i++){
+      st.parts.push({x:Math.random() * W, y:-12, vx:(Math.random() - 0.5) * 2, vy:1.5 + Math.random() * 2.5, w:6 + Math.random() * 5, h:4 + Math.random() * 4,
+        r:Math.random() * 6, vr:(Math.random() - 0.5) * 0.3, c:COLORS[(Math.random() * COLORS.length) | 0]});
+    }
+  }
+
+  function sizeCanvas(cv){
+    var dpr = Math.min(window.devicePixelRatio || 1, 2), w = cv.clientWidth, h = cv.clientHeight;
+    if(cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)){ cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    var ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return {ctx:ctx, W:w, H:h};
+  }
+
+  /* A waving flag along the top: white above red, sliding in from the left */
+  function drawFlag(ctx, W, H, t, fullNow){
+    var fh = Math.max(84, H * 0.15), amp = fh * 0.075, top = amp * 1.6 + 8;
+    var p = fullNow ? 1 : Math.min(1, Math.max(0, (t - 0.3) / 1.5)), e = 1 - Math.pow(1 - p, 3);
+    var vis = W * e;
+    for(var x = 0; x < vis; x += 3){
+      var k = x * 0.017 - t * 3.1, fall = 0.3 + 0.7 * (x / W);
+      var dy = Math.sin(k) * amp * fall, sh = Math.cos(k) * fall;
+      var y = top + dy;
+      ctx.fillStyle = '#FFFFFF'; ctx.fillRect(x, y, 4, fh / 2);
+      ctx.fillStyle = '#DC143C'; ctx.fillRect(x, y + fh / 2, 4, fh / 2);
+      if(sh > 0){ ctx.fillStyle = 'rgba(15,31,61,' + (sh * 0.22).toFixed(3) + ')'; ctx.fillRect(x, y, 4, fh); }
+      else { ctx.fillStyle = 'rgba(255,255,255,' + (-sh * 0.12).toFixed(3) + ')'; ctx.fillRect(x, y, 4, fh); }
+      ctx.fillStyle = '#C9A84C'; ctx.fillRect(x, y + fh, 4, 3);
+      ctx.fillRect(x, y - 3, 4, 3);
+    }
+  }
+
+  function frame(now){
+    if(!st.open) return;
+    var cv = document.getElementById('celCanvas'); if(!cv){ return; }
+    var s = sizeCanvas(cv), ctx = s.ctx, t = (now - st.t0) / 1000, dt = Math.min(2, (now - st.last) / 16.67); st.last = now;
+    ctx.clearRect(0, 0, s.W, s.H);
+    drawFlag(ctx, s.W, s.H, t, false);
+    if(st.rainUntil && now < st.rainUntil) rain(2);
+    for(var i = st.parts.length - 1; i >= 0; i--){
+      var q = st.parts[i];
+      q.vy += 0.26 * dt; q.vx *= 0.995; q.x += q.vx * dt; q.y += q.vy * dt; q.r += q.vr * dt;
+      if(q.y > s.H + 20){ st.parts.splice(i, 1); continue; }
+      ctx.save(); ctx.translate(q.x, q.y); ctx.rotate(q.r); ctx.fillStyle = q.c; ctx.fillRect(-q.w / 2, -q.h / 2, q.w, q.h); ctx.restore();
+    }
+    st.raf = requestAnimationFrame(frame);
+  }
+  function drawStatic(){
+    var cv = document.getElementById('celCanvas'); if(!cv) return;
+    var s = sizeCanvas(cv); drawFlag(s.ctx, s.W, s.H, 0.5, true);
+  }
+
+  function check(user){
+    try{
+      if(!user) return;
+      var now = ukParts(), hash = String(location.hash || '');
+      var forced = /celebrate=([a-z-]+)/.exec(hash);
+      CELEBRATIONS.forEach(function(c){
+        if(st.open) return;
+        if(forced && user.admin && forced[1] === c.id){
+          // Dan previewing: plays it as the person it is for, and does not mark it as seen
+          var target = (typeof USERS !== 'undefined' ? USERS : []).filter(function(u){ return c.who.indexOf(u.key) !== -1; })[0] || user;
+          setTimeout(function(){ play(c, target, now.y, false); }, 500);
+          return;
+        }
+        if(c.who.indexOf(user.key) === -1) return;
+        if(now.m !== c.month || now.d !== c.day) return;
+        if(wasSeen(c, user, now.y)){ showBadge(c, user, now.y); return; }
+        setTimeout(function(){ play(c, user, now.y, true); }, 400);
+      });
+    }catch(e){ if(window.console) console.warn('Celebrations skipped', e); }
+  }
+
+  var prev = window.signIn;
+  if(typeof prev === 'function'){
+    window.signIn = function(user){ prev(user); check(user); };
+    try{ signIn = window.signIn; }catch(e){}
+  }
+  window.l2hCelebrate = {check:check, play:play};
+})();
+</script>
+
 </body>
 </html>
