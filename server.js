@@ -17567,6 +17567,25 @@ setTimeout(async () => {
     const BMS_POL002_V11 = {"127xE99c4cwR91YZYZTn5Lo6_qLcHyPWrbwB6tXLDAD8": "1iHWYx9tyO4jl6dX8M0l8dPWCNc6XfdfCyxByHmb1Ogw"};
     for (const d of await bmsDocs.list()) { const nf = BMS_POL002_V11[d.file_id]; if (nf) await bmsDocs.upsert({ ...d, file_id: nf, version: '1.1', effective_date: '2026-11-11', next_review: bmsAddMonths('2026-11-11', d.review_months), updated_by: 'Daniel Brown (approved in chat)', updated_at: '2026-11-11' }); }
   } catch (e) { console.error('BMS POL-002 v1.1:', e.message); }
+  // BMS batch 3 go-live (11 Nov 2026): Daniel approved the eleven batch 3 documents in chat. Swap each draft file ID to the re-issued v1.0 file and make it Live, effective 2026-11-11. 4HR Solutions is recorded as the independent HR adviser in the notes of POL-027 and POL-028. Runs once, only where the old draft file ID is still held.
+  try {
+    const BMS_LIVE_B3 = {"18a5soyqjb-SDh3km4kl-Xo1moJZ8XsxpkBb80NcBeKs": "1R87vs4EJRTdHZPjZR4YmhmSGkB3X5mvKQLnIg-pBabI", "1ItVd8dob3ULD_lFcUUjOGYYLvCHHDdSsRqu_Y0UrsAQ": "1U5zdJu9ZTn6Klq5pTE43kqAV23bHgaaKRqdKmMuoXbg", "1f_O8KoIVaqJecOEsUeU29O6sZNsg5wKTUte2USrGC3A": "1ywBJ9Gg3-jKYY1u7B3LT2AROdFVlUrYg9xtllEOO8hE", "1sN6Wy-mf1HoehgcUKhgFdrLXmF3N4NAYoB8xc9wxaD4": "1iIV9qwzYGmjB33ybz-UpB5yqWOqwkr4Dogc0sPwzdag", "1ds6iq-Nnz-0KDZx9ruHgYV9AslgY0kkbka1iG3wBLTM": "1JJymv4fnz_GEWS-8mhg5Kv-AVDAaKjYSJEAW8ru7lBQ", "1PXFLRSA-HKtUCLknRAi9O84QNWwGBvT9VugkTkOrkOQ": "1ZU6JHq5pNXkLI1fkAGfNALsxKPXD74wnh5-KOnOw03c", "19ehHR7FsDylFVz-5ntv6heS1Ll8zsimtyyeX7k0czgE": "1q1JBoK-rGx3c4s96Ltu0Q-WL1HOklpmI-JYoLopVeRA", "1ipdXFbmJeL4JqmKmVVJQ8_iiMGJatazgYOeVafkDQ5Y": "1jWQ6m8zlNOowaxQarznijOO2Pzsa74IPYjNDEsiFRZk", "1v_CVlPlSPM90KRR48Ecrw84byF4h08eSeEBnJ4p6i9g": "1MRX2JNvWGd6qtOzd-EF4SWK-0_nyhRHyvkwLGeegFrs", "1dh8EeIzXwyvnagCfokBT8GWTkJuQ7-OncYuy_akurDY": "1IlzOO6jLm6JARwHsBUhTnJc59Yr3BGGxP5KFCg9koR8", "1mqRsayX7WTqAlibao6p3Yc7sWmMBdfIckI50nrsnb4M": "1c0ERe6n7peXUm3GL6mfPoIvqIASULkokIlQsd3skf8M"};
+    const HR_NOTE = 'Independent external HR adviser: 4HR Solutions';
+    for (const d of await bmsDocs.list()) {
+      const nf = BMS_LIVE_B3[d.file_id]; if (!nf) continue;
+      const notes = (d.id === 'L2H-POL-027' || d.id === 'L2H-POL-028') && !String(d.notes || '').includes('4HR Solutions') ? [d.notes, HR_NOTE].filter(Boolean).join('. ') : (d.notes || '');
+      await bmsDocs.upsert({ ...d, file_id: nf, status: 'Live', version: '1.0', effective_date: '2026-11-11', next_review: bmsAddMonths('2026-11-11', d.review_months), notes, updated_by: 'Daniel Brown (approved in chat)', updated_at: '2026-11-11' });
+    }
+  } catch (e) { console.error('BMS batch 3 go-live:', e.message); }
+  // BMS batch 4 and Employee Policies split (11 Nov 2026): eight new drafts linked as Draft v0.1. POL-039 Employee Privacy Notice is new to the register, so it is added first if missing (numbers are never reused).
+  try {
+    const BMS_BATCH4 = {"L2H-POL-018": "1lsunm7JgwrvP20ovU42SMGYidxbLqmp-8DdL9rJzAm0", "L2H-POL-029": "1dHvCm0-8HJCU3Yqubnc7_QWoOQyZPSMy6ntgFfRJhVw", "L2H-FRM-011": "1CA1A-EuSVg8THe9naAqQ9EvumN9FKCZmuQD9-FvmmOQ", "L2H-FRM-017": "1x7fl8Ayctee6z7IOgCOVxMnPyKGNLj_XfSc4zBMhR98", "L2H-POL-023": "1JA2JcTdnwxznFbMqaBzxr21R9XS2BbkPp5y_8jPCFMM", "L2H-POL-022": "1Qw8dN64UwpGGJFJXe7kp1gdfqBmJTyveGkM94qF0DqE", "L2H-POL-013": "1laaF-EFX2QIkRi1PS9O5rlOQI7yXZ53gUQaH7TGxwxo", "L2H-POL-039": "1XT40ef9VFrTELcLiQMriu2bz79xpo3QuZumrKQWMOeU"};
+    if (!(await bmsDocs.list()).some(d => d.id === 'L2H-POL-039')) {
+      const seed = BMS_SEED.find(d => d.id === 'L2H-POL-039');
+      if (seed) await bmsDocs.upsert({ ...seed, status: 'Planned', version: '', file_id: '' });
+    }
+    for (const d of await bmsDocs.list()) { const nf = BMS_BATCH4[d.id]; if (nf && !d.file_id && d.status === 'Planned') await bmsDocs.upsert({ ...d, file_id: nf, status: 'Draft', version: '0.1', updated_by: 'system', updated_at: '2026-11-11' }); }
+  } catch (e) { console.error('BMS batch 4 drafts:', e.message); }
 }, 18000);
 
 /* ---------- build 42: planning and marketing records (tracker sheet) ---------- */
