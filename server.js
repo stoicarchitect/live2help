@@ -17562,6 +17562,11 @@ setTimeout(async () => {
     const BMS_SWAP_ICO2 = {"1IwFtdeQf2NeXWan5QZWgvEu7m69WxyN8U4-Um5IWmXo": "1PZbv_wgQkgUxJNy9yKbrwuy50a_anSm2_bvcgzw9a3c", "18ho3Y9kH7oHUnoOQkQwiWk3HVHTnm_keLrYwg9aElSc": "127xE99c4cwR91YZYZTn5Lo6_qLcHyPWrbwB6tXLDAD8", "1KW8JcVRZtg-tUkqHn2AI51eUvZtWddr-xpqedSAeGfY": "1397M_V9i7rICxwudOfBBSUxSSAZxcrbFCs6vLrUD5lk"};
     for (const d of await bmsDocs.list()) { const nf = BMS_SWAP_ICO2[d.file_id]; if (nf) await bmsDocs.upsert({ ...d, file_id: nf, updated_by: 'Daniel Brown (approved in chat)', updated_at: '2026-11-10' }); }
   } catch (e) { console.error('BMS ICO swap 2:', e.message); }
+  // BMS POL-002 v1.1 (11 Nov 2026): talent pool retention of 12 months added, approved by Daniel in chat. Swap to the v1.1 file (runs once, only where the v1.0 file is still linked).
+  try {
+    const BMS_POL002_V11 = {"127xE99c4cwR91YZYZTn5Lo6_qLcHyPWrbwB6tXLDAD8": "1iHWYx9tyO4jl6dX8M0l8dPWCNc6XfdfCyxByHmb1Ogw"};
+    for (const d of await bmsDocs.list()) { const nf = BMS_POL002_V11[d.file_id]; if (nf) await bmsDocs.upsert({ ...d, file_id: nf, version: '1.1', effective_date: '2026-11-11', next_review: bmsAddMonths('2026-11-11', d.review_months), updated_by: 'Daniel Brown (approved in chat)', updated_at: '2026-11-11' }); }
+  } catch (e) { console.error('BMS POL-002 v1.1:', e.message); }
 }, 18000);
 
 /* ---------- build 42: planning and marketing records (tracker sheet) ---------- */

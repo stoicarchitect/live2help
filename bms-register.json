@@ -164,7 +164,7 @@
   "title": "Candidate Privacy Notice",
   "level": "L2 Policy",
   "area": "Compliance and Governance",
-  "version": "1.0",
+  "version": "1.1",
   "status": "Live",
   "owner": "Daniel Brown",
   "approver": "Daniel Brown",
@@ -172,12 +172,12 @@
   "needs_ack": "FALSE",
   "phase": "1",
   "review_months": "6",
-  "effective_date": "2026-11-10",
-  "next_review": "2027-05-10",
-  "file_id": "127xE99c4cwR91YZYZTn5Lo6_qLcHyPWrbwB6tXLDAD8",
+  "effective_date": "2026-11-11",
+  "next_review": "2027-05-11",
+  "file_id": "1iHWYx9tyO4jl6dX8M0l8dPWCNc6XfdfCyxByHmb1Ogw",
   "notes": "",
   "updated_by": "Daniel Brown (approved in chat)",
-  "updated_at": "2026-11-10"
+  "updated_at": "2026-11-11"
  },
  {
   "id": "L2H-POL-003",
