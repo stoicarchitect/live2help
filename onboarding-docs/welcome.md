@@ -26,6 +26,10 @@ We go well beyond filling roles. From the moment we receive a brief, we work to 
 3. **Kick-off call.** We will agree your first brief, salary range and interview availability.
 4. **A little something.** Keep an eye out for a small welcome gift from the team.
 
+## How We Look After Your Data
+
+Live 2 Help Recruitment Ltd is registered with the Information Commissioner's Office (ICO registration number ZC296949). Our [Client Privacy Notice](https://live2helprecruitment.co.uk/legal/client-privacy-notice/) explains how we use the details of you and your colleagues. The Data Sharing Agreement you sign covers candidate data.
+
 ## Your Contacts
 
 | | |

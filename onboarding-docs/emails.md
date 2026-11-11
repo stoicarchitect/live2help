@@ -1,7 +1,7 @@
 ---
 title: Client Onboarding Emails
 subtitle: Emails 1 to 3 sent with one click after a recipient check. Reminders send automatically until everything is complete
-version: Version 1.1 - November 2026
+version: Version 1.2 - November 2026
 signing: none
 ---
 
@@ -59,6 +59,8 @@ Kind regards,
 Hi {{contact_first_name}},
 
 Attached are your welcome letter and our 2026 pricing guide for your records.
+
+Our Client Privacy Notice explains how we look after the details of you and your colleagues: https://live2helprecruitment.co.uk/legal/client-privacy-notice/
 
 One last thing: please complete our short site and account form so we can set up invoicing correctly and make sure every candidate arrives on time and prepared.
 

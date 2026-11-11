@@ -247,6 +247,7 @@ textarea.in{min-height:84px;resize:vertical}
       '<div class="group-h">2. Tell us about your site</div><div class="tasks">' +
         card('form', ICON.form, 'Site and account form', formDone ? 'Submitted. You can still update it.' : (d.site_form.status === 'in_progress' ? 'Started. Pick up where you left off.' : 'Invoicing details, parking, reception and key contacts. About five minutes.'), formDone ? 'Done' : (d.site_form.status === 'in_progress' ? 'Continue' : 'Start'), formDone ? 'ok' : 'go', formDone) + '</div>' +
       '<div class="group-h">3. For your records</div><div class="tasks">' + readCard('welcome', 'A short note on how we will work with you.') + readCard('pricing', 'Our 2026 fees, at a glance.') + '</div>' +
+      '<p style="margin:14px 4px 0;font-size:13px;color:#5b6070;">How we look after your details: <a href="https://live2helprecruitment.co.uk/legal/client-privacy-notice/" target="_blank" rel="noopener">Client Privacy Notice</a></p>' +
       partnerHtml() +
       footer();
     window.scrollTo(0, 0);
