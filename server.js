@@ -17588,6 +17588,34 @@ setTimeout(async () => {
   } catch (e) { console.error('BMS batch 4 drafts:', e.message); }
 }, 18000);
 
+/* BMS restyle: swap the 19 batch 3 and batch 4 documents to the POL-011 look (gold borders, navy band). Status, version and dates unchanged. */
+setTimeout(async () => {
+  try {
+    const BMS_RESTYLE = {
+      '1R87vs4EJRTdHZPjZR4YmhmSGkB3X5mvKQLnIg-pBabI': '1oRXniVI6jTp439-WPomT1x8-HFpxo6EQ9Fehhn06X68',
+      '1U5zdJu9ZTn6Klq5pTE43kqAV23bHgaaKRqdKmMuoXbg': '1XyMGBF7wHTZ03NFZQclxV-eN8NgABFF6V8klhyepBBo',
+      '1ywBJ9Gg3-jKYY1u7B3LT2AROdFVlUrYg9xtllEOO8hE': '1uS6YLJ2ml9jPgp_8ewcLyK1nr-OOga-i9dQLaEZOfPw',
+      '1iIV9qwzYGmjB33ybz-UpB5yqWOqwkr4Dogc0sPwzdag': '1qh7H5Dd-7ei9WHH836S6EIuCPc2TJl4CHzCS_Zhvj4M',
+      '1JJymv4fnz_GEWS-8mhg5Kv-AVDAaKjYSJEAW8ru7lBQ': '1FylGykTs29pQC8XfPn8NhCT_td4qeJ4y8l5I4TK4CpU',
+      '1ZU6JHq5pNXkLI1fkAGfNALsxKPXD74wnh5-KOnOw03c': '1w0MUjYOxLAmvpPRJqdTvmGXdHjt_Vh0LNb4FBuaRL58',
+      '1q1JBoK-rGx3c4s96Ltu0Q-WL1HOklpmI-JYoLopVeRA': '1r0ykAcJI0rlGTxZFj3HfyN0FEkSbodcdmhSfPEwmD4Q',
+      '1jWQ6m8zlNOowaxQarznijOO2Pzsa74IPYjNDEsiFRZk': '1SX62luxveSApOSVO3vCPBO-akbjyEs3NPGAN_gXLGNg',
+      '1MRX2JNvWGd6qtOzd-EF4SWK-0_nyhRHyvkwLGeegFrs': '1kHblkQ3GNE0mW5QpPfSAZpCR5w3APd89Nqo4qmSDh-4',
+      '1IlzOO6jLm6JARwHsBUhTnJc59Yr3BGGxP5KFCg9koR8': '1W3kp0DAWnn00Yt1l_pdui3X71vbTuX0qTgghtZULJh8',
+      '1c0ERe6n7peXUm3GL6mfPoIvqIASULkokIlQsd3skf8M': '1hhJLUdI6svFYbtmLDxqSdQOLfVcqci0YZKEPq2Nm5Bg',
+      '1lsunm7JgwrvP20ovU42SMGYidxbLqmp-8DdL9rJzAm0': '19Iq1LTuaBS_KIgQ8PgU-xlu5d03LvQiCJ1MA5rVzaTo',
+      '1dHvCm0-8HJCU3Yqubnc7_QWoOQyZPSMy6ntgFfRJhVw': '1vM2SQrXpi8WKCLeE4h1hHYQ3HUyg9le1YA1GavNsYXg',
+      '1CA1A-EuSVg8THe9naAqQ9EvumN9FKCZmuQD9-FvmmOQ': '1wTfFFMViEmv4gV0RbKzrRRPK3_7Fea126JKWWzieugM',
+      '1x7fl8Ayctee6z7IOgCOVxMnPyKGNLj_XfSc4zBMhR98': '1G0RS8jvbUDYHt7yUpG6_s0fKG6vZ-xQ5maCI6oI9D1Y',
+      '1JA2JcTdnwxznFbMqaBzxr21R9XS2BbkPp5y_8jPCFMM': '1zNVnqK_gxoiYfVBK3lAj9VjktKj6JuBmxA5myDvIk18',
+      '1Qw8dN64UwpGGJFJXe7kp1gdfqBmJTyveGkM94qF0DqE': '1IoDyjLCenlJHxr_lo1znskiFsecn1C1kUEygbrg214E',
+      '1laaF-EFX2QIkRi1PS9O5rlOQI7yXZ53gUQaH7TGxwxo': '1xo7fzWABRXo-5OWZx-O6dqu-dJoLcGySyc2maNP0K7s',
+      '1XT40ef9VFrTELcLiQMriu2bz79xpo3QuZumrKQWMOeU': '1basST4OYXQZhrABv336cOnL0vVmlXmPF4XhCIfazvlY'
+    };
+        for (const d of await bmsDocs.list()) { const nf = BMS_RESTYLE[d.file_id]; if (nf) await bmsDocs.upsert({ ...d, file_id: nf, updated_by: 'system', updated_at: '2026-11-11' }); }
+  } catch (e) { console.error('BMS restyle:', e.message); }
+}, 22000);
+
 /* ---------- build 42: planning and marketing records (tracker sheet) ---------- */
 const weekPlanTable = makeSimpleTable({
   tab: 'Week Plans', path: '/api/week-plans', label: 'Plan item',
