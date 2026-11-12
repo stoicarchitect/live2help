@@ -577,5 +577,25 @@
   });
 </script>
 
+<script>
+/* Audit Nov 2026: this form closes itself when the role is filled or lost on the Roles tab */
+(function(){
+  try {
+    fetch('https://l2h-api.onrender.com/api/public/forms/transport-coordinator')
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(j){
+        if (!j || !j.found || j.open !== false) return;
+        var forms = document.querySelectorAll('form');
+        if (!forms.length) return;
+        var box = document.createElement('div');
+        box.setAttribute('role', 'status');
+        box.style.cssText = 'margin:24px auto;max-width:640px;padding:28px 24px;border:1px solid #C9A84C;border-radius:10px;background:#F7F6F3;color:#0B0B18;font:16px/1.6 Georgia,serif;text-align:center;';
+        box.innerHTML = '<strong style="display:block;font-size:20px;margin-bottom:8px;">This role is no longer taking applications</strong>Thank you for your interest. You can see our current roles at <a style="color:#A8892F;font-weight:600;" href="https://careers.live2helprecruitment.co.uk/">careers.live2helprecruitment.co.uk</a>.';
+        forms[0].parentNode.insertBefore(box, forms[0]);
+        for (var i = 0; i < forms.length; i++) forms[i].style.display = 'none';
+      }).catch(function(){});
+  } catch (e) {}
+})();
+</script>
 </body>
 </html>

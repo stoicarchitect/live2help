@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import nodeFetch from 'node-fetch';
 import { AsyncLocalStorage } from 'async_hooks';
 import { google } from 'googleapis';
@@ -15,6 +16,7 @@ import zlib from 'zlib';
 import dns from 'dns';
 import { fileURLToPath } from 'url';
 import * as onbDocs from './onboarding-docs.js';
+import { dumpDatabase, inspectDump, restoreDatabase } from './db-dump.js'; // audit Nov 2026
 import { createMailEngine, ENGINE_LOG_HEADER, msSecretExpires, msSecretDaysLeft } from './mail-engine.js'; // build 57.0
 
 const __filename = fileURLToPath(import.meta.url);
@@ -43,7 +45,69 @@ function fetch(url, opts) {
 const aiCtx = new AsyncLocalStorage();
 
 const app = express();
-app.use(cors());
+app.disable('x-powered-by');
+
+/* ---------- Audit Nov 2026: request log, fault counters, security headers, compression, cross-origin list ----------
+   - Every failed or slow request writes one line to the Render log (path only, never the query string,
+     so sign-in tokens and keys are never logged). Counters feed the fault alerts further down.
+   - Security headers on every response.
+   - Responses are compressed.
+   - Only our own sites may call the server from a browser. CORS_OPEN=1 on Render puts it back to
+     "any site" without a deploy, CAREERS_EXTRA_ORIGINS adds more host names. */
+const reqStats = { since: new Date().toISOString(), total: 0, s4: 0, s5: 0, recent5: [], notFound: new Map(), lastErrors: [] };
+app.use((req, res, next) => {
+  const t0 = Date.now();
+  res.on('finish', () => {
+    const ms = Date.now() - t0;
+    const p = req.originalUrl.split('?')[0].slice(0, 160);
+    const st = res.statusCode;
+    reqStats.total++;
+    if (st >= 500) {
+      reqStats.s5++;
+      reqStats.recent5.push(Date.now());
+      reqStats.lastErrors.unshift({ at: new Date().toISOString(), status: st, method: req.method, path: p });
+      reqStats.lastErrors = reqStats.lastErrors.slice(0, 30);
+    } else if (st >= 400) {
+      reqStats.s4++;
+      if (st === 404) {
+        if (reqStats.notFound.size > 500) reqStats.notFound.clear();
+        reqStats.notFound.set(p, (reqStats.notFound.get(p) || 0) + 1);
+      }
+    }
+    if (st >= 400 || ms > 4000) {
+      const who = (req.user && req.user.key) || '-';
+      const from = String(req.get('origin') || req.get('referer') || '-').slice(0, 80);
+      console.log(`[req] ${st} ${req.method} ${p} ${ms}ms user=${who} from=${from}`);
+    }
+  });
+  next();
+});
+
+const OUR_SITE_HOSTS = ['careers.live2helprecruitment.co.uk', 'live2helprecruitment.co.uk', 'www.live2helprecruitment.co.uk', 'live2help.co.uk', 'www.live2help.co.uk', 'localhost', '127.0.0.1']
+  .concat(String(process.env.CAREERS_EXTRA_ORIGINS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean));
+function isOurOrigin(origin) {
+  let host = '';
+  try { host = new URL(origin).hostname.toLowerCase(); } catch (e) { return false; }
+  return OUR_SITE_HOSTS.some(h => host === h || host.endsWith('.' + h));
+}
+const FRAME_ANCESTORS = "frame-ancestors 'self' https://careers.live2helprecruitment.co.uk https://live2helprecruitment.co.uk https://www.live2helprecruitment.co.uk";
+app.use((req, res, next) => {
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.set('Content-Security-Policy', FRAME_ANCESTORS);
+  res.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  next();
+});
+app.use(compression({ threshold: 1024 }));
+app.use(cors({
+  origin(origin, cb) {
+    // no Origin header: not a browser cross-site call (schedulers, Stripe, links opened directly)
+    if (!origin || process.env.CORS_OPEN === '1' || isOurOrigin(origin)) return cb(null, true);
+    cb(null, false);
+  },
+  maxAge: 86400, // the browser remembers the permission check, so each request is sent once, not twice
+}));
 // keep the exact bytes for the Stripe webhook so its signature can be checked
 app.use(express.json({ limit: '15mb', verify: (req, res, buf) => { if (req.originalUrl.startsWith('/api/stripe/webhook')) req.rawBody = buf; } }));
 
@@ -2113,12 +2177,14 @@ async function findRoleForForm(slug, roleId) {
   const roles = await rolesTable.list();
   const s = String(slug || '').toLowerCase();
   const m = s.match(ROLE_FORM_SLUG_RE);
-  const ref = m ? m[1].toUpperCase() : '';
+  // audit Nov 2026: the older bespoke forms are tied to their role reference too, so they close with the role
+  const ref = m ? m[1].toUpperCase() : (BESPOKE_FORM_REFS[s] || '');
   return roles.find(r => ref && String(r.ref || '').toUpperCase() === ref)
     || roles.find(r => String(r.form_slug || '').toLowerCase() === s)
     || (roleId ? roles.find(r => r.id === roleId) : null)
     || null;
 }
+const BESPOKE_FORM_REFS = { 'transport-coordinator': 'R001', 'sales-manager-south': 'R002', 'sales-manager-midlands': 'R003', 'cad-technician': 'R004' };
 function roleIsTakingApplications(role) {
   const st = String(role.status || 'open').trim().toLowerCase();
   return st === 'open' || st === 'hold';
@@ -2369,6 +2435,13 @@ app.post('/api/applications/:role', async (req, res) => {
   try {
     const { role } = req.params;
     if (isRoleFormSlug(role)) return await handleRoleFormApplication(req, res, role);
+    // audit Nov 2026: a filled or lost role no longer accepts applications on the older bespoke forms either.
+    // If the role cannot be looked up the application is still taken, so a fault here never loses a candidate.
+    if (BESPOKE_FORM_REFS[String(role).toLowerCase()]) {
+      let linked = null;
+      try { linked = await findRoleForForm(String(role).toLowerCase()); } catch (e) { console.error('Role status check failed for', role, e.message); }
+      if (linked && !roleIsTakingApplications(linked)) return res.status(410).json({ error: 'This role is no longer taking applications' });
+    }
     if (SALES_MANAGER_FORMS[role]) return await handleSalesManagerApplication(req, res, SALES_MANAGER_FORMS[role]);
     if (CAD_FORMS[role]) return await handleCadApplication(req, res, CAD_FORMS[role]);
     const {
@@ -3056,7 +3129,6 @@ function detectWeeklyHours(text) {
   const h = m ? parseFloat(m[1]) : 0;
   return h >= 8 && h <= 60 ? h : 0;
 }
-function looksHourly(text) { return /per\s*hour|an\s*hour|\/\s*h(?:ou)?r\b|\bp\/?h\b|hourly/i.test(String(text || '')); }
 function hourlyPayNote(rate, hours, annual) {
   const f2 = n => '£' + Number(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return `${f2(rate)} per hour x ${hours} basic hours x ${PAY_WEEKS_PER_YEAR} weeks = £${Number(annual).toLocaleString('en-GB')} a year`;
@@ -3993,20 +4065,6 @@ function getCurrentQuarter() {
   return { quarter: 'Q4', year };
 }
 
-// Helper: Check if date is in current quarter
-function isInCurrentQuarter(dateStr) {
-  const { quarter, year } = getCurrentQuarter();
-  const date = new Date(dateStr);
-  const dateYear = date.getFullYear();
-  const month = date.getMonth() + 1;
-  
-  if (dateYear !== year) return false;
-  
-  if (quarter === 'Q1') return month >= 1 && month <= 3;
-  if (quarter === 'Q2') return month >= 4 && month <= 6;
-  if (quarter === 'Q3') return month >= 7 && month <= 9;
-  return month >= 10 && month <= 12;
-}
 
 // Progress and business health metrics now live in the Automation Batch A block below.
 
@@ -11082,7 +11140,19 @@ async function runBackup() {
   for (const [label, fileId] of targets) {
     const name = `${label} backup ${date}`;
     const existing = await drive.files.list({ q: `'${folderId}' in parents and (name='${name}' or name='${name}.xlsx') and trashed=false`, fields: 'files(id)', pageSize: 1 });
-    if (!(existing.data.files && existing.data.files.length)) {
+    // audit Nov 2026: the data now lives in Postgres, so a Sheet is only copied when it has changed since its
+    // newest copy. If a group is ever switched back to Sheets the daily copies resume on their own.
+    let unchanged = false;
+    try {
+      const newest = await drive.files.list({ q: `'${folderId}' in parents and name contains '${label} backup' and trashed=false`, orderBy: 'createdTime desc', fields: 'files(id,createdTime)', pageSize: 1 });
+      const last = newest.data.files && newest.data.files[0];
+      if (last) {
+        const src = await getDriveClient().files.get({ fileId, fields: 'modifiedTime' });
+        unchanged = Date.parse(src.data.modifiedTime) <= Date.parse(last.createdTime);
+      }
+    } catch (e) { unchanged = false; }
+    if (unchanged) methods[label] = 'not copied (unchanged since the last copy)';
+    else if (!(existing.data.files && existing.data.files.length)) {
       try {
         await drive.files.copy({ fileId, requestBody: { name, parents: [folderId] }, fields: 'id' });
         methods[label] = 'copy';
@@ -11109,10 +11179,95 @@ async function runBackup() {
   // Build 48.0: the data held in Postgres goes into its own dated, readable Google Sheet
   const database = await backupDatabaseToDrive(drive, folderId, date);
   if (database && !database.skipped) made.push(database.name);
-  const status = { at: new Date().toISOString(), ok: true, made, methods, folderId, database };
+  // audit Nov 2026: the true restore point - a complete compressed dump of the database
+  let dump = null;
+  try {
+    dump = await backupDumpToDrive(drive, folderId, date);
+    if (dump && !dump.skipped) made.push(dump.name);
+  } catch (e) {
+    dump = { ok: false, error: String((e && e.message) || e).slice(0, 300) };
+    console.error('Database dump failed:', e);
+    await alertDan('dump', 'Live 2 Help dashboard: database dump failed', `The nightly database dump did not complete, so last night has no full restore point (the readable Sheet backup was still made).\n\nReason: ${dump.error}\n\nLive 2 Help dashboard`);
+  }
+  const status = { at: new Date().toISOString(), ok: true, made, methods, folderId, database, dump };
   await settingsTable.upsert({ id: 'backup_last', value: JSON.stringify(status), updated_by: 'system' });
   return status;
 }
+
+/* ---------- Database dump (audit Nov 2026) ----------
+   Nightly: every table and every row of the live database as one compressed file in the Drive backup
+   folder ("Workspace database dump YYYY-MM-DD.json.gz"). Unlike the Sheet backup nothing is cut, and
+   scripts/restore-dump.mjs (or the restore test below) rebuilds the whole database from it.
+   The newest DUMP_KEEP files are kept; older ones go to the Drive bin. */
+const DUMP_KEEP = 30;
+const DUMP_PREFIX = 'Workspace database dump';
+async function backupDumpToDrive(drive, folderId, date) {
+  if (!pgLivePool) return null;
+  const name = `${DUMP_PREFIX} ${date}.json.gz`;
+  const existing = await drive.files.list({ q: `'${folderId}' in parents and name='${name}' and trashed=false`, fields: 'files(id)', pageSize: 1 });
+  if (existing.data.files && existing.data.files.length) return { name, skipped: 'already made today' };
+  const d = await dumpDatabase(pgLivePool);
+  const check = await inspectDump(d.buffer); // reads the file back, so a broken dump is never stored as good
+  const file = await drive.files.create({
+    requestBody: { name, parents: [folderId] },
+    media: { mimeType: 'application/gzip', body: Readable.from([d.buffer]) },
+    fields: 'id',
+  });
+  const all = await drive.files.list({ q: `'${folderId}' in parents and name contains '${DUMP_PREFIX}' and trashed=false`, orderBy: 'createdTime desc', fields: 'files(id)', pageSize: 200 });
+  for (const f of (all.data.files || []).slice(DUMP_KEEP)) await drive.files.update({ fileId: f.id, requestBody: { trashed: true } });
+  return { name, fileId: file.data.id, tables: check.tables, rows: check.rows, megabytes: +(d.bytes / 1048576).toFixed(2) };
+}
+
+// Proves the newest dump can be restored: rebuilds it in a scratch schema (the preview database when there
+// is one, otherwise a separate schema of the live database), checks every row count, then removes the copy.
+// Live tables are never touched.
+async function newestDumpFromDrive() {
+  const drive = getUploadDriveClient();
+  const folderId = await findOrCreateBackupFolder(drive);
+  const list = await drive.files.list({ q: `'${folderId}' in parents and name contains '${DUMP_PREFIX}' and trashed=false`, orderBy: 'createdTime desc', fields: 'files(id,name)', pageSize: 1 });
+  const f = list.data.files && list.data.files[0];
+  if (!f) throw new Error('There is no database dump in the backup folder yet. Run the backup first.');
+  const r = await drive.files.get({ fileId: f.id, alt: 'media' }, { responseType: 'arraybuffer' });
+  return { f, buffer: Buffer.from(r.data) };
+}
+/* Moving the database (for example to another Render region): set RESTORE_TARGET_URL to the NEW, EMPTY
+   database and call this once. It rebuilds the newest Drive dump there and checks every row count.
+   It refuses to run against the live database or any database that already holds tables. */
+app.post('/api/cron/restore-to-target', cronOnly, async (req, res) => {
+  const target = String(process.env.RESTORE_TARGET_URL || '');
+  if (!target) return res.status(400).json({ error: 'RESTORE_TARGET_URL is not set on the server.' });
+  if (target === process.env.DATABASE_URL || target === process.env.PREVIEW_DATABASE_URL) return res.status(400).json({ error: 'RESTORE_TARGET_URL is the same as a database already in use. Nothing was changed.' });
+  const pool = makePgPool(target, 'restore target');
+  try {
+    const { f, buffer } = await newestDumpFromDrive();
+    const out = await restoreDatabase(pool, buffer, { schema: 'public' });
+    res.json({ ok: true, file: f.name, ...out });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String((e && e.message) || e).slice(0, 500) });
+  } finally { pool.end().catch(() => {}); }
+});
+async function runRestoreTest() {
+  const started = Date.now();
+  const { f, buffer } = await newestDumpFromDrive();
+  const pool = pgPreviewPool || pgLivePool;
+  if (!pool) throw new Error('No database is connected.');
+  const schema = 'restore_test';
+  await pool.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+  let out;
+  try { out = await restoreDatabase(pool, buffer, { schema }); }
+  finally { await pool.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`).catch(() => {}); }
+  const status = { at: new Date().toISOString(), ok: true, file: f.name, tables: out.tables, rows: out.rows, dumpedAt: out.dumpedAt, database: pool === pgPreviewPool ? 'preview' : 'live (scratch schema)', seconds: Math.round((Date.now() - started) / 1000) };
+  await settingsTable.upsert({ id: 'restore_test_last', value: JSON.stringify(status), updated_by: 'system' });
+  return status;
+}
+app.post('/api/backup/restore-test', requireAdmin, async (req, res) => {
+  try { res.json(await runRestoreTest()); }
+  catch (e) {
+    const status = { at: new Date().toISOString(), ok: false, error: String((e && e.message) || e).slice(0, 500) };
+    try { await settingsTable.upsert({ id: 'restore_test_last', value: JSON.stringify(status), updated_by: 'system' }); } catch (x) { /* ignore */ }
+    res.status(500).json(status);
+  }
+});
 
 async function safeBackup() {
   try { return await runBackup(); }
@@ -11139,6 +11294,20 @@ async function runCronJob(name, fn) {
   fn().then(async result => {
     const failed = result && typeof result === 'object' && (result.ok === false || Object.values(result).some(v => typeof v === 'string' && v.startsWith('FAIL')));
     try { await settingsTable.upsert({ id: 'cron_' + name, value: JSON.stringify({ startedAt, finishedAt: new Date().toISOString(), running: false, ok: !failed, result }).slice(0, 45000), updated_by: 'system' }); } catch (e) { /* not essential */ }
+    // audit Nov 2026: a job that finishes but reports a failed step now emails Daniel too (at most once every 6 hours per job)
+    if (failed) {
+      const bad = [];
+      (function walk(o, pre) {
+        if (!o || typeof o !== 'object') return;
+        for (const [k, v] of Object.entries(o)) {
+          const p = pre ? pre + '.' + k : k;
+          if (typeof v === 'string' && v.startsWith('FAIL')) bad.push(`- ${p}: ${v.slice(0, 300)}`);
+          else if ((k === 'ok' && v === false) || (k === 'error' && v)) bad.push(`- ${p}: ${String(v).slice(0, 300)}`);
+          else if (v && typeof v === 'object' && bad.length < 20) walk(v, p);
+        }
+      })(result, '');
+      await alertDan('cron:' + name, `Live 2 Help dashboard: ${name} job reported a problem`, `The ${name} job finished but one or more steps reported a problem:\n\n${bad.slice(0, 20).join('\n') || '(no detail given)'}\n\nFull detail is on the System status screen.\n\nLive 2 Help dashboard`);
+    }
   }).catch(async e => {
     try { await settingsTable.upsert({ id: 'cron_' + name, value: JSON.stringify({ startedAt, finishedAt: new Date().toISOString(), running: false, ok: false, error: e.message }), updated_by: 'system' }); } catch (x) { /* not essential */ }
     await alertDan('cron:' + name, `Live 2 Help dashboard: ${name} job failed`, e.message);
@@ -11157,6 +11326,71 @@ app.get('/api/cron/status', cronOnly, async (req, res) => {
     res.json({ now: new Date().toISOString(), build: SERVER_BUILD, backup: get('backup_last'), backupJob: get('cron_backup'), daily: get('cron_daily'), roleFinder: get('cron_roleFinder'), morning: get('cron_morning'), gapSend: get('cron_gapSend'), morningLastDate: (rows.find(o => o.id === 'morning_last_date') || {}).value || '' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+/* ---------- Fault watch (audit Nov 2026) ----------
+   - a job marker left on "running" by a restart is closed off, so the status screen is never misleading
+   - Daniel is emailed when the server restarts without a deploy (a crash, memory limit or Render fault)
+   - Daniel is emailed when server errors or not-found requests pass a threshold
+   - /api/system/faults shows the recent errors and the most requested missing addresses */
+process.on('unhandledRejection', err => {
+  console.error('[fault] unhandled rejection:', (err && err.stack) || err);
+  reqStats.lastErrors.unshift({ at: new Date().toISOString(), status: 'unhandled', method: '-', path: String((err && err.message) || err).slice(0, 160) });
+  reqStats.lastErrors = reqStats.lastErrors.slice(0, 30);
+});
+const BOOT_AT = new Date().toISOString();
+const BOOT_COMMIT = String(process.env.RENDER_GIT_COMMIT || '').slice(0, 12);
+setTimeout(async () => {
+  try {
+    const rows = await settingsTable.list();
+    for (const r of rows) {
+      if (!String(r.id || '').startsWith('cron_')) continue;
+      let v = null;
+      try { v = JSON.parse(r.value); } catch (e) { continue; }
+      if (v && v.running === true) {
+        await settingsTable.upsert({ id: r.id, value: JSON.stringify({ startedAt: v.startedAt, finishedAt: BOOT_AT, running: false, ok: false, error: 'Interrupted by a server restart before it finished' }), updated_by: 'system' });
+      }
+    }
+    const prevRow = rows.find(r => r.id === 'boot_last');
+    let prev = null;
+    try { prev = prevRow ? JSON.parse(prevRow.value) : null; } catch (e) { prev = null; }
+    const sameCode = !!(prev && BOOT_COMMIT && prev.commit === BOOT_COMMIT);
+    const count = sameCode ? (prev.restarts || 0) + 1 : 0;
+    let alertedAt = sameCode ? (prev.alertedAt || '') : '';
+    if (sameCode && process.env.RENDER && (!alertedAt || Date.now() - Date.parse(alertedAt) > 30 * 60 * 1000)) {
+      alertedAt = BOOT_AT;
+      await mailDan('Live 2 Help dashboard: the server restarted unexpectedly',
+        `The workspace server restarted at ${BOOT_AT} without a new deploy (restart ${count} on this version; the previous start was ${prev.at}).\n\n` +
+        'Usual causes: the server ran out of memory, a fault stopped it, or Render restarted it for maintenance. Anyone signed in may have had to retry what they were doing.\n\n' +
+        'If this repeats, the Render log for l2h-api shows the reason just before the restart.\n\nLive 2 Help dashboard');
+    }
+    await settingsTable.upsert({ id: 'boot_last', value: JSON.stringify({ at: BOOT_AT, commit: BOOT_COMMIT, restarts: count, alertedAt }), updated_by: 'system' });
+  } catch (e) { console.error('Fault watch start-up check failed:', e.message); }
+}, 20000);
+const FAULT_5XX_LIMIT = 15;   // server errors in 10 minutes
+const FAULT_404_LIMIT = 400;  // not-found requests in 10 minutes
+let notFoundWindow = { at: Date.now(), n: 0, last: 0 };
+setInterval(() => {
+  const now = Date.now();
+  reqStats.recent5 = reqStats.recent5.filter(t => now - t < 10 * 60 * 1000);
+  if (reqStats.recent5.length >= FAULT_5XX_LIMIT) {
+    const lines = reqStats.lastErrors.slice(0, 12).map(e => `- ${e.at} ${e.status} ${e.method} ${e.path}`).join('\n');
+    alertDan('errors', 'Live 2 Help dashboard: the server is reporting errors',
+      `${reqStats.recent5.length} requests failed with a server error in the last 10 minutes.\n\nMost recent:\n${lines}\n\nLive 2 Help dashboard`).catch(() => {});
+  }
+  const total404 = [...reqStats.notFound.values()].reduce((a, b) => a + b, 0);
+  if (now - notFoundWindow.at >= 10 * 60 * 1000) notFoundWindow = { at: now, n: 0, last: total404 };
+  notFoundWindow.n = Math.max(0, total404 - notFoundWindow.last);
+  if (notFoundWindow.n >= FAULT_404_LIMIT) {
+    const top = [...reqStats.notFound.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([p, n]) => `- ${n} x ${p}`).join('\n');
+    alertDan('notfound', 'Live 2 Help dashboard: a burst of not-found requests',
+      `${notFoundWindow.n} requests in the last 10 minutes asked for an address that does not exist. This is usually a scanner, or a page calling a route that was renamed.\n\nMost requested:\n${top}\n\nLive 2 Help dashboard`).catch(() => {});
+  }
+}, 60 * 1000).unref();
+app.get('/api/system/faults', requireAdmin, (req, res) => res.json({
+  since: reqStats.since, bootedAt: BOOT_AT, commit: BOOT_COMMIT, requests: reqStats.total, clientErrors: reqStats.s4, serverErrors: reqStats.s5,
+  serverErrorsLast10Min: reqStats.recent5.length, lastErrors: reqStats.lastErrors,
+  notFoundTop: [...reqStats.notFound.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([path, n]) => ({ path, n })),
+}));
+
 app.post('/api/backup/run', requireAdmin, async (req, res) => {
   const s = await safeBackup();
   auditLog(auditActorOf(req), 'backup_run', 'backup', s.ok ? 'ok' : 'failed', s.error || '');
@@ -15778,36 +16012,6 @@ async function cmpReedAgencyTown(town) {
   return out;
 }
 
-// Companies House: active employment agencies registered in the chosen postcode areas (weekly)
-async function cmpDiscoverCompaniesHouse(settings, summary, force) {
-  if (!rfxSources().companiesHouse) return [];
-  const rows = await settingsTable.list();
-  const last = (rows.find(o => o.id === 'cmp_ch_last') || {}).value || '';
-  if (!force && last && Date.now() - Date.parse(last) < 7 * 86400000) return [];
-  const found = new Map();
-  const pcRe = new RegExp('^(' + settings.compPostcodes.map(p => p.replace(/[^A-Z]/gi, '').toUpperCase()).join('|') + ')\\d', 'i');
-  for (const town of settings.compTowns) {
-    try {
-      const p = new URLSearchParams({ company_status: 'active', sic_codes: RFX_AGENCY_SIC.join(','), location: town, size: '100' });
-      const j = await rfxCh('/advanced-search/companies?' + p);
-      ((j && j.items) || []).forEach(c => {
-        const a = c.registered_office_address || {};
-        if (!pcRe.test(String(a.postal_code || '').replace(/\s+/g, ''))) return;
-        const sic = (c.sic_codes || []).map(String);
-        if (!sic.includes('78200') && !CMP_AGENCY_NAME_RE.test(c.company_name || '')) return;
-        found.set(c.company_number, {
-          sic: sic.join(','), company_created: c.date_of_creation || '',
-          name: String(c.company_name || '').toLowerCase().replace(/\b\w/g, x => x.toUpperCase()).replace(/\bLtd\b/i, 'Ltd'),
-          company_number: c.company_number, postcode: a.postal_code || '',
-          address: [a.address_line_1, a.locality, a.postal_code].filter(Boolean).join(', '),
-        });
-      });
-    } catch (e) { summary.errors.push(`Competitors (Companies House ${town}): ${e.message}`); }
-    await rfxSleep(200);
-  }
-  await settingsTable.upsert({ id: 'cmp_ch_last', value: rfxNow(), updated_by: 'system' });
-  return [...found.values()];
-}
 
 /* ---------- reading a competitor's own job pages (free) ----------
    Works with most agency job boards: it reads structured job data (JobPosting) where the site
@@ -16347,7 +16551,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '10 Nov 2026 - build 58 (Hourly pay: invoices, roles and Role Finder use rate x basic hours x 52)';
+const SERVER_BUILD = '12 Nov 2026 - build 59 (Systems audit: own-sites-only access, security headers, compression, closed roles refuse applications, database dump backup, fault alerts)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -20468,7 +20672,6 @@ const specCheckinsTable = makeSimpleTable({
   label: 'Candidate check-in',
 });
 
-function specAlias(i) { return 'Candidate ' + String.fromCharCode(65 + (i % 26)) + (i >= 26 ? Math.floor(i / 26) + 1 : ''); }
 
 async function poolEntryById(poolId) {
   const rows = await readPoolRows();
