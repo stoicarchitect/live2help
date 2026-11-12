@@ -17616,6 +17616,68 @@ setTimeout(async () => {
   } catch (e) { console.error('BMS restyle:', e.message); }
 }, 22000);
 
+/* BMS logo fix, batch 4 go-live and batches 5 and 6 (12 Nov 2026): every document was re-issued with the transparent logo, so the file IDs are swapped (status, version and dates unchanged). The eight batch 4 documents also go Live v1.0, effective 2026-11-12, approved by Daniel in chat. Batch 5 and 6 drafts are linked as Draft v0.1; FRM-019, 020 and 021 are new to the register and are added first if missing (numbers are never reused). Each step runs once, only where the old file ID or the Planned state still holds. */
+setTimeout(async () => {
+  try {
+    const BMS_LOGO_FIX = {
+      '10nOu-KWoV3uxusGSbUTY0bTXWXBhJl36cbTcPNE1E2o': '1TwvtJvqVWfDHpaGjTAADN5_BzwJxN82xUykH9X9KCx8',
+      '1wTfFFMViEmv4gV0RbKzrRRPK3_7Fea126JKWWzieugM': '1bkySV5_tx-W-oY8ZV9tpw3nT6Mh7nBuMYcFx0MmXo6g',
+      '1G0RS8jvbUDYHt7yUpG6_s0fKG6vZ-xQ5maCI6oI9D1Y': '1WbA0y2z2jSskS3oY65Fq1mkDEHd1In-mlstBUQ8s-bg',
+      '1At4ToNGUmHCnzWoAqby4jeyewNqr5MiyP5qawSRCxdg': '1Lec3xKlSKwwySGDqlnqeIW8GnFSk3LXSbOIXYKJYnFM',
+      '1PZbv_wgQkgUxJNy9yKbrwuy50a_anSm2_bvcgzw9a3c': '12DnyX6b4KhCKPAgCkGFRWF3ogvdBNnDlmbHcrJr5ucU',
+      '1iHWYx9tyO4jl6dX8M0l8dPWCNc6XfdfCyxByHmb1Ogw': '1f9RXuLUVdOCOgUeg8yFNPv9YyWff3XeSgTKrWPb-u58',
+      '1397M_V9i7rICxwudOfBBSUxSSAZxcrbFCs6vLrUD5lk': '1l9Z3cJq86_RAx-1obX_tZ-vXDLsaddA3c9GrRSQAemg',
+      '1DC84ysuSeHn8iqiCtOG8_srPcqAkktQHKr2yVayiChk': '1B73ymAjDiS8ScsjRZirjH3yurzJ8r7F6pKNqKUIkpps',
+      '1IfPg28Uwyf-NjHNY5iyrZJ5li1mTUs8SDKOyFH_Q4JM': '1zX958gMwg75O8BH3mgoAD9MpJrWqJZ-axGlh3P6gbNg',
+      '1vzoviuquDOf6fFaL3K_2hUtYbLjDr59l3ZxAdlixntg': '1oIwzihYSKOzoaDAXrkOw7kfyvqCOywBgQnvVcv7ExSE',
+      '1VzdbviS-Mz_msfd0u6iJ93wO9GlrtGSADtZR45V7Ol4': '1TlcMLddq0ze_sOCSYBDiuqkFHTZAHVIZsEC3RGBAglM',
+      '1FylGykTs29pQC8XfPn8NhCT_td4qeJ4y8l5I4TK4CpU': '1xGNYmy4G9GZ-0HHHDNAfOTSCP4nO22ZJ1gnHX3PGRAA',
+      '1XPCsl_i46EtiOY2KxktyRhQvvFbYv_FEs-nhZ08QpRI': '197Rlxae7jJ7uyecs1awsTYOm9ca7J25df1iVXZicrgs',
+      '1bGAab5F9LzLjvwiqi_zxLNjQAmWLWN-79ye7Dv4FZEI': '1y_GwjcHNU8u2D89-2eLzU1jAv2LrFvT0TnmkTkx2Szw',
+      '1w0MUjYOxLAmvpPRJqdTvmGXdHjt_Vh0LNb4FBuaRL58': '1VhFZ7-zZpEuE0ECiAl-N7CsQ4LrznOWQVLSbshxZbVA',
+      '1xo7fzWABRXo-5OWZx-O6dqu-dJoLcGySyc2maNP0K7s': '1pWNEzRgqkpL_TO_yiJwAAWmNYNBkWS1Qwubk8mTb24w',
+      '185S5ZmUEatEs9If4_fqYlehWJqpaF4CN5Jdl6AYU09Q': '1ap4E9ERo2yZqlxbRw19be0baqhLvGFhmx6zPQbd2waw',
+      '19Iq1LTuaBS_KIgQ8PgU-xlu5d03LvQiCJ1MA5rVzaTo': '12ZFXLhjWoaM00drUsu0TUfGtOaj3JLAiDpcevQ98UpA',
+      '1IoDyjLCenlJHxr_lo1znskiFsecn1C1kUEygbrg214E': '10zbAfM5rPAKdqb7vw6M8uyYnTrzVRXLG3H0d-5c0_S8',
+      '1zNVnqK_gxoiYfVBK3lAj9VjktKj6JuBmxA5myDvIk18': '1xscs9CFnwgndEtkE1KFx9a3Umt6CLGmDseoty5qLYqg',
+      '1r0ykAcJI0rlGTxZFj3HfyN0FEkSbodcdmhSfPEwmD4Q': '1pHbrAqiVvNhT5BlUkeg9NVprVq0RSHUMubgHFwyhYR4',
+      '1SX62luxveSApOSVO3vCPBO-akbjyEs3NPGAN_gXLGNg': '1XOdiGys7bTKkYfGOUYzvu8shCRt4A8pYiAiCWcqrVc4',
+      '1vM2SQrXpi8WKCLeE4h1hHYQ3HUyg9le1YA1GavNsYXg': '1Ew5H_DFfjlkGShMRAmi7lJ6b8C2Yn2WiowBAW1B_lLk',
+      '1t-49-5LSNnsTObsowzog4fUUKyPTUyvcnijDbFQHi1M': '1ojSaC_2zxV02wEtBXmv92I7V8jcSJ7R5jR7_1KF64jw',
+      '1basST4OYXQZhrABv336cOnL0vVmlXmPF4XhCIfazvlY': '1vkX_E_R3vbiq4k0O4PUF_D6WgvxM3IY3uR0RhUEPkK4',
+      '1Du0paSiKanMLnjg_xOg2GpEduogKD6hI1qHZlTVOnU8': '1uJ4k3mkOGcRy1oDGv6LcwkI1h8pJZeugf4Olszgx2B8',
+      '1kHblkQ3GNE0mW5QpPfSAZpCR5w3APd89Nqo4qmSDh-4': '14IK4EtlZpDWjxCatfngMVYdAAyxUBkQvZKGzlMTfpeM',
+      '1W3kp0DAWnn00Yt1l_pdui3X71vbTuX0qTgghtZULJh8': '1c7efWb070jaIGE9pOLxvkRJVxHKE5IJg1ZoL_XXX5fM',
+      '1hhJLUdI6svFYbtmLDxqSdQOLfVcqci0YZKEPq2Nm5Bg': '1yRc7HPLEVyAdsNdd_ZFS-Z_vBuYME7OirsW5olKskZw',
+      '1vfdvmfeVHo1dMMAXUDoAv0K7B-dty2tkgLM70x1_Ggw': '1t3Mm_jJp4dnJpfayzOwuwaNUfHwI_TzsVR_I8_7D51g',
+      '1UyYEO4a5OgQZ7dzRs-bXjTZ3ArGDLe8Q1ma805LmGq8': '1BJ3Nq6TOvgbmGhUx6CzVOSFJZ7ackszFP6lxeNVS4fI',
+      '1ccmSNXOljRHX-2UnxjQ3xcMuusalLXVnLQreFTuGDGk': '16nv17kIbZB8jqWoiVI5yX8pVhXD2C8H56zcSrDEZh0w',
+      '1xGa6ac1d-beiPEiB0rabM59hzKmMi2Kqjggsd-qN9k8': '1xLukAiyAhs8U-CXvxtHJnCYdLzO0eZuGKQoZwP3FYBA',
+      '1oRXniVI6jTp439-WPomT1x8-HFpxo6EQ9Fehhn06X68': '1b7WUrcwQynpbeQTIF4z9aYb4FirW_6qGnCgRhYZUzXY',
+      '1XyMGBF7wHTZ03NFZQclxV-eN8NgABFF6V8klhyepBBo': '14DRKQnP_8n1jBFzAScxrqIeK_SFrO3i0u0YztbwIEZg',
+      '1uS6YLJ2ml9jPgp_8ewcLyK1nr-OOga-i9dQLaEZOfPw': '1EAZ0CLSYqMdFcs0s2H2Oc8w32OgzW0_dUdT1Mv6TgNo',
+      '1qh7H5Dd-7ei9WHH836S6EIuCPc2TJl4CHzCS_Zhvj4M': '1Ytboyi2VYauenGeNiGVQtrVKvJfQCtX2e_kB7T0Io8c'
+    };
+    const BMS_LIVE_B4_NEW = new Set(["1bkySV5_tx-W-oY8ZV9tpw3nT6Mh7nBuMYcFx0MmXo6g", "1WbA0y2z2jSskS3oY65Fq1mkDEHd1In-mlstBUQ8s-bg", "1pWNEzRgqkpL_TO_yiJwAAWmNYNBkWS1Qwubk8mTb24w", "12ZFXLhjWoaM00drUsu0TUfGtOaj3JLAiDpcevQ98UpA", "10zbAfM5rPAKdqb7vw6M8uyYnTrzVRXLG3H0d-5c0_S8", "1xscs9CFnwgndEtkE1KFx9a3Umt6CLGmDseoty5qLYqg", "1Ew5H_DFfjlkGShMRAmi7lJ6b8C2Yn2WiowBAW1B_lLk", "1vkX_E_R3vbiq4k0O4PUF_D6WgvxM3IY3uR0RhUEPkK4"]);
+    for (const d of await bmsDocs.list()) {
+      const nf = BMS_LOGO_FIX[d.file_id]; if (!nf) continue;
+      if (BMS_LIVE_B4_NEW.has(nf)) await bmsDocs.upsert({ ...d, file_id: nf, status: 'Live', version: '1.0', effective_date: '2026-11-12', next_review: bmsAddMonths('2026-11-12', d.review_months), updated_by: 'Daniel Brown (approved in chat)', updated_at: '2026-11-12' });
+      else await bmsDocs.upsert({ ...d, file_id: nf, updated_by: 'system', updated_at: '2026-11-12' });
+    }
+  } catch (e) { console.error('BMS logo fix and batch 4 go-live:', e.message); }
+  try {
+    const BMS_BATCH56 = {"L2H-POL-021": "1ZPq0Z3Mx1tfe7Fb-kL-w2ULobSBamAdA8SDpL3QSIk4", "L2H-POL-036": "1UIDzm8iwThlyy-DLz3ZGUCCfmOsS_-RqWOexuTQyRuo", "L2H-POL-024": "1COMnMAc96NFR0ncvbDO-_mvYQUWKMlBxshxB9o0ctQI", "L2H-POL-026": "1R_2IARsjXmfbdYIAxh0A7akknhkQ4yxptVxccsTgEF4", "L2H-POL-033": "1C-EdIYb3hjSHQPiTpQWnyp0me6AB3TppaBYrZvEnOCo", "L2H-FRM-016": "1MPis37TsIOsHSYXLsIPOOG7zBMTxOCMKIhZAGsEkh0E", "L2H-FRM-019": "1_dhN9xukn1wJOHMnj4zyUWHdmflwPOxxJMya9cqPtNw", "L2H-FRM-020": "1GnvH9QqyPSAQYf7OXOoiVoXzzWje_Unhu-e7uXYyxIE", "L2H-FRM-021": "1Ed_Y_H02gPKsvljWfa5WGjPC7UowmyqApil3IUHc2fQ"};
+    const have = await bmsDocs.list();
+    for (const id of ['L2H-FRM-019', 'L2H-FRM-020', 'L2H-FRM-021']) {
+      if (!have.some(d => d.id === id)) {
+        const seed = BMS_SEED.find(d => d.id === id);
+        if (seed) await bmsDocs.upsert({ ...seed, status: 'Planned', version: '', file_id: '' });
+      }
+    }
+    for (const d of await bmsDocs.list()) { const nf = BMS_BATCH56[d.id]; if (nf && !d.file_id && d.status === 'Planned') await bmsDocs.upsert({ ...d, file_id: nf, status: 'Draft', version: '0.1', updated_by: 'system', updated_at: '2026-11-12' }); }
+  } catch (e) { console.error('BMS batch 5 and 6 drafts:', e.message); }
+}, 26000);
+
 /* ---------- build 42: planning and marketing records (tracker sheet) ---------- */
 const weekPlanTable = makeSimpleTable({
   tab: 'Week Plans', path: '/api/week-plans', label: 'Plan item',
