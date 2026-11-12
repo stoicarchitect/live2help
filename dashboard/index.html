@@ -3673,7 +3673,7 @@ function startAutoSync(){
   if(window._autoSyncInterval) return;
   console.log('Starting board refresh - now, then every 1 minute');
   syncSubmissions();
-  window._autoSyncInterval = setInterval(syncSubmissions, 1 * 60 * 1000);
+  window._autoSyncInterval = setInterval(() => { if(document.hidden){ window._l2hSkippedPoll = true; return; } syncSubmissions(); }, 1 * 60 * 1000); // audit Nov 2026: no polling while the tab is hidden
   setInterval(updateSyncDisplay, 1000);
 }
 
@@ -6977,7 +6977,7 @@ async function savePlacement(){
     await prev();
     if(signedInUser){ refreshOps(false); recomputeOps(); }
   };
-  setInterval(() => { if(signedInUser) refreshOps(true); }, 5 * 60 * 1000);
+  setInterval(() => { if(document.hidden){ window._l2hSkippedPoll = true; return; } if(signedInUser) refreshOps(true); }, 5 * 60 * 1000);
 })();
 
 </script>
@@ -8780,8 +8780,15 @@ let authToken = null;
       if(authToken) h['Authorization'] = 'Bearer ' + authToken;
       else if(signedInUser) h['X-User-Role'] = signedInUser.key;
       opts.headers = h;
+      const isSignIn = url.indexOf('/api/login') !== -1 || url.indexOf('/api/change-password') !== -1;
+      // audit Nov 2026: once the session has ended nothing more is sent, so an open tab no longer
+      // keeps asking the server (and being refused) while it waits to show the sign-in screen
+      if(window._l2hSessionEnded && !isSignIn){
+        return Promise.resolve(new Response(JSON.stringify({ error: 'Please sign in again', code: 'AUTH' }), { status: 401, headers: { 'Content-Type': 'application/json' } }));
+      }
       return rawFetch(url, opts).then(r => {
-        if(r && r.status === 401 && authToken && url.indexOf('/api/login') === -1 && url.indexOf('/api/change-password') === -1){
+        if(r && r.status === 401 && authToken && !isSignIn && !window._l2hSessionEnded){
+          window._l2hSessionEnded = true;
           showToast('Your session has ended. Please sign in again.');
           setTimeout(() => location.reload(), 2500);
         }
@@ -8791,6 +8798,17 @@ let authToken = null;
     return rawFetch(url, opts);
   };
 })();
+
+/* audit Nov 2026: the board, tasks and notification checks pause while the tab is hidden and catch up once when it is shown again */
+document.addEventListener('visibilitychange', function(){
+  if(document.hidden || !window._l2hSkippedPoll || window._l2hSessionEnded) return;
+  window._l2hSkippedPoll = false;
+  if(typeof signedInUser === 'undefined' || !signedInUser) return;
+  try { if(window._autoSyncInterval && typeof syncSubmissions === 'function') syncSubmissions(); } catch(e){}
+  try { if(typeof refreshOps === 'function') refreshOps(true); } catch(e){}
+  try { if(typeof rpCheck === 'function') rpCheck(false); } catch(e){}
+  try { if(typeof tpCheck === 'function') tpCheck(); } catch(e){}
+});
 
 function authUrl(u){
   return authToken ? u + (u.indexOf('?') === -1 ? '?' : '&') + 'token=' + encodeURIComponent(authToken) : u;
@@ -13648,7 +13666,7 @@ function rpOpenCard(name, role){
     if(RP.timer) clearInterval(RP.timer);
     RP.seen = null;
     setTimeout(() => rpCheck(true), 4000);
-    RP.timer = setInterval(() => rpCheck(false), 60 * 1000);
+    RP.timer = setInterval(() => { if(document.hidden){ window._l2hSkippedPoll = true; return; } rpCheck(false); }, 60 * 1000);
   };
 })();
 </script>
@@ -14763,7 +14781,7 @@ async function tpReviewed(id){
     if(TP.timer) clearInterval(TP.timer);
     TP.stats = null; TP.statsAt = 0;
     setTimeout(() => { tpCheck(); tpLoadStats(true); }, 5000);
-    TP.timer = setInterval(tpCheck, 60 * 1000);
+    TP.timer = setInterval(() => { if(document.hidden){ window._l2hSkippedPoll = true; return; } tpCheck(); }, 60 * 1000);
   };
 })();
 </script>
@@ -17095,7 +17113,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '10 Nov 2026 - build 58.2 (Celebration title colour fix)';
+var PAGE_BUILD = '12 Nov 2026 - build 59.0 (Systems audit: checks pause in hidden tabs, one sign-in prompt when a session ends)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
