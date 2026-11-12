@@ -11221,15 +11221,34 @@ async function backupDumpToDrive(drive, folderId, date) {
 // Proves the newest dump can be restored: rebuilds it in a scratch schema (the preview database when there
 // is one, otherwise a separate schema of the live database), checks every row count, then removes the copy.
 // Live tables are never touched.
-async function runRestoreTest() {
-  const started = Date.now();
+async function newestDumpFromDrive() {
   const drive = getUploadDriveClient();
   const folderId = await findOrCreateBackupFolder(drive);
   const list = await drive.files.list({ q: `'${folderId}' in parents and name contains '${DUMP_PREFIX}' and trashed=false`, orderBy: 'createdTime desc', fields: 'files(id,name)', pageSize: 1 });
   const f = list.data.files && list.data.files[0];
   if (!f) throw new Error('There is no database dump in the backup folder yet. Run the backup first.');
   const r = await drive.files.get({ fileId: f.id, alt: 'media' }, { responseType: 'arraybuffer' });
-  const buffer = Buffer.from(r.data);
+  return { f, buffer: Buffer.from(r.data) };
+}
+/* Moving the database (for example to another Render region): set RESTORE_TARGET_URL to the NEW, EMPTY
+   database and call this once. It rebuilds the newest Drive dump there and checks every row count.
+   It refuses to run against the live database or any database that already holds tables. */
+app.post('/api/cron/restore-to-target', cronOnly, async (req, res) => {
+  const target = String(process.env.RESTORE_TARGET_URL || '');
+  if (!target) return res.status(400).json({ error: 'RESTORE_TARGET_URL is not set on the server.' });
+  if (target === process.env.DATABASE_URL || target === process.env.PREVIEW_DATABASE_URL) return res.status(400).json({ error: 'RESTORE_TARGET_URL is the same as a database already in use. Nothing was changed.' });
+  const pool = makePgPool(target, 'restore target');
+  try {
+    const { f, buffer } = await newestDumpFromDrive();
+    const out = await restoreDatabase(pool, buffer, { schema: 'public' });
+    res.json({ ok: true, file: f.name, ...out });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String((e && e.message) || e).slice(0, 500) });
+  } finally { pool.end().catch(() => {}); }
+});
+async function runRestoreTest() {
+  const started = Date.now();
+  const { f, buffer } = await newestDumpFromDrive();
   const pool = pgPreviewPool || pgLivePool;
   if (!pool) throw new Error('No database is connected.');
   const schema = 'restore_test';
