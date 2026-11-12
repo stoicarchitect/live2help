@@ -17678,6 +17678,19 @@ setTimeout(async () => {
   } catch (e) { console.error('BMS batch 5 and 6 drafts:', e.message); }
 }, 26000);
 
+/* 12 Nov 2026 (second run): batch 5 and 6 go-live (Draft to Live v1.0) and batch 7 drafts */
+setTimeout(async () => {
+  try {
+    const BMS_GL56 = {"1ZPq0Z3Mx1tfe7Fb-kL-w2ULobSBamAdA8SDpL3QSIk4": "1iQqunZxBEe7ObDrcjyAw5VaJeJwj0nXrmpLFZ8YVWT8", "1UIDzm8iwThlyy-DLz3ZGUCCfmOsS_-RqWOexuTQyRuo": "1V71GQ5fOBPzpmb9gujt-mrnkXBzbtbMaG166ZC_Wrv8", "1COMnMAc96NFR0ncvbDO-_mvYQUWKMlBxshxB9o0ctQI": "1xoBVDAsZBrjITxEBTWY97QJIcOzls4zLIkjeczBnh1k", "1R_2IARsjXmfbdYIAxh0A7akknhkQ4yxptVxccsTgEF4": "1GTtrwU5aJfXD3hnnP3uNjmfVE8XQElqbJQ0atPkHg5g", "1C-EdIYb3hjSHQPiTpQWnyp0me6AB3TppaBYrZvEnOCo": "1-pHKJWM7G5KnqR_NJIKtGopaQp8FdHZaUQ6zVAfi3y0", "1MPis37TsIOsHSYXLsIPOOG7zBMTxOCMKIhZAGsEkh0E": "1KYBHc--aF19XqbRMOlpG2nBxD4--KklC95_3LjSIu5c", "1_dhN9xukn1wJOHMnj4zyUWHdmflwPOxxJMya9cqPtNw": "13SpzU3G0hNj7smKyBdCpAMSL8nkSmOZrPbazfFnR8nw", "1GnvH9QqyPSAQYf7OXOoiVoXzzWje_Unhu-e7uXYyxIE": "1HnhT5lIRwSfGpNyzLn2cCVsxxQuWA0c3n7MRNfrXQmA", "1Ed_Y_H02gPKsvljWfa5WGjPC7UowmyqApil3IUHc2fQ": "1xqqbLqwO8bSutonDizYWK6H2QVOLvWikrgw3UjNIEII"};
+    for (const d of await bmsDocs.list()) { const nf = BMS_GL56[d.file_id]; if (!nf) continue;
+      await bmsDocs.upsert({ ...d, file_id: nf, status: 'Live', version: '1.0', effective_date: '2026-11-12', next_review: bmsAddMonths('2026-11-12', d.review_months), updated_by: 'Daniel Brown (approved in chat)', updated_at: '2026-11-12' }); }
+  } catch (e) { console.error('BMS batch 5 and 6 go-live:', e.message); }
+  try {
+    const BMS_BATCH7 = {"L2H-POL-037": "1cVU2CO17jm6D5jUsk_ZQSlKD7PaaviLOP1a72SMXn3I", "L2H-POL-020": "1oyuhqik1CiT4sZucDGsN2R9khfqP8BD9ae7IlAGPr_Y", "L2H-POL-035": "1dXioIbDwgVrwXzrL4HO6Q67NlthG64XM2ogZWfPrQgU", "L2H-POL-034": "1f8uflo3Yl3FmRDdxbc_J0KorW6j0VsZwcPqyCqDKTq8", "L2H-POL-032": "1vZXrzYpNeCNNioAFZ7w0pg283TdQIbzpMNLWFmukqiE", "L2H-POL-025": "15CR_0QCuUjw4NTn6cvLFG2CqyzxIk48TdNf1QhYluhY", "L2H-POL-038": "1xdfGZ9Vv49DSQ6xn6CYAlQ6Vs2HqvbJyJjsAssrlx-Q", "L2H-POL-031": "1nxSWhtnHyppuCM4LvwKMNIjkRzzKcaPnMW5XNY6wb_Q", "L2H-POL-019": "1A-oEgVHeiTo_MeDLmZMJy8GHwagEx3iTPQioXv_h6BI", "L2H-FRM-013": "1tlajyaF5edXOP2O1yullihxrskH9tgl1k-7yVCeh3F8", "L2H-FRM-014": "1k_1DfCt8dZxI3RKWQkRyThCfW4_Br5INh1tDNierTj8", "L2H-FRM-015": "1yHn_itEuRW8PeZ0B1lN0pwZGQoFvNSAl8it9tzyEYF0", "L2H-FRM-018": "1iL5uIKjppQyEStCiTVEiEH9oMN09cg3ZIFP7KwWq7e0"};
+    for (const d of await bmsDocs.list()) { const nf = BMS_BATCH7[d.id]; if (nf && !d.file_id && d.status === 'Planned') await bmsDocs.upsert({ ...d, file_id: nf, status: 'Draft', version: '0.1', updated_by: 'system', updated_at: '2026-11-12' }); }
+  } catch (e) { console.error('BMS batch 7 drafts:', e.message); }
+}, 30000);
+
 /* ---------- build 42: planning and marketing records (tracker sheet) ---------- */
 const weekPlanTable = makeSimpleTable({
   tab: 'Week Plans', path: '/api/week-plans', label: 'Plan item',
