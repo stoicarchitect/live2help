@@ -5160,18 +5160,38 @@ async function ensurePoolTab() {
 // Cleared after every locked pool write, so edits are always visible straight away.
 let poolRowsCache = null;
 let poolRowsCacheAt = 0;
+// build 59.3: a read that overlaps a pool write is never kept, so a background refresh cannot bring back older rows
+let poolWriteGen = 0;
+function poolCacheClear() { poolRowsCache = null; poolWriteGen++; }
 const POOL_CACHE_MS = 10000;
+
+// build 59.3: screens that only show alerts may use a copy up to 10 minutes old and refresh it in the background.
+// Every pool write still clears the copy, so a save is always seen straight away.
+let poolRefreshing = null;
+async function readPoolRowsQuick() {
+  if (isPreview() || !poolRowsCache) return readPoolRows();
+  const age = Date.now() - poolRowsCacheAt;
+  if (age > 600000) return readPoolRows();
+  if (age > POOL_CACHE_MS && !poolRefreshing) {
+    const was = poolRowsCache;
+    poolRefreshing = readPoolRows().catch(e => { console.error('Talent pool refresh:', e.message); return was; })
+      .finally(() => { poolRefreshing = null; });
+  }
+  return poolRowsCache;
+}
 
 async function readPoolRows() {
   if (!isPreview() && poolRowsCache && Date.now() - poolRowsCacheAt < POOL_CACHE_MS) return poolRowsCache;
   await ensurePoolTab();
   const sheets = getSheetsClient();
+  const gen = poolWriteGen;
   const result = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
     range: `'${POOL_TAB}'!A2:${POOL_LAST_COL}`,
   });
   const rows = result.data.values || [];
   if (isPreview()) return rows; // build 48.1: preview rows never go in the live cache
+  if (gen !== poolWriteGen) return rows;
   poolRowsCache = rows;
   poolRowsCacheAt = Date.now();
   return poolRowsCache;
@@ -5183,7 +5203,7 @@ let poolChain = Promise.resolve();
 function withPoolLock(fn) {
   const run = poolChain.then(async () => {
     try { return await fn(); }
-    finally { poolRowsCache = null; }
+    finally { poolCacheClear(); }
   });
   poolChain = run.catch(() => {});
   return run;
@@ -5737,6 +5757,25 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
     return rows.map(x => x.slice());
   }
 
+  // build 59.3: a write through this table patches the kept copy of a whole tab instead of throwing it away,
+  // so shortlisting or dismissing one advert no longer forces a full re-read of every advert.
+  // Only used when nothing else wrote to the tab meanwhile (its generation moved by exactly our own write).
+  function wtBefore() {
+    if (!wholeTab) return null;
+    const mode = isPreview() ? 'p' : 'l';
+    const hit = wtCache[mode];
+    if (!hit || hit.key !== gridGenKey(SID_OF(), tab)) return null;
+    return { mode, hit, g: gridGen.get(SID_OF() + '|' + tab) || 0, s: gridStructGen };
+  }
+  function wtAfter(snap, writes, patch) {
+    if (!snap) return;
+    const g = gridGen.get(SID_OF() + '|' + tab) || 0;
+    if (g !== snap.g + 2 * writes || gridStructGen !== snap.s || wtCache[snap.mode] !== null) { wtCache[snap.mode] = null; return; }
+    const rows = snap.hit.rows.slice();
+    patch(rows);
+    wtCache[snap.mode] = { at: snap.hit.at, key: gridGenKey(SID_OF(), tab), rows };
+  }
+
   const pad = row => {
     const a = (row || []).slice(0, width).map(v => (v == null ? '' : String(v)));
     while (a.length < width) a.push('');
@@ -5769,6 +5808,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
       const rows = await readRows();
       const idx = rows.findIndex(r => r && r[0] === obj.id);
       const row = toRow(obj);
+      const snap = idx === -1 ? null : wtBefore();
       invalidate();
       if (idx === -1) {
         await sheets.spreadsheets.values.append({
@@ -5781,6 +5821,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
           spreadsheetId: SID_OF(), range: `'${tab}'!A${n}:${lastCol}${n}`, valueInputOption: 'RAW',
           requestBody: { values: [row] },
         });
+        wtAfter(snap, 1, rows => { rows[idx] = row; });
       }
       return toObj(row);
     });
@@ -5821,8 +5862,10 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
       const idx = rows.findIndex(r => r && r[0] === id);
       if (idx === -1) return false;
       const n = idx + 2;
+      const snap = wtBefore();
       invalidate();
       await sheets.spreadsheets.values.clear({ spreadsheetId: SID_OF(), range: `'${tab}'!A${n}:${lastCol}${n}` });
+      wtAfter(snap, 1, rows => { rows[idx] = []; });
       return true;
     });
   }
@@ -5855,17 +5898,21 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
       const sheets = getSheetsClient();
       const rows = await readRows();
       const data = [];
+      const at = [];
       rows.forEach((r, i) => {
         if (!r || !r[0]) return;
         const o = toObj(r);
         if (pred(o)) {
           const m = mutate({ ...o }) || o;
           data.push({ range: `'${tab}'!A${i + 2}:${lastCol}${i + 2}`, values: [toRow(m)] });
+          at.push(i);
         }
       });
       if (data.length) {
+        const snap = wtBefore();
         invalidate();
         await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: SID_OF(), requestBody: { valueInputOption: 'RAW', data } });
+        wtAfter(snap, data.length, rs => { at.forEach((i, k) => { rs[i] = data[k].values[0]; }); });
       }
       return data.length;
     });
@@ -13833,7 +13880,7 @@ async function talentPoolUpsert(c, saved, srcLabel) {
   const summary = tpSummaryLine(c, today);
   const result = { mode: 'new', id: '', trashFileId: '' };
   await withPoolLock(async () => {
-    poolRowsCache = null;
+    poolCacheClear();
     const sheets = getSheetsClient();
     const rows = await readPoolRows();
     const matches = tpFindMatches(rows, c.email, c.phone);
@@ -13928,7 +13975,7 @@ async function mergeTalentPoolOnApplication(poolId, email, phone, roleName) {
     let trash = '';
     let did = false;
     await withPoolLock(async () => {
-      poolRowsCache = null;
+      poolCacheClear();
       const sheets = getSheetsClient();
       const rows = await readPoolRows();
       const appIdx = rows.findIndex(r => r && r[0] === poolId);
@@ -13977,7 +14024,7 @@ async function mergeTalentPoolOnApplication(poolId, email, phone, roleName) {
 app.get('/api/talent-pool/new', async (req, res) => {
   try {
     const me = actorOf(req);
-    const rows = await readPoolRows();
+    const rows = await readPoolRowsQuick();
     const data = rows.map(padPoolRow)
       .filter(r => r[0] && !r[20] && r[21] && !tpSeenList(r).includes(me))
       .sort((a, b) => String(b[9]).localeCompare(String(a[9])))
@@ -13997,7 +14044,7 @@ app.post('/api/talent-pool/seen', async (req, res) => {
     if (!ids.size) return res.json({ ok: true, updated: 0 });
     let updated = 0;
     await withPoolLock(async () => {
-      poolRowsCache = null;
+      poolCacheClear();
       const rows = await readPoolRows();
       const data = [];
       rows.forEach((raw, i) => {
@@ -14052,7 +14099,7 @@ async function tpEraseEntry(id, actorLabel) {
   tomb[0] = tombId; tomb[1] = 'Erased candidate'; tomb[14] = 'No';
   tomb[20] = todayISO(); tomb[9] = new Date().toISOString();
   await withPoolLock(async () => {
-    poolRowsCache = null;
+    poolCacheClear();
     const rows = await readPoolRows();
     const idx = rows.findIndex(r => r && r[0] === id);
     if (idx === -1) return;
@@ -14310,7 +14357,7 @@ app.post('/t/:token', async (req, res) => {
 
 // Daily: email at month 11, flag for deletion after month 12 with no answer
 async function talentPoolReconsentCheck() {
-  poolRowsCache = null;
+  poolCacheClear();
   const rows = (await readPoolRows()).map(padPoolRow);
   const today = todayISO();
   let sent = 0, flagged = 0, failed = 0, queuedIds = null;
@@ -14352,7 +14399,7 @@ async function talentPoolReconsentCheck() {
 // Writes single cells without touching last_updated
 function tpPatchCells(id, cells) {
   return withPoolLock(async () => {
-    poolRowsCache = null;
+    poolCacheClear();
     const rows = await readPoolRows();
     const idx = rows.findIndex(r => r && r[0] === id);
     if (idx === -1) return;
@@ -15638,31 +15685,88 @@ app.post('/api/role-finder/restore-company', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// build 59.2: the list is built once and reused until anything is written (or the day changes), 60 seconds at most
+// build 59.3: the advert list leaves out the two large text columns (advert text and deep dive), which the board
+// never shows. Read straight from the database copy of the tab when there is one, otherwise from the table.
+const RFX_IDX_DESC = RFX_RESULT_HEADER.indexOf('description');
+const RFX_IDX_DIVE = RFX_RESULT_HEADER.indexOf('dive_json');
+async function rfxLightResults() {
+  const pool = gridPoolFor(SHEET_ID, RFX_RESULTS_TAB);
+  if (pool && RFX_IDX_DESC >= 0 && RFX_IDX_DIVE >= 0) {
+    await gridSchema(pool);
+    const hi = Math.max(RFX_IDX_DESC, RFX_IDX_DIVE), lo = Math.min(RFX_IDX_DESC, RFX_IDX_DIVE);
+    const r = await pool.query({
+      text: `select (cells - ${hi}) - ${lo} as cells, coalesce(cells->>${RFX_IDX_DIVE}, '') <> '' as dived
+             from grid_rows where spreadsheet = $1 and title = $2 and r > 1 order by r`,
+      values: [SHEET_ID, RFX_RESULTS_TAB],
+    });
+    if (r.rows.length) {
+      const out = [];
+      for (const x of r.rows) {
+        const c = Array.isArray(x.cells) ? x.cells : [];
+        if (!c[0] || String(c[0]).startsWith('__')) continue;
+        const full = c.slice(0, lo).concat(['']).concat(c.slice(lo, hi - 1)).concat(['']).concat(c.slice(hi - 1));
+        const o = {};
+        RFX_RESULT_HEADER.forEach((h, i) => { o[h] = full[i] == null ? '' : String(full[i]); });
+        o.dive_json = x.dived ? '1' : '';
+        out.push(o);
+      }
+      return out;
+    }
+  }
+  return rfxResultsTable.list();
+}
+
+// build 59.3: three separate keeps, so an unrelated save elsewhere no longer forces the whole advert list to be rebuilt.
+// adverts: until this tab is written or the day changes; context (clients, leads, suppressions): until any save, 60 s at most
+let rfxBaseMemo = { l: null, p: null };
+let rfxCtxMemo = { l: null, p: null };
 let rfxListMemo = { l: null, p: null };
-app.get('/api/role-finder/results', async (req, res) => {
-  try {
-    const mode = isPreview() ? 'p' : 'l';
-    const key = `${gridGenKey(SHEET_ID, RFX_RESULTS_TAB)}|${sheetsWriteGen}|${rfxToday()}`;
-    const memo = rfxListMemo[mode];
-    if (memo && memo.key === key && Date.now() - memo.at < 60000) return res.type('application/json').send(memo.body);
-    const [list, ctx, settings] = await Promise.all([rfxResultsTable.list(), rfxContext(), rfxSweepSettings()]);
-    const scores = rfxCompanyScores(list, settings, rfxToday());
-    const data = list.map(o => {
+async function rfxBuildList() {
+  const mode = isPreview() ? 'p' : 'l';
+  const today = rfxToday();
+  const key = `${gridGenKey(SHEET_ID, RFX_RESULTS_TAB)}|${today}|${sheetsWriteGen}`;
+  const memo = rfxListMemo[mode];
+  if (memo && memo.key === key && Date.now() - memo.at < 60000) return memo.body;
+  const settings = await rfxSweepSettings();
+  const baseKey = `${gridGenKey(SHEET_ID, RFX_RESULTS_TAB)}|${today}|${JSON.stringify(settings.bands || [])}`;
+  let base = rfxBaseMemo[mode];
+  if (!base || base.key !== baseKey || Date.now() - base.at > 600000) {
+    const list = await rfxLightResults();
+    const scores = rfxCompanyScores(list, settings, today);
+    const rows = list.map(o => {
       const p = rfxPublicResult(o);
-      const n = rfxNormCompany(o.company);
-      p.score = scores.get(n) || 0;
+      p._n = rfxNormCompany(o.company);
+      p.score = scores.get(p._n) || 0;
       p.in_band = rfxInBands(o, settings.bands);
-      p.is_client = ctx.clients.has(n);
-      p.is_lead = ctx.leads.has(n);
-      p.suppressed = ctx.suppressedCompanies.has(n);
       return p;
     });
-    const body = JSON.stringify({ data, today: rfxToday() });
-    if (`${gridGenKey(SHEET_ID, RFX_RESULTS_TAB)}|${sheetsWriteGen}|${rfxToday()}` === key) rfxListMemo[mode] = { at: Date.now(), key, body };
-    res.type('application/json').send(body);
-  } catch (e) { console.error('GET role finder results:', e.message); res.status(500).json({ error: e.message }); }
+    base = { at: Date.now(), key: baseKey, rows };
+    if (`${gridGenKey(SHEET_ID, RFX_RESULTS_TAB)}|${rfxToday()}|${JSON.stringify(settings.bands || [])}` === baseKey) rfxBaseMemo[mode] = base;
+  }
+  let ctx = rfxCtxMemo[mode];
+  if (!ctx || ctx.key !== sheetsWriteGen || Date.now() - ctx.at > 60000) {
+    const gen = sheetsWriteGen;
+    ctx = { at: Date.now(), key: gen, v: await rfxContext() };
+    if (sheetsWriteGen === gen) rfxCtxMemo[mode] = ctx;
+  }
+  const c = ctx.v;
+  const data = base.rows.map(p => {
+    const { _n, ...q } = p;
+    q.is_client = c.clients.has(_n);
+    q.is_lead = c.leads.has(_n);
+    q.suppressed = c.suppressedCompanies.has(_n);
+    return q;
+  });
+  const body = JSON.stringify({ data, today });
+  if (`${gridGenKey(SHEET_ID, RFX_RESULTS_TAB)}|${rfxToday()}|${sheetsWriteGen}` === key) rfxListMemo[mode] = { at: Date.now(), key, body };
+  return body;
+}
+app.get('/api/role-finder/results', async (req, res) => {
+  try { res.type('application/json').send(await rfxBuildList()); }
+  catch (e) { console.error('GET role finder results:', e.message); res.status(500).json({ error: e.message }); }
 });
+// build 59.3: build the list once shortly after start-up, so the first person to open Role Finder does not wait for it
+setTimeout(() => { rfxBuildList().then(() => console.log('Role Finder list ready')).catch(e => console.error('Role Finder warm-up:', e.message)); }, 20000);
 
 app.get('/api/role-finder/results/:id', async (req, res) => {
   try {
@@ -16667,7 +16771,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '13 Nov 2026 - build 59.2 (Faster boards: no Google call on Candidates and Interviews, Role Finder adverts kept ready, Lead Pipeline indexed, preview read only)';
+const SERVER_BUILD = '13 Nov 2026 - build 59.3 (Role Finder ready at start-up and after a shortlist, talent pool alerts without waiting on Google)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -19953,7 +20057,7 @@ const RETENTION_SOON_DAYS = 30;
 const RETENTION_PLACED = new Set(['start_date', 'day1', 'week1', 'month1']);
 
 async function retentionCandidates() {
-  poolRowsCache = null;
+  poolCacheClear();
   const out = [];
   for (const r of (await readPoolRows()).map(padPoolRow)) {
     if (!r[0] || r[20] || r[5] === TALENT_POOL_ROLE) continue;
