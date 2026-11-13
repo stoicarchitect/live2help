@@ -3591,6 +3591,21 @@ function showToast(msg){
   clearTimeout(window._toastTimer);
   window._toastTimer = setTimeout(() => { t.style.display = 'none'; }, 3200);
 }
+// build 60: a toast with buttons (View, Undo). Stays up for 8 seconds; pressing a button closes it.
+function showToastActions(msg, actions){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  (actions || []).forEach(a => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = a.label;
+    b.style.cssText = 'margin-left:12px;background:none;border:0;color:#d4a843;font:inherit;font-weight:700;cursor:pointer;text-decoration:underline;padding:0;';
+    b.onclick = () => { t.style.display = 'none'; clearTimeout(window._toastTimer); a.fn(); };
+    t.appendChild(b);
+  });
+  t.style.display = 'block';
+  clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(() => { t.style.display = 'none'; }, 8000);
+}
 
 function openDeleteConfirm(){
   document.getElementById('deleteReasonInput').value = '';
@@ -6992,13 +7007,28 @@ const B2 = {interviews:[], comms:[], feedback:[], templates:[], activity:[], fet
 
 function b2Id(prefix){ return prefix + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
+// build 60: a list that failed to load is not asked for again straight away. Each failure doubles the wait
+// (2 s, 4 s, 8 s... up to 30 s) so a broken list can never hammer the server in a tight loop.
+const B2_BACKOFF = {};
 async function b2Api(path, opts){
-  const r = await fetch(API_BASE + path, opts);
+  const isGet = !opts || !opts.method || String(opts.method).toUpperCase() === 'GET';
+  const bo = isGet ? B2_BACKOFF[path] : null;
+  if(bo && Date.now() < bo.until) throw new Error(bo.msg);
+  let r;
+  try{ r = await fetch(API_BASE + path, opts); }
+  catch(e){ if(isGet) b2Failed(path, e.message || 'Could not reach the server'); throw e; }
   if(!r.ok){
     const e = await r.json().catch(() => ({}));
-    throw new Error(e.error || ('Server returned ' + r.status));
+    const msg = e.error || ('Server returned ' + r.status);
+    if(isGet && r.status >= 500) b2Failed(path, msg);
+    throw new Error(msg);
   }
+  if(isGet) delete B2_BACKOFF[path];
   return r.json();
+}
+function b2Failed(path, msg){
+  const n = ((B2_BACKOFF[path] && B2_BACKOFF[path].n) || 0) + 1;
+  B2_BACKOFF[path] = {n, msg, until: Date.now() + Math.min(30000, 2000 * Math.pow(2, n - 1))};
 }
 function b2Post(path, body){ return b2Api(path, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); }
 function b2Del(path, id){ return b2Api(path + '/' + encodeURIComponent(id), {method:'DELETE'}); }
@@ -14932,6 +14962,14 @@ th.cmp-sort::after{content:attr(data-arrow);font-size:10px;color:var(--gold);fon
   </div></div>
 </div>
 
+<div class="modal-overlay" id="rfxWorkModal">
+  <div class="modal rfx-mid"><div class="modal-inner">
+    <button class="modal-close" onclick="closeModal('rfxWorkModal')">&times;</button>
+    <h2>Work this role</h2>
+    <div id="rfxWorkBody"><div class="rfx-sub">Loading...</div></div>
+  </div></div>
+</div>
+
 <div class="modal-overlay" id="rfxSearchModal">
   <div class="modal rfx-mid"><div class="modal-inner">
     <button class="modal-close" onclick="closeModal('rfxSearchModal')">&times;</button>
@@ -15115,10 +15153,11 @@ function rfxNorm(s){ return String(s || '').toLowerCase().replace(/&/g,' and ').
 
 async function rfxLoad(afterRun){
   try{
-    const [cfg, res, srch, st] = await Promise.all([
+    const [cfg, res, srch, st, wk] = await Promise.all([
       b2Api('/api/role-finder/config'), b2Api('/api/role-finder/results'), b2Api('/api/role-finder/searches'), b2Api('/api/role-finder/status'),
+      b2Api('/api/role-finder/work').catch(() => ({data: {}})),
     ]);
-    RFX.config = cfg; RFX.results = res.data || []; RFX.today = res.today; RFX.searches = b2List(srch); RFX.status = st; RFX.loaded = true;
+    RFX.config = cfg; RFX.results = res.data || []; RFX.today = res.today; RFX.searches = b2List(srch); RFX.status = st; RFX.work = wk.data || {}; RFX.loaded = true;
     rfxRenderSetup(); rfxRender();
     if(st.running && !afterRun) rfxPoll();
   }catch(e){
@@ -15245,7 +15284,15 @@ function rfxRender(){
   const shown = groups.slice((RFX.page - 1) * per, RFX.page * per);
   [...RFX.sel].forEach(k => { if(!groups.some(g => g.key === k)) RFX.sel.delete(k); });
   RFX.groupMap = new Map(groups.map(g => [g.key, g]));
-  document.getElementById('rfxBody').innerHTML = shown.length ? shown.map(g => {
+  // build 60: how many companies sit in each status, shown in the Status dropdown
+  const stSel = document.getElementById('rfxStatus');
+  if(stSel){
+    const cos = st => new Set(all.filter(r => st === 'all' || r.status === st).map(r => rfxNorm(r.company))).size;
+    const labels = {new:'To work', shortlisted:'Shortlisted', added:'Added to leads', dismissed:'Dismissed', agency:'Filtered agencies', all:'Everything'};
+    [...stSel.options].forEach(o => { if(labels[o.value]) o.textContent = `${labels[o.value]} (${cos(o.value)})`; });
+  }
+  const explain = status === 'shortlisted' ? `<tr><td colspan="7" class="rfx-sub" style="padding:8px 10px;">Shortlisted companies are the ones you are working. Press <b>Work this role</b> to check a contact, queue email 1 for Approve and send, and see talent pool matches. Nothing is emailed until someone approves the cold batch.</td></tr>` : '';
+  document.getElementById('rfxBody').innerHTML = explain + (shown.length ? shown.map(g => {
     const top = g.top;
     const k = esc(g.key);
     const open = RFX.expanded.has(g.key);
@@ -15262,14 +15309,17 @@ function rfxRender(){
       [...g.types].slice(0, 2).map(t => `<span class="rfx-pill">${esc(t)}</span>`).join(''),
       status === 'agency' ? `<span class="rfx-pill warn">${esc(top.agency_reason || 'Agency')}</span>` : '',
       status === 'dismissed' && top.dismiss_reason ? `<span class="rfx-pill">${esc(top.dismiss_reason)}</span>` : '',
-    ].join('');
+    ].join('') + (RFX.work && RFX.work[g.key] && RFX.work[g.key].line ? `<div class="rfx-sub" style="margin-top:4px;color:var(--navy,#1a2b4a);font-weight:600;">${esc(RFX.work[g.key].line)}</div>` : '');
+    const working = RFX.work && RFX.work[g.key];
     let acts;
     if(status === 'agency') acts = `<button onclick="rfxSet('${esc(top.id)}','new')">Not an agency</button>`;
     else if(status === 'dismissed') acts = `<button onclick="rfxRestoreCompany('${k}')">Restore</button>`;
     else acts = `<button class="gold" onclick="rfxOpenDive('${esc(top.id)}')">${g.has_dive ? 'View deep dive' : 'Deep dive'}</button>
       ${status !== 'added' ? `<button onclick="rfxOpenAdd('${esc(top.id)}')">Add lead</button>` : ''}
       ${status === 'new' ? `<button onclick="rfxGroupStatus('${k}','shortlisted')">Shortlist</button>` : ''}
-      ${status === 'shortlisted' ? `<button onclick="rfxGroupStatus('${k}','new')">Unshortlist</button>` : ''}
+      ${status === 'shortlisted' && !working ? `<button class="gold" onclick="rfxWorkOpen('${esc(top.id)}')">Work this role</button>` : ''}
+      ${status === 'shortlisted' && working ? `<button onclick="rfxWorkOpen('${esc(top.id)}')">View work</button><button onclick="rfxWorkUndo('${esc(top.id)}')" title="Pull back the queued email and tasks and return to To work">Undo</button>` : ''}
+      ${status === 'shortlisted' && !working ? `<button onclick="rfxGroupStatus('${k}','new')">Unshortlist</button>` : ''}
       ${status !== 'added' ? `<button onclick="rfxDismissCompany('${k}')">Dismiss</button>` : ''}
       <button onclick="rfxAgency('${esc(top.id)}')" title="This is a recruitment agency: hide it for good">Agency</button>`;
     return `<tr class="rfx-row">
@@ -15280,7 +15330,7 @@ function rfxRender(){
       <td><span class="rfx-days ${g.days >= 21 ? 'hot' : ''}">${g.days} days</span><div class="rfx-sub">${g.items.length} advert${g.items.length === 1 ? '' : 's'}</div></td>
       <td><span class="rfx-days">${g.score}</span><div class="rfx-sub">score</div></td>
       <td><div class="rfx-actions">${acts}</div></td></tr>`;
-  }).join('') : `<tr><td colspan="7" class="empty-row">${all.length ? 'Nothing matches these filters.' : 'No adverts yet. Press Search now to run the first market sweep.'}</td></tr>`;
+  }).join('') : `<tr><td colspan="7" class="empty-row">${all.length ? 'Nothing matches these filters.' : 'No adverts yet. Press Search now to run the first market sweep.'}</td></tr>`);
   const more = document.getElementById('rfxMore');
   more.innerHTML = l2hPager(groups.length, RFX.page, per, 'rfxPage', 'rfxPer');
   rfxSortMarks();
@@ -15346,8 +15396,31 @@ async function rfxSet(id, status, reason){
 async function rfxGroupStatus(k, status){
   const ids = rfxIdsFor(k);
   if(!ids.length) return;
-  try{ await b2Post('/api/role-finder/bulk', {ids, status}); ids.forEach(id => rfxLocal(id, {status})); rfxRender(); }
+  const g = RFX.groupMap && RFX.groupMap.get(k);
+  const was = g && g.top ? g.top.status : 'new';
+  try{
+    await b2Post('/api/role-finder/bulk', {ids, status}); ids.forEach(id => rfxLocal(id, {status})); rfxRender();
+    // build 60: shortlisting opens "Work this role"; the toast can take you to the Shortlisted view or undo it
+    if(status === 'shortlisted' && g){
+      showToastActions(`${g.company || 'Company'} shortlisted`, [
+        {label:'View', fn: () => rfxShowStatus('shortlisted')},
+        {label:'Undo', fn: () => rfxUndoStatus(ids, was, g.company)},
+      ]);
+      rfxWorkOpen(g.top.id);
+    }
+  }
   catch(e){ showToast('Could not update: ' + e.message); }
+}
+function rfxShowStatus(st){ const s = document.getElementById('rfxStatus'); if(s){ s.value = st; RFX.page = 1; RFX.sel.clear(); rfxRender(); } }
+async function rfxUndoStatus(ids, was, company){
+  try{
+    const top = RFX.results.find(x => x.id === ids[0]);
+    // if work was already started from the panel, undo pulls that back too
+    if(top && RFX.work && RFX.work[rfxNorm(top.company)]){ await rfxWorkUndo(top.id, true); return; }
+    await b2Post('/api/role-finder/bulk', {ids, status: was || 'new'});
+    ids.forEach(id => rfxLocal(id, {status: was || 'new'}));
+    closeModal('rfxWorkModal'); rfxRender(); showToast(`${company || 'Company'} is back in To work`);
+  }catch(e){ showToast('Could not undo: ' + e.message); }
 }
 
 async function rfxDismissCompany(k, silentReason){
@@ -15359,12 +15432,20 @@ async function rfxDismissCompany(k, silentReason){
     await b2Post('/api/role-finder/dismiss-company', {company: g.company, reason});
     RFX.results.filter(r => rfxNorm(r.company) === k && ['new','shortlisted'].includes(r.status)).forEach(r => { r.status = 'dismissed'; r.dismiss_reason = reason || 'Company dismissed'; });
     RFX.sel.delete(k);
-    if(silentReason === undefined){ rfxRender(); showToast(g.company + ' dismissed'); }
+    if(silentReason === undefined){
+      rfxRender();
+      showToastActions(g.company + ' dismissed', [
+        {label:'View', fn: () => rfxShowStatus('dismissed')},
+        {label:'Undo', fn: () => rfxRestoreCompany(k)},
+      ]);
+    }
   }catch(e){ showToast('Could not dismiss: ' + e.message); }
 }
 
 async function rfxRestoreCompany(k){
-  const g = RFX.groupMap && RFX.groupMap.get(k);
+  // build 60: also works from the Undo toast, when the company is no longer in the list on screen
+  const any = RFX.results.find(r => rfxNorm(r.company) === k);
+  const g = (RFX.groupMap && RFX.groupMap.get(k)) || (any ? {company: any.company} : null);
   if(!g) return;
   try{
     await b2Post('/api/role-finder/restore-company', {company: g.company});
@@ -15802,6 +15883,105 @@ async function rfxSaveLead(){
     showToast(`${company} added to Lead Clients and the Lead Pipeline`);
   }catch(e){ showToast('Could not add: ' + e.message); }
   finally{ btn.disabled = false; }
+}
+
+/* ---------- Role Finder: Work this role (build 60) ----------
+   Contact (checked) -> lead in the pipeline -> email 1 queued in the owner's cold batch (waits for Approve and send)
+   -> talent pool matches -> tasks where something is missing. Undo pulls the queued email and tasks back. */
+
+async function rfxWorkOpen(id){
+  RFX.workFor = id; RFX.workData = null;
+  document.getElementById('rfxWorkBody').innerHTML = '<div class="rfx-sub"><span class="rfx-spin"></span>Loading the company, contacts and talent pool matches</div>';
+  document.getElementById('rfxWorkModal').classList.add('visible');
+  try{ RFX.workData = await b2Api('/api/role-finder/work/' + encodeURIComponent(id)); rfxWorkRender(); }
+  catch(e){ document.getElementById('rfxWorkBody').innerHTML = `<div class="rfx-check bad">Could not load: ${esc(e.message)}</div>`; }
+}
+
+function rfxWorkRender(){
+  const d = RFX.workData; if(!d) return;
+  const a = d.advert, w = d.work;
+  const head = `<div class="role-sub">${esc(a.company)} - ${esc(a.role)}${a.location ? ' - ' + esc(a.location) : ''}${a.weeks != null ? ' - advertised ' + (a.weeks >= 1 ? a.weeks + ' week' + (a.weeks === 1 ? '' : 's') : a.days + ' days') : ''}${a.salary ? ' - ' + esc(a.salary) : ''} - ${d.liveAdverts} live advert${d.liveAdverts === 1 ? '' : 's'} at this company ${a.url ? ' - ' + rfxLink(a.url, 'view advert') : ''}</div>`;
+  const matches = d.matchCount
+    ? `<div class="rfx-sec">Talent pool matches (${d.matchCount})</div><div class="rfx-list">${d.matches.map(m => `${esc(m.name)} <span class="rfx-sub">- score ${esc(m.score)}${m.reason ? ', ' + esc(m.reason) : ''}</span>`).join('<br>')}</div>
+       <div class="rfx-sub" style="margin-top:4px;">Names are for you only. Email 1 just says screened candidates are ready; CVs go anonymised.</div>
+       <div class="simple-form"><div class="actions" style="justify-content:flex-start;"><button class="save" onclick="closeModal('rfxWorkModal');specOpen('${esc(a.id)}')">Send shortlisted to this company</button></div></div>`
+    : `<div class="rfx-sec">Talent pool matches</div><div class="rfx-sub">No screened match yet. Starting work creates a sourcing task for Ella: Find candidates for ${esc(a.role)} at ${esc(a.company)}.</div>`;
+  if(w){
+    const st = RFX.work && RFX.work[rfxNorm(a.company)];
+    document.getElementById('rfxWorkBody').innerHTML = head + `
+      <div class="rfx-sec">Progress</div>
+      <div class="rfx-brief">${esc((st && st.line) || 'Started')}<br><span class="rfx-sub">Started by ${esc(userLabel(w.started_by))} ${esc(rfxAgo(w.started_at))}${w.contact_email ? ' - contact ' + esc(w.contact_name || '') + ' ' + esc(w.contact_email) : ''}${w.note ? ' - ' + esc(w.note) : ''}</span></div>
+      ${matches}
+      <div class="simple-form"><div class="actions">
+        <button class="cancel" onclick="rfxWorkUndo('${esc(a.id)}')">Undo (pull back email 1 and tasks)</button>
+        <button class="save" onclick="closeModal('rfxWorkModal');switchTab('coldOutreach')">Open the cold batch</button>
+      </div></div>`;
+    return;
+  }
+  const opts = d.people.map((p, i) => `<option value="${i}">${esc(p.name)}${p.title ? ' - ' + esc(p.title) : ''}${p.email ? ' (' + esc(p.email) + ')' : ' (no email)'}</option>`).join('');
+  document.getElementById('rfxWorkBody').innerHTML = head + `
+    <div class="rfx-sec">Contact</div>
+    <div class="simple-form">
+      ${d.people.length ? `<label>From the deep dive</label><select id="rfxWkPick" onchange="rfxWorkPick()"><option value="">Type a contact instead</option>${opts}</select>` : `<div class="rfx-sub">No deep dive contacts${d.switchboard ? '. Switchboard: ' + esc(d.switchboard) : ''}. Type a contact, or use No contact yet.</div>`}
+      <div class="two-col"><div><label>Contact name</label><input id="rfxWkName"></div><div><label>Job title</label><input id="rfxWkTitle"></div></div>
+      <div class="two-col"><div><label>Email</label><input id="rfxWkEmail"></div><div><label>Phone</label><input id="rfxWkPhone" value="${esc(d.switchboard || '')}"></div></div>
+      <label>Sector (for the first email)</label><select id="rfxWkSector"><option value="">Choose a sector</option>${d.sectors.map(s => `<option>${esc(s)}</option>`).join('')}</select>
+      <label class="rfx-confirm"><input type="checkbox" id="rfxWkVerified"> <span>I have checked: it is a limited company, the email is a company address (not personal), and the company is not on the Do not email list.</span></label>
+    </div>
+    ${matches}
+    <div class="rfx-sub" style="margin-top:10px;">Start outreach adds the contact to Lead Clients and the Lead Pipeline, and puts email 1 (day 0, then day 4 and day 9) in the contact owner's cold batch. It only goes when someone presses Approve and send.</div>
+    <div class="simple-form"><div class="actions">
+      <button class="cancel" onclick="rfxWorkStart('find-contact')">No contact yet (create a task)</button>
+      <button class="save" id="rfxWkGo" onclick="rfxWorkStart('outreach')">Start outreach</button>
+    </div></div>`;
+  if(d.people.length){ const first = d.people.findIndex(p => p.email); if(first >= 0){ document.getElementById('rfxWkPick').value = String(first); rfxWorkPick(); } }
+}
+
+function rfxWorkPick(){
+  const d = RFX.workData; const v = b2Val('rfxWkPick');
+  const p = v === '' ? null : d.people[parseInt(v, 10)];
+  b2Set('rfxWkName', p ? p.name : ''); b2Set('rfxWkTitle', p ? p.title : ''); b2Set('rfxWkEmail', p ? p.email : '');
+  if(p && p.phone) b2Set('rfxWkPhone', p.phone);
+  RFX.workEmailStatus = p ? p.email_status : '';
+}
+
+async function rfxWorkStart(mode){
+  const d = RFX.workData; if(!d) return;
+  const body = {mode, contact_name: b2Val('rfxWkName').trim(), job_title: b2Val('rfxWkTitle').trim(), email: b2Val('rfxWkEmail').trim(),
+    phone: b2Val('rfxWkPhone').trim(), sector: b2Val('rfxWkSector'), verified: !!(document.getElementById('rfxWkVerified') || {}).checked,
+    email_status: 'checked by ' + ((signedInUser && signedInUser.name) || 'team') + (RFX.workEmailStatus ? ' (' + RFX.workEmailStatus + ')' : '')};
+  if(mode === 'outreach'){
+    if(!body.email){ showToast('Add an email address, or use No contact yet'); return; }
+    if(!body.sector){ showToast('Choose a sector so email 1 can be written'); return; }
+    if(!body.verified){ showToast('Tick the box to confirm you have checked the details'); return; }
+  }
+  const btn = document.getElementById('rfxWkGo'); if(btn) btn.disabled = true;
+  try{
+    const j = await b2Post('/api/role-finder/work/' + encodeURIComponent(d.advert.id), body);
+    const k = rfxNorm(d.advert.company);
+    RFX.work = RFX.work || {}; if(j.state) RFX.work[k] = j.state;
+    RFX.results.filter(x => rfxNorm(x.company) === k && x.status === 'new').forEach(x => { x.status = 'shortlisted'; });
+    if(mode === 'outreach') RFX.results.filter(x => rfxNorm(x.company) === k).forEach(x => { x.is_lead = true; });
+    closeModal('rfxWorkModal'); rfxRender();
+    const msg = mode === 'find-contact' ? `Task set to find a contact at ${d.advert.company}`
+      : j.picked ? `Email 1 to ${body.contact_name || body.email} is waiting in ${userLabel(j.owner)}'s cold batch` : `Contact added, but email 1 was not queued: ${j.note}`;
+    showToastActions(msg + (j.matchCount ? '' : '. Sourcing task set for Ella.'), [{label:'Undo', fn: () => rfxWorkUndo(d.advert.id, true)}]);
+  }catch(e){ showToast('Could not start: ' + e.message); }
+  finally{ if(btn) btn.disabled = false; }
+}
+
+async function rfxWorkUndo(id, noConfirm){
+  const r = RFX.results.find(x => x.id === id);
+  if(!r) return;
+  if(!noConfirm && !confirm(`Undo the work on ${r.company}? Email 1 is pulled back if it has not gone, open tasks are cancelled and the adverts go back to To work. An email that has already gone cannot be recalled, so its sequence is stopped instead.`)) return;
+  try{
+    const j = await b2Post('/api/role-finder/work/' + encodeURIComponent(id) + '/undo', {});
+    const k = rfxNorm(r.company);
+    if(RFX.work) delete RFX.work[k];
+    RFX.results.filter(x => rfxNorm(x.company) === k && x.status === 'shortlisted').forEach(x => { x.status = 'new'; });
+    closeModal('rfxWorkModal'); rfxRender();
+    showToast(`${r.company} is back in To work` + (j.pickRemoved ? ', email 1 pulled back' : '') + (j.seqStopped ? ', sequence stopped' : '') + (j.tasks ? `, ${j.tasks} task${j.tasks === 1 ? '' : 's'} cancelled` : ''));
+  }catch(e){ showToast('Could not undo: ' + e.message); }
 }
 
 /* ---------- Lead Pipeline ---------- */
@@ -17113,7 +17293,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '12 Nov 2026 - build 59.0 (Systems audit: checks pause in hidden tabs, one sign-in prompt when a session ends)';
+var PAGE_BUILD = '13 Nov 2026 - build 60 (Role Finder: Work this role, View and Undo toasts, status counts; failed lists back off instead of retrying)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;

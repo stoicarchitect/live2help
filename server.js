@@ -15878,12 +15878,23 @@ app.post('/api/role-finder/results/:id/add-lead', async (req, res) => {
     const company = String(b.company || o.company).trim();
     const email = String(b.email || '').trim().toLowerCase();
     if (!company) return res.status(400).json({ error: 'Company is required' });
+    const lead = await rfxAddLeadCore(o, b, actorOf(req), { keepStatus: false });
+    auditLog(auditActorOf(req), 'created', 'lead', company, 'Added from Role Finder');
+    res.json({ ok: true, lead });
+  } catch (e) { console.error('Add lead failed:', e.message); res.status(e.status || 500).json({ error: e.message }); }
+});
+
+// build 60: the add-lead steps on their own, so "Work this role" can reuse them.
+// keepStatus: leave the adverts as they are (shortlisted) instead of moving them to "Added"
+async function rfxAddLeadCore(o, b, actor, { keepStatus }) {
+  const company = String(b.company || o.company).trim();
+  const email = String(b.email || '').trim().toLowerCase();
+  {
     const ctx = await rfxContext();
     if (ctx.suppressedCompanies.has(rfxNormCompany(company)) || (email && ctx.suppressedEmails.has(email))) {
-      return res.status(409).json({ error: 'This company or email is on the suppression list (opted out), so it cannot be added' });
+      throw Object.assign(new Error('This company or email is on the suppression list (opted out), so it cannot be added'), { status: 409 });
     }
     const now = rfxNow();
-    const actor = actorOf(req);
     const lead = await lpxUpsertForCompany(company, {
       stage: 'identified', contact_name: b.contact_name || '', job_title: b.job_title || '', email, email_status: b.email_status || 'checked',
       phone: b.phone || '', website: b.website || '', address: b.address || '',
@@ -15905,10 +15916,212 @@ app.post('/api/role-finder/results/:id/add-lead', async (req, res) => {
     }
     // every advert from this company is now handled
     await rfxResultsTable.updateWhere(x => rfxNormCompany(x.company) === rfxNormCompany(o.company) && x.status !== 'agency',
-      x => ({ ...x, status: 'added', lead_id: lead.id, handled_by: actor }));
-    auditLog(auditActorOf(req), 'created', 'lead', company, 'Added from Role Finder');
-    res.json({ ok: true, lead });
-  } catch (e) { console.error('Add lead failed:', e.message); res.status(500).json({ error: e.message }); }
+      x => ({ ...x, status: keepStatus ? (x.status === 'new' ? 'shortlisted' : x.status) : 'added', lead_id: lead.id, handled_by: actor }));
+    return lead;
+  }
+}
+
+/* =====================================================================
+   Build 60: shortlisting a Role Finder company starts outreach and filling.
+   "Work this role" = contact checked, lead in the pipeline, first cold email queued in the owner's
+   batch (still waits for "Approve and send"), pool matches shown, tasks where something is missing.
+   One record per company. Undo pulls back what was queued (pick, tasks) and returns the adverts to "To work".
+   ===================================================================== */
+const rfxWorkTable = makeSimpleTable({
+  tab: 'Role Finder Work',
+  header: ['id', 'result_id', 'company', 'role', 'location', 'owner', 'mode', 'contact_name', 'job_title', 'contact_email', 'lead_id', 'sector',
+    'pool_matches', 'task_ids', 'picked', 'status', 'started_by', 'started_at', 'updated_at', 'note'],
+  path: null,
+  label: 'Role Finder work',
+});
+const rfxWorkId = company => 'rw-' + crypto.createHash('sha1').update(rfxNormCompany(company)).digest('hex').slice(0, 14);
+
+// A task row written straight to the Tasks tab (same shape as POST /api/tasks), for any team member
+async function rfxMakeTask(user, title, context, dueDate) {
+  const task = { id: `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, user: lc(user), title, priority: 'high', dueDate: dueDate || rfxToday(), context, status: 'Open', recurring: 'none', archived: false };
+  await getSheetsClient().spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: TASKS_RANGE, valueInputOption: 'RAW', requestBody: { values: [taskToRow(task)] } });
+  return task.id;
+}
+// Undo: an open task is archived (never deleted), a finished one is left alone
+async function rfxCancelTasks(ids) {
+  const want = new Set(ids.filter(Boolean));
+  if (!want.size) return 0;
+  const rows = await getTasksSheet();
+  const data = [];
+  rows.forEach((r, i) => {
+    if (!want.has(r[0])) return;
+    const t = rowToTask(r);
+    if (String(t.status).toLowerCase() !== 'open') return;
+    data.push({ range: `${TASKS_TAB}!A${i + 2}:I${i + 2}`, values: [taskToRow({ ...t, status: 'Cancelled', archived: true, context: `${t.context || ''} (Undone from Role Finder)`.trim() })] });
+  });
+  if (data.length) await getSheetsClient().spreadsheets.values.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { valueInputOption: 'RAW', data } });
+  return data.length;
+}
+function rfxNextWorkingDayIso() {
+  const d = new Date(rfxToday() + 'T12:00:00Z');
+  do { d.setUTCDate(d.getUTCDate() + 1); } while ([0, 6].includes(d.getUTCDay()));
+  return d.toISOString().slice(0, 10);
+}
+
+// Screened people in the talent pool the matcher shortlisted for this advert (consent checked)
+async function rfxPoolMatchesFor(r) {
+  const key = matchRoleKey(r.company, r.role);
+  const [scores, rows] = await Promise.all([poolMatchTable.list().catch(() => []), readPoolRowsQuick().catch(() => [])]);
+  const byId = new Map(rows.filter(x => x && x[0]).map(x => [x[0], x]));
+  return scores.filter(o => o.role_key === key && String(o.shortlisted).toUpperCase() === 'TRUE').map(s => {
+    const row = byId.get(s.pool_id);
+    if (!row) return null;
+    const p = rowToPoolEntry(row);
+    if (!poolConsentOk(p)) return null;
+    return { poolId: s.pool_id, name: p.name, score: Number(s.score) || 0, reason: s.reason || '' };
+  }).filter(Boolean).sort((a, b) => b.score - a.score);
+}
+
+// One line for the advert card: where outreach and filling have got to
+function rfxWorkLine(w, seq, picked, sentN) {
+  if (!w || w.status === 'undone') return '';
+  const on = iso => { const d = new Date(String(iso).slice(0, 10) + 'T12:00:00Z'); return isNaN(d) ? String(iso || '') : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }); };
+  const parts = [];
+  if (w.mode === 'find-contact' && !w.contact_email) parts.push('Finding a contact (task set)');
+  else if (seq && seq.stage === 'Active') parts.push(`In outreach: email ${seq.step} of 3 on ${on(seq.last_sent_at)}`);
+  else if (seq && seq.stage === 'Finished') parts.push(`Outreach finished: email 3 of 3 on ${on(seq.last_sent_at)}`);
+  else if (seq && seq.stage && seq.stage !== 'Active') parts.push('Outreach: ' + (seq.stage === 'Yes' ? 'said yes' : seq.stage === 'Replied' ? 'replied' : String(seq.stage).toLowerCase()));
+  else if (picked) parts.push('Email 1 waiting for Approve and send');
+  else if (w.contact_email) parts.push('Contact added, email 1 not queued' + (w.note ? ` (${w.note})` : ''));
+  parts.push(sentN ? `${sentN} candidate${sentN === 1 ? '' : 's'} sent` : (Number(w.pool_matches) ? `${w.pool_matches} pool match${Number(w.pool_matches) === 1 ? '' : 'es'}` : 'sourcing task set'));
+  return parts.join(', ');
+}
+
+async function rfxWorkStates() {
+  const [works, seqs, picks, sends] = await Promise.all([rfxWorkTable.list().catch(() => []), coldSeqTable.list().catch(() => []), coldPicksTable.list().catch(() => []), specSendsTable.list().catch(() => [])]);
+  const seqBy = new Map(seqs.map(s => [lc(s.email), s]));
+  const pickSet = new Set(picks.map(p => lc(p.owner) + '|' + lc(p.email)));
+  const out = {};
+  works.filter(w => w.status !== 'undone').forEach(w => {
+    const n = rfxNormCompany(w.company);
+    const e = lc(w.contact_email);
+    const seq = e ? seqBy.get(e) : null;
+    const sentN = sends.filter(x => rfxNormCompany(x.company) === n && String(x.at) >= String(w.started_at)).length;
+    out[n] = { id: w.id, mode: w.mode, owner: w.owner, line: rfxWorkLine(w, seq, e && pickSet.has(lc(w.owner) + '|' + e), sentN), started_at: w.started_at, started_by: w.started_by };
+  });
+  return out;
+}
+
+app.get('/api/role-finder/work', async (req, res) => {
+  try { res.json({ data: await rfxWorkStates() }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Everything the "Work this role" panel needs for one advert's company
+app.get('/api/role-finder/work/:id', async (req, res) => {
+  try {
+    const all = await rfxResultsTable.list();
+    const r = all.find(x => x.id === req.params.id);
+    if (!r) return res.status(404).json({ error: 'Advert not found' });
+    const n = rfxNormCompany(r.company);
+    const live = all.filter(x => rfxNormCompany(x.company) === n && ['new', 'shortlisted', 'added'].includes(x.status));
+    const dive = rfxDiveOf(r) || (live.map(rfxDiveOf).find(Boolean)) || null;
+    const people = ((dive && dive.people) || []).map(p => ({ name: p.name || '', title: String(p.title || '').replace(/\s*\(Companies House\)$/, ''), email: p.email || '', email_status: p.email_status || '', phone: p.phone || '' }));
+    const [matches, work] = await Promise.all([rfxPoolMatchesFor(r), rfxWorkTable.list().then(l => l.find(w => w.id === rfxWorkId(r.company)) || null).catch(() => null)]);
+    const days = rfxDaysBetween(r.posted_date, rfxToday());
+    res.json({
+      advert: { id: r.id, company: r.company, role: r.role, location: r.location, salary: r.salary, url: r.url, days, weeks: days == null ? null : Math.floor(days / 7) },
+      liveAdverts: live.length, people, switchboard: (dive && dive.company && dive.company.switchboard) || '',
+      matches: matches.slice(0, 10), matchCount: matches.length,
+      work: work && work.status !== 'undone' ? work : null,
+      sectors: SECTORS.map(x => x.name), me: lc(actorOf(req)),
+    });
+  } catch (e) { console.error('GET role finder work:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Start work on the company: mode "outreach" (contact checked, email 1 queued) or "find-contact" (no named contact yet)
+app.post('/api/role-finder/work/:id', async (req, res) => {
+  try {
+    if (isPreview()) return res.status(409).json({ error: 'Preview workspace: nothing is changed from here' });
+    const b = req.body || {};
+    const all = await rfxResultsTable.list();
+    const r = all.find(x => x.id === req.params.id);
+    if (!r) return res.status(404).json({ error: 'Advert not found' });
+    const actor = lc(actorOf(req));
+    const mode = b.mode === 'find-contact' ? 'find-contact' : 'outreach';
+    const email = lc(String(b.email || '').trim());
+    const sector = SECTORS.some(x => x.name === b.sector) ? b.sector : '';
+    const wid = rfxWorkId(r.company);
+    const prev = (await rfxWorkTable.list()).find(w => w.id === wid);
+    if (prev && prev.status !== 'undone') return res.status(409).json({ error: `${r.company} is already being worked (started by ${prev.started_by} on ${String(prev.started_at).slice(0, 10)})` });
+    if (mode === 'outreach') {
+      if (b.verified !== true) return res.status(400).json({ error: 'Tick the box to confirm the contact details have been checked' });
+      if (!audIsEmail(email)) return res.status(400).json({ error: 'An email address is needed to start outreach. Use "No contact yet" instead.' });
+      if (COLD_PERSONAL.test(email)) return res.status(400).json({ error: 'That is a personal email address. Cold email only goes to company addresses.' });
+      if (!sector) return res.status(400).json({ error: 'Choose a sector so the first email can be written' });
+    }
+    const n = rfxNormCompany(r.company);
+    const days = rfxDaysBetween(r.posted_date, rfxToday());
+    const taskIds = [];
+    let lead = null, picked = false, note = '', owner = actor;
+    if (mode === 'outreach') {
+      lead = await rfxAddLeadCore(r, { ...b, email, company: r.company, email_status: b.email_status || ('checked by ' + actor) }, actor, { keepStatus: true });
+      // the contact's owner decides whose batch the email waits in; a brand new contact belongs to the person working it
+      let c = (await audResolve()).find(x => x.email === email);
+      const audId = 'ca-' + crypto.createHash('sha1').update(email).digest('hex').slice(0, 14);
+      const ex = (await contactAudienceTable.list()).find(a => lc(a.email) === email);
+      const patch = { ...(ex || { id: audId, email }), company: (ex && ex.company) || r.company, updated_by: actor, updated_at: rfxNow() };
+      let touched = false;
+      if (!c || c.ownerFrom === 'default') { patch.owner = actor; touched = true; }
+      if (!c || !(c.sectors || []).length) { patch.sector = sector; touched = true; }
+      if (touched) { await contactAudienceTable.upsert(patch); c = (await audResolve()).find(x => x.email === email); }
+      owner = c ? lc(c.owner) : actor;
+      const seq = (await coldSeqTable.list().catch(() => [])).find(s => lc(s.email) === email);
+      const why = coldWhyNot(c, seq, owner, rfxToday());
+      if (why) note = why;
+      else { await coldPicksTable.upsert({ id: coldPickId(owner, email), owner, email, picked_by: actor, at: rfxNow() }); picked = true; }
+    } else {
+      await rfxResultsTable.updateWhere(x => rfxNormCompany(x.company) === n && x.status === 'new', x => ({ ...x, status: 'shortlisted', handled_by: actor }));
+      taskIds.push(await rfxMakeTask(actor, `Find a contact for ${r.role} at ${r.company}`,
+        `Role Finder: ${r.role}${r.location ? ', ' + r.location : ''}${days != null ? ', advertised ' + days + ' days' : ''}. Find the hiring manager or HR contact, then open the company in Role Finder and press Work this role.${b.notes ? ' ' + b.notes : ''}`, rfxNextWorkingDayIso()));
+    }
+    const matches = await rfxPoolMatchesFor(r);
+    if (!matches.length) {
+      taskIds.push(await rfxMakeTask('ella', `Find candidates for ${r.role} at ${r.company}`,
+        `No screened talent pool match yet for this Role Finder advert${r.location ? ' in ' + r.location : ''}${r.salary ? ' (' + r.salary + ')' : ''}. ${r.url ? 'Advert: ' + r.url : ''}`.trim(), rfxNextWorkingDayIso()));
+    }
+    const now = rfxNow();
+    const work = await rfxWorkTable.upsert({
+      id: wid, result_id: r.id, company: r.company, role: r.role, location: r.location || '', owner, mode,
+      contact_name: b.contact_name || '', job_title: b.job_title || '', contact_email: mode === 'outreach' ? email : '', lead_id: lead ? lead.id : '', sector,
+      pool_matches: String(matches.length), task_ids: taskIds.join(','), picked: picked ? 'yes' : '', status: 'active',
+      started_by: actor, started_at: now, updated_at: now, note,
+    });
+    auditLog(auditActorOf(req), 'created', 'role_finder_work', r.company, mode === 'outreach' ? (picked ? `email 1 queued for ${owner}` : `contact added, not queued: ${note}`) : 'find a contact task');
+    res.json({ ok: true, work, picked, note, owner, matchCount: matches.length, tasks: taskIds.length, state: (await rfxWorkStates())[n] || null });
+  } catch (e) { console.error('Role Finder work failed:', e.message); res.status(e.status || 500).json({ error: e.message }); }
+});
+
+// Undo: adverts back to "To work", queued email 1 and open tasks pulled back. An email already sent cannot be recalled,
+// so a running sequence is stopped instead. The lead stays in the pipeline (it is real information).
+app.post('/api/role-finder/work/:id/undo', async (req, res) => {
+  try {
+    if (isPreview()) return res.status(409).json({ error: 'Preview workspace: nothing is changed from here' });
+    const r = (await rfxResultsTable.list()).find(x => x.id === req.params.id);
+    if (!r) return res.status(404).json({ error: 'Advert not found' });
+    const actor = lc(actorOf(req));
+    const n = rfxNormCompany(r.company);
+    const w = (await rfxWorkTable.list()).find(x => x.id === rfxWorkId(r.company) && x.status !== 'undone');
+    const out = { pickRemoved: false, seqStopped: false, tasks: 0, adverts: 0 };
+    if (w) {
+      if (w.contact_email) {
+        const pid = coldPickId(w.owner, w.contact_email);
+        if ((await coldPicksTable.list().catch(() => [])).some(p => p.id === pid)) { await coldPicksTable.remove(pid); out.pickRemoved = true; }
+        const seq = (await coldSeqTable.list().catch(() => [])).find(s => lc(s.email) === lc(w.contact_email) && s.stage === 'Active' && String(s.started_at) >= String(w.started_at).slice(0, 10));
+        if (seq) { await coldSeqTable.upsert({ ...seq, stage: 'Stopped', closed_at: rfxToday(), note: 'Undone from Role Finder', updated_by: actor, updated_at: rfxNow() }); out.seqStopped = true; }
+      }
+      out.tasks = await rfxCancelTasks(String(w.task_ids || '').split(','));
+      await rfxWorkTable.upsert({ ...w, status: 'undone', updated_at: rfxNow(), note: `Undone by ${actor}` });
+    }
+    out.adverts = await rfxResultsTable.updateWhere(x => rfxNormCompany(x.company) === n && ['shortlisted'].includes(x.status), x => ({ ...x, status: 'new', handled_by: actor }));
+    auditLog(auditActorOf(req), 'updated', 'role_finder_work', r.company, `undone: ${out.pickRemoved ? 'email 1 pulled back, ' : ''}${out.seqStopped ? 'sequence stopped, ' : ''}${out.tasks} task(s) cancelled`);
+    res.json({ ok: true, ...out });
+  } catch (e) { console.error('Role Finder undo failed:', e.message); res.status(500).json({ error: e.message }); }
 });
 
 // Run now (one search or all of them). Runs in the background; the page checks the status.
@@ -16771,7 +16984,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '13 Nov 2026 - build 59.3 (Role Finder ready at start-up and after a shortlist, talent pool alerts without waiting on Google)';
+const SERVER_BUILD = '13 Nov 2026 - build 60 (Role Finder: Work this role starts outreach and filling, Undo; Role Finder and talent pool alerts faster)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -21723,7 +21936,9 @@ function coldBuild(step, c, owner, prob, firstSubject) {
     if (role) {
       subject = `${role} at ${co}`;
       body = `${hi}\n\nI noticed ${co} has been advertising for a ${role}${c.roleWhere ? ' in ' + c.roleWhere : ''}${coldWeeks(c.roleSince)}.\n\n` +
-        `${coldSentence(prob.problem)} We find, screen and interview candidates before you see them, so you only spend time on people who genuinely fit.\n\n` +
+        (Number(c.poolMatches) > 0
+          ? `We already have ${Number(c.poolMatches) === 1 ? 'a screened candidate' : 'screened candidates'} who could fit the ${role} role, and I can send ${Number(c.poolMatches) === 1 ? 'their anonymised profile' : 'anonymised profiles'} straight away. ${coldSentence(prob.problem)}\n\n`
+          : `${coldSentence(prob.problem)} We find, screen and interview candidates before you see them, so you only spend time on people who genuinely fit.\n\n`) +
         `Would it be worth a quick chat about the role, or is someone else looking after it?\n\n${sign}`;
     } else {
       subject = `Hiring at ${co}`;
@@ -21832,6 +22047,8 @@ async function coldBatch(owner) {
   }
   // new first-touch: only the contacts this owner has chosen (57.3.2: nothing is picked automatically)
   const picks = (await coldPicksTable.list().catch(() => [])).filter(x => lc(x.owner) === owner);
+  // build 60: a contact started from Role Finder carries how many screened pool matches there were (no names in the email)
+  const works = new Map((await rfxWorkTable.list().catch(() => [])).filter(w => w.status === 'active' && w.contact_email).map(w => [lc(w.contact_email), w]));
   out.picked = picks.length;
   out.pickedBlocked = [];
   for (const pk of picks.sort((x, y) => String(x.at).localeCompare(String(y.at)))) {
@@ -21841,7 +22058,8 @@ async function coldBatch(owner) {
     if (out.items.filter(i => i.step === 1).length >= usage.remaining) { out.waitingForTomorrow = (out.waitingForTomorrow || 0) + 1; continue; }
     const prob = coldPickProblem(c.sector, problems, seqs);
     if (!prob) { out.noProblem++; continue; }
-    const mail = coldBuild(1, c, owner, prob);
+    const wk = works.get(c.email);
+    const mail = coldBuild(1, wk ? { ...c, poolMatches: Number(wk.pool_matches) || 0, roleSeen: c.roleSeen || wk.role, roleWhere: c.roleWhere || wk.location } : c, owner, prob);
     out.items.push({ key: c.email + '|1', email: c.email, name: c.name, company: c.company, sector: c.sector, step: 1, newSeq: true, seqId: coldSeqId(c.email), problemId: prob.id, kind: c.kind, ...mail });
     // pretend this problem was just used so the next contact in the same sector gets the next one along
     seqs.push({ problem_id: prob.id, started_at: rfxNow() });
