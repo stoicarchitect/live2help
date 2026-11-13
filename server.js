@@ -16584,7 +16584,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '12 Nov 2026 - build 59 (Systems audit: own-sites-only access, security headers, compression, closed roles refuse applications, database dump backup, fault alerts)';
+const SERVER_BUILD = '13 Nov 2026 - build 59.1 (Fixed address api.live2helprecruitment.co.uk, slow request measurement)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
