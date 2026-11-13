@@ -3,6 +3,7 @@ import cors from 'cors';
 import compression from 'compression';
 import nodeFetch from 'node-fetch';
 import { AsyncLocalStorage } from 'async_hooks';
+import { monitorEventLoopDelay } from 'perf_hooks';
 import { google } from 'googleapis';
 import PDFDocument from 'pdfkit';
 import nodemailer from 'nodemailer';
@@ -54,11 +55,27 @@ app.disable('x-powered-by');
    - Responses are compressed.
    - Only our own sites may call the server from a browser. CORS_OPEN=1 on Render puts it back to
      "any site" without a deploy, CAREERS_EXTRA_ORIGINS adds more host names. */
+/* ---------- Measurement build 59.1 (13 Nov 2026): where slow requests spend their time ----------
+   Logs only, nothing users see changes. Remove once the slow boards are fixed.
+   [perf] lines: per slow request (over 1.5 s) the summed database time, query count, the deepest
+   connection queue seen, time waiting for a connection, Google Sheets time and quota waits.
+   [loop] lines: once a minute when the event loop was held up (max over 100 ms). */
+const perfCtx = new AsyncLocalStorage();
+const PERF_LOG_MS = Number(process.env.PERF_LOG_MS || 1500);
+const perfLoop = monitorEventLoopDelay({ resolution: 20 });
+perfLoop.enable();
+setInterval(() => {
+  const max = perfLoop.max / 1e6;
+  if (max > 100) console.log(`[loop] event loop delay p50=${Math.round(perfLoop.percentile(50) / 1e6)}ms p99=${Math.round(perfLoop.percentile(99) / 1e6)}ms max=${Math.round(max)}ms`);
+  perfLoop.reset();
+}, 60000).unref();
 const reqStats = { since: new Date().toISOString(), total: 0, s4: 0, s5: 0, recent5: [], notFound: new Map(), lastErrors: [] };
 app.use((req, res, next) => {
   const t0 = Date.now();
+  const perf = { db: 0, dbN: 0, dbQ: 0, conn: 0, g: 0, gN: 0, gWait: 0 };
   res.on('finish', () => {
     const ms = Date.now() - t0;
+    if (ms > PERF_LOG_MS) console.log(`[perf] ${req.method} ${req.originalUrl.split('?')[0].slice(0, 120)} ${ms}ms db=${perf.db}ms/${perf.dbN}q queue=${perf.dbQ} connwait=${perf.conn}ms google=${perf.g}ms/${perf.gN} quotawait=${perf.gWait}ms`);
     const p = req.originalUrl.split('?')[0].slice(0, 160);
     const st = res.statusCode;
     reqStats.total++;
@@ -80,7 +97,7 @@ app.use((req, res, next) => {
       console.log(`[req] ${st} ${req.method} ${p} ${ms}ms user=${who} from=${from}`);
     }
   });
-  next();
+  perfCtx.run(perf, next);
 });
 
 const OUR_SITE_HOSTS = ['careers.live2helprecruitment.co.uk', 'live2helprecruitment.co.uk', 'www.live2helprecruitment.co.uk', 'live2help.co.uk', 'www.live2help.co.uk', 'localhost', '127.0.0.1']
@@ -155,6 +172,18 @@ function makePgPool(url, label) {
   } catch (e) { /* leave ssl off */ }
   const pool = new pg.Pool({ connectionString: url, ssl, max: 5, idleTimeoutMillis: 30000 });
   pool.on('error', e => console.error(`Postgres (${label}) connection error:`, e.message));
+  // measurement build 59.1: time every query and connection wait against the request that made it
+  const rawQuery = pool.query.bind(pool), rawConnect = pool.connect.bind(pool);
+  pool.query = (...a) => {
+    if (typeof a[a.length - 1] === 'function') return rawQuery(...a);
+    const st = perfCtx.getStore(), t = Date.now(), waiting = pool.waitingCount;
+    return rawQuery(...a).finally(() => { if (st) { st.db += Date.now() - t; st.dbN++; st.dbQ = Math.max(st.dbQ, waiting); } });
+  };
+  pool.connect = (...a) => {
+    if (typeof a[0] === 'function') return rawConnect(...a);
+    const st = perfCtx.getStore(), t = Date.now();
+    return rawConnect().then(c => { if (st) st.conn += Date.now() - t; return c; });
+  };
   return pool;
 }
 const pgLivePool = makePgPool(process.env.DATABASE_URL, 'live');
@@ -1179,13 +1208,17 @@ function sheetsQuotaGuard(client) {
   const clearFor = id => { for (const k of [...cache.keys()]) if (k.startsWith(id + '|')) cache.delete(k); };
   async function run(arr, fn) {
     for (let attempt = 0; ; attempt++) {
+      const st = perfCtx.getStore(), w0 = Date.now();
       await slot(arr);
+      const g0 = Date.now();
+      if (st) st.gWait += g0 - w0;
       try { return await fn(); }
       catch (e) {
         if (!isQuota(e) || attempt >= 4) throw e;
         pauseUntil = Math.max(pauseUntil, Date.now() + 15000 * (attempt + 1));
         console.warn('Sheets quota reached, waiting before trying again');
       }
+      finally { if (st) { st.g += Date.now() - g0; st.gN++; } }
     }
   }
   const wrapRead = (obj, name, keyOf) => {
