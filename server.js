@@ -15691,11 +15691,13 @@ const RFX_IDX_DESC = RFX_RESULT_HEADER.indexOf('description');
 const RFX_IDX_DIVE = RFX_RESULT_HEADER.indexOf('dive_json');
 async function rfxLightResults() {
   const pool = gridPoolFor(SHEET_ID, RFX_RESULTS_TAB);
-  if (pool && RFX_IDX_DESC >= 0 && RFX_IDX_DIVE >= 0) {
+  if (pool && RFX_IDX_DESC >= 0 && RFX_IDX_DIVE >= 0) try {
     await gridSchema(pool);
     const hi = Math.max(RFX_IDX_DESC, RFX_IDX_DIVE), lo = Math.min(RFX_IDX_DESC, RFX_IDX_DIVE);
+    // cells is a text array (1-based): keep everything except the two large columns
     const r = await pool.query({
-      text: `select (cells - ${hi}) - ${lo} as cells, coalesce(cells->>${RFX_IDX_DIVE}, '') <> '' as dived
+      text: `select array_cat(array_cat(cells[1:${lo}], cells[${lo + 2}:${hi}]), cells[${hi + 2}:]) as cells,
+                    coalesce(cells[${RFX_IDX_DIVE + 1}], '') <> '' as dived
              from grid_rows where spreadsheet = $1 and title = $2 and r > 1 order by r`,
       values: [SHEET_ID, RFX_RESULTS_TAB],
     });
@@ -15712,7 +15714,7 @@ async function rfxLightResults() {
       }
       return out;
     }
-  }
+  } catch (e) { console.error('Role Finder light read, using the full read instead:', e.message); }
   return rfxResultsTable.list();
 }
 
@@ -16984,7 +16986,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '13 Nov 2026 - build 60 (Role Finder: Work this role starts outreach and filling, Undo; Role Finder and talent pool alerts faster)';
+const SERVER_BUILD = '13 Nov 2026 - build 60.1 (Role Finder: Work this role starts outreach and filling, Undo; fast advert read fixed for the live database)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
