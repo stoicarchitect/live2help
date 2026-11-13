@@ -627,8 +627,32 @@ function makeSheetsRouter(real) {
       return wrap({ spreadsheetId: p.spreadsheetId, replies });
     },
   };
+  // build 59.2: every write bumps a generation for the tabs it touches, so cached whole-tab reads know they are stale
+  const bump = (sid, ranges) => { gridGenAll++; ranges.forEach(r => { const t = titleOfRange(r); if (t) gridGen.set(sid + '|' + t, (gridGen.get(sid + '|' + t) || 0) + 1); }); };
+  const rangesOf = (name, p) => {
+    const b = p.requestBody || p.resource || {};
+    if (name === 'batchUpdate') return (b.data || []).map(d => d.range);
+    if (name === 'batchClear') return b.ranges || [];
+    return [p.range];
+  };
+  ['update', 'append', 'clear', 'batchUpdate', 'batchClear'].forEach(name => {
+    const orig = values[name];
+    values[name] = async (p = {}, ...rest) => {
+      const rs = rangesOf(name, p);
+      bump(p.spreadsheetId, rs);
+      try { return await orig(p, ...rest); } finally { bump(p.spreadsheetId, rs); }
+    };
+  });
+  const origBatch = spreadsheets.batchUpdate;
+  spreadsheets.batchUpdate = async (p = {}, ...rest) => {
+    gridStructGen++;
+    try { return await origBatch(p, ...rest); } finally { gridStructGen++; }
+  };
   return { spreadsheets, __real: real };
 }
+let gridGenAll = 0, gridStructGen = 0;
+const gridGen = new Map();
+function gridGenKey(sid, title) { return `${isPreview() ? 'p' : 'l'}|${gridStructGen}|${gridGen.get(sid + '|' + title) || 0}`; }
 
 // Whole-tab copies, used by the import, the copy back and the nightly backup
 async function gridReadRealTab(real, sid, title) {
@@ -1457,17 +1481,27 @@ async function purgeApplicantRoles(variants) {
 }
 
 // Helper: read from Applications tabs and convert to candidates with 'applied' stage
+async function applicationTabTitles(sheets) {
+  const pool = gridPoolFor(SHEET_ID, 'Applications - x');
+  if (pool) {
+    await gridSchema(pool);
+    const r = await pool.query('select title from grid_tabs where spreadsheet = $1 order by created_at, title', [SHEET_ID]);
+    return r.rows.map(x => x.title);
+  }
+  const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties.title' });
+  return (spreadsheet.data.sheets || []).map(t => t.properties.title);
+}
 async function readApplicationsRows(strict = false) {
   const sheets = getSheetsClient();
   const allApplications = [];
   try {
-    const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets.properties.title' });
-    const tabs = spreadsheet.data.sheets;
+    // build 59.2: when the Applications tabs are held in the database, list them from there (was a Google call of 3 to 5 seconds)
+    const tabs = await applicationTabTitles(sheets);
     let assigns = new Map();
     try { assigns = new Map((await getApplicantRoles()).map(a => [a.id, a])); } catch (e) { /* no assignments yet */ }
 
     // Build 47.3: every Applications tab in one read (was one read per tab), so the per-minute Sheets budget lasts
-    const appTabs = tabs.map(t => t.properties.title).filter(n => n.startsWith('Applications -'));
+    const appTabs = tabs.filter(n => n.startsWith('Applications -'));
     const batch = appTabs.length ? await sheets.spreadsheets.values.batchGet({
       spreadsheetId: SHEET_ID,
       ranges: appTabs.map(n => `'${n.replace(/'/g, "''")}'!A2:Z`),
@@ -5626,12 +5660,25 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
     if (pool) return pgEnsureTable(pool, pgName, header, seed);
     return sheetsEnsure();
   }
+  let previewMissing = false;
   async function sheetsEnsure() {
     if (ready) return;
+    // build 59.2: a whole tab held in the database is checked there (was two Google calls after every restart)
+    const gpool = wholeTab ? gridPoolFor(SID_OF(), tab) : null;
+    if (gpool && !isPreview()) {
+      await gridSchema(gpool);
+      const t = await gpool.query('select 1 from grid_tabs where spreadsheet = $1 and title = $2', [SID_OF(), tab]);
+      const h = t.rows.length ? await gpool.query('select cells from grid_rows where spreadsheet = $1 and title = $2 and r = 1', [SID_OF(), tab]) : { rows: [] };
+      const first = h.rows[0] && h.rows[0].cells;
+      if (t.rows.length && first && first[0] === header[0] && first.length >= width) { ready = true; return; }
+    }
     const sheets = getSheetsClient();
     const ss = await sheets.spreadsheets.get({ spreadsheetId: SID_OF(), fields: 'sheets.properties.title' });
     let created = false;
-    if (!(ss.data.sheets || []).some(s => s.properties.title === tab)) {
+    const exists = (ss.data.sheets || []).some(s => s.properties.title === tab);
+    // build 59.2: preview (/dashboard-next) is read only, so it reads what is there and never creates or fixes a tab
+    if (isPreview()) { previewMissing = !exists; return; }
+    if (!exists) {
       created = true;
       await sheets.spreadsheets.batchUpdate({
         spreadsheetId: SID_OF(),
@@ -5661,16 +5708,29 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
   // A very short read cache keeps busy pages and loops inside Google's per-minute read quota.
   // Every write through this table clears it, so reads after a write are always fresh.
   let cache = null;
-  const invalidate = () => { cache = null; };
+  const invalidate = () => { cache = null; wtCache = { l: null, p: null }; };
   async function sheetsReadRows() {
     const sheets = getSheetsClient();
     const r = await sheets.spreadsheets.values.get({ spreadsheetId: SID_OF(), range: `'${tab}'!A2:${lastCol}` });
     return r.data.values || [];
   }
+  // build 59.2: a whole-tab table (Role Finder adverts, competitors) is read once and kept until that tab is
+  // written or its structure changes (any write through the Sheets client bumps the tab's generation), at most 10 minutes
+  let wtCache = { l: null, p: null };
   async function readRows() {
     await ensure();
     const pool = poolNow();
     if (pool) return pgReadAll(pool, pgName, header);
+    if (wholeTab) {
+      const mode = isPreview() ? 'p' : 'l';
+      const key = gridGenKey(SID_OF(), tab);
+      const hit = wtCache[mode];
+      if (hit && hit.key === key && Date.now() - hit.at < 600000) return hit.rows.slice();
+      const rows = await sheetsReadRows();
+      if (gridGenKey(SID_OF(), tab) === key) wtCache[mode] = { at: Date.now(), key, rows };
+      return rows.slice();
+    }
+    if (isPreview() && previewMissing) return [];
     if (cache && Date.now() - cache.at < 3000) return cache.rows.map(r => r.slice());
     const rows = await sheetsReadRows();
     cache = { at: Date.now(), rows };
@@ -5847,7 +5907,7 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
     const g = guard ? [guard] : [];
     app.get(path, ...g, async (req, res) => {
       try {
-        if (beforeList) await beforeList();
+        if (beforeList && !isPreview()) await beforeList(); // build 59.2: preview never writes
         res.json({ data: await list() });
       } catch (e) { console.error(`GET ${path} error:`, e.message); res.status(500).json({ error: e.message }); }
     });
@@ -14392,7 +14452,14 @@ function rfxToday() { return new Date().toLocaleDateString('en-CA', { timeZone: 
 function rfxNow() { return new Date().toISOString(); }
 function rfxId(prefix) { return prefix + '-' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'); }
 function rfxSlug(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); }
+const rfxNormMemo = new Map();
 function rfxNormCompany(s) {
+  const k = String(s || '');
+  let v = rfxNormMemo.get(k);
+  if (v === undefined) { if (rfxNormMemo.size > 50000) rfxNormMemo.clear(); v = rfxNormCompanyRaw(k); rfxNormMemo.set(k, v); }
+  return v;
+}
+function rfxNormCompanyRaw(s) {
   return String(s || '').toLowerCase()
     .replace(/&/g, ' and ')
     .replace(/[^a-z0-9 ]+/g, ' ')
@@ -15571,8 +15638,14 @@ app.post('/api/role-finder/restore-company', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// build 59.2: the list is built once and reused until anything is written (or the day changes), 60 seconds at most
+let rfxListMemo = { l: null, p: null };
 app.get('/api/role-finder/results', async (req, res) => {
   try {
+    const mode = isPreview() ? 'p' : 'l';
+    const key = `${gridGenKey(SHEET_ID, RFX_RESULTS_TAB)}|${sheetsWriteGen}|${rfxToday()}`;
+    const memo = rfxListMemo[mode];
+    if (memo && memo.key === key && Date.now() - memo.at < 60000) return res.type('application/json').send(memo.body);
     const [list, ctx, settings] = await Promise.all([rfxResultsTable.list(), rfxContext(), rfxSweepSettings()]);
     const scores = rfxCompanyScores(list, settings, rfxToday());
     const data = list.map(o => {
@@ -15585,7 +15658,9 @@ app.get('/api/role-finder/results', async (req, res) => {
       p.suppressed = ctx.suppressedCompanies.has(n);
       return p;
     });
-    res.json({ data, today: rfxToday() });
+    const body = JSON.stringify({ data, today: rfxToday() });
+    if (`${gridGenKey(SHEET_ID, RFX_RESULTS_TAB)}|${sheetsWriteGen}|${rfxToday()}` === key) rfxListMemo[mode] = { at: Date.now(), key, body };
+    res.type('application/json').send(body);
   } catch (e) { console.error('GET role finder results:', e.message); res.status(500).json({ error: e.message }); }
 });
 
@@ -15851,11 +15926,19 @@ app.get('/api/lead-pipeline', async (req, res) => {
         contacts: [{ name: c.contactName, title: c.jobTitle, email: c.email, phone: c.phone }],
       });
     });
+    // build 59.2: calls and live adverts grouped by company once (was a full scan of both lists for every company)
+    const today = rfxToday();
+    const callsBy = new Map(), liveBy = new Map();
+    calls.forEach(c => { const k = rfxNormCompany(c.company); if (!callsBy.has(k)) callsBy.set(k, []); callsBy.get(k).push(c); });
+    results.forEach(x => {
+      if (!(rfxDaysBetween(x.last_seen, today) <= 3)) return;
+      const k = rfxNormCompany(x.company); if (!liveBy.has(k)) liveBy.set(k, []); liveBy.get(k).push(x.role);
+    });
     const out = [...byCompany.values()].map(l => {
       const n = rfxNormCompany(l.company);
-      const cc = calls.filter(c => rfxNormCompany(c.company) === n).sort((a, b) => String(b.dateCalled).localeCompare(String(a.dateCalled)));
+      const cc = (callsBy.get(n) || []).slice().sort((a, b) => String(b.dateCalled).localeCompare(String(a.dateCalled)));
       const open = cc.filter(c => c.status !== 'completed' && c.followupDate).map(c => c.followupDate).sort();
-      const live = results.filter(x => rfxNormCompany(x.company) === n && rfxDaysBetween(x.last_seen, rfxToday()) <= 3).map(x => x.role);
+      const live = liveBy.get(n) || [];
       return {
         ...l,
         stage: clients.has(n) && !['lost', 'archived'].includes(l.stage) ? 'converted' : l.stage,
@@ -16584,7 +16667,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '13 Nov 2026 - build 59.1 (Fixed address api.live2helprecruitment.co.uk, slow request measurement)';
+const SERVER_BUILD = '13 Nov 2026 - build 59.2 (Faster boards: no Google call on Candidates and Interviews, Role Finder adverts kept ready, Lead Pipeline indexed, preview read only)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -19962,7 +20045,7 @@ const retentionOf = async id => (await retentionTable.list()).find(x => x.id ===
 
 app.get('/api/retention', requireAdmin, async (req, res) => {
   try {
-    await retentionScan();
+    if (!isPreview()) await retentionScan(); // build 59.2: preview never writes
     const all = await retentionTable.list();
     const today = todayISO();
     const open = all.filter(x => x.status === 'open').sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
