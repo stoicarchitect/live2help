@@ -26,7 +26,7 @@
   var t = (new URLSearchParams(location.search).get('t') || '').replace(/[^A-Za-z0-9_-]/g, '');
   if(!t){ go(); return; }
   setTimeout(function(){ go(); }, 3000);
-  fetch('https://l2h-api.onrender.com/api/public/track/' + t, {method:'POST', keepalive:true})
+  fetch('https://api.live2helprecruitment.co.uk/api/public/track/' + t, {method:'POST', keepalive:true})
     .then(function(r){ return r.json(); }).then(function(j){ go(j && j.to); }).catch(function(){ go(); });
 })();
 </script>

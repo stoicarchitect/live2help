@@ -496,7 +496,7 @@
 
 <script>
   // Live endpoint on Render
-  const SUBMIT_ENDPOINT = 'https://l2h-api.onrender.com/api/applications/transport-coordinator';
+  const SUBMIT_ENDPOINT = 'https://api.live2helprecruitment.co.uk/api/applications/transport-coordinator';
   const MAX_CV_BYTES = 5 * 1024 * 1024;
 
   const form = document.getElementById('applyForm');
@@ -581,7 +581,7 @@
 /* Audit Nov 2026: this form closes itself when the role is filled or lost on the Roles tab */
 (function(){
   try {
-    fetch('https://l2h-api.onrender.com/api/public/forms/transport-coordinator')
+    fetch('https://api.live2helprecruitment.co.uk/api/public/forms/transport-coordinator')
       .then(function(r){ return r.ok ? r.json() : null; })
       .then(function(j){
         if (!j || !j.found || j.open !== false) return;

@@ -379,7 +379,7 @@
 
 <script>
 (function(){
-  var API_BASE = "https://l2h-api.onrender.com";
+  var API_BASE = "https://api.live2helprecruitment.co.uk";
   var ENDPOINT = API_BASE + "/api/applications/cad-technician";
   var MAX_BYTES = 5 * 1024 * 1024;
 
@@ -515,7 +515,7 @@
 /* Audit Nov 2026: this form closes itself when the role is filled or lost on the Roles tab */
 (function(){
   try {
-    fetch('https://l2h-api.onrender.com/api/public/forms/cad-technician')
+    fetch('https://api.live2helprecruitment.co.uk/api/public/forms/cad-technician')
       .then(function(r){ return r.ok ? r.json() : null; })
       .then(function(j){
         if (!j || !j.found || j.open !== false) return;

@@ -1,4 +1,4 @@
-// Add this route to the existing l2h-api.onrender.com service (same file/pattern as /api/candidates)
+// Add this route to the existing api.live2helprecruitment.co.uk service (same file/pattern as /api/candidates)
 // Requires the same googleapis "sheets" client and SHEET_ID already configured for the dashboard
 
 app.post('/api/applications/transport-coordinator', async (req, res) => {
@@ -75,6 +75,6 @@ app.post('/api/applications/transport-coordinator', async (req, res) => {
 });
 
 // CORS note: if the apply form is served from careers.live2helprecruitment.co.uk and this
-// endpoint is on l2h-api.onrender.com, confirm CORS already allows that origin (it should,
+// endpoint is on api.live2helprecruitment.co.uk, confirm CORS already allows that origin (it should,
 // since the dashboard already calls this Render service from the same domain). If it doesn't,
 // add careers.live2helprecruitment.co.uk to the allowed origins list alongside the dashboard.

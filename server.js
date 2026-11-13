@@ -13624,7 +13624,7 @@ function tpColLetter(i) {
 function tpSeenList(r) { return String(r[29] || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean); }
 function tpPhoneKey(p) { const d = String(p || '').replace(/\D/g, ''); return d.length >= 9 ? d.slice(-10) : ''; }
 function tpUkDate(iso) { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1]}` : String(iso || ''); }
-function tpPublicBase() { return (process.env.PUBLIC_API_URL || process.env.RENDER_EXTERNAL_URL || 'https://l2h-api.onrender.com').replace(/\/+$/, ''); }
+function tpPublicBase() { return (process.env.PUBLIC_API_URL || process.env.RENDER_EXTERNAL_URL || 'https://api.live2helprecruitment.co.uk').replace(/\/+$/, ''); }
 function tpMergeTags(existing, add) {
   const list = String(existing || '').split(',').map(s => s.trim()).filter(Boolean);
   if (add && !list.some(t => t.toLowerCase() === add.toLowerCase())) list.push(add);
@@ -14020,7 +14020,7 @@ async function publicDocSave(key, buf, filename, actor) {
   publicDocCache.delete(key);
   return r.rows[0];
 }
-const publicDocUrl = key => `${(process.env.PUBLIC_API_URL || 'https://l2h-api.onrender.com').replace(/\/+$/, '')}/docs/${key}`;
+const publicDocUrl = key => `${(process.env.PUBLIC_API_URL || 'https://api.live2helprecruitment.co.uk').replace(/\/+$/, '')}/docs/${key}`;
 
 app.get('/docs/:key', async (req, res) => {
   const key = String(req.params.key || '').toLowerCase().replace(/\.pdf$/, '');

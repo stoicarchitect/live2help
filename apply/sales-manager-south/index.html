@@ -65,7 +65,7 @@ footer{text-align:center;color:#777;font-size:12.5px;padding:0 16px 28px}
 </div>
 <footer>Live 2 Help Recruitment</footer>
 <script>
-const API="https://l2h-api.onrender.com/api/applications/sales-manager-south";
+const API="https://api.live2helprecruitment.co.uk/api/applications/sales-manager-south";
 const f=document.getElementById('f'),err=document.getElementById('err'),go=document.getElementById('go');
 const ARR=['fireSectors','tradeRelationships'];
 function fail(m){err.textContent=m;err.style.display='block';err.scrollIntoView({behavior:'smooth',block:'center'});}
@@ -97,7 +97,7 @@ f.addEventListener('submit',async e=>{
 /* Audit Nov 2026: this form closes itself when the role is filled or lost on the Roles tab */
 (function(){
   try {
-    fetch('https://l2h-api.onrender.com/api/public/forms/sales-manager-south')
+    fetch('https://api.live2helprecruitment.co.uk/api/public/forms/sales-manager-south')
       .then(function(r){ return r.ok ? r.json() : null; })
       .then(function(j){
         if (!j || !j.found || j.open !== false) return;

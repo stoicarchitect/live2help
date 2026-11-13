@@ -15,7 +15,7 @@ const inject = `
 <script>
 /* Preview workspace (made by scripts/build-preview.mjs - edit dashboard/index.html, not this file) */
 (function(){
-  var SERVER = 'https://l2h-api.onrender.com';
+  var SERVER = 'https://api.live2helprecruitment.co.uk';
   var realFetch = window.fetch.bind(window);
   window.fetch = function(input, init){
     var url = typeof input === 'string' ? input : (input && input.url) || '';

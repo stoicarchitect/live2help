@@ -18,7 +18,7 @@ on:
         default: send
 
 env:
-  BASE_URL: https://l2h-api.onrender.com
+  BASE_URL: https://api.live2helprecruitment.co.uk
   CRON_SECRET: ${{ secrets.CRON_SECRET }}
 
 jobs:
