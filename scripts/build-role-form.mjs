@@ -102,6 +102,7 @@ function buildForm(def, logo) {
 <html lang="en-GB">
 <head>
 <meta charset="UTF-8">
+<link rel="icon" href="/favicon.ico" sizes="any"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Apply - ${esc(def.title)}</title>
 <meta name="robots" content="noindex">

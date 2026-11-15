@@ -69,7 +69,105 @@ setInterval(() => {
   if (max > 100) console.log(`[loop] event loop delay p50=${Math.round(perfLoop.percentile(50) / 1e6)}ms p99=${Math.round(perfLoop.percentile(99) / 1e6)}ms max=${Math.round(max)}ms`);
   perfLoop.reset();
 }, 60000).unref();
-const reqStats = { since: new Date().toISOString(), total: 0, s4: 0, s5: 0, recent5: [], notFound: new Map(), lastErrors: [] };
+const reqStats = { since: new Date().toISOString(), total: 0, s4: 0, s5: 0, recent5: [], notFound: new Map(), probes: new Map(), lastErrors: [] };
+
+/* Build 60.2: scanner guard and rate limit (15 Nov 2026, after the 13:52 scan of 496 probe requests in 4 seconds).
+   - A request for an address bots probe for (.env, wp-config, debug panels, keys, path tricks) scores 5 points,
+     any other not-found or refused request scores 1. Only requests that are NOT signed in count, so Dan and Ella
+     can never be blocked by a broken page. 40 points in 5 minutes blocks that address for 30 minutes (HTTP 403).
+   - General limit: more than RATE_LIMIT_PER_MIN requests (default 900) a minute from one address gets HTTP 429
+     for the rest of that minute. A signed-in dashboard uses a fraction of this.
+   - The client address is Cloudflare's CF-Connecting-IP when present, else Express's req.ip (trust proxy 1),
+     so a bot cannot get someone else blocked by forging X-Forwarded-For.
+   - Off switch: GUARD_OFF=1 on Render (no deploy). GUARD_ALLOW_IPS = comma list that is never blocked or limited.
+   - Blocked requests are counted, not logged one by one; one [guard] line is logged per block. */
+const PROBE_RE = /(^|\/)\.(env|git|svn|hg|aws|ssh|docker|idea|vscode|s3cfg|boto|npmrc|pypirc|bash_|zsh|gitconfig|htaccess|htpasswd|ds_store|streamlit|output|travis|circleci|terraform|kube)|(^|\/)(wp-|wordpress|userfiles|phpmyadmin|pma|telescope|_debugbar|actuator|cgi-bin|vendor\/|server-status|xmlrpc|swagger|openapi|graphql|v1\/graphql|console$|admin\/?$|jenkins|solr|owa|autodiscover|boaform|hnap1|shell|eval-stdin)|\.(php\d?|asp|aspx|jsp|cgi|py|rb|sql|sqlite|db|bak|backup|swp|old|orig|save|key|pem|p12|pfx|ini|toml|ya?ml|cfg|conf|log|tar|gz|zip|rar|7z)~?$|\.\.\/|%2e|proc\/self|etc\/passwd|\/environ/i;
+const GUARD_OFF = process.env.GUARD_OFF === '1';
+const GUARD_ALLOW = new Set(String(process.env.GUARD_ALLOW_IPS || '').split(',').map(s => s.trim()).filter(Boolean));
+const GUARD_WINDOW_MS = 5 * 60 * 1000, GUARD_POINTS = 40, GUARD_BLOCK_MS = 30 * 60 * 1000;
+const RATE_LIMIT_PER_MIN = Number(process.env.RATE_LIMIT_PER_MIN || 900);
+const guardIps = new Map(); // ip -> { pts, ptsAt, blockedUntil, min, minAt, hits }
+const guardStats = { blocks: [], blockedRequests: 0, limitedRequests: 0, probeRequests: 0 };
+function clientIp(req) { return String(req.get('cf-connecting-ip') || req.ip || '').trim().replace(/^::ffff:/, '') || 'unknown'; }
+// Safety nets: an address that has carried a signed-in request in the last 12 hours (Dan's or Ella's network, or a
+// shared proxy address if the client address ever reads wrong) is never blocked or limited, and nor is a private one.
+const guardTrusted = new Map(); // ip -> last signed-in request time
+const PRIVATE_IP_RE = /^(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1$|f[cd][0-9a-f]{2}:|fe80:|unknown$)/i;
+function guardSafe(ip, now) { return PRIVATE_IP_RE.test(ip) || (guardTrusted.has(ip) && now - guardTrusted.get(ip) < 12 * 60 * 60 * 1000); }
+let guardAddrChecks = 0;
+function isProbePath(p) { return PROBE_RE.test(p); }
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, t] of guardTrusted) if (now - t > 12 * 60 * 60 * 1000) guardTrusted.delete(ip);
+  for (const [ip, g] of guardIps) if (g.blockedUntil < now && now - g.ptsAt > GUARD_WINDOW_MS && now - g.minAt > 60000) guardIps.delete(ip);
+  guardStats.blocks = guardStats.blocks.filter(b => now - Date.parse(b.at) < 24 * 60 * 60 * 1000).slice(0, 50);
+}, 60 * 1000).unref();
+app.use((req, res, next) => {
+  if (GUARD_OFF) return next();
+  const ip = clientIp(req);
+  if (guardAddrChecks < 3) { // one-off proof in the log that the client address is read correctly on Render
+    guardAddrChecks++;
+    console.log(`[guard] address check: cf-connecting-ip=${req.get('cf-connecting-ip') ? 'present' : 'absent'} req.ip=${req.ip} x-forwarded-for hops=${String(req.get('x-forwarded-for') || '').split(',').filter(Boolean).length} using=${ip}`);
+  }
+  res.on('finish', () => { if (req.user) guardTrusted.set(ip, Date.now()); });
+  const p = req.originalUrl.split('?')[0];
+  const probe = isProbePath(p);
+  req.l2hProbe = probe;
+  const now = Date.now();
+  if (GUARD_ALLOW.has(ip) || guardSafe(ip, now)) return next();
+  let g = guardIps.get(ip);
+  if (!g) { g = { pts: 0, ptsAt: now, blockedUntil: 0, min: 0, minAt: now, hits: 0 }; guardIps.set(ip, g); }
+  if (g.blockedUntil > now) {
+    g.hits++; guardStats.blockedRequests++;
+    res.set('Retry-After', String(Math.ceil((g.blockedUntil - now) / 1000)));
+    return res.status(403).type('text/plain').send('Forbidden');
+  }
+  if (now - g.minAt >= 60000) { g.min = 0; g.minAt = now; }
+  if (++g.min > RATE_LIMIT_PER_MIN) {
+    guardStats.limitedRequests++;
+    if (g.min === RATE_LIMIT_PER_MIN + 1) console.log(`[guard] rate limit: ${ip} went over ${RATE_LIMIT_PER_MIN} requests in a minute`);
+    res.set('Retry-After', String(Math.max(1, Math.ceil((g.minAt + 60000 - now) / 1000))));
+    return res.status(429).type('text/plain').send('Too many requests, please wait a moment');
+  }
+  res.on('finish', () => {
+    if (req.user) return; // signed in: never counted
+    const st = res.statusCode;
+    let add = 0;
+    if (probe && st >= 400) add = 5;
+    else if (st === 404 || st === 405) add = 1;
+    if (!add) return;
+    if (probe) guardStats.probeRequests++;
+    const t = Date.now();
+    if (t - g.ptsAt > GUARD_WINDOW_MS) { g.pts = 0; g.ptsAt = t; }
+    g.pts += add;
+    if (g.pts >= GUARD_POINTS && g.blockedUntil <= t) {
+      g.blockedUntil = t + GUARD_BLOCK_MS; g.hits = 0;
+      guardStats.blocks.unshift({ at: new Date(t).toISOString(), ip, until: new Date(g.blockedUntil).toISOString(), lastPath: p.slice(0, 120) });
+      console.log(`[guard] blocked ${ip} for 30 minutes after scanning (last ${p.slice(0, 120)})`);
+    }
+  });
+  next();
+});
+
+// Build 60.2: icons and robots answered here, so browsers and crawlers stop showing up as not-found.
+const ICON_FILES = {
+  '/favicon.ico': ['assets/favicon.ico', 'image/x-icon'],
+  '/favicon.png': ['assets/favicon-64.png', 'image/png'],
+  '/apple-touch-icon.png': ['assets/apple-touch-icon.png', 'image/png'],
+  '/apple-touch-icon-precomposed.png': ['assets/apple-touch-icon.png', 'image/png'],
+};
+const iconCache = new Map();
+app.get(Object.keys(ICON_FILES), (req, res) => {
+  const [file, type] = ICON_FILES[req.path];
+  let buf = iconCache.get(file);
+  if (!buf) {
+    try { buf = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), file)); iconCache.set(file, buf); }
+    catch (e) { return res.status(204).end(); }
+  }
+  res.set('Cache-Control', 'public, max-age=604800').type(type).send(buf);
+});
+app.get('/robots.txt', (req, res) => res.set('Cache-Control', 'public, max-age=86400').type('text/plain').send('User-agent: *\nAllow: /docs/\nDisallow: /\n'));
+
 app.use((req, res, next) => {
   const t0 = Date.now();
   const perf = { db: 0, dbN: 0, dbQ: 0, conn: 0, g: 0, gN: 0, gWait: 0 };
@@ -86,12 +184,14 @@ app.use((req, res, next) => {
       reqStats.lastErrors = reqStats.lastErrors.slice(0, 30);
     } else if (st >= 400) {
       reqStats.s4++;
-      if (st === 404) {
-        if (reqStats.notFound.size > 500) reqStats.notFound.clear();
-        reqStats.notFound.set(p, (reqStats.notFound.get(p) || 0) + 1);
+      // build 60.2: scanner probes are kept apart, so the not-found alert only counts addresses a real page might call
+      const bucket = req.l2hProbe ? reqStats.probes : reqStats.notFound;
+      if (st === 404 || (req.l2hProbe && !req.user)) {
+        if (bucket.size > 500) bucket.clear();
+        bucket.set(p, (bucket.get(p) || 0) + 1);
       }
     }
-    if (st >= 400 || ms > 4000) {
+    if ((st >= 400 && !(req.l2hProbe && !req.user)) || ms > 4000) {
       const who = (req.user && req.user.key) || '-';
       const from = String(req.get('origin') || req.get('referer') || '-').slice(0, 80);
       console.log(`[req] ${st} ${req.method} ${p} ${ms}ms user=${who} from=${from}`);
@@ -11506,7 +11606,7 @@ setTimeout(async () => {
   } catch (e) { console.error('Fault watch start-up check failed:', e.message); }
 }, 20000);
 const FAULT_5XX_LIMIT = 15;   // server errors in 10 minutes
-const FAULT_404_LIMIT = 400;  // not-found requests in 10 minutes
+const FAULT_404_LIMIT = Number(process.env.FAULT_404_LIMIT || 150);  // build 60.2: genuine not-found requests in 10 minutes (scanner probes and blocked addresses no longer count)
 let notFoundWindow = { at: Date.now(), n: 0, last: 0 };
 setInterval(() => {
   const now = Date.now();
@@ -11522,13 +11622,20 @@ setInterval(() => {
   if (notFoundWindow.n >= FAULT_404_LIMIT) {
     const top = [...reqStats.notFound.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([p, n]) => `- ${n} x ${p}`).join('\n');
     alertDan('notfound', 'Live 2 Help dashboard: a burst of not-found requests',
-      `${notFoundWindow.n} requests in the last 10 minutes asked for an address that does not exist. This is usually a scanner, or a page calling a route that was renamed.\n\nMost requested:\n${top}\n\nLive 2 Help dashboard`).catch(() => {});
+      `${notFoundWindow.n} requests in the last 10 minutes asked for an address that does not exist. Known scanner probes are already filtered out of this count, so this is more likely a page calling a route that was renamed or removed.\n\nMost requested:\n${top}\n\nScanner guard: ${guardStats.blocks.length} address(es) blocked in the last 24 hours, ${guardStats.probeRequests} probe requests since start-up.\n\nLive 2 Help dashboard`).catch(() => {});
   }
 }, 60 * 1000).unref();
 app.get('/api/system/faults', requireAdmin, (req, res) => res.json({
   since: reqStats.since, bootedAt: BOOT_AT, commit: BOOT_COMMIT, requests: reqStats.total, clientErrors: reqStats.s4, serverErrors: reqStats.s5,
   serverErrorsLast10Min: reqStats.recent5.length, lastErrors: reqStats.lastErrors,
   notFoundTop: [...reqStats.notFound.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([path, n]) => ({ path, n })),
+  // build 60.2: scanner guard
+  guard: { on: !GUARD_OFF, rateLimitPerMin: RATE_LIMIT_PER_MIN, blockAfterPoints: GUARD_POINTS, blockMinutes: GUARD_BLOCK_MS / 60000,
+    probeRequests: guardStats.probeRequests, blockedRequests: guardStats.blockedRequests, limitedRequests: guardStats.limitedRequests,
+    trustedAddresses: guardTrusted.size,
+    blockedNow: [...guardIps.entries()].filter(([, g]) => g.blockedUntil > Date.now()).map(([ip, g]) => ({ ip, until: new Date(g.blockedUntil).toISOString(), refused: g.hits })),
+    blocksLast24h: guardStats.blocks,
+    probeTop: [...reqStats.probes.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20).map(([path, n]) => ({ path, n })) },
 }));
 
 app.post('/api/backup/run', requireAdmin, async (req, res) => {
@@ -16986,7 +17093,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '13 Nov 2026 - build 60.1 (Role Finder: Work this role starts outreach and filling, Undo; fast advert read fixed for the live database)';
+const SERVER_BUILD = '15 Nov 2026 - build 60.2 (scanner guard and rate limit, favicon and robots, not-found alert ignores scanner probes)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
