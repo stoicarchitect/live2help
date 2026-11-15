@@ -1,0 +1,486 @@
+{
+  "issue": 1,
+  "sendDate": "2026-11-17",
+  "briefs": [
+    {
+      "sector": "Engineering and Technical",
+      "subject": "The Gap Brief: Engineers are in demand again. Is your process ready?",
+      "problemIds": [
+        "gp-eng-1"
+      ],
+      "content": {
+        "preheader": "Engineering is leading the rise in permanent demand.",
+        "headline": "Engineering demand is rising.",
+        "headlineGold": "Is your hiring speed keeping up?",
+        "intro": "demand for engineers is climbing again, and the best candidates will not wait for a slow process. Here is where the market stands and what the gap could be costing you.",
+        "numberValue": "6 of 10",
+        "numberText": "categories monitored by KPMG and REC saw **permanent demand rise in October**, led by **IT and Computing and Engineering**.",
+        "stateTitle": "1 Where things stand: demand is back, and so is competition",
+        "statePoints": [
+          "**Six of ten** job categories recorded higher permanent demand in October, with engineering one of the two leading the rise.",
+          "More people are available overall, but **availability is not the same as the right engineer being free** to start.",
+          "Recruiters reported **stronger starting salary increases** as employers worked to secure scarce, high-calibre candidates."
+        ],
+        "futureTitle": "2 What the best employers do: move before the vacancy opens",
+        "futurePoints": [
+          "They **build a pipeline ahead of demand**, so a resignation or a new contract starts a conversation, not a search.",
+          "They **agree sign-off and offer authority before the first interview**, so a good engineer gets a decision in days, not weeks.",
+          "They keep the number of stages to the few that genuinely test the work."
+        ],
+        "gapText": "3 Mind the gap: every week a technical seat stays empty, projects slip and the team left behind carries the load. A process that moves slower than the candidate hands your best option to a competitor.",
+        "maths": "A **£52,000** engineering role left empty for **10 weeks** is ==£10,000== of salary value that is not at work for you.",
+        "checkTitle": "How wide is your gap?",
+        "questions": [
+          "How long has your longest open technical role been open?",
+          "How many engineers will you need to hire before March?",
+          "If a key engineer resigned tomorrow, how long would it take to replace them?"
+        ],
+        "checkAsk": "",
+        "myth": "Good engineers will wait for a thorough process",
+        "reality": "The strongest are quick to accept the first good offer, so speed is part of your pitch.",
+        "roleType": "engineers",
+        "sources": "KPMG and REC, UK Report on Jobs, November 2026 (survey 12 to 26 October 2026); no category index values were published in the text, so the figure is a count of categories. Quick maths is salary only (£52,000 divided by 52, multiplied by 10 weeks; illustrative salary, no on-costs, agency or other costs)."
+      }
+    },
+    {
+      "sector": "Manufacturing and Industrial",
+      "subject": "The Gap Brief: Output is up. Staffing has stalled.",
+      "problemIds": [
+        "gp-mfg-1"
+      ],
+      "content": {
+        "preheader": "Fastest output growth in 25 months, but job creation has paused.",
+        "headline": "Orders are growing.",
+        "headlineGold": "Your shop floor needs to as well.",
+        "intro": "UK factories are producing more, but hiring has stalled. If your production roles are open while orders build, the gap shows up on your shifts first.",
+        "numberValue": "52.8",
+        "numberText": "the **UK Manufacturing PMI for October 2026**, a five-month high, with output rising at its **fastest rate in 25 months**.",
+        "stateTitle": "1 Where things stand: more output, no extra headcount",
+        "statePoints": [
+          "Output rose for a **seventh month** in October and at the fastest pace in 25 months.",
+          "Yet **staffing levels were unchanged**, ending a six-month run of job creation, as some firms delayed capacity increases to offset costs.",
+          "Make UK reports manufacturers **holding back on recruitment** and weaker hiring intentions despite signs of improving demand."
+        ],
+        "futureTitle": "2 What the best employers do: sell the job, not just the vacancy",
+        "futurePoints": [
+          "They **show shift patterns, training and progression** in the advert, because that is what a production candidate compares.",
+          "They **let candidates see the site** before they accept, so the first week holds no surprises.",
+          "They **recruit beyond the immediate area** and plan ahead of peaks rather than reacting to them."
+        ],
+        "gapText": "3 Mind the gap: when output rises and the floor does not, the load lands on overtime and agency cover. Stretched shifts also raise quality and safety risk.",
+        "maths": "A **£28,000** production role left empty for **8 weeks** is ==£4,308== of salary value that is not at work for you.",
+        "checkTitle": "How wide is your gap?",
+        "questions": [
+          "How many production roles are open right now, and for how long?",
+          "How much of your shift cover is agency, and what does it cost you?",
+          "How many starters in the last year left within three months?"
+        ],
+        "checkAsk": "",
+        "myth": "Production roles fill themselves when orders pick up",
+        "reality": "Output is at a 25-month high while staffing has stalled, so the shortfall is already on your shifts.",
+        "roleType": "production operatives",
+        "sources": "S&P Global UK Manufacturing PMI, October 2026 (survey 12 to 27 October), as reported by The Manufacturer, 3 November 2026; Make UK, Manufacturing Outlook 2026 Q3, 14 September 2026 (qualitative findings only). Quick maths is salary only (£28,000 divided by 52, multiplied by 8 weeks; illustrative salary, no on-costs, agency or other costs)."
+      }
+    },
+    {
+      "sector": "Procurement and Supply Chain",
+      "subject": "The Gap Brief: Lead times are stretching. Who is watching your suppliers?",
+      "problemIds": [
+        "gp-proc-1"
+      ],
+      "content": {
+        "preheader": "Supplier delays are among the longest in four years.",
+        "headline": "Supplier lead times are stretching.",
+        "headlineGold": "Who is managing the risk?",
+        "intro": "delays from suppliers are building again, and the buyers who can manage that risk are hard to find. Here is what the market is telling you.",
+        "numberValue": "4 years",
+        "numberText": "supplier lead times lengthened in October to **one of the greatest extents recorded in four years**, according to the S&P Global UK Manufacturing PMI.",
+        "stateTitle": "1 Where things stand: longer lead times, thinner stocks",
+        "statePoints": [
+          "Firms cited **shipping rerouting, port congestion and material shortages** behind the longer delivery times.",
+          "Purchasing activity **rose for a third month** as firms brought orders forward, while stocks of inputs and finished goods kept falling.",
+          "In a ProcureAbility survey of 160 senior procurement leaders at large enterprises, **71% said their teams are capacity-constrained** and only 19% are adding team members."
+        ],
+        "futureTitle": "2 What the best employers do: protect the seat that protects the supply",
+        "futurePoints": [
+          "They **name a cover plan** for the lead buyer before holiday, illness or resignation tests it.",
+          "They **hire for commercial skill and resilience experience together**, rather than settling for one.",
+          "They talk to **passive candidates early**, because the strongest buyers never see a job board."
+        ],
+        "gapText": "3 Mind the gap: unmanaged supplier risk means missed savings and weaker negotiations when lead times are already against you. A buying seat left empty through a disruption is a risk you carry alone.",
+        "maths": "A **£55,000** buyer role left empty for **12 weeks** is ==£12,692== of salary value that is not at work for you.",
+        "checkTitle": "How wide is your gap?",
+        "questions": [
+          "Which buying or supply chain role has been hardest to fill?",
+          "What did the last supplier disruption cost you in time or money?",
+          "Who covers if your lead buyer is away for a month?"
+        ],
+        "checkAsk": "",
+        "myth": "Supply risk is a systems problem, not a people problem",
+        "reality": "Longer lead times and stretched teams put the weight on experienced buyers, and there are few spare.",
+        "roleType": "buyers",
+        "sources": "S&P Global UK Manufacturing PMI, October 2026 (survey 12 to 27 October), as reported by The Manufacturer, 3 November 2026; ProcureAbility procurement leadership study (160 senior procurement leaders at large enterprises, not UK-specific), as reported by IT Brief UK, 25 September 2026. Quick maths is salary only (£55,000 divided by 52, multiplied by 12 weeks; illustrative salary, no on-costs, agency or other costs)."
+      }
+    },
+    {
+      "sector": "Sales and Business Development",
+      "subject": "The Gap Brief: The best sellers are not on the market",
+      "problemIds": [
+        "gp-sales-1"
+      ],
+      "content": {
+        "preheader": "Why polish at interview is not proof of results.",
+        "headline": "The strongest sellers are not looking.",
+        "headlineGold": "So who are you interviewing?",
+        "intro": "the sellers who consistently hit target rarely apply to adverts, which leaves interviews full of people who present well. Here is how to tell the difference before a mis-hire costs you a territory.",
+        "numberValue": "Passive",
+        "numberText": "Henderson Scott's August 2026 hiring snapshot finds that **the strongest commercial professionals rarely need to look for their next opportunity**.",
+        "stateTitle": "1 Where things stand: a hidden market for top sellers",
+        "statePoints": [
+          "Henderson Scott reports **strong movement** among VP of Sales, commercial director and technical sales candidates, but the best stay quiet until approached.",
+          "The same snapshot describes a **more selective market for junior commercial professionals**.",
+          "A mis-hire in sales is **visible and expensive**: quota gaps, a long ramp-up and pipeline lost when a seat turns over."
+        ],
+        "futureTitle": "2 What the best employers do: hire on evidence, not performance",
+        "futurePoints": [
+          "They **check track record against target** (quota, deal size, cycle length) before the second interview.",
+          "They **set a realistic ramp** and agree what good looks like at 30, 60 and 90 days.",
+          "They **approach sellers directly**, because the best are already in a job and rarely apply."
+        ],
+        "gapText": "3 Mind the gap: while a territory sits empty, pipeline cools and competitors speak to your accounts. A wrong hire then takes months to unwind and repeats the gap.",
+        "maths": "A **£60,000** sales role (basic salary only) left empty for **12 weeks** is ==£13,846== of salary value that is not at work for you.",
+        "checkTitle": "How wide is your gap?",
+        "questions": [
+          "How long does a new seller take to reach full quota here?",
+          "How many sales hires in the last two years did not work out?",
+          "What happens to a territory while the seat is empty?"
+        ],
+        "checkAsk": "",
+        "myth": "A great interview means a great seller",
+        "reality": "Interviews reward polish, so the evidence is results on the record.",
+        "roleType": "sales professionals",
+        "sources": "Henderson Scott, August 2026 Hiring Snapshot, The Hidden Hiring Market: Sales and Marketing (qualitative only, no figures published). No current UK figure was found for this problem, so this brief is number-free. Quick maths is salary only (£60,000 divided by 52, multiplied by 12 weeks; illustrative salary, no on-costs, agency or other costs)."
+      }
+    },
+    {
+      "sector": "Accountancy and Finance",
+      "subject": "The Gap Brief: Finance demand is rising. Is your year end hiring late?",
+      "problemIds": [
+        "gp-fin-1"
+      ],
+      "content": {
+        "preheader": "Permanent demand for finance staff is rising again.",
+        "headline": "Finance hiring is picking up.",
+        "headlineGold": "Is yours starting early enough?",
+        "intro": "demand for accountancy and finance staff is rising again, and the people you need for close and audit are the ones who move first. Here is where the market stands.",
+        "numberValue": "Rising",
+        "numberText": "REC reports **permanent demand rising in accounting and finance**, alongside IT, engineering and construction, in October 2026.",
+        "stateTitle": "1 Where things stand: more employers competing for the same people",
+        "statePoints": [
+          "KPMG and REC say permanent demand rose in **IT, engineering, construction and accounting and finance** in October.",
+          "Candidate availability rose sharply overall, but a wider pool does not mean **qualified, part-qualified and system-confident finance staff** are easier to find.",
+          "Hiring that **starts after the finance calendar has begun** is already late for the close or audit it was meant to support."
+        ],
+        "futureTitle": "2 What the best employers do: hire against the finance calendar",
+        "futurePoints": [
+          "They **work back from close and audit dates** and begin the search months ahead.",
+          "They **offer flexibility** such as hybrid working or compressed hours, because candidates weigh it alongside pay.",
+          "They **make a decision fast** once the right person appears."
+        ],
+        "gapText": "3 Mind the gap: an empty finance seat means late closes, stretched audits and a team close to burnout. Costly interim cover is the fallback when hiring starts too late.",
+        "maths": "A **£50,000** finance role left empty for **10 weeks** is ==£9,615== of salary value that is not at work for you.",
+        "checkTitle": "How wide is your gap?",
+        "questions": [
+          "Which finance seat is the one you can least afford to leave empty?",
+          "When is your next close or audit, and is the team ready for it?",
+          "Have you lost a finance candidate in the last year to a faster offer?"
+        ],
+        "checkAsk": "",
+        "myth": "Finance hires can wait until after year end",
+        "reality": "Demand for accounting and finance staff is rising, so the people free to move do not wait for your calendar.",
+        "roleType": "finance professionals",
+        "sources": "KPMG and REC, UK Report on Jobs, November 2026 (survey 12 to 26 October 2026; quoted REC commentary on permanent demand). No current UK numeric figure for finance vacancies was verified, so this brief is number-free. Quick maths is salary only (£50,000 divided by 52, multiplied by 10 weeks; illustrative salary, no on-costs, agency or other costs)."
+      }
+    },
+    {
+      "sector": "IT and Technology",
+      "subject": "The Gap Brief: IT leads the demand rise. How fast is your offer?",
+      "problemIds": [
+        "gp-it-1"
+      ],
+      "content": {
+        "preheader": "IT and Computing is one of the two categories leading permanent demand.",
+        "headline": "IT candidates choose fast.",
+        "headlineGold": "Do you decide faster than they do?",
+        "intro": "IT and Computing is leading the rise in permanent demand, which means good candidates are weighing several employers at once. Here is where the market stands.",
+        "numberValue": "Top 2",
+        "numberText": "**IT and Computing** was one of the **two categories leading the rise in permanent demand** in October, with Engineering, according to KPMG and REC.",
+        "stateTitle": "1 Where things stand: demand is concentrated in tech",
+        "statePoints": [
+          "Six of ten categories saw higher permanent demand in October, and **IT and Computing led the rise**.",
+          "Recruiters reported **stronger starting salary increases** as employers worked to secure scarce, high-calibre candidates.",
+          "A larger overall pool does not help if **the specific skills you need** are the ones in demand everywhere."
+        ],
+        "futureTitle": "2 What the best employers do: shorten the path to a yes",
+        "futurePoints": [
+          "They **give feedback between interview stages within days**, not weeks.",
+          "They **keep technical tests short** and relevant to the work.",
+          "They **tell candidates the timeline** at the start and keep to it."
+        ],
+        "gapText": "3 Mind the gap: when an offer is turned down, the role reopens and delivery dates move. The next IT hire is often waiting on a decision, not on a candidate.",
+        "maths": "A **£65,000** IT role left empty for **8 weeks** is ==£10,000== of salary value that is not at work for you.",
+        "checkTitle": "How wide is your gap?",
+        "questions": [
+          "How many days pass between first interview and offer?",
+          "How many IT offers have you had turned down in the last year?",
+          "What is waiting on the next IT hire?"
+        ],
+        "checkAsk": "",
+        "myth": "A long technical test shows how serious you are",
+        "reality": "Candidates compare your process with other offers, so every extra stage and silent week gives a rival time.",
+        "roleType": "IT professionals",
+        "sources": "KPMG and REC, UK Report on Jobs, November 2026 (survey 12 to 26 October 2026; no index values published in the text). Quick maths is salary only (£65,000 divided by 52, multiplied by 8 weeks; illustrative salary, no on-costs, agency or other costs)."
+      }
+    },
+    {
+      "sector": "Construction and Infrastructure",
+      "subject": "The Gap Brief: Housebuilding is down. Infrastructure is not.",
+      "problemIds": [
+        "gp-con-1"
+      ],
+      "content": {
+        "preheader": "A split market makes it harder to staff the right project.",
+        "headline": "Demand is uneven.",
+        "headlineGold": "Is your project team in the right place?",
+        "intro": "construction activity is falling overall, but not everywhere, and the sites that are busy still need people at the right moment. Here is the picture.",
+        "numberValue": "43.6",
+        "numberText": "the **UK Construction PMI for October 2026**, down from 46.1 in September and lower than economists expected, with housebuilding the weakest part.",
+        "stateTitle": "1 Where things stand: a market split by project type",
+        "statePoints": [
+          "Housebuilding saw its **biggest slump of the year**, as borrowing costs and weak confidence weighed.",
+          "Civil engineering recorded its **slowest fall since May 2025**, with data centres, energy and utilities showing rising workloads.",
+          "REC says **permanent demand for construction staff rose** in October, so the busy projects are competing for people."
+        ],
+        "futureTitle": "2 What the best employers do: plan ahead of the award",
+        "futurePoints": [
+          "They **hire against the pipeline**, not only against contracts already won.",
+          "They **start recruiting months before a start date** so travel and relocation can be arranged.",
+          "They are **clear about location, duration and progression**, because these decide whether site and commercial staff say yes."
+        ],
+        "gapText": "3 Mind the gap: a vacancy on a live project can hold up a milestone, lift subcontractor rates and add pressure on site safety. The gap costs most where the work is busiest.",
+        "maths": "A **£58,000** site or commercial role left empty for **12 weeks** is ==£13,385== of salary value that is not at work for you.",
+        "checkTitle": "How wide is your gap?",
+        "questions": [
+          "Which upcoming project is short of people right now?",
+          "How far ahead of a start date do you begin hiring for it?",
+          "How often does a vacancy hold up a programme milestone?"
+        ],
+        "checkAsk": "",
+        "myth": "A weak construction index means hiring is easy",
+        "reality": "Activity is uneven, so the projects that are busy still compete hard for the same site and commercial staff.",
+        "roleType": "site and commercial staff",
+        "sources": "S&P Global UK Construction PMI, October 2026, as reported by ITV News, 5 November 2026; KPMG and REC, UK Report on Jobs, November 2026 (REC commentary on permanent demand). Quick maths is salary only (£58,000 divided by 52, multiplied by 12 weeks; illustrative salary, no on-costs, agency or other costs)."
+      }
+    },
+    {
+      "sector": "Health and Social Care",
+      "subject": "The Gap Brief: Vacancies are down. The wait between offer and start is not.",
+      "problemIds": [
+        "gp-health-1"
+      ],
+      "content": {
+        "preheader": "Vacancy rates have eased, but around 100,000 NHS posts are still open.",
+        "headline": "Vacancy rates are easing.",
+        "headlineGold": "Are you losing people between offer and start?",
+        "intro": "vacancies in health and care are lower than a year ago, but the people you do find can still be lost while checks take their course. Here is where things stand.",
+        "numberValue": "6.7%",
+        "numberText": "the **NHS vacancy rate in England at 30 June 2026**, or 100,326 vacancies, down from 7.1% a year earlier.",
+        "stateTitle": "1 Where things stand: better, but far from solved",
+        "statePoints": [
+          "Registered nursing vacancies stood at **5.3% (23,046)**, down from 6.1% a year earlier.",
+          "In adult social care, Skills for Care reports the vacancy rate fell to **6.2% in 2025/26**, the lowest since 2015/16, with about **96,000 vacancies** on any given day.",
+          "New international recruits direct from abroad fell to **30,000**, the lowest in four years, so the domestic pool matters more."
+        ],
+        "futureTitle": "2 What the best employers do: keep the candidate warm",
+        "futurePoints": [
+          "They **start compliance checks the day an offer is accepted** and keep the candidate informed at each step.",
+          "They **offer a named contact and a start date** early, so the candidate has a reason to wait.",
+          "They track **starters lost during compliance** as a headline measure, not an afterthought."
+        ],
+        "gapText": "3 Mind the gap: every shift that goes to agency costs more and breaks continuity of care. Every week between offer and start is a week a candidate can accept another job.",
+        "maths": "A **£38,000** care or clinical role left empty for **8 weeks** is ==£5,846== of salary value that is not at work for you.",
+        "checkTitle": "How wide is your gap?",
+        "questions": [
+          "How many care or clinical shifts went to agency last month?",
+          "How long between offer and start date for a new starter?",
+          "How many starters have you lost during the compliance stage?"
+        ],
+        "checkAsk": "",
+        "myth": "Falling vacancy rates mean recruitment is now easy",
+        "reality": "There are still around 100,000 NHS vacancies and 96,000 in adult social care on any given day.",
+        "roleType": "care and clinical staff",
+        "sources": "NHS England, NHS Vacancy Statistics England April 2015 to June 2026 (experimental statistics), published 27 August 2026; Skills for Care workforce data for 2025/26, as reported by LocalGov and National Health Executive, 24 June 2026. Quick maths is salary only (£38,000 divided by 52, multiplied by 8 weeks; illustrative salary, no on-costs, agency or other costs)."
+      }
+    },
+    {
+      "sector": "AI and Emerging Technologies",
+      "subject": "The Gap Brief: AI skills now carry a 34% premium",
+      "problemIds": [
+        "gp-ai-1"
+      ],
+      "content": {
+        "preheader": "The UK AI pay premium has tripled in a year.",
+        "headline": "AI pay has moved.",
+        "headlineGold": "Has your brief?",
+        "intro": "demand for AI skills is running ahead of supply, and pay expectations have jumped with it. A vague brief or a must-have list nobody matches gets expensive fast.",
+        "numberValue": "34.2%",
+        "numberText": "the **UK wage premium for jobs requiring AI skills in 2025**, up from 11% in 2024, according to PwC's 2026 AI Jobs Barometer.",
+        "stateTitle": "1 Where things stand: more AI roles, higher expectations",
+        "statePoints": [
+          "UK job postings requiring specialist AI skills reached **179,954 in 2025**, up from roughly 112,000 in 2024.",
+          "The UK AI wage premium **roughly tripled in a single year**, from 11% to 34.2%.",
+          "PwC counts only roles where AI proficiency is **explicitly stated in the advert**, so real demand is wider than the figure shows."
+        ],
+        "futureTitle": "2 What the best employers do: define the work before the title",
+        "futurePoints": [
+          "They **describe what the hire will build or own** in their first six months, not just a job title.",
+          "They **drop must-haves** no real candidate matches and test for ability to learn.",
+          "They **budget to the market now**, not to last year's expectations."
+        ],
+        "gapText": "3 Mind the gap: projects stall while the seat is open, and the wrong hire against an unclear brief costs more than waiting to define the role. Salary expectations are moving upward each quarter you delay.",
+        "maths": "A **£60,000** role plus the **34.2%** premium PwC reports is ==£80,520==, so a brief set against last year's pay can be **£20,520** short.",
+        "checkTitle": "How wide is your gap?",
+        "questions": [
+          "What exactly do you need this hire to build or own in their first six months?",
+          "How many of your must-haves would you drop for the right person?",
+          "What is on hold until this seat is filled?"
+        ],
+        "checkAsk": "",
+        "myth": "You can write a long must-have list and wait for a match",
+        "reality": "AI role titles and skills are poorly defined, so lists nobody matches leave projects waiting.",
+        "roleType": "AI specialists",
+        "sources": "PwC, 2026 AI Jobs Barometer (UK findings, June 2026), as reported by Employment Hero, 15 June 2026; the premium compares roles requiring AI skills with comparable roles. Quick maths is salary only (£60,000 illustrative base salary multiplied by 1.342; no on-costs or other costs)."
+      }
+    },
+    {
+      "sector": "HR and People Management",
+      "subject": "The Gap Brief: One in three employers still cannot fill roles",
+      "problemIds": [
+        "gp-hr-1"
+      ],
+      "content": {
+        "preheader": "A low-hire market is not an easy one.",
+        "headline": "Hiring is slow.",
+        "headlineGold": "Hard-to-fill roles are not.",
+        "intro": "the market is quiet, yet recruitment pressure has not eased for HR teams asked to move fast and keep standards. Here is the latest picture.",
+        "numberValue": "31%",
+        "numberText": "of UK employers reported **hard-to-fill vacancies** in the CIPD Labour Market Outlook for summer 2026.",
+        "stateTitle": "1 Where things stand: low hire, low fire, still hard",
+        "statePoints": [
+          "CIPD describes a **low-hire, low-fire market**, with a net employment balance of +9, close to its lowest outside the pandemic.",
+          "**14% of employers** expect significant recruitment difficulties in the next six months.",
+          "The median expected pay award stayed at **3%**, so pay alone will not win hard-to-fill roles."
+        ],
+        "futureTitle": "2 What the best employers do: standardise the shortlist",
+        "futurePoints": [
+          "They **agree one shortlist standard** across hiring managers, so every hire is judged the same way.",
+          "They **set response times** for hiring managers and candidates, so chasing does not fill the week.",
+          "They **protect compliance** with a fixed process rather than ad hoc exceptions."
+        ],
+        "gapText": "3 Mind the gap: time lost chasing hiring managers and candidates is time not spent on the rest of the people agenda. An inconsistent process leads to slower hires and weaker decisions.",
+        "maths": "A **£48,000** HR or people role left empty for **10 weeks** is ==£9,231== of salary value that is not at work for you.",
+        "checkTitle": "How wide is your gap?",
+        "questions": [
+          "How much of your week goes on chasing hiring managers and candidates?",
+          "How consistent is the process across your hiring managers?",
+          "Which vacancy is causing you the most pressure?"
+        ],
+        "checkAsk": "",
+        "myth": "A slow market means hiring can ease off",
+        "reality": "31% of employers still have hard-to-fill vacancies, even with hiring intentions near record lows.",
+        "roleType": "HR professionals",
+        "sources": "CIPD Labour Market Outlook, summer 2026 (2,017 employers surveyed 24 June to 24 July 2026), as reported by Allwork.Space, 17 August 2026. Quick maths is salary only (£48,000 divided by 52, multiplied by 10 weeks; illustrative salary, no on-costs, agency or other costs)."
+      }
+    },
+    {
+      "sector": "Corporate and Executive",
+      "subject": "The Gap Brief: Leadership seats are filled quietly",
+      "problemIds": [
+        "gp-exec-1"
+      ],
+      "content": {
+        "preheader": "CEO appointments are up from a low base, and boards favour known leaders.",
+        "headline": "Senior hires happen quietly.",
+        "headlineGold": "Is your brief clear before the seat opens?",
+        "intro": "leadership moves are picking up from a low base, and boards are leaning towards leaders they already know. If a seat opens, you want the brief ready.",
+        "numberValue": "6",
+        "numberText": "CEO appointments at the UK's 100 largest companies in the first half of 2026, **up from three a year earlier**, according to Russell Reynolds Associates.",
+        "stateTitle": "1 Where things stand: low turnover, selective boards",
+        "statePoints": [
+          "Russell Reynolds reports a **high proportion of internal appointments** and boards preferring leaders whose judgement is already understood.",
+          "Robert Walters found UK CFO average tenure **below three years**.",
+          "**42% of UK business leaders** named early retirements and ageing leaders as a bigger threat to the C-suite pipeline, up from 38% in 2024."
+        ],
+        "futureTitle": "2 What the best employers do: prepare before the vacancy",
+        "futurePoints": [
+          "They **write the brief and success measures** before a seat is open or likely to open.",
+          "They **approach leaders in confidence**, because the strongest are not reading adverts.",
+          "They **plan internal succession** and external options side by side."
+        ],
+        "gapText": "3 Mind the gap: a leadership gap stalls strategy and pushes work onto interim cover. A wrong hire at this level costs far more than a few extra weeks of preparation.",
+        "maths": "A **£150,000** senior role left empty for **20 weeks** is ==£57,692== of salary value that is not at work for you.",
+        "checkTitle": "How wide is your gap?",
+        "questions": [
+          "Which leadership seat is open or likely to open this year?",
+          "How confidential does the search need to be?",
+          "What would a wrong hire at this level cost you?"
+        ],
+        "checkAsk": "",
+        "myth": "Senior seats can wait because turnover is low",
+        "reality": "Appointments are rising from a low base and boards favour proven leaders, so a clear brief matters early.",
+        "roleType": "senior leaders",
+        "sources": "Russell Reynolds Associates, CEO Turnover Index H1 2026, as reported by Board Agenda, 30 July 2026 (UK largest 100 companies); Robert Walters data as reported by Workplace Journal, 24 March 2026. Quick maths is salary only (£150,000 divided by 52, multiplied by 20 weeks; illustrative salary, no on-costs, agency or other costs)."
+      }
+    },
+    {
+      "sector": "Driving and Logistics",
+      "subject": "The Gap Brief: 28% of hauliers still cannot fill driver roles",
+      "problemIds": [
+        "gp-log-1"
+      ],
+      "content": {
+        "preheader": "Vacancies are rising and driver pay is moving.",
+        "headline": "Driver vacancies are rising.",
+        "headlineGold": "Is your compliance process keeping up?",
+        "intro": "more hauliers are short of drivers than at the start of the year, and pay is moving. Here is where the market stands.",
+        "numberValue": "28%",
+        "numberText": "of UK hauliers reported **driver vacancies in April to June 2026**, up from 25% in the first quarter and 26% a year earlier.",
+        "stateTitle": "1 Where things stand: more hauliers short of drivers",
+        "statePoints": [
+          "The DfT's top three reasons, each given by about a third of businesses, are **drivers leaving the industry, better pay or benefits elsewhere and retirement**.",
+          "**25% of hauliers raised driver wages** in the quarter, up from 11% in the first quarter, though the DfT notes annual pay rises are common in Q2.",
+          "Empty running averaged **29%** of kilometres over the 12 months to June 2026, a sign of capacity wasted."
+        ],
+        "futureTitle": "2 What the best employers do: make the first week easy",
+        "futurePoints": [
+          "They **check licence, CPC and ADR requirements at the first conversation**, not after the offer.",
+          "They **publish pay and shift patterns clearly**, since drivers compare both.",
+          "They **plan compliance and induction** so a new driver is on the road quickly."
+        ],
+        "gapText": "3 Mind the gap: a vehicle standing without a driver means missed deliveries and expensive agency cover. Late compliance checks add weeks the vehicle cannot work.",
+        "maths": "A **£36,000** driver role left empty for **6 weeks** is ==£4,154== of salary value that is not at work for you.",
+        "checkTitle": "How wide is your gap?",
+        "questions": [
+          "How many vehicles are standing because there is no driver?",
+          "What do you pay for agency driver cover?",
+          "How long does it take to get a new driver compliant and on the road?"
+        ],
+        "checkAsk": "",
+        "myth": "Pay is the only thing drivers compare",
+        "reality": "Pay rises are spreading, so shift patterns and a fast, clear compliance process decide who joins.",
+        "roleType": "drivers",
+        "sources": "Department for Transport, Domestic road freight statistics, United Kingdom: July 2025 to June 2026, updated 4 November 2026 (vacancy survey, Q2 2026); reported by trans.info, 6 November 2026. Quick maths is salary only (£36,000 divided by 52, multiplied by 6 weeks; illustrative salary, no on-costs, agency or other costs)."
+      }
+    }
+  ]
+}
