@@ -12604,14 +12604,15 @@ var OD_SETS = {
   info_request:{label:'Information request email', hint:'Asks for details, right to work and references'},
   placement:   {label:'Client handover pack and placement email', hint:'Handover pack attached, to the client contact'},
   prestart:    {label:'Pre-start pack and email', hint:'Onboarding pack attached, to the candidate'},
-  rejection:   {label:'Rejection email', hint:'Warm template, to the candidate'},
+  rejection:   {label:'Rejection email - after interview', hint:'Warm template with the free Career Toolkit, to the candidate'},
+  rejection_early:{label:'Rejection email - before interview', hint:'For applicants not taken to interview, with the free Career Toolkit'},
   feedback_week1:  {label:'Week 1 client check-in', hint:'Short check-in email to the client contact'},
   feedback_month1: {label:'Month 1 client feedback request', hint:'Feedback, new vacancies, guarantee reminder and review link'}
 };
 var OD_BY_STAGE = {
   offer:['offer','info_request','placement'],
   start_date:['prestart','placement'], day1:['feedback_week1','placement'], week1:['feedback_week1','feedback_month1','placement'], month1:['feedback_month1','placement'],
-  rejected:['rejection']
+  rejected:['rejection_early','rejection']
 };
 var OD_PICKS = {
   dob:'date', offer_reply_by:'date'
@@ -12682,7 +12683,7 @@ function odRender(){
   if(OD.error){ box.innerHTML = h + '<div style="padding:12px;background:#fdf1ef;border-left:3px solid var(--danger);font-size:13px;">' + esc(OD.error) + '</div>'; return; }
   const r = OD.res, saved = r.saved || {};
   const missing = r.missing || [];
-  if(OD.kind === 'placement' || OD.kind === 'rejection'){
+  if(OD.kind === 'placement' || OD.kind === 'rejection' || OD.kind === 'rejection_early'){
     h += '<div style="margin-bottom:12px;"><button onclick="odAiDraft()" style="padding:8px 14px;background:var(--dark);color:#fff;border:none;border-radius:2px;cursor:pointer;font-size:12.5px;">Draft the wording with AI from the notes</button> <span style="font-size:11px;color:#999;">Review before sending</span></div>';
   }
   if(OD.kind === 'placement'){
@@ -13082,15 +13083,15 @@ async function bulkRejectGo(){
   const done = items.map(function(x){ return x; });
   bkOverlay('<h3 style="margin:0 0 8px;">Rejected ' + res.ok + ' candidate' + (res.ok === 1 ? '' : 's') + '</h3>' +
     (res.failed.length ? '<div class="list">' + res.failed.map(esc).join('<br>') + '</div>' : '') +
-    '<p style="font-size:13px;">Draft each rejection email below. Tasks have also been added for Ella.</p>' +
-    done.map(function(x, i){ return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px solid #eee;padding:7px 0;font-size:13px;"><span>' + esc(formatCandidateName(x.c.name)) + '</span><button class="sub-btn small" onclick="bulkRejEmail(' + i + ')">Rejection email</button></div>'; }).join('') +
+    '<p style="font-size:13px;">Draft each rejection email below. Choose Before interview for people who were never interviewed. Tasks have also been added for Ella.</p>' +
+    done.map(function(x, i){ return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px solid #eee;padding:7px 0;font-size:13px;"><span>' + esc(formatCandidateName(x.c.name)) + '</span><span><button class="sub-btn small" onclick="bulkRejEmail(' + i + ',\'rejection_early\')">Before interview</button> <button class="sub-btn small" onclick="bulkRejEmail(' + i + ',\'rejection\')">After interview</button></span></div>'; }).join('') +
     '<div class="bk-act"><button class="gold" onclick="bkClose()">Close</button></div>');
   window.BK_DONE = done;
 }
-function bulkRejEmail(i){
+function bulkRejEmail(i, kind){
   const x = window.BK_DONE[i]; if(!x) return;
   bkClose();
-  odOpen('rejection', {name:x.c.name, company:x.c.company || x.co, role:x.c.role || x.role, stage:'rejected', notes:x.c.notes || '', email:x.c.email || '', phone:x.c.phone || '', salary:x.c.salary || '', startDate:x.c.startDate || ''});
+  odOpen(kind || 'rejection', {name:x.c.name, company:x.c.company || x.co, role:x.c.role || x.role, stage:'rejected', notes:x.c.notes || '', email:x.c.email || '', phone:x.c.phone || '', salary:x.c.salary || '', startDate:x.c.startDate || ''});
 }
 
 /* Assign company and contact */
@@ -17294,7 +17295,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '16 Nov 2026 - build 60.3 (Cold outreach: bounce and reply detection, Email not working flag, bounce table in Usage)';
+var PAGE_BUILD = '16 Nov 2026 - build 61 (Rejection emails offer the free Career Toolkit, new before-interview rejection email, rejection sign-up counts)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -19043,7 +19044,7 @@ function buildTagApply(){
       MKT.tsTotal = ts.length; MKT.tsLinkedIn = ts.filter(u => /^li-/i.test(String(u.source || ''))).length;
       // build 54: Hiring Toolkit leads store the source as "src=tag-channel", so they count toward campaign cards too
       MKT.tsSrc = ts.map(u => String(u.source || '').toLowerCase()).concat(fl.map(l => String(l.source || '').toLowerCase().replace(/^\??src=/, '')));
-      MKT.tsBy = ts.reduce((m, u) => { const k = String(u.source || ''); if(/^li-/i.test(k)) m[k] = (m[k] || 0) + 1; return m; }, {});
+      MKT.tsBy = ts.reduce((m, u) => { const k = String(u.source || ''); if(/^(li-|rejection-)/i.test(k)) m[k] = (m[k] || 0) + 1; return m; }, {});
     }catch(e){ $('mk41Body').innerHTML = `<div class="p41-panel"><div class="p41-err">${h(e.message)}</div></div>`; return; }
     if(MKT.camp === undefined){ const a = MKT.rows.find(r => r.type === 'campaign' && r.status === 'Active'); MKT.camp = a ? a.title : ''; }
     mktRender();
@@ -19159,7 +19160,7 @@ function buildTagApply(){
       brevo: [`<b>${h(r.title)}</b>`, h(r.audience), pill(r.status), h(r.next_step), h(who41(r.owner)), link(r)],
       magnet: [`<b>${h(r.title)}</b>`, h(r.channel), pill(r.status),
         /hiring toolkit/i.test(r.title) ? `${MKT.funnel} <a data-mkx="1" onclick="switchTab('funnelLeads')" style="cursor:pointer;color:var(--gold)">view</a>`
-        : /career toolkit/i.test(r.title) ? `${MKT.tsTotal} sign-ups<br><span style="font-size:12px;color:var(--grey)">LinkedIn ${MKT.tsLinkedIn}: company ${lic('li-company')}, Ella ${lic('li-ella')}, outreach ${lic('li-outreach')}</span>` : '',
+        : /career toolkit/i.test(r.title) ? `${MKT.tsTotal} sign-ups<br><span style="font-size:12px;color:var(--grey)">LinkedIn ${MKT.tsLinkedIn}: company ${lic('li-company')}, Ella ${lic('li-ella')}, outreach ${lic('li-outreach')}</span><br><span style="font-size:12px;color:var(--grey)">Rejection emails: ${lic('rejection-early') + lic('rejection-interview')} (before interview ${lic('rejection-early')}, after ${lic('rejection-interview')})</span>` : '',
         h(who41(r.owner)), link(r)],
       event: [r.date ? fmt41(r.date, true) : 'No date', `<b>${h(r.title)}</b>`, h(r.location), h(r.cost), pill(r.status), link(r)],
     })[MKT.tab];
@@ -21061,7 +21062,7 @@ const C47_CAT = {lead:'Lead', client:'Client', candidate:'Candidate'};
 const C47_ORDER = {
   lead: ['tpl-lead-live-advert', 'tpl-lead-intro', 'tpl-lead-after-call', 'tpl-lead-rates-prospectus', 'tpl-lead-chase', 'tpl-lead-spec', 'tpl-lead-talent-suite'],
   client: ['tpl-client-new-role', 'tpl-lead-rates-prospectus', 'tpl-client-follow-up', 'tpl-client-feedback-chase', 'tpl-client-placement', 'tpl-client-rejection', 'tpl-client-invoice-chase'],
-  candidate: ['tpl-candidate-availability', 'tpl-interview-confirmation', 'tpl-offer-cover', 'tpl-information-request', 'tpl-references-request', 'tpl-start-reminder', 'tpl-day-one', 'tpl-week-one', 'tpl-month-one', 'tpl-candidate-rejection'],
+  candidate: ['tpl-candidate-availability', 'tpl-interview-confirmation', 'tpl-offer-cover', 'tpl-information-request', 'tpl-references-request', 'tpl-start-reminder', 'tpl-day-one', 'tpl-week-one', 'tpl-month-one', 'tpl-candidate-rejection-early', 'tpl-candidate-rejection'],
 };
 // Templates that only make sense when the dashboard builds them with attachments elsewhere
 const C47_SKIP = ['tpl-client-submission', 'tpl-snippet-partnership'];

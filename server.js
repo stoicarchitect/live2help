@@ -8270,10 +8270,18 @@ const DEFAULT_TEMPLATES = [
   },
   {
     "id": "tpl-candidate-rejection",
-    "name": "Candidate rejection",
+    "name": "Candidate rejection (after interview)",
     "category": "Candidate",
     "subject": "Your application for {{role}} at {{company}}",
-    "body": "Dear {{first_name}},\n\nThank you for investing your time in the process and for the genuine effort you put into your preparation. It was a pleasure getting to know you and we appreciated the quality of your engagement throughout.\n\nWe wanted to let you know that we have decided to move forward with another candidate for this particular role. This was not a reflection of your capabilities - you demonstrated real strengths in [SPECIFIC STRENGTH], and we were genuinely impressed by [SPECIFIC EXAMPLE]. The decision came down to a very close match of specific experience within [DETAIL].\n\nWe would very much like to stay in touch. Your background in [SECTOR/SPECIALISM] puts you in a strong position for future opportunities, particularly in [RELEVANT AREA]. If your situation changes or you update your CV, please do let us know - we check profiles regularly and if something lands that fits, we will reach out directly.\n\nIf you would like to chat about next steps or explore other possibilities in your field, I am always happy to have that conversation. Please feel free to reach out at any time.\n\nKind regards,\n\n{{signature}}",
+    "body": "Dear {{first_name}},\n\nThank you for investing your time in the process and for the genuine effort you put into your preparation. It was a pleasure getting to know you and we appreciated the quality of your engagement throughout.\n\nWe wanted to let you know that we have decided to move forward with another candidate for this particular role. This was not a reflection of your capabilities - you demonstrated real strengths in [SPECIFIC STRENGTH], and we were genuinely impressed by [SPECIFIC EXAMPLE]. The decision came down to a very close match of specific experience within [DETAIL].\n\nWe would very much like to stay in touch. Your background in [SECTOR/SPECIALISM] puts you in a strong position for future opportunities, particularly in [RELEVANT AREA]. If your situation changes or you update your CV, please do let us know - we check profiles regularly and if something lands that fits, we will reach out directly.\n\nIf you would like to chat about next steps or explore other possibilities in your field, I am always happy to have that conversation. Please feel free to reach out at any time.\n\nWhatever comes next, we would like to help you get there. We have built a free Career Toolkit for job seekers. It gives you a CV health check, shows how well your CV matches the roles you are aiming for, and suggests improvements before your next application. There is no obligation, and it is yours to use whenever you like: https://careers.live2helprecruitment.co.uk/talent-suite/career/?src=rejection-interview\n\nKind regards,\n\n{{signature}}",
+    "updated_by": "system"
+  },
+  {
+    "id": "tpl-candidate-rejection-early",
+    "name": "Candidate rejection (before interview)",
+    "category": "Candidate",
+    "subject": "Your application for {{role}} at {{company}}",
+    "body": "Dear {{first_name}},\n\nThank you for applying for the {{role}} role at {{company}}, and for the time you took to put your application together.\n\nWe have reviewed it carefully against what the role requires. On this occasion we are not able to take your application forward, as we are progressing candidates whose experience is a closer match to the specific requirements. This is not a reflection of your wider ability, and we know how much effort a job search takes.\n\nYour background in [SECTOR/SPECIALISM] puts you in a good position for future opportunities, particularly in [RELEVANT AREA]. If you would like us to keep your details on file for similar roles, just reply to this email and let us know, and we will be in touch if something suitable comes up.\n\nWhatever comes next, we would like to help you get there. We have built a free Career Toolkit for job seekers. It gives you a CV health check, shows how well your CV matches the roles you are aiming for, and suggests improvements before your next application. There is no obligation, and it is yours to use whenever you like: https://careers.live2helprecruitment.co.uk/talent-suite/career/?src=rejection-early\n\nKind regards,\n\n{{signature}}",
     "updated_by": "system"
   },
   {
@@ -8441,7 +8449,7 @@ let tplMigrated = false;
 async function migrateTemplates() {
   if (tplMigrated) return;
   const all = await templatesTable.listAll();
-  if (all.some(t => t.id === '__templates_v8')) { tplMigrated = true; return; }
+  if (all.some(t => t.id === '__templates_v9')) { tplMigrated = true; return; }
   for (const d of DEFAULT_TEMPLATES) {
     const ex = all.find(t => t.id === d.id);
     if (!ex || ex.updated_by === 'system') await templatesTable.upsert(d);
@@ -8450,7 +8458,7 @@ async function migrateTemplates() {
     const ex = all.find(t => t.id === oldId);
     if (ex && ex.updated_by === 'system') await templatesTable.remove(oldId);
   }
-  await templatesTable.upsert({ id: '__templates_v8', name: 'migration marker', category: '', subject: '', body: '', updated_by: 'system' });
+  await templatesTable.upsert({ id: '__templates_v9', name: 'migration marker', category: '', subject: '', body: '', updated_by: 'system' });
   tplMigrated = true;
 }
 
@@ -12648,7 +12656,7 @@ app.get('/api/cron/daily', cronOnly, async (req, res) => {
    Uses your own Word templates (built into this file). The
    [PLACEHOLDERS] in them were converted to {{tokens}} so the design is
    untouched. Needs "jszip" in package.json dependencies.
-   Kinds: offer, info_request, placement, prestart, rejection
+   Kinds: offer, info_request, placement, prestart, rejection (after interview), rejection_early (before interview)
    ====================================================================== */
 
 const offerDetailsTable = makeSimpleTable({
@@ -12698,7 +12706,11 @@ const OFFER_EMAILS = {
   },
   rejection: {
     to: 'candidate_email', subject: 'Your application for {{job_title}} at {{company}}', attach: [],
-    body: `Dear {{candidate_name}},\n\nThank you for investing your time in the process and for the genuine effort you put into your preparation. It was a pleasure getting to know you and we appreciated the quality of your engagement throughout.\n\nWe wanted to let you know that we have decided to move forward with another candidate for this particular role. This was not a reflection of your capabilities - you demonstrated real strengths in {{specific_strength}}, and we were genuinely impressed by {{specific_example}}. The decision came down to a very close match of specific experience within {{close_match_detail}}.\n\nWe would very much like to stay in touch. Your background in {{sector}} puts you in a strong position for future opportunities, particularly in {{future_area}}. If your situation changes or you update your CV, please do let us know - we check profiles regularly and if something lands that fits, we will reach out directly.\n\nIf you would like to chat about next steps or explore other possibilities in your field, I am always happy to have that conversation. Please feel free to reach out at any time.\n\nKind regards,\n\n{{sig_consultant}}`,
+    body: `Dear {{candidate_name}},\n\nThank you for investing your time in the process and for the genuine effort you put into your preparation. It was a pleasure getting to know you and we appreciated the quality of your engagement throughout.\n\nWe wanted to let you know that we have decided to move forward with another candidate for this particular role. This was not a reflection of your capabilities - you demonstrated real strengths in {{specific_strength}}, and we were genuinely impressed by {{specific_example}}. The decision came down to a very close match of specific experience within {{close_match_detail}}.\n\nWe would very much like to stay in touch. Your background in {{sector}} puts you in a strong position for future opportunities, particularly in {{future_area}}. If your situation changes or you update your CV, please do let us know - we check profiles regularly and if something lands that fits, we will reach out directly.\n\nIf you would like to chat about next steps or explore other possibilities in your field, I am always happy to have that conversation. Please feel free to reach out at any time.\n\nWhatever comes next, we would like to help you get there. We have built a free Career Toolkit for job seekers. It gives you a CV health check, shows how well your CV matches the roles you are aiming for, and suggests improvements before your next application. There is no obligation, and it is yours to use whenever you like: https://careers.live2helprecruitment.co.uk/talent-suite/career/?src=rejection-interview\n\nKind regards,\n\n{{sig_consultant}}`,
+  },
+  rejection_early: {
+    to: 'candidate_email', subject: 'Your application for {{job_title}} at {{company}}', attach: [],
+    body: `Dear {{candidate_first}},\n\nThank you for applying for the {{job_title}} role at {{company}}, and for the time you took to put your application together.\n\nWe have reviewed it carefully against what the role requires. On this occasion we are not able to take your application forward, as we are progressing candidates whose experience is a closer match to the specific requirements. This is not a reflection of your wider ability, and we know how much effort a job search takes.\n\nYour background in {{sector}} puts you in a good position for future opportunities, particularly in {{future_area}}. If you would like us to keep your details on file for similar roles, just reply to this email and let us know, and we will be in touch if something suitable comes up.\n\nWhatever comes next, we would like to help you get there. We have built a free Career Toolkit for job seekers. It gives you a CV health check, shows how well your CV matches the roles you are aiming for, and suggests improvements before your next application. There is no obligation, and it is yours to use whenever you like: https://careers.live2helprecruitment.co.uk/talent-suite/career/?src=rejection-early\n\nKind regards,\n\n{{sig_consultant}}`,
   },
 };
 
@@ -12898,15 +12910,17 @@ app.post('/api/offer-docs/draft-text', async (req, res) => {
     const brief = (await roleBriefsTable.list().catch(() => [])).find(b => lc(b.company) === lc(c.company) && lc(b.role) === lc(c.role));
     const reqText = brief ? String(brief.requirements || brief.job_description || '').slice(0, 3000) : '';
     const placement = kind === 'placement';
+    const early = kind === 'rejection_early';
     const tool = {
       name: 'fill_fields', description: 'Return the short wording fields for the email.',
       input_schema: { type: 'object', properties: placement
         ? { key_strength_1: { type: 'string' }, key_strength_2: { type: 'string' }, evidence: { type: 'string' }, relevant_area: { type: 'string' }, impact_area: { type: 'string' } }
+        : early ? { sector: { type: 'string' }, future_area: { type: 'string' } }
         : { specific_strength: { type: 'string' }, specific_example: { type: 'string' }, close_match_detail: { type: 'string' }, sector: { type: 'string' }, future_area: { type: 'string' } },
-        required: placement ? ['key_strength_1', 'key_strength_2', 'evidence', 'relevant_area', 'impact_area'] : ['specific_strength', 'specific_example', 'close_match_detail', 'sector', 'future_area'] },
+        required: placement ? ['key_strength_1', 'key_strength_2', 'evidence', 'relevant_area', 'impact_area'] : early ? ['sector', 'future_area'] : ['specific_strength', 'specific_example', 'close_match_detail', 'sector', 'future_area'] },
     };
     const system = 'You write short phrase fragments for recruitment emails from a UK agency. Each value is a lower case noun phrase that completes a sentence (no full stops, no leading capital, no em dashes). Use only facts present in the notes. If the notes do not support a field, write a safe, honest, general phrase instead of inventing detail.';
-    const content = `Candidate: ${c.name}, role: ${c.role} at ${c.company}.\nNotes:\n${notes || c.notes || '(none)'}\n\nSubmission draft data:\n${subText || '(none)'}\n\nClient requirements:\n${reqText || '(none)'}\n\nFields are for a ${placement ? 'placement confirmation email to the client' : 'warm rejection email to the candidate'}.`;
+    const content = `Candidate: ${c.name}, role: ${c.role} at ${c.company}.\nNotes:\n${notes || c.notes || '(none)'}\n\nSubmission draft data:\n${subText || '(none)'}\n\nClient requirements:\n${reqText || '(none)'}\n\nFields are for a ${placement ? 'placement confirmation email to the client' : early ? 'warm rejection email to a candidate who applied and was not taken to interview (describe only their background and sensible future areas, never claim an interview took place)' : 'warm rejection email to the candidate'}.`;
     const out = await callClaudeTool({ system, content, tool, maxTokens: 700 });
     res.json({ fields: out });
   } catch (e) {
@@ -17094,7 +17108,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '16 Nov 2026 - build 60.3 (cold outreach bounce and reply detection: inbox scan, Bounced stage, Email not working flag, auto pause)';
+const SERVER_BUILD = '16 Nov 2026 - build 61 (rejection emails offer the free Career Toolkit, new before-interview rejection email, rejection source tags)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -18661,6 +18675,12 @@ function tsCodeEmail(name, code) {
   </div></div>`;
 }
 
+// Campaign tags (LinkedIn li-*, rejection emails) are kept as they are so the Marketing tab can count them; anything else goes through the usual channel names
+function tsSourceTag(src) {
+  const t = String(src || '').trim().toLowerCase();
+  if (/^(li-[a-z]{2,20}|rejection-(interview|early))$/.test(t)) return t;
+  return normaliseSource(src, '');
+}
 app.post('/api/talent-suite/start', async (req, res) => {
   try {
     const b = req.body || {};
@@ -18675,7 +18695,7 @@ app.post('/api/talent-suite/start', async (req, res) => {
     if (!(await tpVerifyTurnstile(b.turnstileToken, ip))) return res.status(400).json({ error: 'We could not confirm you are human. Please refresh and try again.' });
     const code = String(crypto.randomInt(100000, 1000000));
     tsCodes.set(email, { hash: crypto.createHash('sha256').update(code).digest('hex'), exp: Date.now() + 15 * 60000, tries: 0,
-      pending: { name, sector, target_role: tpClean(b.targetRole, 100), source: normaliseSource(b.src, ''), marketing: b.marketing === true } });
+      pending: { name, sector, target_role: tpClean(b.targetRole, 100), source: tsSourceTag(b.src), marketing: b.marketing === true } });
     // reply straight away; the email goes out in the background so the page never waits on the mail server
     res.json({ ok: true });
     emailTransporter.sendMail({
