@@ -1512,6 +1512,7 @@ h1,h2,.view-head h2,#leadClientsHeader h2,#clientsHeader h2,.modal h2{font-famil
       <div id="kpiContent" style="flex:1;overflow-y:auto;padding:18px 24px;">
         <!-- Build 62: the owner's view (Ella sees her own activity only). Filled by k62Load(). -->
         <div id="k62Owner" style="margin-bottom:32px;"></div>
+        <div id="p64Payroll" style="margin-bottom:32px;"></div>
         
         <!-- KPI Targets Section -->
         <div style="margin-bottom:32px;">
@@ -1748,6 +1749,7 @@ h1,h2,.view-head h2,#leadClientsHeader h2,#clientsHeader h2,.modal h2{font-famil
         </div>
       </div>
       <div class="view-body">
+        <div id="p64Banner"></div>
         <div class="tile-grid" id="homeTiles"></div>
         <div class="panel-grid">
           <div class="panel">
@@ -6502,6 +6504,7 @@ function renderHome(){
   document.getElementById('homeRecent').innerHTML = recent.length
     ? recent.map(r => `<div class="mini-row"><div><div class="t">${esc(r.x.c.name)}</div><div class="d">${esc(r.x.role)}${r.x.company && r.x.company !== UNASSIGNED_LABEL ? ' - ' + esc(r.x.company) : ''}</div></div><div class="r">${esc(poolStageLabel(r.x.c.stage))}<br>${esc(opsFmt(r.d))}</div></div>`).join('')
     : '<div class="panel-empty">No candidate activity yet.</div>';
+  p64RenderBanner(); // build 64: payroll banner for Daniel Brown until the month is marked sent
 }
 
 /* ---------- Roles ---------- */
@@ -14163,24 +14166,163 @@ function renderPayrollTools(){
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
   const inp = 'padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:12px;font-family:inherit;background:#fff;';
   host.innerHTML = `
-    <div style="font-weight:600;margin-bottom:8px;color:var(--dark);">Payroll email</div>
+    <div style="font-weight:600;margin-bottom:8px;color:var(--dark);">Payroll email settings</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
-      <div><div style="font-size:11px;color:#999;">Payroll cut-off day of the month</div><input id="payCutoff" type="number" min="1" max="31" value="${st.cutoff || ''}" placeholder="e.g. 25" style="${inp}width:120px;"></div>
-      <div><div style="font-size:11px;color:#999;">Weekly pay day</div><select id="payDay" style="${inp}">${days.map((d, i) => `<option value="${i + 1}" ${st.payday === i + 1 ? 'selected' : ''}>${d}</option>`).join('')}</select></div>
+      <div><div style="font-size:11px;color:#999;">Commission cut-off day of the month</div><input id="payCutoff" type="number" min="1" max="31" value="${st.cutoff || ''}" placeholder="e.g. 25" style="${inp}width:120px;"></div>
       <div><div style="font-size:11px;color:#999;">Send payroll to (email)</div><input id="payEmail" value="${esc(st.email)}" placeholder="payroll or accountant email" style="${inp}width:230px;"></div>
       <button onclick="savePaySettings()" style="padding:8px 14px;background:none;border:1px solid var(--border);border-radius:2px;cursor:pointer;font-size:12px;">Save settings</button>
     </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:10px;">
-      <div><div style="font-size:11px;color:#999;">Payroll month</div><input id="payMonth" type="month" value="${mv}" style="${inp}"></div>
-      <button onclick="createPayrollEmail()" style="padding:8px 16px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:12px;font-weight:600;">Create payroll email</button>
-    </div>
-    <div class="note-line" style="margin-top:6px;">Commission is included once the client has paid and the payment date is on or before that month's cut-off day. Anything paid after the cut-off moves to the next month automatically.</div>`;
+    <div class="note-line" style="margin-top:6px;">Commission is included once the client has paid on or before the cut-off day (if no cut-off is set, up to the pay date). Anything paid later moves to the next month. The pay date, the payroll pack and the payroll email itself are in the Payroll panel at the top of KPI Reporting (build 64).</div>`;
 }
+/* ---------- Build 64: payroll control (Daniel Brown only; the server refuses everyone else) ---------- */
+var P64 = {status: null, at: 0, pack: null, month: '', loading: false};
+function p64Owner(){ return !!(signedInUser && signedInUser.admin && !signedInUser.va); }
+function p64Gbp(n){ return '£' + (Number(n) || 0).toLocaleString('en-GB', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+function p64Day(iso){ if(!iso) return ''; var d = new Date(String(iso).slice(0, 10) + 'T00:00:00Z'); return isNaN(d) ? '' : d.toLocaleDateString('en-GB', {weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC'}); }
+async function p64Status(force){
+  if(!p64Owner()) return null;
+  if(!force && P64.status && Date.now() - P64.at < 5 * 60 * 1000) return P64.status;
+  try{ P64.status = await b2Api('/api/payroll/status'); P64.at = Date.now(); }catch(e){ console.error('Payroll status:', e.message); }
+  return P64.status;
+}
+// Today: a banner that stays until the month is marked sent (not dismissable)
+async function p64RenderBanner(force){
+  var host = document.getElementById('p64Banner');
+  if(!host) return;
+  if(!p64Owner()){ host.innerHTML = ''; return; }
+  var s = await p64Status(force);
+  var b = s && s.banner;
+  if(!b){ host.innerHTML = ''; return; }
+  var over = b.level === 'overdue', today = b.level === 'today';
+  host.innerHTML = '<div class="p64-banner ' + (over ? 'over' : today ? 'today' : '') + '">' +
+    '<div><strong>' + (over ? 'Payroll overdue' : today ? 'Payroll due today' : 'Payroll coming up') + '</strong><div>' + esc(b.text) + '</div></div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="p64-btn gold" onclick="p64OpenEmail(true)">Open payroll email</button><button class="p64-btn" onclick="p64GoPanel()">Payroll pack</button></div></div>';
+}
+function p64GoPanel(){ switchTab('kpi'); setTimeout(function(){ var el = document.getElementById('p64Payroll'); if(el) el.scrollIntoView({behavior: 'smooth', block: 'start'}); }, 600); }
+
+// KPI Reporting: the payroll panel
+async function p64Load(month){
+  var host = document.getElementById('p64Payroll');
+  if(!host) return;
+  if(!p64Owner()){ host.innerHTML = ''; return; }
+  host.innerHTML = '<div class="k62-h">Payroll</div><div class="panel" style="padding:16px;color:#999;font-size:12.5px;">Loading the payroll pack...</div>';
+  try{
+    var s = await p64Status(true);
+    var m = month || P64.month || (s && s.current && s.current.month) || '';
+    var j = await b2Api('/api/payroll/pack' + (m ? '?month=' + encodeURIComponent(m) : ''));
+    P64.pack = j; P64.month = j.month;
+    var runs = await b2Api('/api/payroll/runs').catch(function(){ return {runs: []}; });
+    p64Render(j, s, runs.runs || []);
+  }catch(e){
+    host.innerHTML = '<div class="k62-h">Payroll</div><div class="panel" style="padding:16px;font-size:12.5px;color:#b3261e;">Could not load the payroll pack: ' + esc(e.message) + '</div>';
+  }
+}
+function p64Render(j, s, runs){
+  var host = document.getElementById('p64Payroll');
+  var p = j.pack, st = j.state || {}, sent = !!j.run;
+  var stageText = sent ? 'Marked as sent ' + p64Day(j.run.sent_at) + ' by ' + esc(j.run.sent_by) :
+    ({not_yet: 'Not due yet', three_days: 'Due in 3 working days or less', day_before: 'Due tomorrow', on_day: 'Due today', overdue: 'Overdue by ' + (st.daysOverdue || 0) + ' day' + (st.daysOverdue === 1 ? '' : 's')})[st.stage] || '';
+  var months = (s && s.months) || [];
+  var h = '<div class="k62-h">Payroll <small>only you can see this</small></div>';
+  h += '<div class="panel" style="padding:16px;">';
+  h += '<div class="p64-row"><div><label>Payroll month</label><select id="p64Month" onchange="p64Load(this.value)">' +
+    months.concat(runs.filter(function(r){ return !months.some(function(x){ return x.month === r.month; }); }).map(function(r){ return {month: r.month, monthName: r.month}; }))
+      .sort(function(a, b){ return a.month < b.month ? 1 : -1; })
+      .map(function(x){ return '<option value="' + esc(x.month) + '"' + (x.month === j.month ? ' selected' : '') + '>' + esc(x.monthName || x.month) + '</option>'; }).join('') + '</select></div>' +
+    '<div><label>Pay date</label><div class="p64-big">' + esc(p64Day(p.payDate)) + '</div><div class="note-line">' + esc(p.payDateSource === 'override' ? 'Changed for this month' : 'Last working day of the month') + '</div></div>' +
+    '<div><label>Status</label><div class="p64-big ' + (sent ? 'ok' : st.stage === 'overdue' ? 'bad' : '') + '">' + stageText + '</div>' +
+    (st.reminders && !sent ? '<div class="note-line">Reminders: ' + esc(p64Day(st.reminders.threeDays)) + ', ' + esc(p64Day(st.reminders.dayBefore)) + ' and on the day</div>' : '') + '</div></div>';
+  if(!sent){
+    h += '<div class="p64-row" style="margin-top:10px;"><div><label>Change the pay date for this month</label><input id="p64Date" type="date" value="' + esc(p.payDateSource === 'override' ? p.payDate : '') + '"></div>' +
+      '<button class="p64-btn" onclick="p64SaveDate()">Save pay date</button>' +
+      (p.payDateSource === 'override' ? '<button class="p64-btn" onclick="p64SaveDate(true)">Back to last working day</button>' : '') +
+      '<div class="note-line" style="flex-basis:100%;">The default is the last working day of the month (weekends and bank holidays skipped). Set the 1st of the next month here when you want to pay then.</div></div>';
+  }
+  // the pack
+  var t = p.totals;
+  h += '<div class="tile-grid" style="margin-top:14px;">' +
+    [['Salary', t.salary], ['Commission', t.commission], ['Gross pay', t.gross], ['Employer pension', t.pension], ['Employer cost', t.employerCost]]
+      .map(function(x){ return '<div class="tile"><div class="n">' + p64Gbp(x[1]) + '</div><div class="l">' + x[0] + '</div></div>'; }).join('') + '</div>';
+  p.people.forEach(function(e){
+    h += '<div class="k62-sub" style="margin-top:12px;">' + esc(e.name) + (e.role ? ' - ' + esc(e.role) : '') + '</div>' +
+      '<div style="font-size:12.5px;color:#555;line-height:1.7;">Salary ' + p64Gbp(e.salary) + (e.partMonth ? ' (part month, ' + e.activeDays + ' days)' : ' (' + p64Gbp(e.salaryYear) + ' a year / 12)') +
+      ' - Commission ' + p64Gbp(e.commission) + (e.commissionRate ? ' at ' + e.commissionRate + '%' : '') +
+      ' - Employer pension ' + p64Gbp(e.pension) + ' (' + e.pensionPct + '%' + (e.pensionOnCommission ? ' on salary and commission' : ' on salary') + ')</div>';
+    if(e.lines.length){
+      h += '<div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>Invoice</th><th>Client</th><th>Candidate</th><th>Invoice amount</th><th>Client paid</th><th>Commission</th></tr></thead><tbody>' +
+        e.lines.map(function(l){ return '<tr><td class="strong">' + esc(l.invoice) + '</td><td>' + esc(l.company) + '</td><td>' + esc(l.candidate) + '</td><td>' + p64Gbp(l.invoiceAmount) + '</td><td>' + esc(p64Day(l.clientPaid)) + '</td><td><strong>' + p64Gbp(l.amount) + '</strong></td></tr>'; }).join('') + '</tbody></table></div>';
+    }else h += '<div class="note-line">No commission due this month.</div>';
+    if(e.later.length) h += '<div class="note-line">Moving to next month (client paid after the cut-off of ' + esc(p64Day(p.cutoff)) + '): ' + e.later.map(function(l){ return esc(l.invoice) + ' ' + p64Gbp(l.amount); }).join(', ') + '</div>';
+    if(e.waitingCount) h += '<div class="note-line">Not yet due (client has not paid): ' + e.waitingCount + ' invoice' + (e.waitingCount === 1 ? '' : 's') + ', ' + p64Gbp(e.waitingAmount) + '</div>';
+  });
+  if(!p.people.length) h += '<div class="note-line" style="margin-top:10px;">No one is on payroll for this month. Team members and pay are under "Payroll, team and cost inputs" below.</div>';
+  (p.warnings || []).forEach(function(w){ h += '<div class="p64-flag">' + esc(w) + '</div>'; });
+  (j.clawback || []).forEach(function(c){
+    h += '<div class="p64-flag"><strong>Clawback check:</strong> ' + esc(c.text) +
+      (c.rows.length ? '<ul style="margin:6px 0 0 18px;">' + c.rows.map(function(r){ return '<li>' + esc(r.invoice) + ', ' + esc(r.candidate) + ' at ' + esc(r.company) + ': ' + p64Gbp(r.amount) + ' (' + esc(r.when) + (r.guaranteeEnd ? ', guarantee to ' + esc(p64Day(r.guaranteeEnd)) : '') + (r.placementStatus === 'left' ? ', candidate has left' : '') + ')</li>'; }).join('') + '</ul>' : '') + '</div>';
+  });
+  if(j.bankCheck && j.bankCheck.connected) h += '<div class="note-line" style="margin-top:8px;">Bank: ' + esc(j.bankCheck.note) + '</div>';
+  // actions
+  h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">';
+  if(!sent){
+    h += '<button class="p64-btn gold" onclick="p64OpenEmail()">Open payroll email</button>' +
+      '<button class="p64-btn" onclick="p64MarkSent()">Mark as sent</button>';
+  }
+  h += '</div>';
+  h += '<div class="note-line" style="margin-top:6px;">' + (sent ? 'Gross ' + p64Gbp(j.run.gross) + ', employer cost ' + p64Gbp(j.run.employer_cost) + ', sent to ' + esc(j.run.to || 'not recorded') + '. Commission on ' + (j.run.invoices ? esc(j.run.invoices) : 'no invoices') + ' is recorded as paid and will not be counted again.' :
+    'The email opens for you to review and send. Nothing is sent automatically. Press Mark as sent once it has gone: that logs the run, records each commission as paid so it is never counted twice, and clears the Today banner.') + '</div>';
+  h += '</div>';
+  // history
+  if(runs.length){
+    h += '<div class="panel" style="padding:16px;margin-top:10px;"><div class="k62-sub">Payroll history</div><div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>Month</th><th>Pay date</th><th>Salary</th><th>Commission</th><th>Pension</th><th>Gross</th><th>Employer cost</th><th>Sent</th><th>By</th></tr></thead><tbody>' +
+      runs.map(function(r){ return '<tr><td class="strong">' + esc(r.month) + '</td><td>' + esc(p64Day(r.pay_date)) + '</td><td>' + p64Gbp(r.salary) + '</td><td>' + p64Gbp(r.commission) + '</td><td>' + p64Gbp(r.pension) + '</td><td>' + p64Gbp(r.gross) + '</td><td>' + p64Gbp(r.employer_cost) + '</td><td>' + esc(p64Day(r.sent_at)) + '</td><td>' + esc(r.sent_by) + '</td></tr>'; }).join('') + '</tbody></table></div></div>';
+  }
+  host.innerHTML = h;
+}
+async function p64SaveDate(clear){
+  var v = clear ? '' : (document.getElementById('p64Date') || {}).value || '';
+  if(!clear && !v){ showToast('Pick a date first'); return; }
+  try{
+    await b2Post('/api/payroll/settings', {month: P64.month, payDate: v});
+    showToast(clear ? 'Pay date set back to the last working day' : 'Pay date saved');
+    await p64Load(P64.month); p64RenderBanner(true);
+  }catch(e){ showToast(e.message); }
+}
+async function p64OpenEmail(fromBanner){
+  try{
+    // from the Today banner: always the month that is due; from the panel: the month on screen
+    var j = fromBanner ? null : P64.pack;
+    if(!j){ j = await b2Api('/api/payroll/pack'); P64.pack = j; P64.month = j.month; }
+    if(j.run){ showToast('Payroll for this month is already marked as sent'); return; }
+    if(!j.pack.people.length){ showToast('No one is on payroll for this month'); return; }
+    if(!j.email.to) showToast('No payroll email address is saved yet. Add it in the To box, and save it under Payroll, team and cost inputs.');
+    var gross = j.pack.totals.gross, month = j.month;
+    mailOpen({to: j.email.to, subject: j.email.subject, body: j.email.body, atts: [], kind: 'email', meta: {entityType: 'client', entity: 'Payroll'},
+      onSent: async function(){
+        showToastActions('Payroll email sent. Mark payroll for ' + month + ' as sent?', [{label: 'Mark as sent', fn: function(){ p64MarkSent(month, gross, j.email.to); }}]);
+      }});
+  }catch(e){ showToast('Could not open the payroll email: ' + e.message); }
+}
+async function p64MarkSent(month, gross, to){
+  var j = P64.pack;
+  month = month || (j && j.month); if(!month){ showToast('Open the payroll pack first'); return; }
+  if(gross === undefined && j) gross = j.pack.totals.gross;
+  if(!confirm('Mark payroll for ' + month + ' as sent?\n\nOnly do this once you have sent the payroll email. Gross pay ' + p64Gbp(gross) + '. Commission on these invoices will be recorded as paid.')) return;
+  try{
+    var r = await b2Post('/api/payroll/mark-sent', {month: month, gross: gross, to: to || (j && j.email && j.email.to) || ''});
+    showToast('Payroll for ' + month + ' marked as sent' + (r.invoicesStamped ? ', ' + r.invoicesStamped + ' commission' + (r.invoicesStamped === 1 ? '' : 's') + ' recorded as paid' : ''));
+    P64.month = month;
+    await p64Status(true);
+    p64RenderBanner(true);
+    if(document.getElementById('p64Payroll')) p64Load(month);
+  }catch(e){ showToast(e.message); }
+}
+
 function savePaySettings(){
-  const c = parseInt(document.getElementById('payCutoff').value, 10);
-  if(!(c >= 1 && c <= 31)){ showToast('Enter a cut-off day between 1 and 31'); return; }
-  finSet('l2h-payroll-cutoff', String(c));
-  finSet('l2h-payday', document.getElementById('payDay').value);
+  const raw = document.getElementById('payCutoff').value.trim();
+  const c = parseInt(raw, 10);
+  if(raw && !(c >= 1 && c <= 31)){ showToast('Enter a cut-off day between 1 and 31, or leave it blank to use the pay date'); return; }
+  finSet('l2h-payroll-cutoff', raw ? String(c) : '');
   finSet('l2h-payroll-email', document.getElementById('payEmail').value.trim());
   showToast('Payroll settings saved');
 }
@@ -17301,7 +17443,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '16 Nov 2026 - build 63 (KPI Reporting Bank section: Starling balance, cash forecast, tax reserve, confirm match list, cost rules, how each client pays)';
+var PAGE_BUILD = '16 Nov 2026 - build 64 (Payroll control: Today payroll banner, KPI Reporting Payroll panel with pay date, payroll pack, commission list, clawback check, open payroll email, Mark as sent, history; built on page build 63)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -22300,6 +22442,19 @@ function rtDelete(id, category, recordId){
   #k62Owner .k62-set input{padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:12px;font-family:inherit;background:#fff;width:120px;}
   #k62Owner .k62-btn{padding:8px 14px;background:none;border:1px solid var(--border);border-radius:2px;cursor:pointer;font-size:12px;font-family:inherit;}
   #k62Owner .k62-btn.gold{background:var(--gold);border-color:var(--gold);color:var(--dark);font-weight:600;}
+  #p64Payroll .k62-h{font-size:16px;color:var(--dark);margin:0 0 12px;font-weight:500;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
+  #p64Payroll .k62-h small{font-size:11.5px;color:#999;font-weight:400;}
+  #p64Payroll .k62-sub{font-size:12.5px;font-weight:600;color:var(--dark);margin:0 0 6px;}
+  #p64Payroll .p64-row{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end;}
+  #p64Payroll .p64-row label{display:block;font-size:11px;color:#999;margin-bottom:3px;}
+  #p64Payroll .p64-row select,#p64Payroll .p64-row input{padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:12px;font-family:inherit;background:#fff;}
+  #p64Payroll .p64-big{font-size:15px;color:var(--dark);font-weight:600;} #p64Payroll .p64-big.ok{color:#2E7D4F;} #p64Payroll .p64-big.bad{color:#B3372B;}
+  #p64Payroll .p64-flag{margin-top:10px;padding:10px 12px;border-left:3px solid #c9703f;background:#FBF3EC;font-size:12.5px;color:#5a3a1f;line-height:1.5;}
+  .p64-btn{padding:8px 14px;background:#fff;border:1px solid var(--border);border-radius:2px;cursor:pointer;font-size:12px;font-family:inherit;}
+  .p64-btn.gold{background:var(--gold);border-color:var(--gold);color:var(--dark);font-weight:600;}
+  .p64-banner{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;padding:14px 16px;margin-bottom:16px;border-radius:2px;background:#0B0B18;color:#fff;border-left:4px solid var(--gold);font-size:13px;line-height:1.5;}
+  .p64-banner strong{color:var(--gold);font-weight:600;display:block;margin-bottom:2px;}
+  .p64-banner.today{border-left-color:#E0A040;} .p64-banner.over{background:#5A1A14;border-left-color:#E0705F;} .p64-banner.over strong{color:#FFB4A8;}
   #k62Owner .k62-months{display:flex;align-items:flex-end;gap:4px;height:64px;margin-top:10px;}
   #k62Owner .k62-months div{flex:1;background:var(--gold);opacity:.75;min-height:2px;border-radius:1px 1px 0 0;}
   #k62Owner td.num,#k62Owner th.num{text-align:right;}
@@ -22620,6 +22775,7 @@ function k62Render(k){
 
   host.innerHTML = h;
   k63After(k);
+  p64Load(); // build 64: the payroll panel under the owner view
 }
 
 function k62RenderMine(k){
