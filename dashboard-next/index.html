@@ -17337,7 +17337,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '16 Nov 2026 - build 62 (KPI Reporting rebuilt as an owner view: money, pipeline, clients, cost, staff, VAT threshold watch, guarantee watch, what changed this month) preview';
+var PAGE_BUILD = '16 Nov 2026 - build 62 (frozen top section while scrolling, KPI Reporting rebuilt as an owner view: money, pipeline, clients, cost, staff, VAT threshold watch, guarantee watch, what changed this month) preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -22530,6 +22530,34 @@ async function k62VatTest(){
     showToast(r.levelsThatWouldAlert.length ? (r.sent ? 'Test alert sent to your inbox: ' + r.pct + '% of ' + k62Money(r.threshold) : 'An alert would fire at ' + r.pct + '%, but the email was not sent (no emails go out from the preview)') : 'No alert at that threshold: turnover is only ' + r.pct + '% of it');
   }catch(e){ showToast(e.message || 'Could not run the test'); }
 }
+</script>
+
+<style id="freeze63">
+/* Build 62: frozen top section. Title bar, tabs and the view header stay in place while the workspace scrolls (desktop). */
+@media (min-width:781px){
+  body.app-on #groupBar{position:sticky;top:0;z-index:60;}
+  body.app-on #tabs{position:sticky;top:var(--fz1,64px);z-index:59;}
+  body.app-on #main > div > .view-head, body.app-on #main > div > #kpiHeader{position:sticky;top:var(--fz2,110px);z-index:58;background:var(--white);}
+}
+</style>
+<script>
+(function(){
+  function measure(){
+    try{
+      var g=document.getElementById('groupBar'), t=document.getElementById('tabs'), r=document.documentElement.style;
+      if(!g||!t) return;
+      var h1=g.offsetHeight, h2=h1+t.offsetHeight;
+      r.setProperty('--fz1',h1+'px'); r.setProperty('--fz2',h2+'px');
+    }catch(e){}
+  }
+  window.addEventListener('resize',measure);
+  if(window.ResizeObserver){
+    var ro=new ResizeObserver(measure);
+    var go=function(){var g=document.getElementById('groupBar'),t=document.getElementById('tabs'); if(g&&t){ro.observe(g);ro.observe(t);measure();return true;}return false;};
+    if(!go()) document.addEventListener('DOMContentLoaded',go);
+  }
+  setInterval(measure,1500);
+})();
 </script>
 </body>
 </html>
