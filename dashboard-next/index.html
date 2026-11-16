@@ -17330,7 +17330,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '13 Nov 2026 - build 60 (Role Finder: Work this role, View and Undo toasts, status counts; failed lists back off instead of retrying) preview';
+var PAGE_BUILD = '16 Nov 2026 - build 57.4 (Cold outreach: bounce and reply detection) / earlier build 60 (Role Finder: Work this role, View and Undo toasts, status counts; failed lists back off instead of retrying) preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -19597,6 +19597,7 @@ async function useOpen(tab){
     jobs.push(b2Api('/api/ai-spend').then(j => USE.ai = j).catch(e => USE.ai = {error:e.message}));
     jobs.push(b2Api('/api/mail/webhook-url').then(j => USE.hook = j.url).catch(() => {}));
     jobs.push(b2Api('/api/engine/status').then(j => USE.engine = j).catch(e => USE.engine = {error:e.message})); // page build 57.0
+    jobs.push(b2Api('/api/cold/bounces').then(j => USE.coldBn = j).catch(() => USE.coldBn = null)); // page build 57.4
   }
   jobs.push(b2Api('/api/spec/sends').then(j => USE.spec = j.data || []).catch(() => USE.spec = []));
   await Promise.all(jobs);
@@ -19794,6 +19795,7 @@ async function audApplyDefaults(btn){
   catch(e){ showToast(e.message); btn.disabled = false; }
 }
 function audStatusPill(c){
+  if(c.emailBad) return '<span class="p41-pill bad" title="' + esc('Bounced on ' + c.emailBad + (c.emailBadReason ? ': ' + c.emailBadReason : '') + '. Contact kept; find a new address.') + '">Email not working</span>';
   if(c.suppressed) return '<span class="p41-pill bad" title="' + esc(c.suppressed) + '">Do not email</span>';
   if(c.needsRecording) return '<span class="p41-pill warn">Warm, consent not recorded</span>';
   return '<span class="p41-pill ' + (c.status === 'Warm' ? 'ok' : '') + '">' + esc(c.status) + '</span>';
@@ -20166,8 +20168,8 @@ async function co57Load(force){
   if(!CO.batch || force) body.innerHTML = '<div class="p41-empty">Loading...</div>';
   try{
     const qo = CO.owner ? '?owner=' + encodeURIComponent(CO.owner) : '';
-    const [b, s, l] = await Promise.all([b2Api('/api/cold/batch' + qo), b2Api('/api/cold/sequences'), b2Api('/api/cold/contacts' + qo)]);
-    CO.batch = b; CO.seqs = s; CO.list = l; CO.err = '';
+    const [b, s, l, bn] = await Promise.all([b2Api('/api/cold/batch' + qo), b2Api('/api/cold/sequences'), b2Api('/api/cold/contacts' + qo), b2Api('/api/cold/bounces').catch(() => null)]);
+    CO.batch = b; CO.seqs = s; CO.list = l; CO.bn = bn; CO.err = '';
     if(!CO.owner) CO.owner = b.owner;
   }catch(e){ CO.err = e.message; }
   co57Render();
@@ -20287,11 +20289,11 @@ async function co57Send(btn){
 function co57Seqs(){
   const s = CO.seqs, d = s.data, S = s.summary;
   const open = x => x.stage === 'Active' || x.stage === 'Finished';
-  let h = mk57Cards([{k:'', t:'All sequences', s:d.length + ' contact' + (d.length === 1 ? '' : 's')}, {k:'Active', t:'Active', s:S.active + ' in progress'}, {k:'Finished', t:'Finished', s:S.finished + ' waiting 90 days'}, {k:'closed', t:'Answered', s:S.replied + ' replied, ' + S.yes + ' yes, ' + S.no + ' no'}], CO.sst, "CO.sst='%K';co57Render()");
-  h += '<div class="mk51-tip">Record replies here so nobody gets another email after they have answered. Yes makes them Warm with consent recorded. Not interested puts them on the Do not email list.</div>';
-  const rows = d.filter(x => !CO.sst || (CO.sst === 'closed' ? !open(x) : x.stage === CO.sst));
+  let h = mk57Cards([{k:'', t:'All sequences', s:d.length + ' contact' + (d.length === 1 ? '' : 's')}, {k:'Active', t:'Active', s:S.active + ' in progress'}, {k:'Finished', t:'Finished', s:S.finished + ' waiting 90 days'}, {k:'closed', t:'Answered', s:S.replied + ' replied, ' + S.yes + ' yes, ' + S.no + ' no'}, {k:'Bounced', t:'Bounced', s:(S.bounced || 0) + ' email' + ((S.bounced || 0) === 1 ? '' : 's') + ' not working'}], CO.sst, "CO.sst='%K';co57Render()");
+  h += '<div class="mk51-tip">Bounces and replies are found automatically every 15 minutes (weekdays). A bounced address goes on the Do not email list and shows as Bounced here, and you get a task to find a new address. A reply stops the sequence; a plain "no" also puts them on the Do not email list. You can still record Replied, Yes or Not interested by hand.</div>' + co57ScanBar();
+  const rows = d.filter(x => !CO.sst || (CO.sst === 'closed' ? (!open(x) && x.stage !== 'Bounced') : x.stage === CO.sst));
   return h + mk57Table(['Contact', 'Company', s.admin ? 'Owner' : null, 'Sector', 'Stage', 'Emails sent', 'Next', ''].filter(x => x !== null), rows.map(x => {
-    const cls = x.stage === 'Active' ? 'gold' : x.stage === 'Finished' ? '' : /yes/i.test(x.stage) ? 'ok' : /no|suppress/i.test(x.stage) ? 'bad' : 'ok';
+    const cls = x.stage === 'Active' ? 'gold' : x.stage === 'Finished' ? '' : /yes/i.test(x.stage) ? 'ok' : /no|suppress|bounce/i.test(x.stage) ? 'bad' : 'ok';
     const r = ['<b>' + esc(x.name || x.email) + '</b><div class="mk57-sub">' + esc(x.email) + '</div>', esc(x.company)];
     if(s.admin) r.push(esc(x.owner));
     r.push(esc(x.sector), '<span class="p41-pill ' + cls + '">' + esc(x.stage) + '</span>' + (x.note && !open(x) ? '<div class="mk57-sub">' + esc(x.note) + '</div>' : ''), esc(x.step) + ' of 3',
@@ -20299,6 +20301,34 @@ function co57Seqs(){
       open(x) ? '<div class="mk51-acts"><button class="p41-btn sm" onclick="co57Outcome(\'' + esc(x.id) + '\',\'replied\')">Replied</button><button class="p41-btn sm" onclick="co57Outcome(\'' + esc(x.id) + '\',\'yes\')">Yes, add me</button><button class="p41-btn sm" onclick="co57Outcome(\'' + esc(x.id) + '\',\'no\')">Not interested</button></div>' : '');
     return r;
   }), 'No sequences yet. They start when the first batch is sent.');
+}
+/* Page build 57.4: bounce and reply detection status */
+function co57ScanBar(){
+  const bn = CO.bn; if(!bn) return '';
+  const sc = bn.scan || {}, when = t => t ? new Date(t.replace(' ', 'T')).toLocaleString('en-GB', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'}) : 'not yet';
+  let h = '';
+  if(sc.needsPermission) h += '<div class="p41-note" style="border-color:var(--danger)"><b>Bounces are not being read yet.</b> Microsoft 365 needs the Mail.ReadWrite application permission with admin consent (Entra > App registrations > Live 2 Help Workspace Mail > API permissions). Until then, bounce notices stay in the inbox.</div>';
+  else if(sc.error) h += '<div class="p41-note" style="border-color:var(--danger)">Last inbox check had a problem: ' + esc(sc.error) + '</div>';
+  (bn.owners || []).filter(o => o.paused).forEach(o => {
+    h += '<div class="p41-note" style="border-color:var(--danger)"><b>Cold sending is paused for ' + esc(o.name) + '</b>: ' + esc(o.paused) + '. ' + (bn.admin ? '<button class="p41-btn sm" onclick="co57Resume(\'' + esc(o.owner) + '\')">Resume sending</button>' : 'An admin can resume it.') + '</div>';
+  });
+  h += '<div class="mk57-sub" style="margin:6px 0 10px;">Inboxes last checked ' + esc(when(sc.last)) + (sc.counts && sc.last ? ' (found ' + (sc.counts.hard || 0) + ' bounced, ' + (sc.counts.replies || 0) + ' replies)' : '') + '. ' +
+    (bn.admin ? '<button class="p41-btn sm" onclick="co57Scan(this)">Check inboxes now</button> <button class="p41-btn sm" onclick="co57Scan(this, \'2026-11-10\')">Check back to 10 Nov</button>' : '') + '</div>';
+  return h;
+}
+async function co57Scan(btn, since){
+  btn.disabled = true; const was = btn.textContent; btn.textContent = 'Checking...';
+  try{
+    const j = await b2Post('/api/cold/scan', since ? { since } : {});
+    if(j.needsPermission) showToast('Microsoft 365 will not let the workspace read mailboxes yet. See the note on this page.');
+    else if(j.skipped) showToast(j.skipped);
+    else { const c = j.counts || {}; showToast('Checked ' + (c.scanned || 0) + ' emails: ' + (c.hard || 0) + ' bounced, ' + (c.soft || 0) + ' temporary, ' + (c.policy || 0) + ' blocked, ' + (c.replies || 0) + ' replies, ' + (c.stops || 0) + ' said no.'); }
+    await co57Load(true);
+  }catch(e){ showToast(e.message); btn.disabled = false; btn.textContent = was; }
+}
+async function co57Resume(owner){
+  if(!confirm('Resume cold sending for this mailbox? Check the bounced addresses first so it does not happen again.')) return;
+  try{ await b2Post('/api/cold/resume', { owner }); showToast('Cold sending resumed.'); await co57Load(true); }catch(e){ showToast(e.message); }
 }
 async function co57Outcome(id, outcome){
   const msg = outcome === 'yes' ? 'Record that they said yes? They become Warm with consent recorded and join the fortnightly Gap Brief.' : outcome === 'no' ? 'Record not interested? They go on the Do not email list.' : 'Record that they replied? No more automatic emails go to them.';
@@ -20342,12 +20372,21 @@ function useEngineHtml(){
     '<div class="b46-sub" style="margin:4px 0 8px;">Gap Briefs and the Hiring Pulse. Sends from ' + esc(s.from || '') + ' (' + esc(s.region || '') + '). Today: ' + (s.today || 0) + ' of ' + (s.dailyLimit || 200) + '. While SES is in sandbox it only sends to verified addresses.</div>' + useSnsHtml(e) +
     '<label>Send test to</label><input id="engToS" type="email" style="width:100%;" value="' + esc(me) + '" placeholder="a verified address">' +
     '<button class="b46-btn gold" style="margin-top:8px;" onclick="useEngineTest(\'ses\', this)">Send test</button>' + last(lt.ses) + '</div>';
-  h += '</div>';
+  h += '</div>' + useColdBounceHtml();
   if((e.recent || []).length){
     h += '<label style="margin-top:12px;">Latest new-engine emails</label><table class="b46-tbl"><tr><th>When</th><th>Route</th><th>From</th><th>To</th><th>Subject</th><th>Status</th></tr>' +
       e.recent.map(r => '<tr><td>' + esc(new Date(r.at).toLocaleString('en-GB', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})) + '</td><td>' + (r.route === 'ses' ? 'SES' : 'Microsoft 365') + '</td><td>' + esc(r.from) + '</td><td>' + esc(r.to) + '</td><td>' + esc(r.subject) + '</td><td title="' + esc(r.error || '') + '">' + esc(r.status) + '</td></tr>').join('') + '</table>';
   }
   return h + '</div>';
+}
+function useColdBounceHtml(){
+  const bn = USE.coldBn; if(!bn || !(bn.owners || []).length) return '<div class="b46-sub" style="margin-top:10px;">Cold outreach bounces: no cold emails sent yet.</div>';
+  const sc = bn.scan || {};
+  return '<div style="margin-top:12px;padding:10px;border:1px solid var(--border);border-radius:6px;background:#fff;"><b style="font-size:12px;">Cold outreach bounces (last 30 days)</b>' +
+    '<table class="b46-tbl" style="margin-top:6px;"><tr><th>Mailbox</th><th>Sent</th><th>Bounced</th><th>Temporary</th><th>Blocked</th><th>Replies</th><th>Bounce rate</th><th></th></tr>' +
+    bn.owners.map(o => '<tr><td>' + esc(o.name) + '</td><td>' + o.sent + '</td><td>' + o.hard + '</td><td>' + o.soft + '</td><td>' + o.policy + '</td><td>' + o.replies + '</td><td>' + (100 * o.rate).toFixed(1) + '%</td><td>' + (o.paused ? '<span class="p41-pill bad">Paused</span>' : '<span class="p41-pill ok">Sending</span>') + '</td></tr>').join('') + '</table>' +
+    '<div class="b46-sub" style="margin-top:4px;">Sending from a mailbox pauses on its own if more than ' + Math.round(100 * bn.threshold) + '% of the last ' + bn.minSent + '+ emails in ' + bn.days + ' days bounce. ' +
+    (sc.needsPermission ? 'Inbox reading is not switched on yet (Mail.ReadWrite permission needed).' : sc.last ? 'Inboxes last checked ' + esc(new Date(sc.last.replace(' ', 'T')).toLocaleString('en-GB', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})) + '.' : 'Inboxes not checked yet.') + '</div></div>';
 }
 function useSnsHtml(e){
   const v = e.events || {};
@@ -20367,6 +20406,7 @@ async function useEngineTest(route, btn){
   try{ const j = await b2Post('/api/engine/test', {route, from, to}); msg = j.message || 'Sent'; }
   catch(e){ msg = e.message; }
   try{ USE.engine = await b2Api('/api/engine/status'); }catch(e){}
+  try{ USE.coldBn = await b2Api('/api/cold/bounces'); }catch(e){}
   showToast(msg); useRender();
   btn.disabled = false; btn.textContent = was;
 }

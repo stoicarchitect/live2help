@@ -243,5 +243,21 @@ export function createMailEngine({ fetch, isPreview, logTable, isSuppressed, tod
     };
   }
 
-  return { send, status, msConfigured, sesConfigured, bulkFrom };
+  // Build 57.4: read and move mail in a mailbox (bounce and reply detection). Needs the Mail.ReadWrite application permission.
+  async function graph(method, pathOrUrl, body) {
+    const token = await msToken();
+    const url = /^https:/.test(pathOrUrl) ? pathOrUrl : 'https://graph.microsoft.com/v1.0' + pathOrUrl;
+    const r = await fetch(url, {
+      method, headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Prefer: 'outlook.body-content-type="text"' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const code = String(j.error && j.error.code || r.status);
+      throw Object.assign(new Error(`Microsoft Graph ${method} failed (${code}): ${String(j.error && j.error.message || '').slice(0, 160)}`), { status: r.status, code });
+    }
+    return j;
+  }
+
+  return { send, status, msConfigured, sesConfigured, bulkFrom, graph };
 }

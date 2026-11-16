@@ -19,6 +19,7 @@ import { fileURLToPath } from 'url';
 import * as onbDocs from './onboarding-docs.js';
 import { dumpDatabase, inspectDump, restoreDatabase } from './db-dump.js'; // audit Nov 2026
 import { createMailEngine, ENGINE_LOG_HEADER, msSecretExpires, msSecretDaysLeft } from './mail-engine.js'; // build 57.0
+import { looksLikeNdr, failedRecipient, classifyBounce, replyIntent } from './cold-bounce.js'; // build 57.4
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -316,7 +317,7 @@ const TABLE_GROUPS = {
   'Interviews': 'records', 'Templates': 'records', 'Activity': 'records', 'Invoice Charges': 'records',
   'Audit Log': 'system', 'Retention Reviews': 'system', 'Email Log': 'system', 'Engine Log': 'system', 'AI Usage': 'system', 'Settings': 'system', 'Suppression List': 'system',
   'Company Settings': 'clients', 'Contact Audience': 'clients',
-  'Gap Problems': 'clients', 'Gap Briefs': 'clients', 'Gap Sends': 'clients', 'Cold Sequences': 'clients', 'Cold Sends': 'clients', 'Cold Picks': 'clients',
+  'Gap Problems': 'clients', 'Gap Briefs': 'clients', 'Gap Sends': 'clients', 'Cold Sequences': 'clients', 'Cold Sends': 'clients', 'Cold Picks': 'clients', 'Mail Scan': 'clients',
   'Users': 'auth',
 };
 const SIMPLE_TABLES = []; // every makeSimpleTable table, for import, copy back and the nightly backup
@@ -20754,8 +20755,8 @@ async function audSourceContacts() {
 }
 
 async function audResolve() {
-  const [base, comps, auds, supp] = await Promise.all([
-    audSourceContacts(), companySettingsTable.list().catch(() => []), contactAudienceTable.list().catch(() => []), suppressionTable.list().catch(() => []),
+  const [base, comps, auds, supp, bad] = await Promise.all([
+    audSourceContacts(), companySettingsTable.list().catch(() => []), contactAudienceTable.list().catch(() => []), suppressionTable.list().catch(() => []), coldBadEmails(),
   ]);
   const compBy = new Map(comps.map(c => [audCompanyKey(c.company), c]));
   const audBy = new Map(auds.map(a => [lc(a.email), a]));
@@ -20784,6 +20785,8 @@ async function audResolve() {
       email: b.email, name: b.name, company: b.company, jobTitle: b.jobTitle, kind: b.kind, alsoIn: b.alsoIn, roleSeen: b.roleSeen || '', roleWhere: b.roleWhere || '', roleSince: b.roleSince || '',
       owner, ownerFrom, sector, sectors, sectorFrom, lastSector: a.last_sector || '', status, consentSource, consentDate, consentNote: a.consent_note || '',
       needsRecording, suppressed, unsubscribedAt: a.unsubscribed_at || '', route, hasRow: !!a.id,
+      // build 57.4: an address that bounced is flagged, the contact itself is kept
+      emailBad: bad.has(b.email) ? String(bad.get(b.email).detected_at).slice(0, 10) : '', emailBadReason: bad.has(b.email) ? bad.get(b.email).reason : '',
     });
   }
   rows.sort((x, y) => (x.company || '~').localeCompare(y.company || '~') || x.email.localeCompare(y.email));
@@ -21023,6 +21026,10 @@ app.post('/api/audience/unsuppress', requireAdmin, async (req, res) => {
     for (const h of hit) await suppressionTable.remove(h.id);
     const email = lc(hit[0].email || '');
     if (email) {
+      // build 57.4: removing a bounced address from the list also clears its "Email not working" flag
+      for (const r of (await mailScanTable.list().catch(() => [])).filter(x => x.kind === 'bounce-hard' && x.status === 'active' && lc(x.email) === email)) {
+        await mailScanTable.upsert({ ...r, status: 'cleared', cleared_by: lc(actorOf(req)), cleared_at: rfxNow() });
+      }
       const ex = (await contactAudienceTable.list()).find(a => lc(a.email) === email);
       if (ex && ex.unsubscribed_at) await contactAudienceTable.upsert({ ...ex, unsubscribed_at: '', updated_by: actorOf(req), updated_at: rfxNow() });
     }
@@ -22121,6 +22128,7 @@ const coldPicksTable = makeSimpleTable({
 // Why a contact cannot start a cold sequence from this owner's mailbox right now ('' = it can)
 function coldWhyNot(c, seq, owner, today) {
   if (!c) return 'Not found in Lead Clients or Role Finder prospects';
+  if (c.emailBad) return 'Email bounced on ' + c.emailBad + (c.emailBadReason ? ' (' + c.emailBadReason + ')' : '') + ': find a new address';
   if (c.suppressed) return 'Opted out: ' + c.suppressed;
   if (c.status !== 'Cold') return c.status === 'Warm' ? 'Warm: gets the Gap Brief instead' : 'Status ' + c.status;
   if (c.route !== 'm365') return 'Cannot be emailed';
@@ -22130,7 +22138,7 @@ function coldWhyNot(c, seq, owner, today) {
   if (seq) {
     if (seq.stage === 'Active') return 'Already in a sequence (email ' + seq.step + ' of 3 sent)';
     if (seq.stage === 'Finished' && String(seq.next_due) > today) return 'Sequence finished, can start again from ' + seq.next_due;
-    if (seq.stage !== 'Finished') return 'Sequence closed: ' + seq.stage;
+    if (seq.stage !== 'Finished' && seq.stage !== 'Bounced') return 'Sequence closed: ' + seq.stage;
   }
   return '';
 }
@@ -22143,6 +22151,8 @@ async function coldBatch(owner) {
   const usage = await coldUsage(owner, seqs, sends);
   const out = { owner, today, weekday: coldIsWeekday(), usage, items: [], needSector: 0, noProblem: 0, personal: 0, note: '' };
   if (!out.weekday) { out.note = 'Cold emails go Monday to Friday only.'; return out; }
+  const pausedRow = (await coldPausedOwners()).get(owner);
+  if (pausedRow) { out.paused = pausedRow.reason; out.note = 'Cold sending from this mailbox is paused: ' + pausedRow.reason + '. An admin can resume it.'; return out; }
   const by = new Map(contacts.map(c => [c.email, c]));
   const seqBy = new Map(seqs.map(s => [lc(s.email), s]));
   // follow-ups
@@ -22182,6 +22192,7 @@ async function coldSendBatch(owner, wanted, actor) {
   const h = gapHourUK();
   if (!coldIsWeekday() || h < COLD_SEND_FROM_HOUR || h >= COLD_SEND_TO_HOUR) throw Object.assign(new Error(`Cold emails can be sent Monday to Friday between ${COLD_SEND_FROM_HOUR}:00 and ${COLD_SEND_TO_HOUR}:00 UK time.`), { status: 409 });
   const batch = await coldBatch(owner);
+  if (batch.paused) throw Object.assign(new Error('Cold sending from this mailbox is paused because too many emails bounced. An admin can resume it.'), { status: 409 });
   const today = rfxToday();
   const sender = profileOf(owner);
   if (!sender.email) throw new Error('That person has no mailbox set up');
@@ -22296,7 +22307,7 @@ app.get('/api/cold/sequences', async (req, res) => {
     const rows = (await coldSeqTable.list()).filter(s => isAdmin(req) || lc(s.owner) === me);
     const today = rfxToday();
     const n = st => rows.filter(s => s.stage === st).length;
-    res.json({ today, me, admin: isAdmin(req), summary: { active: n('Active'), finished: n('Finished'), replied: n('Replied'), yes: n('Yes'), no: n('Not interested') },
+    res.json({ today, me, admin: isAdmin(req), summary: { active: n('Active'), finished: n('Finished'), replied: n('Replied'), yes: n('Yes'), no: n('Not interested'), bounced: n('Bounced') },
       data: rows.sort((a, b) => String(b.last_sent_at || '').localeCompare(String(a.last_sent_at || ''))).slice(0, 500) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -22324,6 +22335,233 @@ app.post('/api/cold/sequences/:id/outcome', async (req, res) => {
       await coldSeqTable.upsert({ ...s, stage: 'Not interested', closed_at: today, note: 'Not interested. On the Do not email list.', updated_by: who, updated_at: rfxNow() });
       auditLog(auditActorOf(req), 'created', 'suppression', s.email, 'cold outreach: not interested');
     } else return res.status(400).json({ error: 'Unknown outcome' });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* =====================================================================
+   Build 57.4: Bounce and reply detection for cold outreach
+   Reads each sender's Microsoft 365 inbox every 15 minutes (Mon-Fri 07:00-19:00 UK) through Microsoft Graph.
+   Hard bounce: address goes on the Do not email list, the sequence stops as "Bounced", the contact is flagged "Email not working"
+   (contact is kept), the owner gets a task and the notice moves to a Bounces folder.
+   Soft bounce: logged; a second one on the same address counts as hard. Policy block: logged, domain alert, address NOT suppressed.
+   Replies: the sequence stops as Replied (or Not interested and Do not email when they just say no).
+   More than 5% hard bounces for a mailbox over 7 days (at least 20 sent) pauses cold sending from it until an admin resumes it.
+   Needs the Mail.ReadWrite application permission on the Microsoft 365 app.
+   ===================================================================== */
+const mailScanTable = makeSimpleTable({
+  tab: 'Mail Scan',
+  header: ['id', 'kind', 'email', 'owner', 'company', 'seq_id', 'reason', 'code', 'subject', 'detected_at', 'status', 'cleared_by', 'cleared_at'],
+  path: null,
+  label: 'Mail scan entry',
+});
+const COLD_BOUNCE_RATE = 0.05, COLD_BOUNCE_MIN_SENT = 20, COLD_BOUNCE_DAYS = 7;
+const coldScanState = { running: false, last: null, lastOk: null, error: '', needsPermission: false, counts: {} };
+const coldScanId = (kind, key) => 'ms-' + crypto.createHash('sha1').update(kind + '|' + key).digest('hex').slice(0, 16);
+const coldDaysAgoISO = n => new Date(Date.now() - n * 86400000).toISOString();
+
+// active hard bounces by address: used by audResolve (the "Email not working" flag) and coldWhyNot
+async function coldBadEmails() {
+  const rows = await mailScanTable.list().catch(() => []);
+  const m = new Map();
+  rows.filter(r => r.kind === 'bounce-hard' && r.status === 'active').forEach(r => m.set(lc(r.email), r));
+  return m;
+}
+async function coldPausedOwners() {
+  const rows = await mailScanTable.list().catch(() => []);
+  return new Map(rows.filter(r => r.kind === 'pause' && r.status === 'active').map(r => [lc(r.owner), r]));
+}
+
+async function coldBouncesFolder(mailbox) {
+  const base = '/users/' + encodeURIComponent(mailbox) + '/mailFolders';
+  const found = await engineMail.graph('GET', base + "?$filter=displayName eq 'Bounces'&$select=id");
+  if (found.value && found.value[0]) return found.value[0].id;
+  const made = await engineMail.graph('POST', base, { displayName: 'Bounces' });
+  return made.id;
+}
+
+async function coldHardBounce(n, seq, send) {
+  // n: { email, owner, company, name, reason, code, subject }
+  const today = rfxToday();
+  const supp = await suppressionTable.list().catch(() => []);
+  if (!supp.some(s => lc(s.email) === n.email)) {
+    await suppressionTable.upsert({ id: rfxId('sup'), email: n.email, company: '', reason: `Microsoft 365: hard bounce, ${n.reason}`, added_by: 'system', added_at: rfxNow() });
+  }
+  if (seq && seq.stage === 'Active') {
+    await coldSeqTable.upsert({ ...seq, stage: 'Bounced', closed_at: today, note: `Email bounced (${n.reason}). No more emails go to this address.`, updated_by: 'system', updated_at: rfxNow() });
+  }
+  await coldPicksTable.remove(coldPickId(n.owner, n.email)).catch(() => {});
+  const who = (n.name || n.email) + (n.company ? ' at ' + n.company : '');
+  await addAutoTasks([{ key: 'bounce-' + n.email, user: n.owner, title: `Find a new email for ${who}`, priority: 'Medium', dueDate: coldAddDays(today, 2),
+    context: `Our cold email to ${n.email} bounced on ${today} (${n.reason}). The address is on the Do not email list so nothing more goes there. Find a working address (LinkedIn, the company website, a call), add it as a contact, then start a new sequence. Phone and LinkedIn are still fine to use.` }]).catch(() => {});
+  await commsTable.append({ id: 'cm-bnc-' + crypto.createHash('sha1').update(n.email + today).digest('hex').slice(0, 10), timestamp: new Date().toISOString(), user: 'system',
+    entity_type: 'client', entity_name: n.name || n.email, company: n.company || '', role: '', channel: 'email', direction: 'outbound',
+    summary: `Cold email bounced: ${n.reason}. Email address marked as not working.`, follow_up_date: '', follow_up_done: '' }).catch(() => {});
+  auditLog('system', 'updated', 'cold_outreach', n.email, `hard bounce: ${n.reason}`);
+}
+
+// One mailbox: read recent inbox messages, handle bounce notices and replies
+async function coldScanMailbox(owner, since, ctx) {
+  const mailbox = profileOf(owner).email;
+  const out = { owner, scanned: 0, hard: 0, soft: 0, policy: 0, replies: 0, stops: 0, moved: 0, ignored: 0 };
+  if (!mailbox) return out;
+  const sentTo = new Set(ctx.sends.filter(x => lc(x.owner) === lc(owner) && x.status === 'sent').map(x => lc(x.email)));
+  const seqBy = new Map(ctx.seqs.map(s => [lc(s.email), s]));
+  let url = `/users/${encodeURIComponent(mailbox)}/mailFolders/inbox/messages?$filter=${encodeURIComponent('receivedDateTime ge ' + since)}&$orderby=${encodeURIComponent('receivedDateTime desc')}&$top=50&$select=id,subject,from,receivedDateTime,bodyPreview,body`;
+  let folderId = '';
+  for (let page = 0; url && page < 8; page++) {
+    const j = await engineMail.graph('GET', url);
+    for (const m of j.value || []) {
+      out.scanned++;
+      const fromAddr = lc(m.from && m.from.emailAddress && m.from.emailAddress.address);
+      const fromName = String(m.from && m.from.emailAddress && m.from.emailAddress.name || '');
+      const body = String(m.body && m.body.content || m.bodyPreview || '');
+      const subject = String(m.subject || '');
+      const ndr = looksLikeNdr(fromAddr + ' ' + fromName, subject);
+      if (ndr) {
+        const id = coldScanId('ndr', mailbox + '|' + m.id);
+        if (ctx.seen.has(id)) continue;
+        const email = failedRecipient(body, sentTo, mailbox);
+        if (!email) { ctx.seen.add(id); out.ignored++; continue; } // a bounce for something we did not send as cold outreach: leave it in the inbox
+        const cls = classifyBounce(subject, body);
+        if (cls.kind === 'unknown') { out.ignored++; continue; } // retry next time; a human can read it
+        const seq = seqBy.get(email);
+        const prior = ctx.scan.filter(r => lc(r.email) === email && r.kind === 'bounce-soft').length;
+        let kind = 'bounce-' + cls.kind, reason = cls.reason;
+        if (cls.kind === 'soft' && prior >= 1) { kind = 'bounce-hard'; reason = `${cls.reason}, second time`; }
+        const n = { email, owner, company: (seq && seq.company) || '', name: (seq && seq.name) || '', reason, code: cls.code, subject };
+        const row = { id, kind, email, owner, company: n.company, seq_id: seq ? seq.id : '', reason, code: cls.code, subject: subject.slice(0, 160), detected_at: rfxNow(), status: kind === 'bounce-hard' ? 'active' : 'logged', cleared_by: '', cleared_at: '' };
+        await mailScanTable.upsert(row); ctx.scan.push(row); ctx.seen.add(id);
+        if (kind === 'bounce-hard') { await coldHardBounce(n, seq); out.hard++; ctx.touched.add(lc(owner)); }
+        else if (kind === 'bounce-soft') out.soft++;
+        else {
+          out.policy++;
+          const domain = email.split('@')[1] || '';
+          await alertDan('cold-policy:' + domain, `Live 2 Help: cold email blocked by ${domain}`,
+            `${profileOf(owner).fullName || owner}'s cold email to ${email} was refused by their mail server (${reason}). The address was NOT suppressed because this is usually about our sending reputation, not a bad address. If you see more than a couple of these, pause cold sending and check the domain's SPF, DKIM and DMARC.`).catch(() => {});
+        }
+        try { folderId = folderId || await coldBouncesFolder(mailbox); await engineMail.graph('POST', `/users/${encodeURIComponent(mailbox)}/messages/${encodeURIComponent(m.id)}/move`, { destinationId: folderId }); out.moved++; }
+        catch (e) { /* moving is a nicety: the bounce itself is already handled */ }
+        continue;
+      }
+      // a reply from someone in an active sequence
+      const seq = seqBy.get(fromAddr);
+      if (!seq || lc(seq.owner) !== lc(owner) || seq.stage !== 'Active') continue;
+      const id = coldScanId('reply', mailbox + '|' + m.id);
+      if (ctx.seen.has(id)) continue;
+      if (Date.parse(m.receivedDateTime) < Date.parse(String(seq.started_at).slice(0, 10) + 'T00:00:00Z')) continue;
+      const intent = replyIntent(subject, body);
+      const row = { id, kind: 'reply-' + intent, email: fromAddr, owner, company: seq.company || '', seq_id: seq.id, reason: '', code: '', subject: subject.slice(0, 160), detected_at: rfxNow(), status: 'logged', cleared_by: '', cleared_at: '' };
+      await mailScanTable.upsert(row); ctx.scan.push(row); ctx.seen.add(id);
+      const today = rfxToday();
+      if (intent === 'auto') { out.ignored++; continue; }
+      if (intent === 'stop') {
+        await suppressionTable.upsert({ id: rfxId('sup'), email: fromAddr, company: '', reason: 'Cold outreach: replied no (found automatically)', added_by: 'system', added_at: rfxNow() });
+        await coldSeqTable.upsert({ ...seq, stage: 'Not interested', closed_at: today, note: 'Replied no (found automatically). On the Do not email list.', updated_by: 'system', updated_at: rfxNow() });
+        auditLog('system', 'created', 'suppression', fromAddr, 'cold outreach: replied no (automatic)');
+        out.stops++;
+      } else {
+        await coldSeqTable.upsert({ ...seq, stage: 'Replied', closed_at: today, note: 'Reply found automatically. Read it, then record Yes or Not interested if it applies.', updated_by: 'system', updated_at: rfxNow() });
+        await addAutoTasks([{ key: 'cold-reply-' + fromAddr + '-' + today, user: owner, title: `Reply from ${seq.name || fromAddr}${seq.company ? ' at ' + seq.company : ''}`, priority: 'High', dueDate: today,
+          context: `They replied to our cold email. Read it in your inbox, answer them, then open Marketing > Cold Outreach > Sequences and record Yes (adds them to the Gap Brief) or Not interested if it applies.` }]).catch(() => {});
+        out.replies++;
+      }
+    }
+    url = j['@odata.nextLink'] || '';
+  }
+  return out;
+}
+
+// Pause cold sending from a mailbox when too many recent sends bounced
+async function coldCheckBounceRate(owners) {
+  const [sends, scan, paused] = await Promise.all([coldSendsTable.list().catch(() => []), mailScanTable.list().catch(() => []), coldPausedOwners()]);
+  const cutoff = coldDaysAgoISO(COLD_BOUNCE_DAYS), made = [];
+  for (const owner of owners) {
+    if (paused.has(lc(owner))) continue;
+    const sent = sends.filter(x => lc(x.owner) === lc(owner) && x.status === 'sent' && String(x.at) >= cutoff).length;
+    const hard = scan.filter(x => lc(x.owner) === lc(owner) && x.kind === 'bounce-hard' && String(x.detected_at) >= cutoff).length;
+    if (sent < COLD_BOUNCE_MIN_SENT || hard / sent <= COLD_BOUNCE_RATE) continue;
+    await mailScanTable.upsert({ id: coldScanId('pause', owner + '|' + rfxToday()), kind: 'pause', email: '', owner: lc(owner), company: '', seq_id: '',
+      reason: `${hard} hard bounces from ${sent} emails in ${COLD_BOUNCE_DAYS} days (${Math.round(hard / sent * 100)}%)`, code: '', subject: '', detected_at: rfxNow(), status: 'active', cleared_by: '', cleared_at: '' });
+    const p = profileOf(owner);
+    for (const to of [...new Set([profileOf('dan').email, p.email].filter(Boolean))]) {
+      await engineMail.send({ route: 'm365', from: profileOf('dan').email, fromName: 'Live 2 Help Workspace', to, kind: 'cold-alert', user: 'system',
+        subject: `Cold sending paused for ${p.fullName || owner}: too many bounces`,
+        text: `${hard} of ${sent} cold emails sent from ${p.fullName || owner}'s mailbox in the last ${COLD_BOUNCE_DAYS} days bounced (${Math.round(hard / sent * 100)}%). Cold sending from this mailbox is paused so the domain's reputation is protected.\n\nCheck the addresses being chosen (company websites, not guessed addresses), then an admin can resume sending under Marketing > Cold Outreach.` }).catch(() => {});
+    }
+    made.push(owner);
+  }
+  return made;
+}
+
+async function coldScanAll({ since, actor } = {}) {
+  if (coldScanState.running) return { skipped: 'A scan is already running' };
+  if (!engineMail.msConfigured()) return { skipped: 'Microsoft 365 is not set up' };
+  coldScanState.running = true;
+  try {
+    const [sends, seqs, scan] = await Promise.all([coldSendsTable.list().catch(() => []), coldSeqTable.list().catch(() => []), mailScanTable.list().catch(() => [])]);
+    const ctx = { sends, seqs, scan, seen: new Set(scan.map(r => r.id)), touched: new Set() };
+    const owners = [...new Set(sends.map(x => lc(x.owner)).filter(Boolean))].filter(o => profileOf(o).email);
+    const from = since || coldDaysAgoISO(3);
+    const results = [];
+    coldScanState.needsPermission = false; coldScanState.error = '';
+    for (const o of owners) {
+      try { results.push(await coldScanMailbox(o, from, ctx)); }
+      catch (e) {
+        if (e.status === 403 || /Authorization_RequestDenied|ErrorAccessDenied|AccessDenied/i.test(e.code || '')) { coldScanState.needsPermission = true; coldScanState.error = 'Microsoft 365 will not let the workspace read mailboxes yet. Add the Mail.ReadWrite application permission in Entra and grant admin consent.'; break; }
+        coldScanState.error = e.message; results.push({ owner: o, error: e.message });
+      }
+    }
+    const paused = coldScanState.needsPermission ? [] : await coldCheckBounceRate(owners);
+    const sum = k => results.reduce((s, r) => s + (r[k] || 0), 0);
+    coldScanState.last = rfxNow(); if (!coldScanState.error) coldScanState.lastOk = coldScanState.last;
+    coldScanState.counts = { hard: sum('hard'), soft: sum('soft'), policy: sum('policy'), replies: sum('replies'), stops: sum('stops'), moved: sum('moved'), scanned: sum('scanned') };
+    return { owners, results, paused, counts: coldScanState.counts, needsPermission: coldScanState.needsPermission, error: coldScanState.error, since: from };
+  } finally { coldScanState.running = false; }
+}
+
+// every 15 minutes, weekdays 07:00-19:00 UK, live database only
+if (pgLivePool) setInterval(() => {
+  const h = gapHourUK();
+  if (!coldIsWeekday() || h < 7 || h >= 19) return;
+  coldScanAll().catch(e => { coldScanState.error = e.message; console.error('Cold bounce scan failed:', e.message); });
+}, 15 * 60 * 1000);
+
+// Admin: run a scan now (optionally back to a date, for example the day cold outreach started)
+app.post('/api/cold/scan', requireAdmin, async (req, res) => {
+  try {
+    if (isPreview()) return res.json({ preview: true, note: 'Preview workspace: nothing is read from mailboxes here' });
+    const sinceDay = String((req.body || {}).since || '').slice(0, 10);
+    const since = /^\d{4}-\d{2}-\d{2}$/.test(sinceDay) ? sinceDay + 'T00:00:00Z' : undefined;
+    const out = await coldScanAll({ since, actor: lc(actorOf(req)) });
+    auditLog(auditActorOf(req), 'ran', 'cold_outreach', 'bounce scan', JSON.stringify(out.counts || out.skipped || {}));
+    res.json({ ok: true, ...out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Bounce numbers per mailbox for the Usage > Emails panel and the Sequences tab
+app.get('/api/cold/bounces', async (req, res) => {
+  try {
+    const [sends, scan, paused] = await Promise.all([coldSendsTable.list().catch(() => []), mailScanTable.list().catch(() => []), coldPausedOwners()]);
+    const cut30 = coldDaysAgoISO(30);
+    const owners = [...new Set(sends.map(x => lc(x.owner)).filter(Boolean))];
+    const rows = owners.map(o => {
+      const sent = sends.filter(x => lc(x.owner) === o && x.status === 'sent' && String(x.at) >= cut30).length;
+      const k = kind => scan.filter(x => lc(x.owner) === o && x.kind === kind && String(x.detected_at) >= cut30).length;
+      const hard = k('bounce-hard');
+      return { owner: o, name: profileOf(o).fullName || o, sent, hard, soft: k('bounce-soft'), policy: k('bounce-policy'), replies: k('reply-reply'), rate: sent ? hard / sent : 0, paused: paused.has(o) ? paused.get(o).reason : '' };
+    });
+    res.json({ owners: rows, scan: { last: coldScanState.last, lastOk: coldScanState.lastOk, error: coldScanState.error, needsPermission: coldScanState.needsPermission, running: coldScanState.running, counts: coldScanState.counts },
+      threshold: COLD_BOUNCE_RATE, minSent: COLD_BOUNCE_MIN_SENT, days: COLD_BOUNCE_DAYS, admin: isAdmin(req) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Admin: resume cold sending for a paused mailbox
+app.post('/api/cold/resume', requireAdmin, async (req, res) => {
+  try {
+    const owner = lc((req.body || {}).owner);
+    const rows = (await mailScanTable.list()).filter(r => r.kind === 'pause' && r.status === 'active' && lc(r.owner) === owner);
+    if (!rows.length) return res.status(404).json({ error: 'That mailbox is not paused' });
+    for (const r of rows) await mailScanTable.upsert({ ...r, status: 'cleared', cleared_by: lc(actorOf(req)), cleared_at: rfxNow() });
+    auditLog(auditActorOf(req), 'updated', 'cold_outreach', owner, 'cold sending resumed after bounce pause');
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
