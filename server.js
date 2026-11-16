@@ -21,6 +21,7 @@ import { dumpDatabase, inspectDump, restoreDatabase } from './db-dump.js'; // au
 import { createMailEngine, ENGINE_LOG_HEADER, msSecretExpires, msSecretDaysLeft } from './mail-engine.js'; // build 57.0
 import { looksLikeNdr, failedRecipient, classifyBounce, replyIntent } from './cold-bounce.js'; // build 60.3
 import { STARLING_LIVE, STARLING_SANDBOX, BANK_HEADER, DEFAULT_BANK_RULES, createStarlingClient, createDemoStarling, toBankRow, classifyRow, categoriseCost, matchPayments, findPayoutFor, reconcilePayout, latePayerScores } from './bank.js'; // build 63
+import * as reports from './reports.js'; // build 65
 import { londonToday, monthOf, readPayrollSettings, validOverride, payDateFor, payrollWatch, currentPayrollMonth, bannerFor, reminderFor, payrollPack, clawbackCheck, payrollBankCheck, payrollEmail, runRecords, monthName as payrollMonthName } from './payroll.js'; // build 64
 import { computeOwnerKpi, computeMyKpi, vatAlertsDue, vatAlertText, monthKey, KPI_SETTING_DEFAULTS, KPI_SETTING_KEYS } from './kpi-owner.js'; // build 62
 
@@ -320,6 +321,7 @@ const TABLE_GROUPS = {
   'Interviews': 'records', 'Templates': 'records', 'Activity': 'records', 'Invoice Charges': 'records',
   'Audit Log': 'system', 'Retention Reviews': 'system', 'Email Log': 'system', 'Engine Log': 'system', 'AI Usage': 'system', 'Settings': 'system', 'Suppression List': 'system', 'Bank Transactions': 'system', 'Bank Rules': 'system',
   'Payroll Settings': 'system', 'Payroll Runs': 'system', 'Commission Ledger': 'system', // build 64
+  'Report Runs': 'system', // build 65
   'Company Settings': 'clients', 'Contact Audience': 'clients',
   'Gap Problems': 'clients', 'Gap Briefs': 'clients', 'Gap Sends': 'clients', 'Cold Sequences': 'clients', 'Cold Sends': 'clients', 'Cold Picks': 'clients', 'Mail Scan': 'clients',
   'Users': 'auth',
@@ -3388,7 +3390,8 @@ async function readInvoiceRows() {
 // Port 2525: Render's free plan blocks the usual mail ports (25, 465 and 587), which made every send time out.
 // Brevo accepts the same login on 2525. BREVO_SMTP_PORT on Render can override it.
 const emailTransporter = nodemailer.createTransport({
-  host: 'smtp-relay.brevo.com',
+  // BREVO_SMTP_HOST is honoured only under NODE_ENV=test and only for this machine, so the report tests can read the emails a fake mail server receives
+  host: process.env.NODE_ENV === 'test' && /^127\.0\.0\.1$/.test(process.env.BREVO_SMTP_HOST || '') ? process.env.BREVO_SMTP_HOST : 'smtp-relay.brevo.com',
   port: parseInt(process.env.BREVO_SMTP_PORT || '2525', 10),
   secure: false,
   connectionTimeout: 20000,
@@ -11840,7 +11843,7 @@ app.post('/api/storage/preview-seed', requireAdmin, async (req, res) => {
   } catch (e) { console.error('Preview seed error:', e.message); res.status(500).json({ error: e.message }); }
 });
 
-const NOT_IN_READABLE_BACKUP = new Set(['Bank Transactions', 'Payroll Runs', 'Commission Ledger', 'Payroll Settings']);
+const NOT_IN_READABLE_BACKUP = new Set(['Bank Transactions', 'Payroll Runs', 'Commission Ledger', 'Payroll Settings', 'Report Runs']);
 // Nightly: everything held in the live database, as a readable dated Google Sheet in the backup folder
 async function backupDatabaseToDrive(drive, folderId, date) {
   if (!pgLivePool) return null;
@@ -16308,11 +16311,12 @@ async function runMorningChain() {
     } finally { cronRunning.roleFinder = false; }
   });
   await step('invoiceReminders', sendInvoiceReminders);
+  await step('reports', reportsMorningStep); // build 65
   const dow = new Date().toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'Europe/London' });
   if (dow === 'Mon') await step('weeklyDigest', async () => ({ sent: await mailDan('Your Live 2 Help week at a glance', await buildDigest()) }));
   out.finishedAt = new Date().toISOString();
   const bad = v => typeof v === 'string' ? v.startsWith('FAIL') : (v && typeof v === 'object' ? (v.ok === false || Object.values(v).some(bad)) : false);
-  if (['backup', 'daily', 'roleFinder', 'invoiceReminders', 'weeklyDigest'].some(k => bad(out[k]))) out.ok = false;
+  if (['backup', 'daily', 'roleFinder', 'invoiceReminders', 'weeklyDigest', 'reports'].some(k => bad(out[k]))) out.ok = false;
   return out;
 }
 app.get('/api/cron/morning', cronOnly, async (req, res) => {
@@ -17121,7 +17125,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '16 Nov 2026 - build 64 (payroll control: pay date with monthly override, reminders 3 working days before, day before, on the day and daily when missed, payroll pack with commission ledger, clawback flag, Mark as sent; owner only)';
+const SERVER_BUILD = '16 Nov 2026 - build 65 (monthly owner report and weekly owner brief to Daniel Brown, Ella performance report through Emails to review and her HR record, commission in the 90 day cash forecast; owner only)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -20322,11 +20326,14 @@ async function outboxRender(o) {
     item.hash = onbEmailHash(item);
     return { ...item, payload: p };
   }
+  if (o.kind === 'ella_report') return reportsEllaOutboxItem(o, p);
   throw new Error('Unknown email type');
 }
+// build 65: Ella's performance report waits here for Daniel Brown to add a note and send it. Nobody else can see, open, skip or send it.
+function ownerOnly(req) { return isAdmin(req) && !(req.user && req.user.va); }
 app.get('/api/outbox', async (req, res) => {
   try {
-    const all = await emailOutboxTable.list();
+    const all = (await emailOutboxTable.list()).filter(o => o.kind !== 'ella_report' || ownerOnly(req));
     const pending = all.filter(o => o.status === 'pending').sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
     const recent = all.filter(o => o.status !== 'pending').slice(-15).reverse();
     const view = o => ({ id: o.id, created_at: o.created_at, kind: o.kind, company: o.company, name: o.name, to: o.to, subject: o.subject, status: o.status, handled_by: o.handled_by, handled_at: o.handled_at });
@@ -20336,15 +20343,18 @@ app.get('/api/outbox', async (req, res) => {
 app.get('/api/outbox/:id', async (req, res) => {
   try {
     const o = (await emailOutboxTable.list()).find(x => x.id === req.params.id);
-    if (!o) return res.status(404).json({ error: 'Email not found' });
+    if (!o || (o.kind === 'ella_report' && !ownerOnly(req))) return res.status(404).json({ error: 'Email not found' });
     if (o.status !== 'pending') return res.status(409).json({ error: `This email was already ${o.status}` });
     const it = await outboxRender(o);
-    res.json({ id: o.id, item: { label: it.label, to: it.to, from: it.from, subject: it.subject, text: it.text, attachmentNames: it.attachmentNames }, token: reviewTokenFor(actorOf(req), it.hash) });
+    res.json({ id: o.id, item: { label: it.label, to: it.to, from: it.from, subject: it.subject, text: it.text, attachmentNames: it.attachmentNames, note: it.note || '', canNote: !!it.canNote }, token: reviewTokenFor(actorOf(req), it.hash) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/outbox/:id/skip', async (req, res) => {
   try {
     const me = auditActorOf(req);
+    const ob = (await emailOutboxTable.list()).find(x => x.id === req.params.id);
+    if (ob && ob.kind === 'ella_report' && !ownerOnly(req)) return res.status(404).json({ error: 'Email not found' });
+    if (ob && ob.kind === 'ella_report') await reportsMarkEllaSkipped(ob).catch(() => {});
     const r = await emailOutboxTable.updateWhere(o => o.id === req.params.id && o.status === 'pending', o => ({ ...o, status: 'skipped', handled_by: me, handled_at: new Date().toISOString(), note: String((req.body || {}).note || '').slice(0, 200) }));
     auditLog(me, 'outbox_skipped', 'email', req.params.id, '');
     res.json({ ok: true, changed: r });
@@ -20355,10 +20365,11 @@ app.post('/api/outbox/:id/send', async (req, res) => {
     const me = actorOf(req);
     if (!me || me === 'unknown') return res.status(401).json({ error: 'Please sign in again' });
     const o = (await emailOutboxTable.list()).find(x => x.id === req.params.id);
-    if (!o) return res.status(404).json({ error: 'Email not found' });
+    if (!o || (o.kind === 'ella_report' && !ownerOnly(req))) return res.status(404).json({ error: 'Email not found' });
     if (o.status !== 'pending') return res.status(409).json({ error: `This email was already ${o.status}` });
     const it = await outboxRender(o);
     if (!reviewTokenOk(me, it.hash, (req.body || {}).reviewToken)) return res.status(409).json(NOT_REVIEWED);
+    let hrFiled = '';
     const bad = await onbBadAddresses();
     if (bad[lc(o.to)] && bad[lc(o.to)].hard) return res.status(409).json({ error: `${o.to} ${bad[lc(o.to)].reason}, so this cannot be sent. Skip it instead.` });
     if (o.kind === 'onboarding_reminder') {
@@ -20386,9 +20397,14 @@ app.post('/api/outbox/:id/send', async (req, res) => {
       await mailLogTable.append({ id: 'em-' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), at: now, day: rfxToday(), user: me, from: process.env.BREVO_SENDER_EMAIL, to: o.to, cc: '', subject: it.subject, kind: 'retention', company: o.company || '', role: '', entity: o.name, attachments: '', message_id: String((info && info.messageId) || '').replace(/[<>]/g, ''), status: 'sent', event_at: now, ref: 'retention' }).catch(() => {});
       await retentionMarkRequestSent(it.payload.item_id).catch(() => {});
     }
+    else if (o.kind === 'ella_report') {
+      const sent = await reportsSendElla(o, it, me);
+      if (sent.error) return res.status(502).json({ error: sent.error });
+      hrFiled = sent.hr;
+    }
     await emailOutboxTable.updateWhere(x => x.id === o.id, x => ({ ...x, status: 'sent', handled_by: auditActorOf(req), handled_at: new Date().toISOString() }));
     auditLog(auditActorOf(req), 'email_sent', 'outbox:' + o.kind, o.to, it.subject);
-    res.json({ ok: true });
+    res.json({ ok: true, hr: hrFiled || undefined });
   } catch (e) {
     console.error('POST /api/outbox/:id/send error:', e.message);
     res.status(502).json({ error: 'The email could not be sent: ' + e.message + '. Nothing went out.' });
@@ -22630,6 +22646,8 @@ async function coldRemind() {
    ====================================================================== */
 const kpiCache = new Map(); // 'live' | 'preview' -> { at, input }
 async function loadKpiInput(fresh) {
+  // build 65 tests only (NODE_ENV=test): a fixture file stands in for Google Sheets, which cannot be reached from the test machine
+  if (process.env.NODE_ENV === 'test' && process.env.L2H_TEST_KPI_INPUT) { try { return JSON.parse(fs.readFileSync(process.env.L2H_TEST_KPI_INPUT, 'utf8')); } catch (e) { console.error('test input unreadable:', e.message); } }
   const ck = isPreview() ? 'preview' : 'live';
   const hit = kpiCache.get(ck);
   if (!fresh && hit && Date.now() - hit.at < 60000) return hit.input;
@@ -22661,7 +22679,7 @@ async function loadKpiInput(fresh) {
     kpiTargets: targetRows.filter(r => r && r[0]).map(rowToKPITarget),
     clientFirstSeen: clientRows.filter(r => r && r[1]).map(r => ({ date: r[0], name: r[1] })),
     employees: json('fin:l2h-employees', []),
-    fin: { manualAd: set.get('fin:l2h-advertising-cost') || 0, overheads: set.get('fin:l2h-monthly-overheads') || 0 },
+    fin: { manualAd: set.get('fin:l2h-advertising-cost') || 0, overheads: set.get('fin:l2h-monthly-overheads') || 0, payrollCutoff: set.get('fin:l2h-payroll-cutoff') || '' },
     forecastWeights: json('forecast_weights', null),
   };
   if (!Array.isArray(input.employees)) input.employees = [];
@@ -22673,7 +22691,9 @@ async function loadKpiInput(fresh) {
 app.get('/api/kpi/owner', requireAdmin, async (req, res) => {
   try {
     const input = await loadKpiInput(req.query.fresh === '1');
-    const out = computeOwnerKpi({ ...input, now: new Date() });
+    // build 65: ?asOf=YYYY-MM-DD shows the screen as at that day, which is how the monthly report's numbers can be checked against it
+    const asOf = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.asOf || '')) ? new Date(req.query.asOf + 'T12:00:00Z') : new Date();
+    const out = computeOwnerKpi({ ...input, now: asOf });
     out.vat.alertsSent = input.vatMarkers;
     res.json(out);
   } catch (e) {
@@ -23284,5 +23304,286 @@ async function payrollDailyStep() {
   }
   return out;
 }
+
+/* ======================================================================
+   Build 65 - Monthly owner report, weekly owner brief, Ella's performance report
+
+   Owner only (Daniel Brown). Every report is built from a frozen snapshot saved once in Report Runs (Postgres, system group,
+   left out of the readable Sheet backup), so opening a report later shows the same numbers. Report Runs ids make every report
+   idempotent: owner:YYYY-MM, ella:YYYY-MM and weekly:YYYY-MM-DD can only ever exist once, so a second run sends nothing.
+   - Owner report: the first working day of the month, covering the month just finished. Branded PDF plus an email summary,
+     sent to Daniel Brown only. Month figures come from computeOwnerKpi as at the last day of the month, position figures
+     (cash, money owed, pipeline) from computeOwnerKpi as at today, so they equal the KPI screen (?asOf=).
+   - Weekly brief: Mondays, an internal alert to Daniel Brown only.
+   - Ella's report: built from her own activity only (computeMyKpi). It is written to Emails to review, where only Daniel Brown can
+     open it, add a personal note and send it. Nothing is sent on its own. When it is sent, the PDF is filed in her HR documents.
+   Pure logic and tests: reports.js, scripts/test-reports.mjs
+   ====================================================================== */
+const reportRunsTable = makeSimpleTable({
+  tab: 'Report Runs', path: null, label: 'Report run',
+  header: ['id', 'kind', 'period', 'status', 'generated_at', 'sent_at', 'to', 'subject', 'snapshot', 'note', 'ref'],
+});
+const reportsStoreReady = () => !!pgPoolFor('system');
+const reportsBusy = new Set();
+const reportRunView = r => ({ id: r.id, kind: r.kind, period: r.period, status: r.status, generated_at: r.generated_at, sent_at: r.sent_at, to: r.to, subject: r.subject, note: r.note, ref: r.ref });
+const reportsPeriodOk = p => /^\d{4}-\d{2}$/.test(String(p || '')) && String(p) >= '2026-01' && String(p) <= prevMonthOf(londonToday());
+function prevMonthOf(todayISO) { const [y, m] = todayISO.slice(0, 7).split('-').map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`; }
+
+async function reportsPdf(markdown) {
+  const d = onbDocs.parseDoc(markdown);
+  return onbDocs.buildDocPdf({ PDFDocument, logo: onbLogo(), meta: d.meta, blocks: d.blocks, sign: null });
+}
+// internal email to Daniel Brown's own inbox, optionally with the PDF
+async function reportsMailDan(subject, text, pdf, filename) {
+  try {
+    await emailTransporter.sendMail({ from: process.env.BREVO_SENDER_EMAIL, to: dansInbox(), subject, text, attachments: pdf ? [{ filename, content: pdf, contentType: 'application/pdf' }] : undefined });
+    return true;
+  } catch (e) { console.error('Report email failed:', e.message); return false; }
+}
+
+async function reportsPayrollFor(period) {
+  const name = payrollMonthName(period);
+  try {
+    const s = await payrollState();
+    const run = s.runs.find(r => r.month === period && lc(r.status) === 'sent');
+    if (run) return { status: 'sent', monthName: name, payDate: run.pay_date, sentAt: String(run.sent_at || '').slice(0, 10), salary: parseFloat(run.salary) || 0, commission: parseFloat(run.commission) || 0, pension: parseFloat(run.pension) || 0, gross: parseFloat(run.gross) || 0, employerCost: parseFloat(run.employer_cost) || 0 };
+    if (s.settings.startMonth && period >= s.settings.startMonth) return { status: 'not_sent', monthName: name, payDate: payDateFor(period, s.settings, s.bank).date };
+  } catch (e) { console.error('Report payroll lookup failed:', e.message); }
+  return { status: 'unknown', monthName: name };
+}
+
+async function reportsBuildOwner(period) {
+  const input = await loadKpiInput(true);
+  const kMonth = computeOwnerKpi({ ...input, now: reports.monthEndDate(period) });
+  const kNow = computeOwnerKpi({ ...input, now: new Date() });
+  return reports.buildOwnerSnapshot({ period, kMonth, kNow, payroll: await reportsPayrollFor(period), generatedAt: new Date().toISOString(), asAt: londonToday() });
+}
+
+// Generates (once) and sends (once) the owner report for a finished month. replace: build a fresh snapshot. resend: email it again.
+async function reportsRunOwner(period, { replace = false, resend = false, send = true } = {}) {
+  if (isPreview()) return { skipped: 'preview' };
+  if (!reportsStoreReady()) return { skipped: 'no database' };
+  const id = 'owner:' + period;
+  if (reportsBusy.has(id)) return { skipped: 'already running' };
+  reportsBusy.add(id);
+  try {
+    let row = (await reportRunsTable.list()).find(r => r.id === id);
+    let snap;
+    if (row && row.snapshot && !replace) snap = JSON.parse(row.snapshot);
+    else {
+      snap = await reportsBuildOwner(period);
+      const mail = reports.ownerReportEmail(snap);
+      row = { id, kind: 'owner', period, status: 'generated', generated_at: snap.generatedAt, sent_at: '', to: dansInbox(), subject: mail.subject, snapshot: JSON.stringify(snap), note: '', ref: '' };
+      await reportRunsTable.upsert(row);
+    }
+    if (!send) return { id, status: row.status, sent: false };
+    if (row.status === 'sent' && !resend) return { id, skipped: 'already sent', sent_at: row.sent_at };
+    const mail = reports.ownerReportEmail(snap);
+    const pdf = await reportsPdf(reports.ownerReportMarkdown(snap));
+    const ok = await reportsMailDan(mail.subject, mail.text, pdf, `Owner report ${snap.periodName}.pdf`);
+    if (!ok) { await reportRunsTable.upsert({ ...row, status: 'generated', note: 'The email could not be sent. It will be tried again on the next morning run.' }); return { id, sent: false, error: 'email failed' }; }
+    await reportRunsTable.upsert({ ...row, status: 'sent', sent_at: new Date().toISOString(), note: '' });
+    auditLog('system', 'report_sent', 'report', id, `${snap.periodName} owner report emailed to Daniel Brown`);
+    return { id, sent: true };
+  } finally { reportsBusy.delete(id); }
+}
+
+async function reportsBuildElla(period) {
+  const input = await loadKpiInput(true);
+  const my = computeMyKpi({ ...input, now: reports.monthEndDate(period) }, 'ella');
+  const first = n => lc(String(n || '').split(/\s+/)[0]);
+  const wins = input.invoices.filter(i => i && i.number && first(i.consultant) === 'ella' && String(i.date || '').slice(0, 7) === period)
+    .map(i => ({ company: i.company, role: i.role, candidate: i.candidateName })); // names only, never an amount
+  let reviews = [];
+  try { reviews = (await hrReviews.list()).filter(r => lc(r.employee) === 'ella'); } catch (e) { /* HR sheet not available: the report simply has no review section */ }
+  return reports.buildEllaSnapshot({ period, my, wins, reviews, firstName: profileOf('ella').name || 'Ella', generatedAt: new Date().toISOString() });
+}
+
+// Writes Ella's report into Emails to review (never sends it). One per month, unless Daniel Brown asks for a fresh one.
+async function reportsRunElla(period, { replace = false } = {}) {
+  if (isPreview()) return { skipped: 'preview' };
+  if (!reportsStoreReady()) return { skipped: 'no database' };
+  const id = 'ella:' + period;
+  if (reportsBusy.has(id)) return { skipped: 'already running' };
+  reportsBusy.add(id);
+  try {
+    const existing = (await reportRunsTable.list()).find(r => r.id === id);
+    if (existing && !replace && existing.status !== 'failed') return { id, skipped: existing.status };
+    let snap;
+    try { snap = await reportsBuildElla(period); reports.assertEllaClean(snap, ''); }
+    catch (e) {
+      await reportRunsTable.upsert({ id, kind: 'ella', period, status: 'failed', generated_at: new Date().toISOString(), sent_at: '', to: '', subject: '', snapshot: '', note: String(e.message).slice(0, 300), ref: '' });
+      await alertDan('ella-report:' + period, `Live 2 Help: Ella's ${payrollMonthName(period)} report could not be made`, `${e.message}\n\nNothing was queued. The report is tried again on the next morning run.`);
+      return { id, error: e.message };
+    }
+    if (existing && existing.ref) await emailOutboxTable.updateWhere(x => x.id === existing.ref && x.status === 'pending', x => ({ ...x, status: 'skipped', handled_by: 'system', handled_at: new Date().toISOString(), note: 'Replaced by a newer report' })).catch(() => {});
+    const to = profileOf('ella').email;
+    const mail = reports.ellaReportEmail(snap, '');
+    const ob = await outboxAdd({ kind: 'ella_report', company: '', name: snap.firstName, to, subject: mail.subject, payload: { report_id: id, period, note: '' } });
+    await reportRunsTable.upsert({ id, kind: 'ella', period, status: 'queued', generated_at: snap.generatedAt, sent_at: '', to, subject: mail.subject, snapshot: JSON.stringify(snap), note: '', ref: ob.id });
+    await addAutoTasks([{ key: 'ella-report-' + period, user: 'dan', title: `Review Ella's performance report for ${snap.periodName}, add your note and send it`, priority: 'High', dueDate: todayISO(), context: 'Open Home > Emails to review. The report is written from her activity only. Add a personal note if you want to, read it, then press Send. Nothing goes until you do.' }]).catch(() => {});
+    return { id, queued: ob.id };
+  } finally { reportsBusy.delete(id); }
+}
+
+// What the Emails to review screen shows for Ella's report: the email as it will go, with Daniel Brown's note in it
+async function reportsEllaOutboxItem(o, p) {
+  const run = (await reportRunsTable.list()).find(r => r.id === p.report_id);
+  if (!run || !run.snapshot) throw new Error('This report is no longer stored. Skip it and generate it again from KPI Reporting > Reports.');
+  const snap = JSON.parse(run.snapshot);
+  const { email } = reports.assertEllaClean(snap, p.note || '');
+  const item = { key: 'ella_report', label: `Performance report for ${snap.firstName}`, to: o.to, from: `Daniel Brown <${profileOf('dan').email}>`, subject: email.subject, text: email.text,
+    attachmentNames: [`Performance report ${snap.periodName}.pdf`], note: p.note || '', canNote: true };
+  item.hash = onbEmailHash(item);
+  return { ...item, payload: p };
+}
+
+// Send Ella's report from Daniel Brown, with the PDF, then file the PDF in her HR documents
+async function reportsSendElla(o, it, me) {
+  const run = (await reportRunsTable.list()).find(r => r.id === it.payload.report_id);
+  if (!run || !run.snapshot) return { error: 'This report is no longer stored, so nothing was sent. Skip it and generate it again.' };
+  const snap = JSON.parse(run.snapshot);
+  const { markdown, email } = reports.assertEllaClean(snap, it.payload.note || '');
+  const pdf = await reportsPdf(markdown);
+  const prof = profileOf('dan');
+  const filename = `Performance report ${snap.periodName}.pdf`;
+  const info = await emailTransporter.sendMail({ from: `"${String(prof.fullName || 'Daniel Brown').replace(/["<>]/g, '')}" <${prof.email}>`, replyTo: prof.email, to: o.to, subject: email.subject, text: email.text, attachments: [{ filename, content: pdf, contentType: 'application/pdf' }] });
+  const now = new Date().toISOString();
+  await mailLogTable.append({ id: 'em-' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), at: now, day: rfxToday(), user: me, from: prof.email, to: o.to, cc: '', subject: email.subject, kind: 'performance_report', company: '', role: '', entity: snap.firstName, attachments: filename, message_id: String((info && info.messageId) || '').replace(/[<>]/g, ''), status: 'sent', event_at: now, ref: run.id }).catch(() => {});
+  let hr = 'filed in her HR documents';
+  try {
+    const up = getUploadDriveClient();
+    const f = await up.files.create({ requestBody: { name: `Performance report ${snap.periodName} ${snap.firstName}.pdf`, parents: [HR_FOLDER_ID] }, media: { mimeType: 'application/pdf', body: Readable.from(pdf) }, fields: 'id' });
+    await hrDocuments.upsert({ id: 'doc-perf-' + snap.period, employee: 'ella', name: `Performance report ${snap.periodName}`, category: 'Review', file_id: f.data.id, admin_only: 'FALSE', needs_ack: 'FALSE', acknowledged_at: '', added_at: hrNow(), added_by: 'dan', needs_sign: 'FALSE', period: snap.period });
+  } catch (e) {
+    console.error('Filing the performance report in HR failed:', e.message);
+    hr = 'sent, but NOT filed in her HR documents: ' + e.message;
+  }
+  await reportRunsTable.upsert({ ...run, status: 'sent', sent_at: now, note: hr.startsWith('sent,') ? hr : '' });
+  auditLog('dan', 'report_sent', 'report', run.id, `${snap.periodName} performance report sent to ${snap.firstName}; ${hr}`);
+  return { ok: true, hr };
+}
+async function reportsMarkEllaSkipped(ob) {
+  const p = (() => { try { return JSON.parse(ob.payload || '{}'); } catch (e) { return {}; } })();
+  const run = (await reportRunsTable.list()).find(r => r.id === p.report_id);
+  if (run) await reportRunsTable.upsert({ ...run, status: 'skipped' });
+}
+
+// Daniel Brown's personal note, written into the email before he reviews and sends it. The note is held to the same rule as the report.
+app.post('/api/outbox/:id/note', async (req, res) => {
+  try {
+    if (!ownerOnly(req)) return res.status(403).json({ error: 'Only Daniel Brown can add a note to this report' });
+    const o = (await emailOutboxTable.list()).find(x => x.id === req.params.id && x.kind === 'ella_report');
+    if (!o) return res.status(404).json({ error: 'Email not found' });
+    if (o.status !== 'pending') return res.status(409).json({ error: `This email was already ${o.status}` });
+    const note = String((req.body || {}).note || '').replace(/\r\n/g, '\n').trim().slice(0, 2500);
+    const p = (() => { try { return JSON.parse(o.payload || '{}'); } catch (e) { return {}; } })();
+    const run = (await reportRunsTable.list()).find(r => r.id === p.report_id);
+    if (!run || !run.snapshot) return res.status(409).json({ error: 'This report is no longer stored. Skip it and generate it again.' });
+    try { reports.assertEllaClean(JSON.parse(run.snapshot), note); }
+    catch (e) { return res.status(400).json({ error: e.restricted ? `Your note mentions ${e.restricted.join(', ')}. Keep pay, commission and company money figures out of the report. Say those in person or in a separate email.` : e.message }); }
+    await emailOutboxTable.updateWhere(x => x.id === o.id, x => ({ ...x, payload: JSON.stringify({ ...p, note }) }));
+    const it = await outboxRender({ ...o, payload: JSON.stringify({ ...p, note }) });
+    res.json({ ok: true, item: { label: it.label, to: it.to, from: it.from, subject: it.subject, text: it.text, attachmentNames: it.attachmentNames, note: it.note, canNote: true }, token: reviewTokenFor(actorOf(req), it.hash) });
+  } catch (e) { console.error('POST /api/outbox/:id/note error:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Weekly brief: Mondays, to Daniel Brown only
+async function reportsRunWeekly(today) {
+  if (isPreview()) return { skipped: 'preview' };
+  if (!reportsStoreReady()) return { skipped: 'no database' };
+  const id = 'weekly:' + today;
+  if (reportsBusy.has(id)) return { skipped: 'already running' };
+  reportsBusy.add(id);
+  try {
+    const existing = (await reportRunsTable.list()).find(r => r.id === id);
+    if (existing && existing.status === 'sent') return { id, skipped: 'already sent' };
+    const input = await loadKpiInput(true);
+    const k = computeOwnerKpi({ ...input, now: new Date() });
+    const t = today;
+    const tasks = (await getTasksSheet().catch(() => [])).map(rowToTask).filter(x => !x.archived && lc(x.status) !== 'done' && x.dueDate && x.dueDate < t);
+    const pending = (await emailOutboxTable.list().catch(() => [])).filter(o => o.status === 'pending').length;
+    const ps = await payrollState().catch(() => null);
+    const facts = reports.weeklyFacts({ today, k, invoices: input.invoices, audit: input.audit, roles: input.roles, tasks, outboxPending: pending, payrollBanner: ps && ps.banner ? ps.banner.text : '' });
+    const mail = reports.weeklyBriefEmail(facts);
+    const row = { id, kind: 'weekly', period: today, status: 'generated', generated_at: new Date().toISOString(), sent_at: '', to: dansInbox(), subject: mail.subject, snapshot: JSON.stringify(facts), note: '', ref: '' };
+    const ok = await reportsMailDan(mail.subject, mail.text);
+    await reportRunsTable.upsert({ ...row, status: ok ? 'sent' : 'generated', sent_at: ok ? new Date().toISOString() : '', note: ok ? '' : 'The email could not be sent. It will be tried again on the next morning run.' });
+    return { id, sent: ok };
+  } finally { reportsBusy.delete(id); }
+}
+
+// Runs inside the morning job. The first run records the first month to report, so no old month is sent late.
+async function reportsMorningStep() {
+  if (isPreview()) return { skipped: true };
+  if (!reportsStoreReady()) return { skipped: 'no database' };
+  const today = londonToday();
+  const out = { today };
+  const rows = await settingsTable.list();
+  let start = ((rows.find(r => r.id === 'reports_start_month') || {}).value || '').trim();
+  if (!start) { start = today.slice(0, 7); await settingsTable.upsert({ id: 'reports_start_month', value: start, updated_by: 'system' }); }
+  const period = reports.reportPeriodDue({ today, holidays: await payrollHolidays(), startMonth: start });
+  if (period) {
+    try { out.owner = await reportsRunOwner(period); } catch (e) { out.owner = 'FAIL: ' + e.message; await alertDan('owner-report:' + period, `Live 2 Help: the ${payrollMonthName(period)} owner report failed`, e.message); }
+    try { out.ella = await reportsRunElla(period); } catch (e) { out.ella = 'FAIL: ' + e.message; }
+  }
+  if (reports.isMonday(today)) {
+    try { out.weekly = await reportsRunWeekly(today); } catch (e) { out.weekly = 'FAIL: ' + e.message; await alertDan('weekly-brief', 'Live 2 Help: the weekly brief failed', e.message); }
+  }
+  return out;
+}
+
+// The same step the morning job runs, for the GitHub back-up run or cron-job.org on its own. Safe to call again: every report exists once.
+app.get('/api/cron/reports', cronOnly, async (req, res) => {
+  try { res.json(await reportsMorningStep()); } catch (e) { console.error('cron reports error:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+/* ---------- routes (all owner only) ---------- */
+app.get('/api/reports', bankGuard, async (req, res) => {
+  try {
+    const rows = (await reportRunsTable.list()).sort((a, b) => String(b.generated_at).localeCompare(String(a.generated_at)));
+    const set = new Map((await settingsTable.list()).map(r => [r.id, r.value]));
+    res.json({ reports: rows.map(reportRunView), startMonth: set.get('reports_start_month') || '', stored: reportsStoreReady(), latestMonth: prevMonthOf(londonToday()) });
+  } catch (e) { console.error('GET /api/reports error:', e.message); res.status(500).json({ error: e.message }); }
+});
+app.get('/api/reports/:id', bankGuard, async (req, res) => {
+  try {
+    const r = (await reportRunsTable.list()).find(x => x.id === req.params.id);
+    if (!r) return res.status(404).json({ error: 'Report not found' });
+    const snap = r.snapshot ? JSON.parse(r.snapshot) : null;
+    const out = { ...reportRunView(r), snapshot: snap };
+    if (snap && r.kind === 'owner') { out.markdown = reports.ownerReportMarkdown(snap); out.email = reports.ownerReportEmail(snap); }
+    if (snap && r.kind === 'ella') { out.markdown = reports.ellaReportMarkdown(snap, ''); out.email = reports.ellaReportEmail(snap, ''); }
+    if (snap && r.kind === 'weekly') out.email = reports.weeklyBriefEmail(snap);
+    res.json(out);
+  } catch (e) { console.error('GET /api/reports/:id error:', e.message); res.status(500).json({ error: e.message }); }
+});
+app.get('/api/reports/:id/pdf', bankGuard, async (req, res) => {
+  try {
+    const r = (await reportRunsTable.list()).find(x => x.id === req.params.id);
+    if (!r || !r.snapshot || r.kind === 'weekly') return res.status(404).json({ error: 'No PDF for this report' });
+    const snap = JSON.parse(r.snapshot);
+    const md = r.kind === 'owner' ? reports.ownerReportMarkdown(snap) : reports.ellaReportMarkdown(snap, '');
+    const pdf = await reportsPdf(md);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="${(r.kind === 'owner' ? 'Owner report ' : 'Performance report ') + snap.periodName}.pdf"` }).send(pdf);
+  } catch (e) { console.error('GET /api/reports/:id/pdf error:', e.message); res.status(500).json({ error: e.message }); }
+});
+// { kind: 'owner' | 'ella', period: 'YYYY-MM', send?: true, replace?: true }
+app.post('/api/reports/generate', bankGuard, async (req, res) => {
+  try {
+    if (isPreview()) return res.status(409).json({ error: 'Preview: reports are not created here. Use the live workspace.' });
+    if (!reportsStoreReady()) return res.status(409).json({ error: 'Reports are only kept in the database, and the database is not connected.' });
+    const b = req.body || {};
+    let out;
+    if (b.kind === 'weekly') out = await reportsRunWeekly(londonToday()); // this Monday's date, once: asking again sends nothing more
+    else if (!reportsPeriodOk(b.period)) return res.status(400).json({ error: 'Choose a month that has finished' });
+    else if (b.kind === 'owner') out = await reportsRunOwner(b.period, { replace: !!b.replace, send: !!b.send, resend: !!b.resend });
+    else if (b.kind === 'ella') out = await reportsRunElla(b.period, { replace: !!b.replace });
+    else return res.status(400).json({ error: 'Choose a report type' });
+    auditLog(auditActorOf(req), 'report_generated', 'report', `${b.kind}:${b.period}`, JSON.stringify(out).slice(0, 200));
+    if (out.error) return res.status(409).json({ error: out.error });
+    res.json({ ok: true, ...out });
+  } catch (e) { console.error('POST /api/reports/generate error:', e.message); res.status(500).json({ error: e.message }); }
+});
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

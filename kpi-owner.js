@@ -440,6 +440,13 @@ export function computeOwnerKpi(input) {
     .map(e => ({ name: [e.channel, e.role].filter(Boolean).join(' - ') || 'Monthly spend', amount: num(e.amount) }));
   const monthlyPayroll = sum(employees.filter(e => (!e.endDate || e.endDate >= todayISO) && e.startDate && e.startDate <= todayISO), e => num(e.salary) * (1 + num(e.pensionPct) / 100)) / 12;
   const overheads = num(input.fin && input.fin.overheads);
+  // build 65: commission still to go through payroll, with employer pension on it, for people on payroll only (the director takes dividends, not commission)
+  const commissionItems = invoices.filter(i => i.commissionAmount > 0 && !i.commissionPaidDate).map(i => {
+    const e = employees.find(x => empMatches(x, i.consultant));
+    if (!e) return null;
+    const pen = e.pensionOnComm === false ? 0 : num(e.pensionPct) / 100;
+    return { number: i.number, company: i.company, amount: round2(i.commissionAmount * (1 + pen)), paid: i.paid, paidDate: i.paid && i.pd ? iso(i.pd) : '' };
+  }).filter(Boolean);
   const recurringTotal = monthlyPayroll + sum(recurringAds, r => r.amount) + overheads;
   const cost = {
     teamCostYtd: round2(teamYtd), salaryYtd: round2(sum(ytdCosts, x => x.salary)), pensionYtd: round2(sum(ytdCosts, x => x.pension)), commissionYtd: round2(sum(ytdCosts, x => x.commission)),
@@ -492,7 +499,7 @@ export function computeOwnerKpi(input) {
   }
 
   // build 63: the bank feed (balance, cash forecast, tax reserve, bank costs). Not connected means the tiles say so, with no invented numbers.
-  const bk = bankKpi(input.bank, { todayISO, invoices: (input.invoices || []).filter(i => i && i.number), monthlyPayroll, profitYtd: profit, monthlyOverheads: overheads, ytdStartISO: iso(yS) });
+  const bk = bankKpi(input.bank, { todayISO, invoices: (input.invoices || []).filter(i => i && i.number), monthlyPayroll, commissionItems, commissionCutoffDay: input.fin && input.fin.payrollCutoff, profitYtd: profit, monthlyOverheads: overheads, ytdStartISO: iso(yS) });
   money.bank = bk.tiles; cost.bank = bk.tiles;
 
   const out = { generatedAt: now.toISOString(), month: monthName(today), comparedWith: monthName(lmS), dayOfMonth: today.getUTCDate(), money, pipeline, clients, cost, staff, vat, settings, bank: bk.panel };

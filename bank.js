@@ -319,9 +319,10 @@ export function invoiceWeight(avgDaysLate, daysOverdue) {
   if (avgDaysLate <= 45) return 0.7;
   return 0.5;
 }
-export function cashForecast({ balance, openInvoices, scores, recurring, monthlyPayroll, todayISO, days = 90, floor }) {
+export function cashForecast({ balance, openInvoices, scores, recurring, monthlyPayroll, todayISO, days = 90, floor, commissionItems, commissionCutoffDay }) {
   const start = dayMs(todayISO), end = start + days * DAY;
   const events = []; // {ms, amount, label}
+  const expectedPaid = new Map(); // invoice number -> when the client is expected to pay, and how much to trust it (build 65: commission follows the client's payment)
   const lateVals = Object.values(scores || {});
   const overallLate = lateVals.length ? lateVals.reduce((s, x) => s + x.avgDaysLate * x.invoices, 0) / lateVals.reduce((s, x) => s + x.invoices, 0) : 0;
   (openInvoices || []).forEach(i => {
@@ -333,9 +334,27 @@ export function cashForecast({ balance, openInvoices, scores, recurring, monthly
     if (when <= start) when = start + DAY * (late > 0 ? 3 : 2); // already due: expect it within a few days
     const w = invoiceWeight(sc ? sc.avgDaysLate : null, daysOverdue);
     if (when <= end) events.push({ ms: when, amount: round2(owed(i) * w), label: `${i.company} ${i.number}` });
+    expectedPaid.set(String(i.number), { ms: when, weight: w });
   });
   // payroll on the last day of each month (the 1st is the next day, so the month end is the cautious date)
-  if (monthlyPayroll > 0) for (let m = 0; m < 5; m++) { const d = new Date(start); const ms = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + m + 1, 0); if (ms >= start && ms <= end) events.push({ ms, amount: -round2(monthlyPayroll), label: 'Payroll and pension' }); }
+  // build 65: commission (with employer pension on it) is paid in the first payroll whose cut-off falls on or after the day the client pays
+  // the invoice. Invoices already paid but not yet through payroll are due in the next payroll. Weighted by how far the client's payment is trusted.
+  const cd = parseInt(commissionCutoffDay, 10);
+  const pending = (commissionItems || []).map(c => {
+    const e = c.paid ? { ms: dayMs(c.paidDate), weight: 1 } : expectedPaid.get(String(c.number));
+    return e && e.ms != null ? { ...c, payMs: e.ms, weight: e.weight, taken: false } : null;
+  }).filter(Boolean);
+  if (monthlyPayroll > 0 || pending.length) for (let m = 0; m < 5; m++) {
+    const d = new Date(start); const ms = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + m + 1, 0);
+    if (ms < start) continue;
+    const first = new Date(ms), dim = first.getUTCDate();
+    const cutoffMs = cd >= 1 && cd <= 31 ? Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(cd, dim)) : ms;
+    let commission = 0;
+    pending.forEach(c => { if (!c.taken && c.payMs <= cutoffMs) { c.taken = true; commission += num(c.amount) * c.weight; } });
+    if (ms > end) continue;
+    if (monthlyPayroll > 0) events.push({ ms, amount: -round2(monthlyPayroll), label: 'Payroll and pension' });
+    if (commission > 0) events.push({ ms, amount: -round2(commission), label: 'Commission and pension on commission' });
+  }
   (recurring || []).filter(r => !['Payroll', 'Pension', 'Tax (HMRC)'].includes(r.bucket)).forEach(r => {
     for (let ms = dayMs(r.nextDate); ms != null && ms <= end; ms += 30 * DAY) if (ms >= start) events.push({ ms, amount: -round2(r.amount), label: r.name });
   });
@@ -377,7 +396,7 @@ export function bankKpi(bank, ctx) {
   const taxableProfit = Math.max(0, num(ctx.profitYtd) - overheadsUsed);
   const taxReserve = corporationTax(taxableProfit, bank.settings && bank.settings.tax_rate_pct);
   const open = (ctx.invoices || []).filter(isOpen);
-  const forecast = cashForecast({ balance, openInvoices: open, scores, recurring, monthlyPayroll: ctx.monthlyPayroll, todayISO: today, floor: bank.settings && bank.settings.cash_floor });
+  const forecast = cashForecast({ balance, openInvoices: open, scores, recurring, monthlyPayroll: ctx.monthlyPayroll, todayISO: today, floor: bank.settings && bank.settings.cash_floor, commissionItems: ctx.commissionItems, commissionCutoffDay: ctx.commissionCutoffDay });
   const confirmCount = rows.filter(r => r.match_status === 'confirm').length;
   const costBuckets = {};
   real.filter(r => r.direction === 'OUT' && r.date >= ytdStart).forEach(r => { costBuckets[r.cost_bucket || 'Other'] = (costBuckets[r.cost_bucket || 'Other'] || 0) + num(r.amount); });
