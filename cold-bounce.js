@@ -1,4 +1,4 @@
-/* Build 57.4: reading bounce notices and replies in a sender's inbox.
+/* Build 60.3: reading bounce notices and replies in a sender's inbox.
    Pure functions only (no network, no database) so they can be tested on their own. */
 
 const NDR_FROM = /(postmaster|mailer-daemon|microsoftexchange[0-9a-f]*|mail delivery (sub)?system)/i;

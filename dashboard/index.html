@@ -17294,7 +17294,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '16 Nov 2026 - build 57.4 (Cold outreach: bounce and reply detection) / earlier build 60 (Role Finder: Work this role, View and Undo toasts, status counts; failed lists back off instead of retrying)';
+var PAGE_BUILD = '16 Nov 2026 - build 60.3 (Cold outreach: bounce and reply detection, Email not working flag, bounce table in Usage)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -19561,7 +19561,7 @@ async function useOpen(tab){
     jobs.push(b2Api('/api/ai-spend').then(j => USE.ai = j).catch(e => USE.ai = {error:e.message}));
     jobs.push(b2Api('/api/mail/webhook-url').then(j => USE.hook = j.url).catch(() => {}));
     jobs.push(b2Api('/api/engine/status').then(j => USE.engine = j).catch(e => USE.engine = {error:e.message})); // page build 57.0
-    jobs.push(b2Api('/api/cold/bounces').then(j => USE.coldBn = j).catch(() => USE.coldBn = null)); // page build 57.4
+    jobs.push(b2Api('/api/cold/bounces').then(j => USE.coldBn = j).catch(() => USE.coldBn = null)); // page build 60.3
   }
   jobs.push(b2Api('/api/spec/sends').then(j => USE.spec = j.data || []).catch(() => USE.spec = []));
   await Promise.all(jobs);
@@ -20266,7 +20266,7 @@ function co57Seqs(){
     return r;
   }), 'No sequences yet. They start when the first batch is sent.');
 }
-/* Page build 57.4: bounce and reply detection status */
+/* Page build 60.3: bounce and reply detection status */
 function co57ScanBar(){
   const bn = CO.bn; if(!bn) return '';
   const sc = bn.scan || {}, when = t => t ? new Date(t.replace(' ', 'T')).toLocaleString('en-GB', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'}) : 'not yet';

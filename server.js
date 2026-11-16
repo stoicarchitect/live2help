@@ -19,7 +19,7 @@ import { fileURLToPath } from 'url';
 import * as onbDocs from './onboarding-docs.js';
 import { dumpDatabase, inspectDump, restoreDatabase } from './db-dump.js'; // audit Nov 2026
 import { createMailEngine, ENGINE_LOG_HEADER, msSecretExpires, msSecretDaysLeft } from './mail-engine.js'; // build 57.0
-import { looksLikeNdr, failedRecipient, classifyBounce, replyIntent } from './cold-bounce.js'; // build 57.4
+import { looksLikeNdr, failedRecipient, classifyBounce, replyIntent } from './cold-bounce.js'; // build 60.3
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17094,7 +17094,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '15 Nov 2026 - build 60.2 (scanner guard and rate limit, favicon and robots, not-found alert ignores scanner probes)';
+const SERVER_BUILD = '16 Nov 2026 - build 60.3 (cold outreach bounce and reply detection: inbox scan, Bounced stage, Email not working flag, auto pause)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -20785,7 +20785,7 @@ async function audResolve() {
       email: b.email, name: b.name, company: b.company, jobTitle: b.jobTitle, kind: b.kind, alsoIn: b.alsoIn, roleSeen: b.roleSeen || '', roleWhere: b.roleWhere || '', roleSince: b.roleSince || '',
       owner, ownerFrom, sector, sectors, sectorFrom, lastSector: a.last_sector || '', status, consentSource, consentDate, consentNote: a.consent_note || '',
       needsRecording, suppressed, unsubscribedAt: a.unsubscribed_at || '', route, hasRow: !!a.id,
-      // build 57.4: an address that bounced is flagged, the contact itself is kept
+      // build 60.3: an address that bounced is flagged, the contact itself is kept
       emailBad: bad.has(b.email) ? String(bad.get(b.email).detected_at).slice(0, 10) : '', emailBadReason: bad.has(b.email) ? bad.get(b.email).reason : '',
     });
   }
@@ -21026,7 +21026,7 @@ app.post('/api/audience/unsuppress', requireAdmin, async (req, res) => {
     for (const h of hit) await suppressionTable.remove(h.id);
     const email = lc(hit[0].email || '');
     if (email) {
-      // build 57.4: removing a bounced address from the list also clears its "Email not working" flag
+      // build 60.3: removing a bounced address from the list also clears its "Email not working" flag
       for (const r of (await mailScanTable.list().catch(() => [])).filter(x => x.kind === 'bounce-hard' && x.status === 'active' && lc(x.email) === email)) {
         await mailScanTable.upsert({ ...r, status: 'cleared', cleared_by: lc(actorOf(req)), cleared_at: rfxNow() });
       }
@@ -22340,7 +22340,7 @@ app.post('/api/cold/sequences/:id/outcome', async (req, res) => {
 });
 
 /* =====================================================================
-   Build 57.4: Bounce and reply detection for cold outreach
+   Build 60.3: Bounce and reply detection for cold outreach
    Reads each sender's Microsoft 365 inbox every 15 minutes (Mon-Fri 07:00-19:00 UK) through Microsoft Graph.
    Hard bounce: address goes on the Do not email list, the sequence stops as "Bounced", the contact is flagged "Email not working"
    (contact is kept), the owner gets a task and the notice moves to a Bounces folder.

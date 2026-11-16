@@ -243,7 +243,7 @@ export function createMailEngine({ fetch, isPreview, logTable, isSuppressed, tod
     };
   }
 
-  // Build 57.4: read and move mail in a mailbox (bounce and reply detection). Needs the Mail.ReadWrite application permission.
+  // Build 60.3: read and move mail in a mailbox (bounce and reply detection). Needs the Mail.ReadWrite application permission.
   async function graph(method, pathOrUrl, body) {
     const token = await msToken();
     const url = /^https:/.test(pathOrUrl) ? pathOrUrl : 'https://graph.microsoft.com/v1.0' + pathOrUrl;
