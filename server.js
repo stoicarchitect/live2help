@@ -21,6 +21,7 @@ import { dumpDatabase, inspectDump, restoreDatabase } from './db-dump.js'; // au
 import { createMailEngine, ENGINE_LOG_HEADER, msSecretExpires, msSecretDaysLeft } from './mail-engine.js'; // build 57.0
 import { looksLikeNdr, failedRecipient, classifyBounce, replyIntent } from './cold-bounce.js'; // build 60.3
 import { STARLING_LIVE, STARLING_SANDBOX, BANK_HEADER, DEFAULT_BANK_RULES, createStarlingClient, createDemoStarling, toBankRow, classifyRow, categoriseCost, matchPayments, findPayoutFor, reconcilePayout, latePayerScores } from './bank.js'; // build 63
+import { londonToday, monthOf, readPayrollSettings, validOverride, payDateFor, payrollWatch, currentPayrollMonth, bannerFor, reminderFor, payrollPack, clawbackCheck, payrollBankCheck, payrollEmail, runRecords, monthName as payrollMonthName } from './payroll.js'; // build 64
 import { computeOwnerKpi, computeMyKpi, vatAlertsDue, vatAlertText, monthKey, KPI_SETTING_DEFAULTS, KPI_SETTING_KEYS } from './kpi-owner.js'; // build 62
 
 const __filename = fileURLToPath(import.meta.url);
@@ -318,6 +319,7 @@ const TABLE_GROUPS = {
   'Roles': 'records', 'Role Notes': 'records', 'Role Briefs': 'records', 'Placements': 'records',
   'Interviews': 'records', 'Templates': 'records', 'Activity': 'records', 'Invoice Charges': 'records',
   'Audit Log': 'system', 'Retention Reviews': 'system', 'Email Log': 'system', 'Engine Log': 'system', 'AI Usage': 'system', 'Settings': 'system', 'Suppression List': 'system', 'Bank Transactions': 'system', 'Bank Rules': 'system',
+  'Payroll Settings': 'system', 'Payroll Runs': 'system', 'Commission Ledger': 'system', // build 64
   'Company Settings': 'clients', 'Contact Audience': 'clients',
   'Gap Problems': 'clients', 'Gap Briefs': 'clients', 'Gap Sends': 'clients', 'Cold Sequences': 'clients', 'Cold Sends': 'clients', 'Cold Picks': 'clients', 'Mail Scan': 'clients',
   'Users': 'auth',
@@ -11838,10 +11840,11 @@ app.post('/api/storage/preview-seed', requireAdmin, async (req, res) => {
   } catch (e) { console.error('Preview seed error:', e.message); res.status(500).json({ error: e.message }); }
 });
 
+const NOT_IN_READABLE_BACKUP = new Set(['Bank Transactions', 'Payroll Runs', 'Commission Ledger', 'Payroll Settings']);
 // Nightly: everything held in the live database, as a readable dated Google Sheet in the backup folder
 async function backupDatabaseToDrive(drive, folderId, date) {
   if (!pgLivePool) return null;
-  const tables = SIMPLE_TABLES.filter(t => PG_LIVE_GROUPS.has(t.group) && t.tab !== 'Bank Transactions'); // build 63: bank data is in the full database dump only, never in a readable Sheet
+  const tables = SIMPLE_TABLES.filter(t => PG_LIVE_GROUPS.has(t.group) && !NOT_IN_READABLE_BACKUP.has(t.tab)); // build 63/64: bank and payroll data are in the full database dump only, never in a readable Sheet
   const wholeTabs = [];
   for (const g of PG_LIVE_GROUPS) for (const pr of await pgGridTabsOfGroup(pgLivePool, g)) wholeTabs.push(pr);
   // go-live: onboarding tables are backed up even when no Sheets group has moved to Postgres
@@ -12645,6 +12648,8 @@ async function runDailyJob(skipBackup) {
   // build 63: the overnight bank read, then the cash floor alert
   await step('bankDaily', bankDailyStep);
   await step('kpiDaily', kpiDailyStep);
+  // build 64: payroll reminders (3 working days before, the day before, on the day, then daily if missed)
+  await step('payrollDaily', payrollDailyStep);
   await step('outboxTask', async () => {
     const n = (await emailOutboxTable.list()).filter(o => o.status === 'pending').length;
     if (!n) return 0;
@@ -17116,7 +17121,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '16 Nov 2026 - build 63 (Starling read-only bank feed: balance, invoice auto-match with confirm list, Stripe payout reconciliation, cost rules, 90 day cash forecast, tax reserve, late payer scores; owner only)';
+const SERVER_BUILD = '16 Nov 2026 - build 64 (payroll control: pay date with monthly override, reminders 3 working days before, day before, on the day and daily when missed, payroll pack with commission ledger, clawback flag, Mark as sent; owner only)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -23101,6 +23106,182 @@ async function bankDailyStep() {
       out.alerted = true;
     }
   } else if (set.get('bank_floor_alert')) await bankSet('bank_floor_alert', '');
+  return out;
+}
+
+/* ======================================================================
+   Build 64 - Payroll control
+
+   Owner only (Daniel Brown). Ella and a virtual assistant are refused on every route, on the server.
+   Pay date: the last working day of the month (England and Wales bank holidays), or a per month override.
+   Reminders run in the daily job: a task and an alert email 3 working days before, the day before and on the
+   day, then every day once missed. Nothing fires for a month marked sent.
+   The payroll email is never sent from here: it opens in the Review and Send panel for Daniel Brown.
+   Mark as sent stores the run (Payroll Runs), one Commission Ledger line per invoice, stamps the commission
+   paid date on each invoice so it is never counted twice, closes the payroll tasks and logs to the Audit Trail.
+   Data lives in Postgres only (system group) and is left out of the readable Sheet backup.
+   Pure logic and tests: payroll.js, scripts/test-payroll.mjs
+   ====================================================================== */
+const payrollGuard = bankGuard; // same rule as the bank: Daniel Brown only, never a virtual assistant
+const payrollSettingsTable = makeSimpleTable({ tab: 'Payroll Settings', header: ['id', 'value', 'updated_by', 'updated_at'], path: null, label: 'Payroll setting' });
+const payrollRunsTable = makeSimpleTable({
+  tab: 'Payroll Runs', path: null, label: 'Payroll run',
+  header: ['id', 'month', 'pay_date', 'status', 'sent_at', 'sent_by', 'to', 'salary', 'commission', 'pension', 'gross', 'employer_cost', 'invoices', 'people', 'bank_check', 'note'],
+});
+const commissionLedgerTable = makeSimpleTable({
+  tab: 'Commission Ledger', path: null, label: 'Commission ledger line',
+  header: ['id', 'invoice', 'employee', 'company', 'candidate', 'invoice_amount', 'rate', 'amount', 'client_paid', 'payroll_month', 'status', 'recorded_at', 'recorded_by'],
+});
+// payroll data is only ever written to Postgres, never to a Google Sheet
+const payrollStoreReady = () => !!pgPoolFor('system');
+
+async function payrollHolidays() { return new Set((await hrBankHolidays()).keys()); }
+
+async function payrollState(now = new Date()) {
+  const today = londonToday(now);
+  const [rows, runs, bank] = await Promise.all([payrollSettingsTable.list(), payrollRunsTable.list(), payrollHolidays()]);
+  const settings = readPayrollSettings(rows);
+  if (!settings.startMonth) {
+    // the first time this runs, watching starts with this month, so no old month is reported as missed
+    settings.startMonth = monthOf(today);
+    if (payrollStoreReady() && !isPreview()) await payrollSettingsTable.upsert({ id: 'start_month', value: settings.startMonth, updated_by: 'system', updated_at: new Date().toISOString() }).catch(() => {});
+  }
+  const sentMonths = runs.filter(r => lc(r.status) === 'sent').map(r => r.month);
+  const watch = payrollWatch({ today, settings, bank, sentMonths });
+  const current = currentPayrollMonth(watch);
+  return { today, settings, bank, runs, sentMonths, watch, current, banner: bannerFor(current) };
+}
+
+async function payrollBuildPack(month, state) {
+  const soft = (p, fb, name) => p.catch(e => { console.error(`Payroll input ${name} failed:`, e.message); return fb; });
+  const [invRows, setRows, ledger, placements, hrRows, bankRows] = await Promise.all([
+    readInvoiceRows(), settingsTable.list(), commissionLedgerTable.list(),
+    soft(listPlacements(), [], 'placements'), soft(hrEmployees.list(), [], 'hr employees'),
+    bankStoreReady() && bankCfg().token ? soft(bankTxTable.list(), null, 'bank') : Promise.resolve(null),
+  ]);
+  const set = new Map(setRows.map(r => [r.id, r.value]));
+  let employees = []; try { employees = JSON.parse(set.get('fin:l2h-employees') || '[]'); } catch (e) { employees = []; }
+  if (!Array.isArray(employees)) employees = [];
+  const invoices = invRows.filter(r => r && r[0]).map(rowToInvoice);
+  const pd = payDateFor(month, state.settings, state.bank);
+  const pack = payrollPack({ month, payDate: pd.date, employees, invoices, ledger, cutoffDay: set.get('fin:l2h-payroll-cutoff') || '' });
+  pack.payDateSource = pd.source;
+  const clawback = clawbackCheck({ pack, employees, hrEmployees: hrRows, ledger, placements, today: state.today, bank: state.bank, settings: state.settings });
+  const bankCheck = payrollBankCheck(bankRows ? bankRows.map(r => ({ ...r, bucket: r.cost_bucket })) : null, pd.date);
+  return { pack, clawback, bankCheck, to: set.get('fin:l2h-payroll-email') || '' };
+}
+
+// Stamp the commission paid date on the invoices in one write (the same column the invoice screen uses)
+async function payrollStampInvoices(numbers, dateISO) {
+  if (!numbers.length) return 0;
+  const rows = await readInvoiceRows();
+  const data = [];
+  rows.forEach((r, i) => {
+    if (!r || !numbers.includes(r[0]) || r[14]) return;
+    data.push({ range: `${INVOICES_TAB}!O${i + 2}`, values: [[dateISO]] });
+  });
+  if (data.length) await getSheetsClient().spreadsheets.values.batchUpdate({ spreadsheetId: CLIENT_SHEET_ID, requestBody: { valueInputOption: 'RAW', data } });
+  return data.length;
+}
+
+const payrollView = w => w && ({ month: w.month, monthName: payrollMonthName(w.month), payDate: w.payDate, payDateSource: w.payDateSource, reminders: w.reminders, stage: w.stage, daysOverdue: w.daysOverdue });
+
+// The Today banner and the payroll panel header
+app.get('/api/payroll/status', payrollGuard, async (req, res) => {
+  try {
+    const s = await payrollState();
+    res.json({ today: s.today, current: payrollView(s.current), banner: s.banner, months: s.watch.map(payrollView), stored: payrollStoreReady() });
+  } catch (e) { console.error('GET /api/payroll/status error:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// The payroll pack for a month, the email text to review, the clawback flags and the bank check
+app.get('/api/payroll/pack', payrollGuard, async (req, res) => {
+  try {
+    const s = await payrollState();
+    const month = /^\d{4}-\d{2}$/.test(String(req.query.month || '')) ? String(req.query.month) : (s.current && s.current.month);
+    const b = await payrollBuildPack(month, s);
+    const run = s.runs.find(r => r.month === month && lc(r.status) === 'sent') || null;
+    const w = s.watch.find(x => x.month === month) || null;
+    const signer = 'Daniel Brown'; // only Daniel Brown can open the payroll pack
+    res.json({ month, state: payrollView(w), pack: b.pack, email: { to: b.to, ...payrollEmail(b.pack, signer) }, clawback: b.clawback, bankCheck: b.bankCheck, run, stored: payrollStoreReady() });
+  } catch (e) { console.error('GET /api/payroll/pack error:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/payroll/runs', payrollGuard, async (req, res) => {
+  try {
+    const runs = (await payrollRunsTable.list()).sort((a, b) => String(b.month).localeCompare(String(a.month)));
+    const ledger = await commissionLedgerTable.list();
+    res.json({ runs, ledger });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Pay date override for one month ({ month, payDate }), or clear it with an empty payDate
+app.post('/api/payroll/settings', payrollGuard, async (req, res) => {
+  try {
+    if (isPreview()) return res.status(409).json({ error: 'Preview: payroll settings are not saved here. Change them on the live workspace.' });
+    if (!payrollStoreReady()) return res.status(409).json({ error: 'Payroll data is only kept in the database, and the database is not connected.' });
+    const b = req.body || {};
+    const month = String(b.month || ''), date = String(b.payDate || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ error: 'Choose a month' });
+    if (date && !validOverride(month, date)) return res.status(400).json({ error: 'The pay date must be between the 20th of that month and the 7th of the next month' });
+    const sent = (await payrollRunsTable.list()).some(r => r.month === month && lc(r.status) === 'sent');
+    if (sent) return res.status(409).json({ error: 'That month is already marked as sent, so its pay date cannot change' });
+    await payrollSettingsTable.upsert({ id: 'override:' + month, value: date, updated_by: auditActorOf(req), updated_at: new Date().toISOString() });
+    auditLog(auditActorOf(req), date ? 'payroll_date_set' : 'payroll_date_cleared', 'payroll', month, date || 'last working day');
+    const bank = await payrollHolidays();
+    const s = readPayrollSettings(await payrollSettingsTable.list());
+    res.json({ ok: true, month, payDate: payDateFor(month, s, bank) });
+  } catch (e) { console.error('POST /api/payroll/settings error:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Mark as sent: only after Daniel Brown has reviewed and sent the payroll email himself
+app.post('/api/payroll/mark-sent', payrollGuard, async (req, res) => {
+  try {
+    if (isPreview()) return res.status(409).json({ error: 'Preview: nothing is marked as sent here. Use the live workspace.' });
+    if (!payrollStoreReady()) return res.status(409).json({ error: 'Payroll data is only kept in the database, and the database is not connected.' });
+    const b = req.body || {};
+    const month = String(b.month || '');
+    if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ error: 'Choose a month' });
+    const s = await payrollState();
+    if (s.sentMonths.includes(month)) return res.status(409).json({ error: `Payroll for ${payrollMonthName(month)} is already marked as sent` });
+    const built = await payrollBuildPack(month, s);
+    // the figures must be the ones Daniel Brown reviewed: if anything changed since the pack was opened, reopen it
+    if (b.gross !== undefined && Math.abs((parseFloat(b.gross) || 0) - built.pack.totals.gross) > 0.005) {
+      return res.status(409).json({ error: `The figures have changed since you opened the pack (gross is now £${built.pack.totals.gross.toFixed(2)}). Reopen the payroll pack and check the email before marking it sent.` });
+    }
+    const me = auditActorOf(req), at = new Date().toISOString();
+    const { run, ledger } = runRecords(built.pack, { by: me, at, to: String(b.to || built.to || '').slice(0, 200), bankCheck: built.bankCheck });
+    run.note = String(b.note || '').slice(0, 300);
+    for (const l of ledger) await commissionLedgerTable.upsert(l);
+    let stamped = 0;
+    try { stamped = await payrollStampInvoices(built.pack.invoices, s.today); }
+    catch (e) { console.error('Payroll: stamping commission paid failed:', e.message); run.note = [run.note, 'Commission paid date not stamped on the invoices: ' + e.message].filter(Boolean).join(' | '); }
+    await payrollRunsTable.upsert(run);
+    auditLog(me, 'payroll_sent', 'payroll', month, `pay date ${run.pay_date}; salary £${run.salary}; commission £${run.commission}; pension £${run.pension}; gross £${run.gross}; employer cost £${run.employer_cost}; invoices ${run.invoices || 'none'}; to ${run.to || 'not recorded'}`);
+    const closed = await closeAutoTasks(key => key.startsWith(`payroll-${month}-`) ? `payroll for ${payrollMonthName(month)} was marked as sent` : null).catch(() => []);
+    kpiCache.clear();
+    res.json({ ok: true, run, ledger: ledger.length, invoicesStamped: stamped, tasksClosed: closed.length });
+  } catch (e) { console.error('POST /api/payroll/mark-sent error:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Daily job step: one task and one alert email per stage, every day once overdue. Never for a month marked sent.
+async function payrollDailyStep() {
+  if (isPreview()) return { skipped: true };
+  if (!payrollStoreReady()) return { skipped: 'no database' };
+  const s = await payrollState();
+  const out = { today: s.today, fired: [] };
+  for (const w of s.watch) {
+    const r = reminderFor(w, s.today);
+    if (!r) continue;
+    const marker = 'alerted:' + r.key;
+    const done = (await payrollSettingsTable.list()).some(x => x.id === marker && x.value);
+    await addAutoTasks([{ key: r.key, user: 'dan', title: r.title, priority: r.priority, dueDate: w.payDate, context: 'KPI Reporting > Payroll: check the payroll pack, open the payroll email, review and send it, then press Mark as sent. The Today banner stays until then.' }]).catch(e => console.error('Payroll task failed:', e.message));
+    if (done) continue;
+    const banner = bannerFor(w);
+    const ok = await mailDan(r.subject, `${banner ? banner.text : r.title}\n\nPay date: ${w.payDate} (${w.payDateSource}).\n\nOpen the workspace, KPI Reporting > Payroll. The payroll email opens for you to review; nothing is sent automatically. Press Mark as sent once it has gone.`);
+    if (ok) await payrollSettingsTable.upsert({ id: marker, value: new Date().toISOString(), updated_by: 'system', updated_at: new Date().toISOString() });
+    out.fired.push(r.key);
+  }
   return out;
 }
 
