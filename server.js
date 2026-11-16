@@ -20,6 +20,7 @@ import * as onbDocs from './onboarding-docs.js';
 import { dumpDatabase, inspectDump, restoreDatabase } from './db-dump.js'; // audit Nov 2026
 import { createMailEngine, ENGINE_LOG_HEADER, msSecretExpires, msSecretDaysLeft } from './mail-engine.js'; // build 57.0
 import { looksLikeNdr, failedRecipient, classifyBounce, replyIntent } from './cold-bounce.js'; // build 60.3
+import { computeOwnerKpi, computeMyKpi, vatAlertsDue, vatAlertText, monthKey, KPI_SETTING_DEFAULTS, KPI_SETTING_KEYS } from './kpi-owner.js'; // build 62
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -8084,35 +8085,37 @@ function addDaysISO(iso, days) {
   return d.toISOString().slice(0, 10);
 }
 
+// build 62: one list of placements, used by the Placements tab and the KPI guarantee watch
+async function listPlacements() {
+  const dashRows = await readAllRows();
+  const overrides = new Map((await placementsTable.list()).map(o => [o.id, o]));
+  const today = new Date().toISOString().slice(0, 10);
+  return dashRows
+    .filter(r => r && r[0])
+    .map(rowToCandidate)
+    .filter(c => PLACEMENT_STAGES.includes(normStage(c.stage)))
+    .map(c => {
+      const id = placementKey(c.company, c.name, c.role);
+      const o = overrides.get(id) || {};
+      const weeks = parseInt(o.guarantee_weeks, 10) || DEFAULT_GUARANTEE_WEEKS;
+      const startDate = /^\d{4}-\d{2}-\d{2}/.test(c.startDate || '') ? c.startDate.slice(0, 10) : '';
+      const guaranteeEnd = startDate ? addDaysISO(startDate, weeks * 7) : '';
+      const status = o.status || 'active';
+      let daysLeft = null;
+      if (guaranteeEnd) daysLeft = Math.round((new Date(guaranteeEnd + 'T00:00:00Z') - new Date(today + 'T00:00:00Z')) / 86400000);
+      return {
+        id, name: c.name, company: c.company, role: c.role, salary: c.salary,
+        stage: normStage(c.stage), startDate, invoiceNumber: c.invoiceNumber || '',
+        guaranteeWeeks: weeks, guaranteeEnd, daysLeft,
+        status, leftDate: o.left_date || '', leftReason: o.left_reason || '', notes: o.notes || '',
+      };
+    })
+    .sort((a, b) => String(b.startDate).localeCompare(String(a.startDate)));
+}
+
 app.get('/api/placements', async (req, res) => {
   try {
-    const dashRows = await readAllRows();
-    const overrides = new Map((await placementsTable.list()).map(o => [o.id, o]));
-    const today = new Date().toISOString().slice(0, 10);
-
-    const data = dashRows
-      .filter(r => r && r[0])
-      .map(rowToCandidate)
-      .filter(c => PLACEMENT_STAGES.includes(normStage(c.stage)))
-      .map(c => {
-        const id = placementKey(c.company, c.name, c.role);
-        const o = overrides.get(id) || {};
-        const weeks = parseInt(o.guarantee_weeks, 10) || DEFAULT_GUARANTEE_WEEKS;
-        const startDate = /^\d{4}-\d{2}-\d{2}/.test(c.startDate || '') ? c.startDate.slice(0, 10) : '';
-        const guaranteeEnd = startDate ? addDaysISO(startDate, weeks * 7) : '';
-        const status = o.status || 'active';
-        let daysLeft = null;
-        if (guaranteeEnd) daysLeft = Math.round((new Date(guaranteeEnd + 'T00:00:00Z') - new Date(today + 'T00:00:00Z')) / 86400000);
-        return {
-          id, name: c.name, company: c.company, role: c.role, salary: c.salary,
-          stage: normStage(c.stage), startDate, invoiceNumber: c.invoiceNumber || '',
-          guaranteeWeeks: weeks, guaranteeEnd, daysLeft,
-          status, leftDate: o.left_date || '', leftReason: o.left_reason || '', notes: o.notes || '',
-        };
-      })
-      .sort((a, b) => String(b.startDate).localeCompare(String(a.startDate)));
-
-    res.json({ data, defaultWeeks: DEFAULT_GUARANTEE_WEEKS });
+    res.json({ data: await listPlacements(), defaultWeeks: DEFAULT_GUARANTEE_WEEKS });
   } catch (e) {
     console.error('GET /api/placements error:', e.message);
     res.status(500).json({ error: e.message });
@@ -8690,7 +8693,7 @@ app.get('/api/activity/summary', async (req, res) => {
 
 /* ---------- Sourcing spend and referrals ---------- */
 
-makeSimpleTable({
+const adSpendTable = makeSimpleTable({
   tab: 'Ad Spend',
   header: ['id', 'date', 'channel', 'role', 'company', 'amount', 'notes', 'logged_by', 'frequency', 'end_date', 'applies_to'],
   path: '/api/ad-spend',
@@ -11982,7 +11985,7 @@ app.get('/api/metrics/quarters', requireAdmin, async (req, res) => {
   }
 });
 
-app.get('/api/metrics/business-health', async (req, res) => {
+app.get('/api/metrics/business-health', requireAdmin, async (req, res) => { // build 62: owner only, enforced here
   try {
     const year = req.query.year ? parseInt(req.query.year, 10) : new Date().getFullYear();
     const yStart = new Date(Date.UTC(year, 0, 1)), yEnd = new Date(Date.UTC(year + 1, 0, 1));
@@ -12637,6 +12640,8 @@ async function runDailyJob(skipBackup) {
   // build 57.2: pick up new Gap Brief drafts from the repo, and carry over any approved brief that did not finish sending
   await step('gapBriefs', async () => ({ imported: await gapImportFromGithub('system').catch(e => ({ error: e.message })), ...(await gapSendDue()) }));
   await step('coldRemind', coldRemind);
+  // build 62: VAT threshold alerts and the month opening figures for KPI Reporting
+  await step('kpiDaily', kpiDailyStep);
   await step('outboxTask', async () => {
     const n = (await emailOutboxTable.list()).filter(o => o.status === 'pending').length;
     if (!n) return 0;
@@ -17108,7 +17113,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '16 Nov 2026 - build 61 (rejection emails offer the free Career Toolkit, new before-interview rejection email, rejection source tags)';
+const SERVER_BUILD = '16 Nov 2026 - build 62 (KPI owner view: owner figures worked out on the server, VAT threshold watch and alerts, guarantee watch, business health owner only)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -22603,5 +22608,154 @@ async function coldRemind() {
   }
   return out;
 }
+
+
+/* ======================================================================
+   Build 62: KPI Reporting as an owner's view
+
+   GET /api/kpi/owner   owner only. Money, pipeline, clients, cost, staff, VAT watch, guarantee watch,
+                        month on month movement and "what changed this month". Build 65 reuses it for the reports.
+   GET /api/kpi/mine    anyone signed in. Their own activity and targets. Never any money figure.
+   The sums live in kpi-owner.js (pure functions, tested by scripts/test-kpi-owner.mjs).
+   Settings (Settings table, already in the nightly dump): vat_threshold, vat_alert_pcts,
+   concentration_warn_pct, role_stale_days, forecast_weights, kpi_snap:YYYY-MM, vat_alert:<level>.
+   ====================================================================== */
+const kpiCache = new Map(); // 'live' | 'preview' -> { at, input }
+async function loadKpiInput(fresh) {
+  const ck = isPreview() ? 'preview' : 'live';
+  const hit = kpiCache.get(ck);
+  if (!fresh && hit && Date.now() - hit.at < 60000) return hit.input;
+  const soft = (p, fallback, name) => p.catch(e => { console.error(`KPI input ${name} failed:`, e.message); return fallback; });
+  const [invRows, candRows, roles, audit, activity, comms, interviews, adSpend, settingRows, placements, targetRows, clientRows, orders, credits] = await Promise.all([
+    readInvoiceRows(), readAllRows(),
+    soft(rolesTable.list(), [], 'roles'), soft(auditTable.list(), [], 'audit'), soft(activityTable.list(), [], 'activity'),
+    soft(commsTable.list(), [], 'comms'), soft(interviewsTable.list(), [], 'interviews'), soft(adSpendTable.list(), [], 'ad spend'),
+    soft(settingsTable.list(), [], 'settings'), soft(listPlacements(), [], 'placements'), soft(readKPITargetRows(), [], 'targets'),
+    soft(getSheetsClient().spreadsheets.values.get({ spreadsheetId: CLIENT_SHEET_ID, range: 'Dashboard!A2:J' }).then(r => r.data.values || []), [], 'clients'),
+    soft(tsOrders.list(), [], 'talent suite orders'), soft(tsCreditPurchases.list(), [], 'credit purchases'),
+  ]);
+  const set = new Map(settingRows.map(r => [r.id, r.value]));
+  const json = (id, fallback) => { try { const v = JSON.parse(set.get(id) || ''); return v == null ? fallback : v; } catch (e) { return fallback; } };
+  const settings = {};
+  KPI_SETTING_KEYS.forEach(k => { const v = String(set.get(k) == null ? '' : set.get(k)).trim(); if (v) settings[k] = v; });
+  const snapshots = {}, vatMarkers = {};
+  set.forEach((v, id) => {
+    if (id.startsWith('kpi_snap:')) { try { snapshots[id.slice(9)] = JSON.parse(v); } catch (e) { /* ignore a damaged snapshot */ } }
+    if (id.startsWith('vat_alert:') && v) vatMarkers[id.slice(10)] = v;
+  });
+  const otherSales = [];
+  orders.forEach(o => { if (o.paid_at && !['pending_payment', 'abandoned', 'refunded'].includes(lc(o.status))) otherSales.push({ date: o.paid_at, amount: o.amount_gbp, kind: 'Talent Suite order' }); });
+  credits.forEach(c => { if (!c.refunded_at && lc(c.status) !== 'refunded') otherSales.push({ date: c.date, amount: c.amount_gbp, kind: 'Credit top-up' }); });
+  const input = {
+    invoices: invRows.filter(r => r && r[0]).map(rowToInvoice),
+    candidates: candRows.filter(r => r && r[0]).map(rowToCandidate),
+    roles, audit, activity, comms, interviews, adSpend, placements, otherSales, settings, snapshots, vatMarkers,
+    kpiTargets: targetRows.filter(r => r && r[0]).map(rowToKPITarget),
+    clientFirstSeen: clientRows.filter(r => r && r[1]).map(r => ({ date: r[0], name: r[1] })),
+    employees: json('fin:l2h-employees', []),
+    fin: { manualAd: set.get('fin:l2h-advertising-cost') || 0, overheads: set.get('fin:l2h-monthly-overheads') || 0 },
+    forecastWeights: json('forecast_weights', null),
+  };
+  if (!Array.isArray(input.employees)) input.employees = [];
+  kpiCache.set(ck, { at: Date.now(), input });
+  return input;
+}
+
+app.get('/api/kpi/owner', requireAdmin, async (req, res) => {
+  try {
+    const input = await loadKpiInput(req.query.fresh === '1');
+    const out = computeOwnerKpi({ ...input, now: new Date() });
+    out.vat.alertsSent = input.vatMarkers;
+    res.json(out);
+  } catch (e) {
+    console.error('GET /api/kpi/owner error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Each person's own activity. The response is built by computeMyKpi, which holds no money figures at all.
+app.get('/api/kpi/mine', async (req, res) => {
+  try {
+    const me = actorOf(req);
+    if (!me || me === 'unknown') return res.status(401).json({ error: 'Sign in first' });
+    const input = await loadKpiInput(false);
+    res.json(computeMyKpi({ ...input, now: new Date() }, me));
+  } catch (e) {
+    console.error('GET /api/kpi/mine error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// The four KPI settings, with the defaults shown where nothing has been saved
+app.get('/api/kpi/settings', requireAdmin, async (req, res) => {
+  try {
+    const set = new Map((await settingsTable.list()).map(r => [r.id, r.value]));
+    const out = {};
+    KPI_SETTING_KEYS.forEach(k => { out[k] = String(set.get(k) || '').trim() || KPI_SETTING_DEFAULTS[k]; });
+    res.json({ settings: out, defaults: KPI_SETTING_DEFAULTS });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/kpi/settings', requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const clean = {};
+    const n = (v, lo, hi) => { const x = parseFloat(String(v).replace(/[£,\s]/g, '')); return Number.isFinite(x) && x >= lo && x <= hi ? x : null; };
+    if (b.vat_threshold != null) { const x = n(b.vat_threshold, 1000, 10000000); if (x === null) return res.status(400).json({ error: 'Enter the VAT threshold as a number, for example 90000' }); clean.vat_threshold = String(x); }
+    if (b.vat_alert_pcts != null) {
+      const list = String(b.vat_alert_pcts).split(',').map(s => n(s, 1, 100)).filter(x => x !== null);
+      if (!list.length) return res.status(400).json({ error: 'Enter the alert levels as percentages, for example 80,90' });
+      clean.vat_alert_pcts = [...new Set(list)].sort((a, c) => a - c).join(',');
+    }
+    if (b.concentration_warn_pct != null) { const x = n(b.concentration_warn_pct, 1, 100); if (x === null) return res.status(400).json({ error: 'Enter the concentration warning as a percentage between 1 and 100' }); clean.concentration_warn_pct = String(x); }
+    if (b.role_stale_days != null) { const x = n(b.role_stale_days, 1, 365); if (x === null) return res.status(400).json({ error: 'Enter the number of days between 1 and 365' }); clean.role_stale_days = String(Math.round(x)); }
+    if (b.forecast_weights && typeof b.forecast_weights === 'object') clean.forecast_weights = JSON.stringify(b.forecast_weights).slice(0, 500);
+    for (const [id, value] of Object.entries(clean)) await settingsTable.upsert({ id, value, updated_by: actorOf(req) });
+    kpiCache.clear();
+    auditLog(auditActorOf(req), 'updated', 'setting', 'KPI settings', Object.entries(clean).map(([k, v]) => `${k} = ${v}`).join(', ').slice(0, 300));
+    res.json({ ok: true, saved: clean });
+  } catch (e) {
+    console.error('POST /api/kpi/settings error:', e.message);
+    res.status(e.previewBlocked ? 409 : 500).json({ error: e.message });
+  }
+});
+
+// Runs inside the daily job. Sends each VAT alert level once, and stores the month's opening figures the first time it runs in a month.
+async function kpiDailyStep() {
+  if (isPreview()) return { skipped: true };
+  const input = await loadKpiInput(true);
+  const k = computeOwnerKpi({ ...input, now: new Date() });
+  const out = { vatPct: k.vat.pct, alerted: [], snapshot: false };
+  const due = vatAlertsDue(k.vat, input.vatMarkers);
+  for (const level of due.send) {
+    const ok = await mailDan(`Live 2 Help: turnover has reached ${k.vat.pct}% of the VAT threshold`, vatAlertText(k.vat, level));
+    if (ok) { await settingsTable.upsert({ id: 'vat_alert:' + level, value: todayISO(), updated_by: 'system' }); out.alerted.push(level); }
+  }
+  for (const level of due.clear) await settingsTable.upsert({ id: 'vat_alert:' + level, value: '', updated_by: 'system' });
+  if (due.send.length) await addAutoTasks([{ key: 'vat-watch-' + Math.max(...due.send) + '-' + todayISO().slice(0, 7), user: 'dan', title: `Speak to the accountant: turnover is at ${k.vat.pct}% of the VAT threshold`, priority: 'High', dueDate: todayISO(), context: 'KPI Reporting > VAT threshold watch shows the 12 month total and the month by month picture.' }]).catch(() => {});
+  if (!input.snapshots[k.snapshot.month]) {
+    await settingsTable.upsert({ id: 'kpi_snap:' + k.snapshot.month, value: JSON.stringify(k.snapshot), updated_by: 'system' });
+    out.snapshot = true;
+  }
+  kpiCache.clear();
+  return out;
+}
+
+// Owner test: what the VAT alert would say at a lowered threshold. Sends one email marked TEST and stores nothing.
+app.post('/api/kpi/vat-test', requireAdmin, async (req, res) => {
+  try {
+    const input = await loadKpiInput(true);
+    const threshold = parseFloat((req.body || {}).threshold);
+    const settings = { ...input.settings };
+    if (Number.isFinite(threshold) && threshold > 0) settings.vat_threshold = String(threshold);
+    const k = computeOwnerKpi({ ...input, settings, now: new Date() });
+    const due = vatAlertsDue(k.vat, {});
+    let sent = false;
+    if (due.send.length && (req.body || {}).send === true) {
+      const level = Math.max(...due.send);
+      sent = await mailDan(`TEST - Live 2 Help: turnover has reached ${k.vat.pct}% of the VAT threshold`, 'THIS IS A TEST with the threshold lowered to £' + Math.round(k.vat.threshold).toLocaleString('en-GB') + '. Nothing has been stored.\n\n' + vatAlertText(k.vat, level));
+    }
+    res.json({ pct: k.vat.pct, threshold: k.vat.threshold, turnover12m: k.vat.turnover12m, levelsThatWouldAlert: due.send, sent });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

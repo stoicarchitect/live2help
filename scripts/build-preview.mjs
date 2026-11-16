@@ -9,7 +9,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const src = fs.readFileSync(path.join(root, 'dashboard', 'index.html'), 'utf8');
+// build 62: a page that is not live yet can be previewed by passing its path, for example
+//   node scripts/build-preview.mjs /path/to/new-page.html
+// The live page is then left alone. scripts/promote-preview.mjs makes the previewed page the live one.
+const srcPath = process.argv[2] ? path.resolve(process.argv[2]) : path.join(root, 'dashboard', 'index.html');
+const src = fs.readFileSync(srcPath, 'utf8');
 
 const inject = `
 <script>

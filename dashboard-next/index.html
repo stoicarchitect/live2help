@@ -1546,6 +1546,8 @@ h1,h2,.view-head h2,#leadClientsHeader h2,#clientsHeader h2,.modal h2{font-famil
         <button id="addKPIBtn" onclick="openAddKPIModal()">+ Add Target</button>
       </div>
       <div id="kpiContent" style="flex:1;overflow-y:auto;padding:18px 24px;">
+        <!-- Build 62: the owner's view (Ella sees her own activity only). Filled by k62Load(). -->
+        <div id="k62Owner" style="margin-bottom:32px;"></div>
         
         <!-- KPI Targets Section -->
         <div style="margin-bottom:32px;">
@@ -1588,7 +1590,8 @@ h1,h2,.view-head h2,#leadClientsHeader h2,#clientsHeader h2,.modal h2{font-famil
 
         <!-- Business Health Dashboard (Dan Only) -->
         <div id="businessHealthSection" style="display:none;">
-          <h3 style="font-size:16px;color:var(--dark);margin-bottom:14px;font-weight:500;">Business Health</h3>
+          <details id="k62OldHealth"><summary>Payroll, team and cost inputs</summary>
+          <div class="note-line" style="margin:-6px 0 14px;">The figures above are worked out from what is entered here: team members and pay, other overheads, extra advertising and the payroll email. The bank balance box stays until the Starling feed replaces it in build 63.</div>
           
           <!-- Backup status -->
           <div id="backupBar" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 16px;margin-bottom:18px;background:#fff;border:1px solid var(--border);border-left:3px solid var(--gold);border-radius:2px;">
@@ -1714,6 +1717,7 @@ h1,h2,.view-head h2,#leadClientsHeader h2,#clientsHeader h2,.modal h2{font-famil
             <div id="clientPerformanceBody"></div>
           </div>
           <div id="clientPerformanceEmpty" style="text-align:center;padding:20px;color:#999;font-size:13px;display:none;">No client data yet</div>
+          </details>
           <h3 style="font-size:16px;color:var(--dark);margin:28px 0 6px;font-weight:500;">Previous Quarters - Target vs Actual</h3>
           <div style="font-size:12px;color:#999;margin-bottom:12px;">Team targets against what actually happened, so you can set the next quarter from real numbers. Fill speed counts days from role opened to offer.</div>
           <div id="quarterHistoryBody" style="background:#fff;border:1px solid var(--border);border-radius:2px;overflow-x:auto;"><div style="padding:16px;font-size:13px;color:#999;">Loading...</div></div>
@@ -3971,7 +3975,7 @@ function switchTab(tab){
   if(tab === 'clients') loadClients();
   if(tab === 'invoices') loadInvoices();
   if(tab === 'tasks') loadTasks('active');
-  if(tab === 'kpi') loadKPITargets();
+  if(tab === 'kpi'){ loadKPITargets(); if(typeof k62Load === 'function') k62Load(); }
   if(tab === 'coldCalls') loadColdCalls();
 }
 
@@ -7580,6 +7584,8 @@ function saveForecastWeights(){
     w[k] = isFinite(v) ? Math.max(0, Math.min(100, v)) : FORECAST_DEFAULTS[k];
   });
   try{ localStorage.setItem('l2h-forecast-weights', JSON.stringify(w)); }catch(e){}
+  // build 62: the server uses the same weights for the KPI owner view and the reports
+  if(signedInUser && signedInUser.admin) b2Post('/api/kpi/settings', {forecast_weights: w}).catch(function(){});
   showToast('Weights saved');
   renderForecast();
 }
@@ -12640,14 +12646,15 @@ var OD_SETS = {
   info_request:{label:'Information request email', hint:'Asks for details, right to work and references'},
   placement:   {label:'Client handover pack and placement email', hint:'Handover pack attached, to the client contact'},
   prestart:    {label:'Pre-start pack and email', hint:'Onboarding pack attached, to the candidate'},
-  rejection:   {label:'Rejection email', hint:'Warm template, to the candidate'},
+  rejection:   {label:'Rejection email - after interview', hint:'Warm template with the free Career Toolkit, to the candidate'},
+  rejection_early:{label:'Rejection email - before interview', hint:'For applicants not taken to interview, with the free Career Toolkit'},
   feedback_week1:  {label:'Week 1 client check-in', hint:'Short check-in email to the client contact'},
   feedback_month1: {label:'Month 1 client feedback request', hint:'Feedback, new vacancies, guarantee reminder and review link'}
 };
 var OD_BY_STAGE = {
   offer:['offer','info_request','placement'],
   start_date:['prestart','placement'], day1:['feedback_week1','placement'], week1:['feedback_week1','feedback_month1','placement'], month1:['feedback_month1','placement'],
-  rejected:['rejection']
+  rejected:['rejection_early','rejection']
 };
 var OD_PICKS = {
   dob:'date', offer_reply_by:'date'
@@ -12718,7 +12725,7 @@ function odRender(){
   if(OD.error){ box.innerHTML = h + '<div style="padding:12px;background:#fdf1ef;border-left:3px solid var(--danger);font-size:13px;">' + esc(OD.error) + '</div>'; return; }
   const r = OD.res, saved = r.saved || {};
   const missing = r.missing || [];
-  if(OD.kind === 'placement' || OD.kind === 'rejection'){
+  if(OD.kind === 'placement' || OD.kind === 'rejection' || OD.kind === 'rejection_early'){
     h += '<div style="margin-bottom:12px;"><button onclick="odAiDraft()" style="padding:8px 14px;background:var(--dark);color:#fff;border:none;border-radius:2px;cursor:pointer;font-size:12.5px;">Draft the wording with AI from the notes</button> <span style="font-size:11px;color:#999;">Review before sending</span></div>';
   }
   if(OD.kind === 'placement'){
@@ -13118,15 +13125,15 @@ async function bulkRejectGo(){
   const done = items.map(function(x){ return x; });
   bkOverlay('<h3 style="margin:0 0 8px;">Rejected ' + res.ok + ' candidate' + (res.ok === 1 ? '' : 's') + '</h3>' +
     (res.failed.length ? '<div class="list">' + res.failed.map(esc).join('<br>') + '</div>' : '') +
-    '<p style="font-size:13px;">Draft each rejection email below. Tasks have also been added for Ella.</p>' +
-    done.map(function(x, i){ return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px solid #eee;padding:7px 0;font-size:13px;"><span>' + esc(formatCandidateName(x.c.name)) + '</span><button class="sub-btn small" onclick="bulkRejEmail(' + i + ')">Rejection email</button></div>'; }).join('') +
+    '<p style="font-size:13px;">Draft each rejection email below. Choose Before interview for people who were never interviewed. Tasks have also been added for Ella.</p>' +
+    done.map(function(x, i){ return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px solid #eee;padding:7px 0;font-size:13px;"><span>' + esc(formatCandidateName(x.c.name)) + '</span><span><button class="sub-btn small" onclick="bulkRejEmail(' + i + ',\'rejection_early\')">Before interview</button> <button class="sub-btn small" onclick="bulkRejEmail(' + i + ',\'rejection\')">After interview</button></span></div>'; }).join('') +
     '<div class="bk-act"><button class="gold" onclick="bkClose()">Close</button></div>');
   window.BK_DONE = done;
 }
-function bulkRejEmail(i){
+function bulkRejEmail(i, kind){
   const x = window.BK_DONE[i]; if(!x) return;
   bkClose();
-  odOpen('rejection', {name:x.c.name, company:x.c.company || x.co, role:x.c.role || x.role, stage:'rejected', notes:x.c.notes || '', email:x.c.email || '', phone:x.c.phone || '', salary:x.c.salary || '', startDate:x.c.startDate || ''});
+  odOpen(kind || 'rejection', {name:x.c.name, company:x.c.company || x.co, role:x.c.role || x.role, stage:'rejected', notes:x.c.notes || '', email:x.c.email || '', phone:x.c.phone || '', salary:x.c.salary || '', startDate:x.c.startDate || ''});
 }
 
 /* Assign company and contact */
@@ -17330,7 +17337,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '16 Nov 2026 - build 60.3 (Cold outreach: bounce and reply detection, Email not working flag, bounce table in Usage) preview';
+var PAGE_BUILD = '16 Nov 2026 - build 62 (KPI Reporting rebuilt as an owner view: money, pipeline, clients, cost, staff, VAT threshold watch, guarantee watch, what changed this month) preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -19079,7 +19086,7 @@ function buildTagApply(){
       MKT.tsTotal = ts.length; MKT.tsLinkedIn = ts.filter(u => /^li-/i.test(String(u.source || ''))).length;
       // build 54: Hiring Toolkit leads store the source as "src=tag-channel", so they count toward campaign cards too
       MKT.tsSrc = ts.map(u => String(u.source || '').toLowerCase()).concat(fl.map(l => String(l.source || '').toLowerCase().replace(/^\??src=/, '')));
-      MKT.tsBy = ts.reduce((m, u) => { const k = String(u.source || ''); if(/^li-/i.test(k)) m[k] = (m[k] || 0) + 1; return m; }, {});
+      MKT.tsBy = ts.reduce((m, u) => { const k = String(u.source || ''); if(/^(li-|rejection-)/i.test(k)) m[k] = (m[k] || 0) + 1; return m; }, {});
     }catch(e){ $('mk41Body').innerHTML = `<div class="p41-panel"><div class="p41-err">${h(e.message)}</div></div>`; return; }
     if(MKT.camp === undefined){ const a = MKT.rows.find(r => r.type === 'campaign' && r.status === 'Active'); MKT.camp = a ? a.title : ''; }
     mktRender();
@@ -19195,7 +19202,7 @@ function buildTagApply(){
       brevo: [`<b>${h(r.title)}</b>`, h(r.audience), pill(r.status), h(r.next_step), h(who41(r.owner)), link(r)],
       magnet: [`<b>${h(r.title)}</b>`, h(r.channel), pill(r.status),
         /hiring toolkit/i.test(r.title) ? `${MKT.funnel} <a data-mkx="1" onclick="switchTab('funnelLeads')" style="cursor:pointer;color:var(--gold)">view</a>`
-        : /career toolkit/i.test(r.title) ? `${MKT.tsTotal} sign-ups<br><span style="font-size:12px;color:var(--grey)">LinkedIn ${MKT.tsLinkedIn}: company ${lic('li-company')}, Ella ${lic('li-ella')}, outreach ${lic('li-outreach')}</span>` : '',
+        : /career toolkit/i.test(r.title) ? `${MKT.tsTotal} sign-ups<br><span style="font-size:12px;color:var(--grey)">LinkedIn ${MKT.tsLinkedIn}: company ${lic('li-company')}, Ella ${lic('li-ella')}, outreach ${lic('li-outreach')}</span><br><span style="font-size:12px;color:var(--grey)">Rejection emails: ${lic('rejection-early') + lic('rejection-interview')} (before interview ${lic('rejection-early')}, after ${lic('rejection-interview')})</span>` : '',
         h(who41(r.owner)), link(r)],
       event: [r.date ? fmt41(r.date, true) : 'No date', `<b>${h(r.title)}</b>`, h(r.location), h(r.cost), pill(r.status), link(r)],
     })[MKT.tab];
@@ -21097,7 +21104,7 @@ const C47_CAT = {lead:'Lead', client:'Client', candidate:'Candidate'};
 const C47_ORDER = {
   lead: ['tpl-lead-live-advert', 'tpl-lead-intro', 'tpl-lead-after-call', 'tpl-lead-rates-prospectus', 'tpl-lead-chase', 'tpl-lead-spec', 'tpl-lead-talent-suite'],
   client: ['tpl-client-new-role', 'tpl-lead-rates-prospectus', 'tpl-client-follow-up', 'tpl-client-feedback-chase', 'tpl-client-placement', 'tpl-client-rejection', 'tpl-client-invoice-chase'],
-  candidate: ['tpl-candidate-availability', 'tpl-interview-confirmation', 'tpl-offer-cover', 'tpl-information-request', 'tpl-references-request', 'tpl-start-reminder', 'tpl-day-one', 'tpl-week-one', 'tpl-month-one', 'tpl-candidate-rejection'],
+  candidate: ['tpl-candidate-availability', 'tpl-interview-confirmation', 'tpl-offer-cover', 'tpl-information-request', 'tpl-references-request', 'tpl-start-reminder', 'tpl-day-one', 'tpl-week-one', 'tpl-month-one', 'tpl-candidate-rejection-early', 'tpl-candidate-rejection'],
 };
 // Templates that only make sense when the dashboard builds them with attachments elsewhere
 const C47_SKIP = ['tpl-client-submission', 'tpl-snippet-partnership'];
@@ -22300,5 +22307,229 @@ function rtDelete(id, category, recordId){
 })();
 </script>
 
+<style>
+  /* Build 62: KPI owner view */
+  #k62Owner .k62-h{font-size:16px;color:var(--dark);margin:26px 0 12px;font-weight:500;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
+  #k62Owner .k62-h:first-child{margin-top:0;}
+  #k62Owner .k62-h small{font-size:11.5px;color:#999;font-weight:400;}
+  #k62Owner .tile .n{font-size:22px;}
+  #k62Owner .tile .s{font-size:11px;color:#999;margin-top:4px;line-height:1.35;}
+  #k62Owner .k62-ar{font-size:11px;font-weight:600;margin-left:6px;white-space:nowrap;}
+  #k62Owner .k62-ar.good{color:#2E7D4F;} #k62Owner .k62-ar.bad{color:#B3372B;} #k62Owner .k62-ar.flat{color:#999;}
+  #k62Owner .tile.gold{border-top-color:var(--gold);}
+  #k62Owner .tile.off{background:repeating-linear-gradient(135deg,#fafafa,#fafafa 8px,#f3f3f3 8px,#f3f3f3 16px);}
+  #k62Owner .tile.off .n{font-size:14px;color:#999;}
+  #k62Owner .k62-two{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px;margin-bottom:18px;}
+  #k62Owner .k62-sub{font-size:12.5px;font-weight:600;color:var(--dark);margin:0 0 8px;}
+  #k62Owner .k62-bar{height:10px;background:#eee;border-radius:5px;overflow:hidden;position:relative;margin:10px 0 6px;}
+  #k62Owner .k62-bar i{display:block;height:100%;background:var(--gold);}
+  #k62Owner .k62-bar i.warn{background:#c9703f;} #k62Owner .k62-bar i.over{background:#B3372B;}
+  #k62Owner .k62-bar b{position:absolute;top:0;bottom:0;width:2px;background:#0B0B18;opacity:.55;}
+  #k62Owner .k62-changes{background:#0B0B18;color:#fff;border-radius:2px;padding:16px 18px;margin-bottom:8px;}
+  #k62Owner .k62-changes h3{color:var(--gold);font-size:14px;font-weight:500;margin:0 0 8px;}
+  #k62Owner .k62-changes li{font-size:13px;line-height:1.6;list-style:none;padding-left:16px;position:relative;}
+  #k62Owner .k62-changes li:before{content:'';position:absolute;left:0;top:9px;width:7px;height:7px;border-radius:50%;background:#999;}
+  #k62Owner .k62-changes li.good:before{background:#5CB884;} #k62Owner .k62-changes li.bad:before{background:#E0705F;}
+  #k62Owner .k62-changes li.note{color:#aaa;font-size:12px;} #k62Owner .k62-changes li.note:before{display:none;}
+  #k62Owner .k62-set{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:10px;}
+  #k62Owner .k62-set label{display:block;font-size:11px;color:#999;margin-bottom:3px;}
+  #k62Owner .k62-set input{padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:12px;font-family:inherit;background:#fff;width:120px;}
+  #k62Owner .k62-btn{padding:8px 14px;background:none;border:1px solid var(--border);border-radius:2px;cursor:pointer;font-size:12px;font-family:inherit;}
+  #k62Owner .k62-btn.gold{background:var(--gold);border-color:var(--gold);color:var(--dark);font-weight:600;}
+  #k62Owner .k62-months{display:flex;align-items:flex-end;gap:4px;height:64px;margin-top:10px;}
+  #k62Owner .k62-months div{flex:1;background:var(--gold);opacity:.75;min-height:2px;border-radius:1px 1px 0 0;}
+  #k62Owner td.num,#k62Owner th.num{text-align:right;}
+  #k62OldHealth > summary{cursor:pointer;font-size:16px;color:var(--dark);font-weight:500;margin-bottom:14px;}
+</style>
+<script>
+/* ============================================================
+   Build 62: KPI Reporting as an owner's view.
+   Every figure comes from the server (GET /api/kpi/owner), so the screen, the monthly
+   reports (build 65) and the alerts all show the same numbers. Ella gets GET /api/kpi/mine,
+   which holds her own activity and no money.
+   ============================================================ */
+var K62 = {data: null, loading: false};
+function k62Money(n){ return n == null ? '-' : '£' + Math.round(n).toLocaleString('en-GB'); }
+function k62Arrow(t, money, vs){
+  if(!t || t.dir === 'none' || t.before == null) return '';
+  var was = (money ? k62Money(t.before) : t.before);
+  if(t.dir === 'same') return '<span class="k62-ar flat" title="' + esc(vs) + ': ' + was + '">= same</span>';
+  var good = t.better === 'down' ? t.dir === 'down' : t.dir === 'up';
+  var pct = t.pct == null ? '' : ' ' + Math.abs(t.pct) + '%';
+  return '<span class="k62-ar ' + (good ? 'good' : 'bad') + '" title="' + esc(vs) + ': ' + was + '">' + (t.dir === 'up' ? '▲' : '▼') + pct + '</span>';
+}
+function k62Tile(label, value, opts){
+  opts = opts || {};
+  return '<div class="tile static ' + (opts.cls || '') + '"><div class="n">' + value + (opts.arrow || '') + '</div><div class="l">' + esc(label) + '</div>' + (opts.sub ? '<div class="s">' + opts.sub + '</div>' : '') + '</div>';
+}
+function k62Bank(label){ return '<div class="tile static off"><div class="n">Connect bank in build 63</div><div class="l">' + esc(label) + '</div></div>'; }
+function k62Table(head, rows, empty, minWidth){
+  if(!rows.length) return '<div class="panel"><div class="panel-empty">' + esc(empty) + '</div></div>';
+  return '<div class="ops-table-wrap"><table class="ops-table" style="min-width:' + (minWidth || 520) + 'px;"><thead><tr>' + head.map(function(h){ return '<th' + (h.charAt(0) === '#' ? ' class="num"' : '') + '>' + esc(h.replace(/^#/, '')) + '</th>'; }).join('') + '</tr></thead><tbody>' + rows.join('') + '</tbody></table></div>';
+}
+function k62Act(a, key){ var t = a && a[key]; return t ? t.now + k62Arrow(t, false, 'Last month') : '0'; }
+
+async function k62Load(fresh){
+  var host = document.getElementById('k62Owner');
+  if(!host || !signedInUser || K62.loading) return;
+  K62.loading = true;
+  if(!K62.data) host.innerHTML = '<div class="panel"><div class="panel-empty">Working out the figures...</div></div>';
+  try{
+    if(signedInUser.admin){
+      K62.data = await b2Api('/api/kpi/owner' + (fresh ? '?fresh=1' : ''));
+      k62Render(K62.data);
+    }else{
+      K62.data = await b2Api('/api/kpi/mine');
+      k62RenderMine(K62.data);
+    }
+  }catch(e){
+    host.innerHTML = '<div class="warn-box"><strong>The KPI figures could not be loaded.</strong> ' + esc(e.message || '') + ' <a class="tpl-link" onclick="k62Load(true)">Try again</a></div>';
+  }
+  K62.loading = false;
+}
+
+function k62Render(k){
+  var host = document.getElementById('k62Owner');
+  var m = k.money, p = k.pipeline, c = k.clients, co = k.cost, s = k.staff, v = k.vat, vs = k.comparedWith;
+  var h = '';
+
+  /* What changed this month */
+  h += '<div class="k62-changes"><h3>What changed in ' + esc(k.month) + '</h3><ul style="margin:0;padding:0;">' +
+    (k.changes.length ? k.changes.map(function(x){ return '<li class="' + (x.good === null ? 'note' : x.good ? 'good' : 'bad') + '">' + esc(x.text) + '</li>'; }).join('') : '<li class="note">Nothing has moved yet against ' + esc(vs) + '.</li>') +
+    '</ul></div><div class="note-line" style="margin-bottom:6px;">Arrows compare with ' + esc(vs) + '. Green is good news, red needs a look. Tax and cash figures are steering estimates, the accountant\'s numbers are the source of truth. <a class="tpl-link" onclick="k62Load(true)">Refresh figures</a></div>';
+
+  /* Money */
+  h += '<div class="k62-h">Money <small>invoiced against paid</small></div><div class="tile-grid">' +
+    k62Tile('Invoiced this month', k62Money(m.invoiced.month.now), {arrow: k62Arrow(m.invoiced.month, true, vs), sub: 'Paid in: ' + k62Money(m.paid.month.now) + k62Arrow(m.paid.month, true, vs), cls: 'gold'}) +
+    k62Tile('Invoiced this quarter', k62Money(m.invoiced.quarter.now), {arrow: k62Arrow(m.invoiced.quarter, true, 'Last quarter'), sub: 'Paid in: ' + k62Money(m.paid.quarter.now) + k62Arrow(m.paid.quarter, true, 'Last quarter')}) +
+    k62Tile('Invoiced year to date', k62Money(m.invoiced.ytd.now), {arrow: k62Arrow(m.invoiced.ytd, true, 'Same point last year'), sub: 'Paid in: ' + k62Money(m.paid.ytd.now) + ' from ' + m.invoiceCountYtd + ' invoice' + (m.invoiceCountYtd === 1 ? '' : 's')}) +
+    k62Tile('Owed by clients', k62Money(m.outstanding.now), {arrow: k62Arrow(m.outstanding, true, 'Start of the month'), sub: 'Debtor days: ' + (m.debtorDays == null ? '-' : m.debtorDays) + '. Clients take ' + (m.avgDaysToPay == null ? '-' : m.avgDaysToPay) + ' days to pay on average'}) +
+    k62Tile('Overdue', k62Money(m.overdue.now), {arrow: k62Arrow(m.overdue, true, 'Start of the month'), cls: m.overdue.now > 0 ? 'warn' : '', sub: m.overdueInvoices.length + ' invoice' + (m.overdueInvoices.length === 1 ? '' : 's') + ' past the due date'}) +
+    k62Tile('Average fee', k62Money(m.avgFee), {sub: 'Revenue per client: ' + k62Money(m.revenuePerClient)}) +
+    k62Bank('Bank balance and cash forecast') +
+    '</div>';
+  var f = m.forecast;
+  h += '<div class="k62-two"><div><div class="k62-sub">Forecast against actual</div>' + k62Table(['Measure', '#Amount'], [
+      '<tr><td class="strong">Weighted forecast today</td><td class="num">' + k62Money(f.weighted) + '</td></tr>',
+      '<tr><td>Best case (every open position filled)</td><td class="num">' + k62Money(f.bestCase) + '</td></tr>',
+      '<tr><td>Placed, invoice not raised yet</td><td class="num">' + k62Money(f.awaitingInvoice) + '</td></tr>',
+      '<tr><td>Forecast when ' + esc(k.month) + ' opened</td><td class="num">' + (f.openingWeighted == null ? '<span style="color:#999;">Recorded from the next daily run</span>' : k62Money(f.openingWeighted)) + '</td></tr>',
+      '<tr><td class="strong">Actually invoiced this month</td><td class="num"><strong>' + k62Money(f.invoicedThisMonth) + '</strong></td></tr>',
+      f.lastMonth ? '<tr><td>' + esc(vs) + ': forecast ' + k62Money(f.lastMonth.openingWeighted) + '</td><td class="num">invoiced ' + k62Money(f.lastMonth.invoiced) + '</td></tr>' : ''
+    ], '', 320) + '<div class="note-line">Same rules as the Forecast tab. ' + (f.candidatesWithNoSalary ? f.candidatesWithNoSalary + ' candidate' + (f.candidatesWithNoSalary === 1 ? ' has' : 's have') + ' no salary data and are left out. ' : '') + '<a class="tpl-link" onclick="switchTab(\'forecast\')">Open Forecast</a></div></div>' +
+    '<div><div class="k62-sub">Overdue invoices</div>' + k62Table(['Invoice', 'Client', '#Amount', '#Days overdue'], m.overdueInvoices.map(function(i){
+      return '<tr><td class="strong">' + esc(i.number) + '</td><td>' + esc(i.company) + '</td><td class="num">' + k62Money(i.amount) + '</td><td class="num">' + i.daysOverdue + '</td></tr>'; }), 'Nothing is overdue.', 360) + '</div></div>';
+
+  /* Pipeline */
+  var cv = p.conversion, ttf = p.timeToFillDays;
+  h += '<div class="k62-h">Pipeline</div><div class="tile-grid">' +
+    k62Tile('Open roles', p.openRoles.now, {arrow: k62Arrow(p.openRoles, false, 'Start of the month'), sub: p.openPositions + ' open position' + (p.openPositions === 1 ? '' : 's'), cls: 'gold'}) +
+    k62Tile('Roles at risk', p.atRisk, {cls: p.atRisk ? 'warn' : '', sub: 'No candidate activity in ' + p.staleDays + ' days or more'}) +
+    k62Tile('Roles filled this month', p.rolesFilled.month.now, {arrow: k62Arrow(p.rolesFilled.month, false, vs), sub: 'This quarter: ' + p.rolesFilled.quarter.now + '. Year to date: ' + p.rolesFilled.ytd}) +
+    k62Tile('Time to fill (days)', ttf.quarter == null ? '-' : ttf.quarter, {sub: 'This quarter. Last quarter: ' + (ttf.lastQuarter == null ? '-' : ttf.lastQuarter) + '. Year: ' + (ttf.ytd == null ? '-' : ttf.ytd)}) +
+    k62Tile('Submission to interview', cv.submissionToInterviewPct == null ? '-' : cv.submissionToInterviewPct + '%', {sub: cv.interviewed + ' of ' + cv.submitted + ' submitted candidates, last 12 months'}) +
+    k62Tile('Interview to offer', cv.interviewToOfferPct == null ? '-' : cv.interviewToOfferPct + '%', {sub: cv.offered + ' of ' + cv.interviewed + ' interviewed candidates, last 12 months'}) +
+    k62Tile('Submitted this month', p.submissions.now, {arrow: k62Arrow(p.submissions, false, vs), sub: 'Interviews arranged: ' + p.interviews.now + k62Arrow(p.interviews, false, vs) + ' Offers: ' + p.offers.now + k62Arrow(p.offers, false, vs)}) +
+    '</div>';
+  h += '<div class="k62-two"><div><div class="k62-sub">Open roles</div>' + k62Table(['Role', 'Client', '#Days open', '#Active candidates', '#Days quiet', 'Status'], p.roles.map(function(r){
+      return '<tr><td class="strong">' + esc(r.role) + '</td><td>' + esc(r.company) + '</td><td class="num">' + (r.daysOpen == null ? '-' : r.daysOpen) + '</td><td class="num">' + r.active + '</td><td class="num">' + (r.idleDays == null ? '-' : r.idleDays) + '</td><td><span class="status-pill' + (r.atRisk ? '' : ' active') + '"' + (r.atRisk ? ' style="background:#fbeae7;color:#B3372B;"' : '') + '>' + (r.atRisk ? 'At risk' : 'Moving') + '</span></td></tr>'; }), 'No open roles.', 560) + '</div>' +
+    '<div><div class="k62-sub">Open roles by client</div>' + k62Table(['Client', '#Open roles', '#Positions'], p.byClient.map(function(r){
+      return '<tr><td class="strong">' + esc(r.company) + '</td><td class="num">' + r.roles + '</td><td class="num">' + r.positions + '</td></tr>'; }), 'No open roles.', 300) + '</div></div>';
+
+  /* Clients */
+  var cc = c.concentration, gw = c.guaranteeWatch;
+  h += '<div class="k62-h">Clients</div><div class="tile-grid">' +
+    k62Tile('New clients this month', c.newClients.month.now, {arrow: k62Arrow(c.newClients.month, false, vs), sub: (c.newClients.namesThisMonth.length ? esc(c.newClients.namesThisMonth.join(', ')) + '. ' : '') + 'Quarter: ' + c.newClients.quarter.now + '. Year: ' + c.newClients.ytd, cls: 'gold'}) +
+    k62Tile('Share from the top client', cc.topSharePct == null ? '-' : cc.topSharePct + '%', {cls: cc.warn ? 'warn' : '', sub: (cc.topClient ? esc(cc.topClient) + '. ' : '') + (cc.warn ? 'Above the ' + cc.warnPct + '% warning level' : 'Warning level is ' + cc.warnPct + '%')}) +
+    k62Tile('Revenue inside a guarantee', k62Money(gw.revenueAtRisk), {cls: gw.count ? 'gold' : '', sub: gw.count + ' placement' + (gw.count === 1 ? '' : 's') + ' still in the replacement window' + (gw.leftInGuarantee ? '. ' + gw.leftInGuarantee + ' left in guarantee' : '')}) +
+    k62Tile('Clients invoiced this year', c.invoicedClientsYtd) +
+    '</div>';
+  h += '<div class="k62-two"><div><div class="k62-sub">Guarantee period watch</div>' + k62Table(['Candidate', 'Client', 'Started', 'Guarantee ends', '#Days left', '#Revenue at risk'], gw.placements.map(function(g){
+      return '<tr><td class="strong">' + esc(g.name) + '</td><td>' + esc(g.company) + '</td><td>' + esc(ukDate(g.startDate)) + '</td><td>' + esc(ukDate(g.guaranteeEnd)) + ' <span style="color:#bbb;">(' + g.guaranteeWeeks + 'w)</span></td><td class="num"' + (g.daysLeft <= 14 ? ' style="color:#2E7D4F;"' : '') + '>' + g.daysLeft + '</td><td class="num" title="' + esc(g.basis) + '">' + k62Money(g.atRisk) + '</td></tr>'; }), 'No placements are inside a guarantee period.', 600) +
+      '<div class="note-line">If one of these people leaves before the end date, a free replacement is owed, so this revenue is not safe yet. <a class="tpl-link" onclick="switchTab(\'placements\')">Open Placements</a></div></div>' +
+    '<div><div class="k62-sub">Client concentration (last 12 months)</div>' + k62Table(['Client', '#Invoiced', '#Share'], cc.shares.map(function(g){
+      return '<tr><td class="strong">' + esc(g.company) + '</td><td class="num">' + k62Money(g.revenue) + '</td><td class="num"' + (g.sharePct > cc.warnPct ? ' style="color:#B3372B;font-weight:600;"' : '') + '>' + g.sharePct + '%</td></tr>'; }), 'No invoices in the last 12 months.', 320) + '</div></div>';
+
+  /* Cost */
+  var rc = co.recurring;
+  h += '<div class="k62-h">Cost <small>year to date unless stated</small></div><div class="tile-grid">' +
+    k62Tile('Margin after team and advertising', k62Money(co.profitYtd), {cls: co.profitYtd < 0 ? 'warn' : 'gold', sub: (co.marginPct == null ? '' : co.marginPct + '% of revenue. ') + 'Salary, pension, commission and advertising taken off'}) +
+    k62Tile('Team cost', k62Money(co.teamCostYtd), {sub: 'Salary ' + k62Money(co.salaryYtd) + ', pension ' + k62Money(co.pensionYtd) + ', commission ' + k62Money(co.commissionYtd)}) +
+    k62Tile('Team cost this month', k62Money(co.teamCostMonth.now), {arrow: k62Arrow(co.teamCostMonth, true, vs)}) +
+    k62Tile('Advertising', k62Money(co.adSpendYtd), {sub: 'This month: ' + k62Money(co.adSpendMonth.now) + k62Arrow(co.adSpendMonth, true, vs)}) +
+    k62Tile('Cost per hire', co.costPerHire == null ? '-' : k62Money(co.costPerHire), {sub: co.hiresYtd + ' hire' + (co.hiresYtd === 1 ? '' : 's') + ' this year. Advertising alone: ' + (co.adSpendPerHire == null ? '-' : k62Money(co.adSpendPerHire))}) +
+    k62Tile('Recurring costs a month', k62Money(rc.totalPerMonth), {sub: 'Payroll ' + k62Money(rc.payroll) + ', advertising ' + k62Money(rc.advertising.reduce(function(a, x){ return a + x.amount; }, 0)) + ', other ' + k62Money(rc.overheads)}) +
+    k62Bank('Costs read from the bank') +
+    '</div>';
+  h += '<div class="k62-two"><div><div class="k62-sub">Advertising spend by role</div>' + k62Table(['Role', 'Client', '#Spend'], co.adSpendByRole.map(function(r){
+      return '<tr><td class="strong">' + esc(r.role) + '</td><td>' + esc(r.company) + '</td><td class="num">' + k62Money(r.spend) + '</td></tr>'; }).concat(co.adSpendGeneral ? ['<tr><td>General, not tied to a role</td><td></td><td class="num">' + k62Money(co.adSpendGeneral) + '</td></tr>'] : []), 'No advertising logged this year.', 320) +
+      '<div class="note-line">From Sourcing. Spend marked "all open roles" is split across the roles open on that day.</div></div>' +
+    '<div><div class="k62-sub">Recurring monthly commitments</div>' + k62Table(['Item', '#A month'], ['<tr><td class="strong">Payroll with employer pension</td><td class="num">' + k62Money(rc.payroll) + '</td></tr>'].concat(rc.advertising.map(function(a){
+      return '<tr><td>' + esc(a.name) + '</td><td class="num">' + k62Money(a.amount) + '</td></tr>'; })).concat(['<tr><td>Other overheads (entered below)</td><td class="num">' + k62Money(rc.overheads) + '</td></tr>']), '', 300) +
+      '<div class="note-line">' + esc(co.marginNote) + '</div></div></div>';
+
+  /* Staff */
+  var cm = s.commission;
+  h += '<div class="k62-h">Staff <small>only you can see this section</small></div>' + k62Table(['Name', '#Submitted', '#Interviews booked', '#Emails', '#Calls', '#Placements ' + s.quarter, 'Target ' + s.quarter, '#Revenue this year', '#Employment cost', '#Return'], s.people.map(function(x){
+      var t = x.target ? x.placementsQuarter + ' of ' + x.target.targetRoles + ' roles' : '<span style="color:#bbb;">No target set</span>';
+      return '<tr><td class="strong">' + esc(x.name) + '<div class="pool-muted">' + esc(x.role) + '</div></td><td class="num">' + k62Act(x.activity, 'submissions') + '</td><td class="num">' + k62Act(x.activity, 'interviewsBooked') + '</td><td class="num">' + k62Act(x.activity, 'emails') + '</td><td class="num">' + k62Act(x.activity, 'calls') + '</td><td class="num">' + x.placementsQuarter + '</td><td>' + t + '</td><td class="num">' + k62Money(x.revenueYtd) + '</td><td class="num" title="Salary and pension ' + k62Money(x.salaryAndPension) + ', commission ' + k62Money(x.commission) + '">' + k62Money(x.employmentCostYtd) + '</td><td class="num"><strong>' + (x.roiPct == null ? '-' : x.roiPct + '%') + '</strong></td></tr>';
+    }).concat(s.others.map(function(o){
+      return '<tr><td>' + esc(o.name) + '<div class="pool-muted">' + esc(o.note) + '</div></td><td class="num">' + k62Act(o.activity, 'submissions') + '</td><td class="num">' + k62Act(o.activity, 'interviewsBooked') + '</td><td class="num">' + k62Act(o.activity, 'emails') + '</td><td class="num">' + k62Act(o.activity, 'calls') + '</td><td class="num">-</td><td>-</td><td class="num">' + k62Money(o.revenueYtd) + '</td><td class="num">-</td><td class="num">-</td></tr>'; })), 'Add team members under "Payroll, team and cost inputs" below to see activity against cost.', 900) +
+    '<div class="note-line">Activity is for ' + esc(k.month) + ' with the arrow against ' + esc(vs) + '. Team return: <strong>' + (s.teamRoiPct == null ? '-' : s.teamRoiPct + '%') + '</strong> (revenue less team cost, divided by team cost). Commission: ' + k62Money(cm.recognised) + ' counted as cost, ' + k62Money(cm.due) + ' due to pay, ' + k62Money(cm.paidOut) + ' paid out, ' + k62Money(cm.pending) + ' still to come.</div>';
+
+  /* VAT threshold watch */
+  var barCls = v.status === 'over' ? 'over' : v.status === 'warn' ? 'warn' : '';
+  var maxM = Math.max.apply(null, v.monthly.map(function(x){ return x.amount; }).concat([1]));
+  h += '<div class="k62-h">VAT threshold watch <small>not VAT registered</small></div><div class="k62-two"><div class="panel" style="padding:16px;">' +
+    '<div style="font-size:24px;font-weight:500;color:' + (v.status === 'ok' ? 'var(--dark)' : '#B3372B') + ';">' + v.pct + '% <span style="font-size:13px;color:#999;font-weight:400;">of the ' + k62Money(v.threshold) + ' registration threshold</span></div>' +
+    '<div class="k62-bar"><i class="' + barCls + '" style="width:' + Math.min(100, v.pct) + '%;"></i>' + v.levels.map(function(l){ return '<b style="left:' + l + '%;" title="Alert at ' + l + '%"></b>'; }).join('') + '</div>' +
+    '<div style="font-size:12.5px;color:#666;line-height:1.6;">Turnover in the last 12 months: <strong>' + k62Money(v.turnover12m) + '</strong> (invoices ' + k62Money(v.invoices) + ', Talent Suite ' + k62Money(v.otherSales) + ').<br>Headroom before registration is needed: <strong>' + k62Money(Math.max(0, v.headroom)) + '</strong>.<br>Alerts to you at ' + v.levels.join('% and ') + '%' + (Object.keys(v.alertsSent || {}).length ? '. Already sent: ' + Object.keys(v.alertsSent).map(function(l){ return l + '% on ' + ukDate(v.alertsSent[l]); }).join(', ') : '') + '.</div>' +
+    '<div class="note-line">' + esc(v.note) + '</div></div>' +
+    '<div class="panel" style="padding:16px;"><div class="k62-sub">Turnover by month, last 12 months</div><div class="k62-months">' + v.monthly.map(function(x){ return '<div style="height:' + Math.max(2, Math.round(x.amount / maxM * 100)) + '%;" title="' + x.month + ': ' + k62Money(x.amount) + '"></div>'; }).join('') + '</div>' +
+    '<div style="display:flex;justify-content:space-between;font-size:10.5px;color:#999;margin-top:4px;"><span>' + v.monthly[0].month + '</span><span>' + v.monthly[11].month + '</span></div></div></div>';
+
+  /* Settings */
+  var st = k.settings;
+  h += '<div class="k62-h">KPI settings</div><div class="panel" style="padding:16px;"><div class="k62-set" style="margin-top:0;">' +
+    '<div><label>VAT threshold (£)</label><input id="k62VatThreshold" value="' + esc(st.vat_threshold) + '"></div>' +
+    '<div><label>VAT alert levels (%)</label><input id="k62VatPcts" value="' + esc(st.vat_alert_pcts) + '"></div>' +
+    '<div><label>Top client warning (%)</label><input id="k62Conc" value="' + esc(st.concentration_warn_pct) + '"></div>' +
+    '<div><label>Role at risk after (days)</label><input id="k62Stale" value="' + esc(st.role_stale_days) + '"></div>' +
+    '<button class="k62-btn gold" onclick="k62SaveSettings()">Save settings</button></div>' +
+    '<div class="k62-set"><div><label>Test the VAT alert with a lower threshold (£)</label><input id="k62VatTest" placeholder="e.g. ' + Math.max(1000, Math.round(v.turnover12m * 1.1 / 1000) * 1000) + '" style="width:200px;"></div>' +
+    '<button class="k62-btn" onclick="k62VatTest()">Send me a test alert</button></div>' +
+    '<div class="note-line">The threshold is the HMRC registration figure (£90,000 when checked on 16 Nov 2026). Change it here if HMRC changes it. The test sends one email marked TEST and stores nothing.</div></div>';
+
+  host.innerHTML = h;
+}
+
+function k62RenderMine(k){
+  var host = document.getElementById('k62Owner');
+  var a = k.activity || {}, vs = k.comparedWith, t = k.target, tt = k.teamTarget;
+  var tile = function(label, key, sub){ var x = a[key] || {now: 0}; return k62Tile(label, x.now, {arrow: k62Arrow(x, false, vs), sub: sub || ''}); };
+  host.innerHTML = '<div class="k62-h">Your activity in ' + esc(k.month) + ' <small>arrows compare with ' + esc(vs) + '</small></div><div class="tile-grid">' +
+    tile('Candidates added', 'candidatesAdded') + tile('Candidates submitted', 'submissions') + tile('Interviews booked', 'interviewsBooked') +
+    tile('Emails logged', 'emails') + tile('Calls logged', 'calls', 'Spoke to them: ' + ((a.callsSpoke || {}).now || 0)) + tile('Tasks completed', 'tasksDone') +
+    k62Tile('Your placements this quarter', k.placements.quarter, {cls: 'gold', sub: (t ? 'Target for ' + esc(k.quarter) + ': ' + t.targetRoles + ' roles' : 'No personal target set for ' + esc(k.quarter)) + '. This year: ' + k.placements.ytd}) +
+    k62Tile('Team roles filled this quarter', k.teamRolesFilledQuarter, {sub: tt ? 'Team target: ' + tt.targetRoles + ' roles' : ''}) +
+    '</div>';
+}
+
+async function k62SaveSettings(){
+  try{
+    await b2Post('/api/kpi/settings', {vat_threshold: b2Val('k62VatThreshold'), vat_alert_pcts: b2Val('k62VatPcts'), concentration_warn_pct: b2Val('k62Conc'), role_stale_days: b2Val('k62Stale')});
+    showToast('KPI settings saved');
+    k62Load(true);
+  }catch(e){ showToast(e.message || 'Could not save the settings'); }
+}
+async function k62VatTest(){
+  var n = parseFloat(String(b2Val('k62VatTest')).replace(/[^0-9.]/g, ''));
+  if(!(n > 0)){ showToast('Enter a lower threshold to test with'); return; }
+  try{
+    var r = await b2Post('/api/kpi/vat-test', {threshold: n, send: true});
+    showToast(r.levelsThatWouldAlert.length ? (r.sent ? 'Test alert sent to your inbox: ' + r.pct + '% of ' + k62Money(r.threshold) : 'An alert would fire at ' + r.pct + '%, but the email was not sent (no emails go out from the preview)') : 'No alert at that threshold: turnover is only ' + r.pct + '% of it');
+  }catch(e){ showToast(e.message || 'Could not run the test'); }
+}
+</script>
 </body>
 </html>
