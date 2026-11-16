@@ -20,6 +20,7 @@ import * as onbDocs from './onboarding-docs.js';
 import { dumpDatabase, inspectDump, restoreDatabase } from './db-dump.js'; // audit Nov 2026
 import { createMailEngine, ENGINE_LOG_HEADER, msSecretExpires, msSecretDaysLeft } from './mail-engine.js'; // build 57.0
 import { looksLikeNdr, failedRecipient, classifyBounce, replyIntent } from './cold-bounce.js'; // build 60.3
+import { STARLING_LIVE, STARLING_SANDBOX, BANK_HEADER, DEFAULT_BANK_RULES, createStarlingClient, createDemoStarling, toBankRow, classifyRow, categoriseCost, matchPayments, findPayoutFor, reconcilePayout, latePayerScores } from './bank.js'; // build 63
 import { computeOwnerKpi, computeMyKpi, vatAlertsDue, vatAlertText, monthKey, KPI_SETTING_DEFAULTS, KPI_SETTING_KEYS } from './kpi-owner.js'; // build 62
 
 const __filename = fileURLToPath(import.meta.url);
@@ -316,7 +317,7 @@ const TABLE_GROUPS = {
   'Week Plans': 'planning', 'Roadmap': 'planning', 'Marketing': 'planning', 'Ad Spend': 'planning',
   'Roles': 'records', 'Role Notes': 'records', 'Role Briefs': 'records', 'Placements': 'records',
   'Interviews': 'records', 'Templates': 'records', 'Activity': 'records', 'Invoice Charges': 'records',
-  'Audit Log': 'system', 'Retention Reviews': 'system', 'Email Log': 'system', 'Engine Log': 'system', 'AI Usage': 'system', 'Settings': 'system', 'Suppression List': 'system',
+  'Audit Log': 'system', 'Retention Reviews': 'system', 'Email Log': 'system', 'Engine Log': 'system', 'AI Usage': 'system', 'Settings': 'system', 'Suppression List': 'system', 'Bank Transactions': 'system', 'Bank Rules': 'system',
   'Company Settings': 'clients', 'Contact Audience': 'clients',
   'Gap Problems': 'clients', 'Gap Briefs': 'clients', 'Gap Sends': 'clients', 'Cold Sequences': 'clients', 'Cold Sends': 'clients', 'Cold Picks': 'clients', 'Mail Scan': 'clients',
   'Users': 'auth',
@@ -11840,7 +11841,7 @@ app.post('/api/storage/preview-seed', requireAdmin, async (req, res) => {
 // Nightly: everything held in the live database, as a readable dated Google Sheet in the backup folder
 async function backupDatabaseToDrive(drive, folderId, date) {
   if (!pgLivePool) return null;
-  const tables = SIMPLE_TABLES.filter(t => PG_LIVE_GROUPS.has(t.group));
+  const tables = SIMPLE_TABLES.filter(t => PG_LIVE_GROUPS.has(t.group) && t.tab !== 'Bank Transactions'); // build 63: bank data is in the full database dump only, never in a readable Sheet
   const wholeTabs = [];
   for (const g of PG_LIVE_GROUPS) for (const pr of await pgGridTabsOfGroup(pgLivePool, g)) wholeTabs.push(pr);
   // go-live: onboarding tables are backed up even when no Sheets group has moved to Postgres
@@ -12641,6 +12642,8 @@ async function runDailyJob(skipBackup) {
   await step('gapBriefs', async () => ({ imported: await gapImportFromGithub('system').catch(e => ({ error: e.message })), ...(await gapSendDue()) }));
   await step('coldRemind', coldRemind);
   // build 62: VAT threshold alerts and the month opening figures for KPI Reporting
+  // build 63: the overnight bank read, then the cash floor alert
+  await step('bankDaily', bankDailyStep);
   await step('kpiDaily', kpiDailyStep);
   await step('outboxTask', async () => {
     const n = (await emailOutboxTable.list()).filter(o => o.status === 'pending').length;
@@ -17113,7 +17116,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '16 Nov 2026 - build 62 (KPI owner view: owner figures worked out on the server, VAT threshold watch and alerts, guarantee watch, business health owner only)';
+const SERVER_BUILD = '16 Nov 2026 - build 63 (Starling read-only bank feed: balance, invoice auto-match with confirm list, Stripe payout reconciliation, cost rules, 90 day cash forecast, tax reserve, late payer scores; owner only)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -22657,6 +22660,7 @@ async function loadKpiInput(fresh) {
     forecastWeights: json('forecast_weights', null),
   };
   if (!Array.isArray(input.employees)) input.employees = [];
+  input.bank = await soft(bankInputFor(set), { connected: false, settings: {}, status: {} }, 'bank'); // build 63
   kpiCache.set(ck, { at: Date.now(), input });
   return input;
 }
@@ -22757,5 +22761,347 @@ app.post('/api/kpi/vat-test', requireAdmin, async (req, res) => {
     res.json({ pct: k.vat.pct, threshold: k.vat.threshold, turnover12m: k.vat.turnover12m, levelsThatWouldAlert: due.send, sent });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+/* ======================================================================
+   Build 63 - Starling bank feed, invoice reconciliation, costs and cash
+
+   READ ONLY. The Starling client in bank.js can only make GET requests to accounts, balance and the
+   transaction feed, so nothing in the workspace can move money. The token lives in Render settings
+   (STARLING_TOKEN) and is never stored in the database or returned by any route.
+   Owner only: every route below refuses anyone who is not Daniel Brown, and a virtual assistant too.
+   Pause switch: BANK_FEED_ON=0 on Render stops all polling.
+   ====================================================================== */
+function bankGuard(req, res, next) {
+  if (!isAdmin(req) || (req.user && req.user.va)) return res.status(403).json({ error: 'Only Daniel Brown can see bank figures' });
+  next();
+}
+const bankTxTable = makeSimpleTable({ tab: 'Bank Transactions', header: BANK_HEADER, label: 'Bank transaction' }); // no routes of its own
+const bankRulesTable = makeSimpleTable({
+  tab: 'Bank Rules', header: ['id', 'pattern', 'bucket', 'channel', 'applies', 'note'], path: '/api/bank-rules', label: 'Bank rule', guard: bankGuard,
+  seed: DEFAULT_BANK_RULES.map(r => ({ id: r.id, pattern: r.pattern, bucket: r.bucket, channel: r.channel || '', applies: r.applies || '', note: '' })),
+  auditType: 'bank_rule', auditName: o => `${o.pattern} -> ${o.bucket}`,
+});
+
+const bankCfg = () => ({
+  token: process.env.STARLING_TOKEN || '',
+  // STARLING_BASE_URL exists only so the tests can use a fake bank on this machine: anything but localhost is ignored
+  base: /^http:\/\/127\.0\.0\.1:\d+$/.test(process.env.STARLING_BASE_URL || '') ? process.env.STARLING_BASE_URL : /^sandbox$/i.test(process.env.STARLING_ENV || '') ? STARLING_SANDBOX : STARLING_LIVE,
+  paused: /^(0|false|no|off)$/i.test(String(process.env.BANK_FEED_ON || '')),
+});
+// the bank feed only ever writes to Postgres. If the system group is not on a database, it does nothing rather than fall back to Sheets.
+const bankStoreReady = () => !!pgPoolFor('system');
+let bankPolling = false;
+
+async function bankSettingsMap() { return new Map((await settingsTable.list()).map(r => [r.id, r.value])); }
+async function bankSet(id, value) { await settingsTable.upsert({ id, value: typeof value === 'string' ? value : JSON.stringify(value), updated_by: 'system' }); }
+const bankJson = (m, id, fb) => { try { const v = JSON.parse(m.get(id) || ''); return v == null ? fb : v; } catch (e) { return fb; } };
+
+async function bankRules() {
+  const r = (await bankRulesTable.list()).filter(x => x.pattern);
+  // rules made by hand (ids starting u) are checked before the starting rules
+  r.sort((a, b) => (String(a.id)[0] === 'u' ? 0 : 1) - (String(b.id)[0] === 'u' ? 0 : 1) || String(a.id).localeCompare(String(b.id)));
+  return r.length ? r : DEFAULT_BANK_RULES;
+}
+
+// build 63: marks one invoice paid from a bank payment. Never overwrites a paid invoice, never creates one.
+async function bankMarkInvoicePaid(number, tx, how) {
+  const found = await findInvoice(number);
+  if (!found) return { ok: false, error: `Invoice ${number} was not found` };
+  if (lc(found.inv.status) === 'paid') return { ok: false, error: `Invoice ${number} is already paid` };
+  if (isPreview()) return { ok: false, preview: true };
+  await ensureInvoiceHeaders();
+  const updated = [...found.row];
+  while (updated.length < 17) updated.push('');
+  updated[9] = 'paid';
+  updated[10] = String(tx.settled_at || tx.date || todayISO()).slice(0, 10);
+  updated[15] = 'bank_transfer';
+  await getSheetsClient().spreadsheets.values.update({
+    spreadsheetId: CLIENT_SHEET_ID, range: `${INVOICES_TAB}!A${found.rowIndex + 2}:Q${found.rowIndex + 2}`,
+    valueInputOption: 'RAW', requestBody: { values: [updated] },
+  });
+  invOpenSessions.delete(number);
+  kpiCache.clear();
+  auditLog('bank', 'invoice_paid_bank_feed', 'invoice', number, `${found.inv.company} ${formatCurrency(num0(tx.amount))} ${how} bank item ${tx.id}`);
+  return { ok: true, company: found.inv.company, amount: found.inv.amount };
+}
+const num0 = v => { const x = parseFloat(String(v == null ? '' : v).replace(/[£,\s]/g, '')); return Number.isFinite(x) ? x : 0; };
+
+async function bankInvoices() {
+  const rows = await readInvoiceRows();
+  return withLateCharges(rows.filter(r => r && r[0]).map(rowToInvoice));
+}
+
+async function bankPatch(id, fields) { return bankTxTable.updateWhere(o => o.id === id, o => Object.assign(o, fields)); }
+
+// pull new feed items, store them once each, classify, then reconcile
+async function bankPoll(reason) {
+  const cfg = bankCfg();
+  const demo = isPreview();
+  if (!demo && (!cfg.token || cfg.paused)) return { skipped: cfg.paused ? 'paused' : 'no token' };
+  if (!bankStoreReady()) return { skipped: 'no database for the system group' };
+  if (bankPolling) return { skipped: 'already running' };
+  bankPolling = true;
+  const started = new Date().toISOString();
+  try {
+    const client = demo ? createDemoStarling(started) : createStarlingClient({ token: cfg.token, base: cfg.base });
+    const set = await bankSettingsMap();
+    let accountUid = set.get('bank_account_uid') || '', categoryUid = set.get('bank_category_uid') || '';
+    if (!accountUid || !categoryUid) {
+      const accounts = await client.accounts();
+      const acc = accounts.find(a => /GBP/i.test(a.currency || 'GBP') && /PRIMARY/i.test(a.accountType || 'PRIMARY')) || accounts[0];
+      if (!acc) throw new Error('Starling returned no accounts for this token. Check the business account is linked to the developer account.');
+      accountUid = acc.accountUid; categoryUid = acc.defaultCategory;
+      await bankSet('bank_account_uid', accountUid); await bankSet('bank_category_uid', categoryUid); await bankSet('bank_account_name', acc.name || 'Business account');
+    }
+    const bal = await client.balance(accountUid);
+    const eff = bal.effectiveBalance || bal.totalEffectiveBalance || bal.clearedBalance || {};
+    await bankSet('bank_balance', { amount: (Number(eff.minorUnits) || 0) / 100, at: started });
+    const backfillDays = Math.min(730, Math.max(30, parseInt(set.get('bank_backfill_days') || '400', 10) || 400));
+    const cursor = set.get('bank_cursor');
+    const since = cursor ? new Date(Date.parse(cursor) - 3 * 86400000).toISOString() : new Date(Date.now() - backfillDays * 86400000).toISOString();
+    const items = await client.feed(accountUid, categoryUid, since);
+    const existing = new Map((await bankTxTable.list()).map(o => [o.id, o]));
+    const rules = await bankRules();
+    let added = 0, changed = 0, newest = cursor || '';
+    for (const it of items) {
+      if (!it || !it.feedItemUid) continue;
+      const fresh = toBankRow(it, accountUid);
+      if (fresh.updated_at > newest) newest = fresh.updated_at;
+      const old = existing.get(fresh.id);
+      if (!old) {
+        const cls = classifyRow({ ...fresh }, rules);
+        await bankTxTable.upsert({ ...fresh, kind: cls.kind, cost_bucket: cls.cost_bucket || '', match_status: '' });
+        added++;
+      } else if (old.status !== fresh.status || old.amount !== fresh.amount || old.settled_at !== fresh.settled_at || old.date !== fresh.date) {
+        // only the bank's own fields move; every decision made here (match, tag, note) is kept
+        await bankTxTable.upsert({ ...old, date: fresh.date, settled_at: fresh.settled_at, amount: fresh.amount, status: fresh.status, updated_at: fresh.updated_at });
+        changed++;
+      }
+    }
+    if (newest) await bankSet('bank_cursor', newest);
+    const rec = await bankReconcile(reason);
+    const status = { lastPoll: started, ok: true, reason, items: items.length, added, changed, warning: [rec.matchError && 'invoice matching: ' + rec.matchError, rec.costError && 'cost filing: ' + rec.costError, rec.payoutError && 'Stripe payouts: ' + rec.payoutError].filter(Boolean).join('; ') || undefined, mode: demo ? 'demo' : (cfg.base === STARLING_SANDBOX ? 'sandbox' : 'live'), reconciled: rec };
+    await bankSet('bank_status', status);
+    kpiCache.clear();
+    return status;
+  } catch (e) {
+    const status = { lastPoll: started, ok: false, reason, error: String(e.message || e).slice(0, 300) };
+    try { await bankSet('bank_status', status); } catch (x) { /* ignore */ }
+    console.error('Bank poll failed:', e.message);
+    await alertDan('bank-poll', 'Live 2 Help: the bank feed could not be read', `${status.error}\n\nNothing has been changed. If this is a token problem, create a new read-only token at developer.starlingbank.com and update STARLING_TOKEN in Render.`);
+    return status;
+  } finally { bankPolling = false; }
+}
+
+// classify new rows, match payments to invoices, reconcile Stripe payouts, file advertising costs
+async function bankReconcile(reason) {
+  const out = { matched: [], confirm: 0, payouts: 0, payoutGaps: [], filedCosts: 0 };
+  const demo = isPreview();
+  const rules = await bankRules();
+  let rows = await bankTxTable.list();
+  // re-classify rows that have no kind yet (for example after a rules change)
+  for (const r of rows.filter(r => !r.kind)) { const c = classifyRow(r, rules); await bankPatch(r.id, { kind: c.kind, cost_bucket: c.cost_bucket || '' }); r.kind = c.kind; r.cost_bucket = c.cost_bucket || ''; }
+
+  // 1. payments in against open invoices (a failure here never undoes the feed that was already stored)
+  if (!demo) try {
+    const invoices = await bankInvoices();
+    const pending = rows.filter(r => r.direction === 'IN' && r.kind === 'client_payment' && r.status === 'SETTLED' && !['matched', 'confirmed', 'ignored', 'part_payment'].includes(r.match_status));
+    const { auto, confirm } = matchPayments(pending, invoices);
+    for (const a of auto) {
+      const res = await bankMarkInvoicePaid(a.invoice.number, a.tx, a.how);
+      if (res.ok) { await bankPatch(a.tx.id, { match_status: 'matched', invoice_numbers: a.invoice.number, matched_at: new Date().toISOString(), matched_by: 'bank feed (' + a.how + ')', note: '' }); out.matched.push({ invoice: a.invoice.number, company: res.company, amount: a.tx.amount }); }
+      else await bankPatch(a.tx.id, { match_status: 'confirm', invoice_numbers: a.invoice.number, note: res.error || 'Could not mark paid' });
+    }
+    for (const c of confirm) {
+      const nums = c.candidates.map(i => i.number).join(',');
+      if (c.tx.match_status !== 'confirm' || c.tx.invoice_numbers !== nums || c.tx.note !== c.reason) await bankPatch(c.tx.id, { match_status: 'confirm', invoice_numbers: nums, note: c.reason });
+    }
+    out.confirm = confirm.length;
+    if (out.matched.length) {
+      mailDan(`${out.matched.length} invoice${out.matched.length > 1 ? 's' : ''} marked paid from the bank`,
+        out.matched.map(m => `${m.invoice} ${m.company}: ${formatCurrency(num0(m.amount))}`).join('\n') + '\n\nThe payment dates and "bank transfer" were set from the bank feed. Overdue chasing for these has stopped. Open KPI Reporting > Bank to review.').catch(() => {});
+    }
+    if (confirm.length && reason !== 'confirm') {
+      await addAutoTasks([{ key: 'bank-confirm-' + todayISO(), user: 'dan', title: `Confirm ${confirm.length} bank payment${confirm.length > 1 ? 's' : ''} against invoices`, priority: 'Medium', dueDate: todayISO(), context: 'KPI Reporting > Bank > Confirm match. One click each.' }]).catch(() => {});
+    }
+  } catch (e) { out.matchError = String(e.message || e).slice(0, 200); console.error('Bank invoice matching failed:', e.message); }
+
+  // 2. Stripe payouts: the bank sees the net payout, so each one is checked against the payments inside it
+  const key = process.env.STRIPE_SECRET_KEY;
+  rows = await bankTxTable.list();
+  const payoutRows = rows.filter(r => r.kind === 'stripe_payout' && r.status === 'SETTLED' && !r.payout_id);
+  if (payoutRows.length && key && !demo) {
+    const sget = async p => { const r = await fetch('https://api.stripe.com' + p, { headers: { Authorization: `Bearer ${key}`, 'Stripe-Version': STRIPE_API_VERSION } }); if (!r.ok) throw new Error('Stripe ' + r.status); return r.json(); };
+    try {
+      const payouts = ((await sget('/v1/payouts?limit=100')).data || []).filter(p => p.status === 'paid');
+      for (const row of payoutRows) {
+        const p = findPayoutFor(row, payouts);
+        if (!p) continue;
+        const bts = [];
+        let after = '';
+        for (let page = 0; page < 5; page++) {
+          const res = await sget(`/v1/balance_transactions?payout=${encodeURIComponent(p.id)}&limit=100${after ? '&starting_after=' + after : ''}`);
+          bts.push(...(res.data || []));
+          if (!res.has_more || !res.data.length) break;
+          after = res.data[res.data.length - 1].id;
+        }
+        const rc = reconcilePayout(p, bts);
+        await bankPatch(row.id, { payout_id: p.id, stripe_gross: String(rc.gross), stripe_fee: String(rc.fees), match_status: rc.ok ? 'reconciled' : 'confirm', note: rc.ok ? `Payout of ${rc.count} payments: gross £${rc.gross.toFixed(2)}, fees £${rc.fees.toFixed(2)}` : `Payout does not add up: £${rc.payout.toFixed(2)} paid out against £${rc.net.toFixed(2)} of payments (gap £${rc.diff.toFixed(2)})` });
+        out.payouts++;
+        if (!rc.ok) out.payoutGaps.push({ payout: p.id, diff: rc.diff });
+      }
+    } catch (e) { console.error('Stripe payout reconciliation failed:', e.message); out.payoutError = e.message; }
+  }
+
+  // 3. advertising costs go to Ad Spend (once each, never on top of an entry made by hand)
+  if (!demo) try {
+    rows = await bankTxTable.list();
+    const spend = await adSpendTable.list();
+    for (const r of rows.filter(r => r.kind === 'cost' && r.cost_bucket === 'Advertising' && r.status === 'SETTLED' && !r.adspend_id)) {
+      const amt = num0(r.amount), ms = Date.parse(r.date + 'T00:00:00Z');
+      const channel = categoriseCost(r, rules).channel || r.counterparty;
+      const dup = spend.find(s => s.frequency !== 'monthly' && Math.abs(num0(s.amount) - amt) < 0.01 && Math.abs(Date.parse(String(s.date).slice(0, 10) + 'T00:00:00Z') - ms) <= 3 * 86400000 && (lc(s.channel).includes(lc(channel)) || lc(channel).includes(lc(s.channel))));
+      if (dup) { await bankPatch(r.id, { adspend_id: dup.id }); continue; }
+      const id = 'bank-' + r.id;
+      await adSpendTable.upsert({ id, date: r.date, channel, role: r.role_tag || '', company: '', amount: String(amt), notes: 'From the bank feed', logged_by: 'bank', frequency: '', end_date: '', applies_to: '' });
+      await bankPatch(r.id, { adspend_id: id });
+      out.filedCosts++;
+    }
+  } catch (e) { out.costError = String(e.message || e).slice(0, 200); console.error('Bank cost filing failed:', e.message); }
+  return out;
+}
+
+// the bank figures for loadKpiInput (rows kept small: the last 15 months)
+async function bankInputFor(set) {
+  const cfg = bankCfg(), demo = isPreview();
+  const status = bankJson(set, 'bank_status', {});
+  const settings = { cash_floor: set.get('bank_cash_floor') || '', tax_rate_pct: set.get('bank_tax_rate_pct') || '' };
+  const balance = bankJson(set, 'bank_balance', null);
+  const connected = !!balance && (demo || (!!cfg.token && !cfg.paused)) && bankStoreReady();
+  if (!connected) return { connected: false, mode: demo ? 'demo' : '', settings, status: { ...status, paused: cfg.paused, hasToken: !!cfg.token } };
+  const from = new Date(Date.now() - 460 * 86400000).toISOString().slice(0, 10);
+  const rows = (await bankTxTable.list()).filter(r => r.date >= from).map(r => ({ id: r.id, date: r.date, direction: r.direction, amount: r.amount, counterparty: r.counterparty, kind: r.kind, status: r.status, cost_bucket: r.cost_bucket, match_status: r.match_status, stripe_fee: r.stripe_fee, source: r.source, category: r.category }));
+  return { connected: true, mode: status.mode || (demo ? 'demo' : 'live'), balance, rows, settings, status: { ...status, paused: cfg.paused, hasToken: !!cfg.token } };
+}
+
+/* ---------- routes (owner only) ---------- */
+app.get('/api/bank/status', bankGuard, async (req, res) => {
+  try {
+    const set = await bankSettingsMap(), cfg = bankCfg();
+    res.json({ hasToken: !!cfg.token, paused: cfg.paused, preview: isPreview(), storeReady: bankStoreReady(), env: cfg.base === STARLING_SANDBOX ? 'sandbox' : 'live', account: set.get('bank_account_name') || '', status: bankJson(set, 'bank_status', null), balance: bankJson(set, 'bank_balance', null), settings: { cash_floor: set.get('bank_cash_floor') || '', tax_rate_pct: set.get('bank_tax_rate_pct') || '' } });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/bank/summary', bankGuard, async (req, res) => {
+  try { const input = await loadKpiInput(req.query.fresh === '1'); res.json(computeOwnerKpi({ ...input, now: new Date() }).bank); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/bank/poll', bankGuard, async (req, res) => {
+  try { res.json(await bankPoll('manual')); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/bank/transactions', bankGuard, async (req, res) => {
+  try {
+    const limit = Math.min(300, Math.max(10, parseInt(req.query.limit || '80', 10) || 80)), kind = String(req.query.kind || '');
+    const rows = (await bankTxTable.list()).filter(r => r.status === 'SETTLED' && (!kind || r.kind === kind)).sort((a, b) => (b.date + b.id).localeCompare(a.date + a.id)).slice(0, limit);
+    res.json({ data: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// payments that need one click: each with the invoices it might be for
+app.get('/api/bank/confirm', bankGuard, async (req, res) => {
+  try {
+    const rows = (await bankTxTable.list()).filter(r => r.match_status === 'confirm' && r.kind !== 'stripe_payout');
+    const invs = isPreview() ? [] : await bankInvoices();
+    res.json({ data: rows.map(r => ({ ...r, candidates: String(r.invoice_numbers || '').split(',').filter(Boolean).map(n => invs.find(i => i.number === n)).filter(Boolean).map(i => ({ number: i.number, company: i.company, amountDue: i.amountDue || i.amount, status: i.status, dueDate: i.dueDate })) })), payoutGaps: (await bankTxTable.list()).filter(r => r.kind === 'stripe_payout' && r.match_status === 'confirm') });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/bank/confirm', bankGuard, async (req, res) => {
+  try {
+    const { id, action } = req.body || {};
+    const tx = (await bankTxTable.list()).find(r => r.id === id);
+    if (!tx) return res.status(404).json({ error: 'Bank payment not found' });
+    if (isPreview()) return res.status(409).json({ error: 'Preview: nothing is changed here' });
+    const stamp = { matched_at: new Date().toISOString(), matched_by: actorOf(req) };
+    if (action === 'ignore') { await bankPatch(id, { match_status: 'ignored', ...stamp }); auditLog(auditActorOf(req), 'bank_ignored', 'bank', id, `${tx.counterparty} ${tx.amount}`); }
+    else if (action === 'part') { await bankPatch(id, { match_status: 'part_payment', ...stamp }); auditLog(auditActorOf(req), 'bank_part_payment', 'bank', id, `${tx.counterparty} ${tx.amount} against ${tx.invoice_numbers}`); }
+    else if (action === 'match') {
+      const numbers = [].concat((req.body || {}).invoiceNumbers || []).map(String).filter(Boolean);
+      if (!numbers.length) return res.status(400).json({ error: 'Choose the invoice or invoices this payment is for' });
+      const results = [];
+      for (const n of numbers) results.push({ number: n, ...(await bankMarkInvoicePaid(n, tx, 'confirmed by ' + actorOf(req))) });
+      if (!results.some(r => r.ok)) return res.status(409).json({ error: results.map(r => r.error).filter(Boolean).join('. ') || 'Nothing was marked paid', results });
+      await bankPatch(id, { match_status: 'confirmed', invoice_numbers: results.filter(r => r.ok).map(r => r.number).join(','), ...stamp, note: '' });
+    } else return res.status(400).json({ error: 'Unknown action' });
+    kpiCache.clear();
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// one click: which role (and so which advert spend) a bank cost belongs to
+app.post('/api/bank/tx/:id/tag', bankGuard, async (req, res) => {
+  try {
+    const tx = (await bankTxTable.list()).find(r => r.id === req.params.id);
+    if (!tx) return res.status(404).json({ error: 'Bank item not found' });
+    const role = String((req.body || {}).role || '').slice(0, 120), company = String((req.body || {}).company || '').slice(0, 120);
+    await bankPatch(tx.id, { role_tag: role });
+    if (tx.adspend_id) await adSpendTable.updateWhere(s => s.id === tx.adspend_id, s => { s.role = role; s.company = company; return s; });
+    kpiCache.clear();
+    auditLog(auditActorOf(req), 'bank_tagged', 'bank', tx.id, `${tx.counterparty} -> ${role || 'general'}`);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// after editing the rules, put every cost back through them
+app.post('/api/bank/reclassify', bankGuard, async (req, res) => {
+  try {
+    const rules = await bankRules(); let n = 0;
+    for (const r of await bankTxTable.list()) {
+      if (['client_payment', 'stripe_payout'].includes(r.kind) || (r.kind === 'transfer')) continue;
+      const c = classifyRow(r, rules);
+      if (c.kind !== r.kind || c.cost_bucket !== r.cost_bucket) { await bankPatch(r.id, { kind: c.kind, cost_bucket: c.cost_bucket || '' }); n++; }
+    }
+    kpiCache.clear();
+    res.json({ ok: true, changed: n });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/bank/settings', bankGuard, async (req, res) => {
+  try {
+    const b = req.body || {}, saved = {};
+    if (b.cash_floor != null) { const x = String(b.cash_floor).trim() === '' ? '' : num0(b.cash_floor); if (x !== '' && (x < 0 || x > 10000000)) return res.status(400).json({ error: 'Enter the cash floor as a number such as 5000' }); await bankSet('bank_cash_floor', String(x)); saved.cash_floor = String(x); }
+    if (b.tax_rate_pct != null) { const t = String(b.tax_rate_pct).trim(); const x = t === '' ? '' : num0(t); if (x !== '' && (x < 0 || x > 60)) return res.status(400).json({ error: 'Enter a tax rate between 0 and 60, or leave it empty to use the 19% to 25% bands' }); await bankSet('bank_tax_rate_pct', String(x)); saved.tax_rate_pct = String(x); }
+    kpiCache.clear();
+    auditLog(auditActorOf(req), 'updated', 'setting', 'Bank settings', Object.entries(saved).map(([k, v]) => `${k} = ${v}`).join(', '));
+    res.json({ ok: true, saved });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// scored from invoice dates, so it works without the bank too
+app.get('/api/bank/late-payers', bankGuard, async (req, res) => {
+  try { res.json({ data: latePayerScores(await bankInvoices(), todayISO()) }); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// scheduled: every 15 minutes in UK working hours on weekdays. Overnight the daily job does the one check.
+if (pgLivePool) setInterval(() => {
+  const h = gapHourUK();
+  if (!coldIsWeekday() || h < 7 || h >= 19) return;
+  const cfg = bankCfg();
+  if (!cfg.token || cfg.paused) return;
+  bankPoll('scheduled').catch(e => console.error('Bank scheduled poll failed:', e.message));
+}, 15 * 60 * 1000);
+
+// daily job step: the overnight read, then the cash floor alert (once per breach)
+async function bankDailyStep() {
+  const cfg = bankCfg();
+  if (isPreview() || !cfg.token || cfg.paused) return { skipped: cfg.paused ? 'paused' : 'no token' };
+  const poll = await bankPoll('daily');
+  const set = await bankSettingsMap();
+  const input = await loadKpiInput(true);
+  const k = computeOwnerKpi({ ...input, now: new Date() }).bank;
+  const out = { poll: poll.ok === false ? 'FAILED' : (poll.skipped || 'ok'), belowFloor: !!(k && k.belowFloor) };
+  if (k && k.belowFloor) {
+    const last = set.get('bank_floor_alert') || '';
+    if (!last || (Date.parse(todayISO()) - Date.parse(last)) / 86400000 >= 7) {
+      await mailDan('Live 2 Help: the cash forecast dips below your floor', `The 90 day cash forecast reaches its lowest point of ${formatCurrency(k.forecast.lowest.balance)} on ${formatDateUK(k.forecast.lowest.date)}, below your floor of ${formatCurrency(k.floor)}.\n\nBalance today: ${formatCurrency(k.balance)}. Set aside for corporation tax: ${formatCurrency(k.taxReserve)}.\n\nOpen KPI Reporting > Bank to see what is expected in and out. This is a steering estimate.`);
+      await bankSet('bank_floor_alert', todayISO());
+      out.alerted = true;
+    }
+  } else if (set.get('bank_floor_alert')) await bankSet('bank_floor_alert', '');
+  return out;
+}
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

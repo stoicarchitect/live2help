@@ -8,6 +8,8 @@
    Money figures here are steering estimates. The accountant's numbers are the source of truth.
    ====================================================================== */
 
+import { bankKpi } from './bank.js';
+
 export const KPI_SETTING_DEFAULTS = {
   vat_threshold: '90000',          // HMRC registration threshold, checked 16 Nov 2026. Held as a setting, never hardcode elsewhere.
   vat_alert_pcts: '80,90',
@@ -489,7 +491,11 @@ export function computeOwnerKpi(input) {
     vat.monthly.push({ month: monthKey(a), amount: round2(invoiced(a, b) + sum((input.otherSales || []).filter(s => within(parseDate(s.date), a, b)), s => num(s.amount))) });
   }
 
-  const out = { generatedAt: now.toISOString(), month: monthName(today), comparedWith: monthName(lmS), dayOfMonth: today.getUTCDate(), money, pipeline, clients, cost, staff, vat, settings };
+  // build 63: the bank feed (balance, cash forecast, tax reserve, bank costs). Not connected means the tiles say so, with no invented numbers.
+  const bk = bankKpi(input.bank, { todayISO, invoices: (input.invoices || []).filter(i => i && i.number), monthlyPayroll, profitYtd: profit, monthlyOverheads: overheads, ytdStartISO: iso(yS) });
+  money.bank = bk.tiles; cost.bank = bk.tiles;
+
+  const out = { generatedAt: now.toISOString(), month: monthName(today), comparedWith: monthName(lmS), dayOfMonth: today.getUTCDate(), money, pipeline, clients, cost, staff, vat, settings, bank: bk.panel };
   out.changes = whatChanged(out);
   out.snapshot = { month: monthKey(today), takenOn: iso(today), weightedForecast: fc.weighted, outstanding: round2(outstanding), overdue: round2(overdue), openRoles: openRoles.length };
   return out;
