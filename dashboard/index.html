@@ -1572,7 +1572,7 @@ h1,h2,.view-head h2,#leadClientsHeader h2,#clientsHeader h2,.modal h2{font-famil
                 <option value="2027">2027</option>
               </select>
             </div>
-            <div style="flex:1;min-width:220px;">
+            <div id="k63ManualBank" style="flex:1;min-width:220px;">
               <label style="display:block;font-size:12px;color:#999;margin-bottom:6px;letter-spacing:0.5px;">Bank Balance (£)</label>
               <div style="display:flex;gap:8px;">
                 <input type="text" id="bankBalanceInput" placeholder="e.g. 15000" style="flex:1;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-size:13px;font-family:inherit;background:#fff;">
@@ -17301,7 +17301,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '16 Nov 2026 - build 62 (frozen top section while scrolling, KPI Reporting rebuilt as an owner view: money, pipeline, clients, cost, staff, VAT threshold watch, guarantee watch, what changed this month)';
+var PAGE_BUILD = '16 Nov 2026 - build 63 (KPI Reporting Bank section: Starling balance, cash forecast, tax reserve, confirm match list, cost rules, how each client pays)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -22326,12 +22326,165 @@ function k62Tile(label, value, opts){
   opts = opts || {};
   return '<div class="tile static ' + (opts.cls || '') + '"><div class="n">' + value + (opts.arrow || '') + '</div><div class="l">' + esc(label) + '</div>' + (opts.sub ? '<div class="s">' + opts.sub + '</div>' : '') + '</div>';
 }
-function k62Bank(label){ return '<div class="tile static off"><div class="n">Connect bank in build 63</div><div class="l">' + esc(label) + '</div></div>'; }
+function k62Bank(label){
+  var b = K62.data && K62.data.money && K62.data.money.bank;
+  if(b && b.connected){
+    if(/^Costs/.test(label)) return k62Tile('Money out this month', k62Money(b.outMonth), {sub: 'Last month ' + k62Money(b.outLast) + '. Types are in the Bank section'});
+    return k62Tile('Bank balance', k63Gbp(b.balance), {cls: b.belowFloor ? 'warn' : 'gold', sub: 'Spendable after tax reserve ' + k62Money(b.spendable) + '. Lowest in 90 days ' + k62Money(b.forecastLowest && b.forecastLowest.balance)});
+  }
+  return '<div class="tile static off"><div class="n">Not connected</div><div class="l">' + esc(label) + '</div><div class="s">Add STARLING_TOKEN in Render, see Bank below</div></div>';
+}
 function k62Table(head, rows, empty, minWidth){
   if(!rows.length) return '<div class="panel"><div class="panel-empty">' + esc(empty) + '</div></div>';
   return '<div class="ops-table-wrap"><table class="ops-table" style="min-width:' + (minWidth || 520) + 'px;"><thead><tr>' + head.map(function(h){ return '<th' + (h.charAt(0) === '#' ? ' class="num"' : '') + '>' + esc(h.replace(/^#/, '')) + '</th>'; }).join('') + '</tr></thead><tbody>' + rows.join('') + '</tbody></table></div>';
 }
 function k62Act(a, key){ var t = a && a[key]; return t ? t.now + k62Arrow(t, false, 'Last month') : '0'; }
+
+/* ============================================================
+   Build 63: the Bank section of KPI Reporting (Starling, read only, owner only).
+   The figures arrive inside GET /api/kpi/owner (k.bank). The confirm list, the latest bank items
+   and the cost rules are loaded after the page is drawn from the owner-only /api/bank routes.
+   ============================================================ */
+var K63 = {};
+function k63Gbp(n){ return n == null ? '-' : '£' + Number(n).toLocaleString('en-GB', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+function k63Day(iso){ if(!iso) return ''; var d = new Date(String(iso).slice(0, 10) + 'T00:00:00Z'); return d.toLocaleDateString('en-GB', {day: 'numeric', month: 'short', timeZone: 'UTC'}); }
+function k63When(iso){ if(!iso) return 'never'; var d = new Date(iso); return isNaN(d) ? '' : d.toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'}); }
+function k63Section(k){
+  var b = k.bank || {}, st = b.status || {};
+  var h = '<div class="k62-h">Bank <small>read only link to Starling. Only you can see this section.</small></div>';
+  if(!b.connected){
+    var why = st.paused ? 'The feed is paused (BANK_FEED_ON is 0 on Render).' : (!st.hasToken ? 'Not connected yet. Nothing here is estimated or invented.' : (st.ok === false ? 'The last read failed: ' + esc(st.error || '') : 'Connected, waiting for the first read.'));
+    return h + '<div class="panel" style="padding:16px 18px;"><div style="font-weight:600;margin-bottom:6px;">' + why + '</div>' +
+      (!st.hasToken ? '<ol style="margin:6px 0 10px 18px;padding:0;font-size:13px;line-height:1.7;"><li>Sign in at developer.starlingbank.com and link the business account (approve it in the Starling app)</li><li>Personal Access tab, Create Token, tick only account:read, account-list:read, balance:read and transaction:read</li><li>Put the token in Render, l2h-api, Environment, as <b>STARLING_TOKEN</b> (never in chat or a repo)</li><li>Come back here and press Check the bank now</li></ol>' : '') +
+      (st.hasToken ? '<button class="k62-btn gold" onclick="k63Poll()">Check the bank now</button>' : '') +
+      '<div class="note-line" style="margin-top:8px;">Read only: no payment permission is asked for, and nothing in the workspace can move money. Last read: ' + esc(k63When(st.lastPoll)) + '.</div></div>';
+  }
+  var f = b.forecast || {}, max = 1, min = 0;
+  (f.series || []).forEach(function(p){ if(p.balance > max) max = p.balance; if(p.balance < min) min = p.balance; });
+  var span = (max - min) || 1;
+  var bars = (f.series || []).map(function(p){
+    var hgt = Math.max(2, Math.round(((p.balance - min) / span) * 60));
+    return '<div title="' + esc(k63Day(p.date) + ': ' + k63Gbp(p.balance)) + '" style="height:' + hgt + 'px;' + (f.floor != null && p.balance < f.floor ? 'background:var(--danger);' : '') + '"></div>';
+  }).join('');
+  h += (b.mode === 'demo' ? '<div class="warn-box" style="margin-bottom:12px;"><strong>Demo data.</strong> This is a pretend account on the preview so you can see the layout. Nothing here is real.</div>' : '') +
+    '<div class="tile-grid">' +
+    k62Tile('Bank balance', k63Gbp(b.balance), {cls: 'gold', sub: 'Read ' + esc(k63When(b.balanceAt)) + (st.ok === false ? '. <span style="color:var(--danger);">Last read failed</span>' : '')}) +
+    k62Tile('Spendable after tax reserve', k63Gbp(b.spendable), {sub: 'Set aside for corporation tax: ' + k63Gbp(b.taxReserve) + ' (estimate)'}) +
+    k62Tile('Money in this month', k62Money(b.inMonth), {sub: 'Last month: ' + k62Money(b.inLast)}) +
+    k62Tile('Money out this month', k62Money(b.outMonth), {sub: 'Last month: ' + k62Money(b.outLast)}) +
+    k62Tile('Lowest point, next 90 days', k63Gbp(b.forecastLowest && b.forecastLowest.balance), {cls: b.belowFloor ? 'warn' : '', sub: (b.forecastLowest ? 'on ' + esc(k63Day(b.forecastLowest.date)) : '') + (b.floor != null ? '. Your floor: ' + k62Money(b.floor) : '. No floor set')}) +
+    k62Tile('Waiting for you', String(b.confirmCount || 0), {cls: b.confirmCount ? 'warn' : '', sub: b.confirmCount ? 'payments to confirm below' : 'every payment is matched'}) +
+    '</div>' +
+    '<div class="k62-two"><div><div class="k62-sub">Cash forecast, 90 days, weekly</div><div class="k62-months" style="height:64px;">' + bars + '</div>' +
+      '<div class="note-line">Expected in: ' + k63Gbp(f.expectedIn) + ' (open invoices weighted by how each client usually pays). Expected out: ' + k63Gbp(f.expectedOut) + ' (payroll with pension on the last day of each month, plus recurring costs seen in the bank). Corporation tax is not included. Steering estimate only.</div></div>' +
+    '<div><div class="k62-sub">Corporation tax set aside (estimate)</div>' + k62Table(['Item', '#Amount'], [
+      '<tr><td>Profit so far this year</td><td class="num">' + k63Gbp(b.tax.profitYtd) + '</td></tr>',
+      '<tr><td>Less other costs from the bank</td><td class="num">' + k63Gbp(b.tax.overheadsYtd) + '</td></tr>',
+      '<tr><td class="strong">Set aside' + (b.tax.flatRatePct != null ? ' at ' + b.tax.flatRatePct + '%' : ' (19% to 25% bands)') + '</td><td class="num strong">' + k63Gbp(b.tax.reserve) + '</td></tr>'], '', 300) +
+      '<div class="note-line">' + esc(b.tax.note) + '</div></div></div>' +
+    '<div id="k63Confirm"></div>' +
+    '<div class="k62-two"><div><div class="k62-sub">Costs this year by type</div>' + k62Table(['Type', '#Amount'], (b.costBuckets || []).map(function(x){ return '<tr><td>' + esc(x.bucket) + '</td><td class="num">' + k63Gbp(x.amount) + '</td></tr>'; }), 'No costs read yet', 300) + '</div>' +
+    '<div><div class="k62-sub">Recurring costs seen in the bank</div>' + k62Table(['Cost', 'Next due', '#Amount'], (b.recurring || []).map(function(x){ return '<tr><td>' + esc(x.name) + '<div class="pool-muted">' + esc(x.bucket) + '</div></td><td>' + esc(k63Day(x.nextDate)) + '</td><td class="num">' + k63Gbp(x.amount) + '</td></tr>'; }), 'Nothing repeats monthly yet', 320) + '</div></div>' +
+    '<div class="k62-two"><div><div class="k62-sub">Top payers, last 12 months</div>' + k62Table(['Payer', '#Payments', '#Total'], (b.topPayers || []).map(function(x){ return '<tr><td>' + esc(x.name) + '</td><td class="num">' + x.count + '</td><td class="num">' + k62Money(x.total) + '</td></tr>'; }), 'No payments yet', 320) + '</div>' +
+    '<div><div class="k62-sub">Top payees, last 12 months</div>' + k62Table(['Paid to', '#Payments', '#Total'], (b.topPayees || []).map(function(x){ return '<tr><td>' + esc(x.name) + '</td><td class="num">' + x.count + '</td><td class="num">' + k62Money(x.total) + '</td></tr>'; }), 'No payments yet', 320) + '</div></div>' +
+    '<div class="k62-sub">Money in and out by month</div>' + k62Table(['Month', '#In', '#Out', '#Net'], (b.flows || []).slice(-6).reverse().map(function(x){ return '<tr><td>' + esc(x.month) + '</td><td class="num">' + k62Money(x.in) + '</td><td class="num">' + k62Money(x.out) + '</td><td class="num">' + k62Money(x.in - x.out) + '</td></tr>'; }), 'No money moved yet', 420) +
+    '<div class="k62-sub" style="margin-top:14px;">How each client pays</div>' + k62Table(['Client', '#Invoices paid', '#Days to pay', '#Days late', '#On time', 'Rating'], (b.scores || []).map(function(x){
+      return '<tr><td class="strong">' + esc(x.company) + '</td><td class="num">' + x.invoices + '</td><td class="num">' + x.avgDaysToPay + '</td><td class="num">' + x.avgDaysLate + '</td><td class="num">' + x.onTimePct + '%</td><td>' + esc(x.label) + '</td></tr>'; }), 'No paid invoices yet', 560) +
+    '<div class="note-line">Days are counted from the invoice date to the day the money arrived. Open invoices from slow payers count for less in the cash forecast.</div>' +
+    '<div class="k62-sub" style="margin-top:14px;">Latest bank items <span class="pool-muted">tag an advertising cost to a role in one click</span></div><div id="k63Tx"></div>' +
+    '<div class="k62-sub" style="margin-top:14px;">Settings and cost rules</div>' +
+    '<div class="k62-set"><label>Cash floor (£)<input id="k63Floor" value="' + esc(b.floor == null ? '' : b.floor) + '" placeholder="e.g. 5000"></label><label>Tax rate override (%)<input id="k63Tax" value="' + esc(b.tax.flatRatePct == null ? '' : b.tax.flatRatePct) + '" placeholder="empty = 19% to 25%"></label>' +
+      '<button class="k62-btn gold" onclick="k63SaveSettings()">Save</button><button class="k62-btn" onclick="k63Poll()">Check the bank now</button></div>' +
+    '<div class="note-line">Last read ' + esc(k63When(st.lastPoll)) + (st.added != null ? ': ' + st.added + ' new item' + (st.added === 1 ? '' : 's') : '') + '. The workspace reads every 15 minutes in working hours and once overnight. ' + (st.warning ? '<span style="color:var(--danger);">Needs a look: ' + esc(st.warning) + '</span>' : '') + '</div>' +
+    '<div id="k63Rules" style="margin-top:10px;"></div>';
+  return h;
+}
+function k63After(k){
+  var b = k.bank || {};
+  var man = document.getElementById('k63ManualBank');
+  if(man) man.style.display = b.connected ? 'none' : '';
+  if(!b.connected) return;
+  k63LoadConfirm(); k63LoadTx(); k63LoadRules();
+}
+async function k63Poll(){
+  showToast('Reading the bank...');
+  try{
+    var r = await b2Post('/api/bank/poll', {});
+    showToast(r.skipped ? 'Not read: ' + r.skipped : r.ok === false ? 'Could not read the bank: ' + (r.error || '') : 'Bank read: ' + (r.added || 0) + ' new item' + (r.added === 1 ? '' : 's'));
+    k62Load(true);
+  }catch(e){ showToast(e.message || 'Could not read the bank'); }
+}
+async function k63SaveSettings(){
+  try{ await b2Post('/api/bank/settings', {cash_floor: b2Val('k63Floor'), tax_rate_pct: b2Val('k63Tax')}); showToast('Bank settings saved'); k62Load(true); }
+  catch(e){ showToast(e.message || 'Could not save'); }
+}
+async function k63LoadConfirm(){
+  var host = document.getElementById('k63Confirm'); if(!host) return;
+  try{
+    var r = await b2Api('/api/bank/confirm');
+    K63.confirm = r.data || [];
+    var gaps = r.payoutGaps || [];
+    if(!K63.confirm.length && !gaps.length){ host.innerHTML = ''; return; }
+    var h = '<div class="k62-sub" style="margin-top:14px;">Confirm match <span class="pool-muted">one click each. Nothing is marked paid until you choose.</span></div>';
+    K63.confirm.forEach(function(x, i){
+      h += '<div class="panel" style="padding:12px 14px;margin-bottom:8px;"><div style="font-weight:600;">' + k63Gbp(x.amount) + ' from ' + esc(x.counterparty) + ' <span class="pool-muted">' + esc(k63Day(x.date)) + (x.reference ? ', reference "' + esc(x.reference) + '"' : '') + '</span></div>' +
+        '<div class="note-line" style="margin:4px 0 8px;">' + esc(x.note || 'Needs a decision') + '</div>' +
+        (x.candidates.length ? x.candidates.map(function(c){ return '<label style="display:block;font-size:13px;margin:2px 0;"><input type="checkbox" class="k63Pick' + i + '" value="' + esc(c.number) + '"' + (x.candidates.length === 1 ? ' checked' : '') + '> ' + esc(c.number) + ' ' + esc(c.company) + ', ' + k63Gbp(c.amountDue) + ', due ' + esc(k63Day(c.dueDate)) + '</label>'; }).join('') : '<div class="pool-muted">No open invoice to match.</div>') +
+        '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">' + (x.candidates.length ? '<button class="k62-btn gold" onclick="k63Decide(' + i + ',\'match\')">Mark selected paid</button><button class="k62-btn" onclick="k63Decide(' + i + ',\'part\')">Part payment, leave open</button>' : '') +
+        '<button class="k62-btn" onclick="k63Decide(' + i + ',\'ignore\')">Not an invoice payment</button></div></div>';
+    });
+    gaps.forEach(function(g){ h += '<div class="warn-box" style="margin-bottom:8px;"><strong>Stripe payout of ' + k63Gbp(g.amount) + ' (' + esc(k63Day(g.date)) + ') does not add up.</strong> ' + esc(g.note || '') + '</div>'; });
+    host.innerHTML = h;
+  }catch(e){ host.innerHTML = '<div class="note-line">The confirm list could not be loaded: ' + esc(e.message || '') + '</div>'; }
+}
+async function k63Decide(i, action){
+  var x = (K63.confirm || [])[i]; if(!x) return;
+  var nums = Array.prototype.map.call(document.querySelectorAll('.k63Pick' + i + ':checked'), function(el){ return el.value; });
+  if(action === 'match' && !nums.length){ showToast('Tick the invoice this payment is for'); return; }
+  try{ await b2Post('/api/bank/confirm', {id: x.id, action: action, invoiceNumbers: nums}); showToast(action === 'match' ? 'Marked paid from the bank payment' : 'Saved'); k62Load(true); }
+  catch(e){ showToast(e.message || 'Could not save'); }
+}
+async function k63LoadTx(){
+  var host = document.getElementById('k63Tx'); if(!host) return;
+  try{
+    var r = await b2Api('/api/bank/transactions?limit=40');
+    host.innerHTML = k62Table(['Date', 'Who', 'Type', '#In', '#Out', 'Role'], (r.data || []).map(function(x){
+      var out = x.direction === 'OUT', adv = out && x.cost_bucket === 'Advertising';
+      return '<tr><td>' + esc(k63Day(x.date)) + '</td><td class="strong">' + esc(x.counterparty) + '<div class="pool-muted">' + esc(x.reference || '') + (x.match_status === 'matched' ? ' - matched to ' + esc(x.invoice_numbers) : '') + '</div></td><td>' + esc(x.kind === 'cost' ? (x.cost_bucket || 'Cost') : x.kind === 'client_payment' ? 'Client payment' : x.kind === 'stripe_payout' ? 'Stripe payout' : x.kind === 'transfer' ? 'Transfer' : x.kind) + '</td>' +
+        '<td class="num">' + (out ? '' : k63Gbp(x.amount)) + '</td><td class="num">' + (out ? k63Gbp(x.amount) : '') + '</td>' +
+        '<td>' + (adv ? '<input style="width:130px;padding:5px 7px;border:1px solid var(--border);font-size:12px;" placeholder="role, or empty" value="' + esc(x.role_tag || '') + '" onchange="k63Tag(\'' + esc(x.id) + '\',this.value)">' : '') + '</td></tr>';
+    }), 'No bank items yet', 700);
+  }catch(e){ host.innerHTML = '<div class="note-line">The bank items could not be loaded: ' + esc(e.message || '') + '</div>'; }
+}
+async function k63Tag(id, role){
+  try{ await b2Post('/api/bank/tx/' + encodeURIComponent(id) + '/tag', {role: role}); showToast(role ? 'Cost tagged to ' + role : 'Tag cleared'); }
+  catch(e){ showToast(e.message || 'Could not tag'); }
+}
+async function k63LoadRules(){
+  var host = document.getElementById('k63Rules'); if(!host) return;
+  try{
+    var r = await b2Api('/api/bank-rules');
+    K63.rules = r.data || [];
+    host.innerHTML = '<details><summary style="cursor:pointer;font-size:13px;">Cost rules (' + K63.rules.length + '): what each payee is filed under</summary>' +
+      k62Table(['Looks for (any of, A|B)', 'Filed under', 'Channel', ''], K63.rules.map(function(x){
+        return '<tr><td><code>' + esc(x.pattern) + '</code></td><td>' + esc(x.bucket) + '</td><td>' + esc(x.channel || '') + '</td><td><a class="tpl-link" onclick="k63DelRule(\'' + esc(x.id) + '\')">Delete</a></td></tr>'; }), 'No rules', 520) +
+      '<div class="k62-set" style="margin-top:8px;"><label>Looks for<input id="k63RPat" placeholder="e.g. REED|TOTALJOBS"></label><label>Filed under<input id="k63RBucket" placeholder="Advertising, Software..."></label><label>Channel<input id="k63RChan" placeholder="optional"></label><button class="k62-btn gold" onclick="k63AddRule()">Add rule</button></div>' +
+      '<div class="note-line">Your own rules are checked first. Advertising costs are filed to Ad Spend automatically, once each, unless you already logged the same spend by hand.</div></details>';
+  }catch(e){ host.innerHTML = ''; }
+}
+async function k63AddRule(){
+  var p = b2Val('k63RPat').trim(), bk = b2Val('k63RBucket').trim();
+  if(!p || !bk){ showToast('Enter what to look for and what to file it under'); return; }
+  try{
+    await b2Post('/api/bank-rules', {id: 'u' + Date.now(), pattern: p, bucket: bk, channel: b2Val('k63RChan').trim()});
+    await b2Post('/api/bank/reclassify', {});
+    showToast('Rule added and costs re-filed'); k62Load(true);
+  }catch(e){ showToast(e.message || 'Could not add the rule'); }
+}
+async function k63DelRule(id){
+  try{ await b2Api('/api/bank-rules/' + encodeURIComponent(id), {method: 'DELETE'}); await b2Post('/api/bank/reclassify', {}); showToast('Rule deleted and costs re-filed'); k62Load(true); }
+  catch(e){ showToast(e.message || 'Could not delete'); }
+}
 
 async function k62Load(fresh){
   var host = document.getElementById('k62Owner');
@@ -22372,6 +22525,7 @@ function k62Render(k){
     k62Tile('Average fee', k62Money(m.avgFee), {sub: 'Revenue per client: ' + k62Money(m.revenuePerClient)}) +
     k62Bank('Bank balance and cash forecast') +
     '</div>';
+  h += k63Section(k);
   var f = m.forecast;
   h += '<div class="k62-two"><div><div class="k62-sub">Forecast against actual</div>' + k62Table(['Measure', '#Amount'], [
       '<tr><td class="strong">Weighted forecast today</td><td class="num">' + k62Money(f.weighted) + '</td></tr>',
@@ -22465,6 +22619,7 @@ function k62Render(k){
     '<div class="note-line">The threshold is the HMRC registration figure (£90,000 when checked on 16 Nov 2026). Change it here if HMRC changes it. The test sends one email marked TEST and stores nothing.</div></div>';
 
   host.innerHTML = h;
+  k63After(k);
 }
 
 function k62RenderMine(k){
