@@ -22975,7 +22975,7 @@ async function bankReconcile(reason) {
 async function bankInputFor(set) {
   const cfg = bankCfg(), demo = isPreview();
   const status = bankJson(set, 'bank_status', {});
-  const settings = { cash_floor: set.get('bank_cash_floor') || '', tax_rate_pct: set.get('bank_tax_rate_pct') || '' };
+  const settings = { cash_floor: set.get('bank_cash_floor') || '3000', tax_rate_pct: set.get('bank_tax_rate_pct') || '' };
   const balance = bankJson(set, 'bank_balance', null);
   const connected = !!balance && (demo || (!!cfg.token && !cfg.paused)) && bankStoreReady();
   if (!connected) return { connected: false, mode: demo ? 'demo' : '', settings, status: { ...status, paused: cfg.paused, hasToken: !!cfg.token } };
@@ -22988,7 +22988,7 @@ async function bankInputFor(set) {
 app.get('/api/bank/status', bankGuard, async (req, res) => {
   try {
     const set = await bankSettingsMap(), cfg = bankCfg();
-    res.json({ hasToken: !!cfg.token, paused: cfg.paused, preview: isPreview(), storeReady: bankStoreReady(), env: cfg.base === STARLING_SANDBOX ? 'sandbox' : 'live', account: set.get('bank_account_name') || '', status: bankJson(set, 'bank_status', null), balance: bankJson(set, 'bank_balance', null), settings: { cash_floor: set.get('bank_cash_floor') || '', tax_rate_pct: set.get('bank_tax_rate_pct') || '' } });
+    res.json({ hasToken: !!cfg.token, paused: cfg.paused, preview: isPreview(), storeReady: bankStoreReady(), env: cfg.base === STARLING_SANDBOX ? 'sandbox' : 'live', account: set.get('bank_account_name') || '', status: bankJson(set, 'bank_status', null), balance: bankJson(set, 'bank_balance', null), settings: { cash_floor: set.get('bank_cash_floor') || '3000', tax_rate_pct: set.get('bank_tax_rate_pct') || '' } });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.get('/api/bank/summary', bankGuard, async (req, res) => {
