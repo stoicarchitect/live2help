@@ -17483,7 +17483,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '17 Nov 2026 - build 66 (Mailbox sync: suggested updates from email on Home with one click accept, Mailbox sync panel in KPI Reporting with switch, run now, settings and do not log list, View link on email entries in the comms logs; built on page build 65) preview';
+var PAGE_BUILD = '17 Nov 2026 - build 66.2 (Interview attendance: attended tile with attendance rate in Your activity, Interviews attended column in the Staff table; built on page build 66) preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -22715,6 +22715,8 @@ function k62Table(head, rows, empty, minWidth){
   return '<div class="ops-table-wrap"><table class="ops-table" style="min-width:' + (minWidth || 520) + 'px;"><thead><tr>' + head.map(function(h){ return '<th' + (h.charAt(0) === '#' ? ' class="num"' : '') + '>' + esc(h.replace(/^#/, '')) + '</th>'; }).join('') + '</tr></thead><tbody>' + rows.join('') + '</tbody></table></div>';
 }
 function k62Act(a, key){ var t = a && a[key]; return t ? t.now + k62Arrow(t, false, 'Last month') : '0'; }
+/* build 66.2: interviews attended out of those with an outcome (completed, or no show). Cancelled and not yet recorded are left out. */
+function k662Att(a){ var h = a && a.interviewsHeld ? a.interviewsHeld.now : 0, m = a && a.interviewsNoShow ? a.interviewsNoShow.now : 0; return h + m > 0 ? h + ' of ' + (h + m) + ' (' + Math.round(h / (h + m) * 100) + '%)' : '-'; }
 
 /* ============================================================
    Build 63: the Bank section of KPI Reporting (Starling, read only, owner only).
@@ -22964,11 +22966,11 @@ function k62Render(k){
 
   /* Staff */
   var cm = s.commission;
-  h += '<div class="k62-h">Staff <small>only you can see this section</small></div>' + k62Table(['Name', '#Submitted', '#Interviews booked', '#Emails', '#Calls', '#Placements ' + s.quarter, 'Target ' + s.quarter, '#Revenue this year', '#Employment cost', '#Return'], s.people.map(function(x){
+  h += '<div class="k62-h">Staff <small>only you can see this section</small></div>' + k62Table(['Name', '#Submitted', '#Interviews booked', '#Interviews attended', '#Emails', '#Calls', '#Placements ' + s.quarter, 'Target ' + s.quarter, '#Revenue this year', '#Employment cost', '#Return'], s.people.map(function(x){
       var t = x.target ? x.placementsQuarter + ' of ' + x.target.targetRoles + ' roles' : '<span style="color:#bbb;">No target set</span>';
-      return '<tr><td class="strong">' + esc(x.name) + '<div class="pool-muted">' + esc(x.role) + '</div></td><td class="num">' + k62Act(x.activity, 'submissions') + '</td><td class="num">' + k62Act(x.activity, 'interviewsBooked') + '</td><td class="num">' + k62Act(x.activity, 'emails') + '</td><td class="num">' + k62Act(x.activity, 'calls') + '</td><td class="num">' + x.placementsQuarter + '</td><td>' + t + '</td><td class="num">' + k62Money(x.revenueYtd) + '</td><td class="num" title="Salary and pension ' + k62Money(x.salaryAndPension) + ', commission ' + k62Money(x.commission) + '">' + k62Money(x.employmentCostYtd) + '</td><td class="num"><strong>' + (x.roiPct == null ? '-' : x.roiPct + '%') + '</strong></td></tr>';
+      return '<tr><td class="strong">' + esc(x.name) + '<div class="pool-muted">' + esc(x.role) + '</div></td><td class="num">' + k62Act(x.activity, 'submissions') + '</td><td class="num">' + k62Act(x.activity, 'interviewsBooked') + '</td><td class="num">' + k662Att(x.activity) + '</td><td class="num">' + k62Act(x.activity, 'emails') + '</td><td class="num">' + k62Act(x.activity, 'calls') + '</td><td class="num">' + x.placementsQuarter + '</td><td>' + t + '</td><td class="num">' + k62Money(x.revenueYtd) + '</td><td class="num" title="Salary and pension ' + k62Money(x.salaryAndPension) + ', commission ' + k62Money(x.commission) + '">' + k62Money(x.employmentCostYtd) + '</td><td class="num"><strong>' + (x.roiPct == null ? '-' : x.roiPct + '%') + '</strong></td></tr>';
     }).concat(s.others.map(function(o){
-      return '<tr><td>' + esc(o.name) + '<div class="pool-muted">' + esc(o.note) + '</div></td><td class="num">' + k62Act(o.activity, 'submissions') + '</td><td class="num">' + k62Act(o.activity, 'interviewsBooked') + '</td><td class="num">' + k62Act(o.activity, 'emails') + '</td><td class="num">' + k62Act(o.activity, 'calls') + '</td><td class="num">-</td><td>-</td><td class="num">' + k62Money(o.revenueYtd) + '</td><td class="num">-</td><td class="num">-</td></tr>'; })), 'Add team members under "Payroll, team and cost inputs" below to see activity against cost.', 900) +
+      return '<tr><td>' + esc(o.name) + '<div class="pool-muted">' + esc(o.note) + '</div></td><td class="num">' + k62Act(o.activity, 'submissions') + '</td><td class="num">' + k62Act(o.activity, 'interviewsBooked') + '</td><td class="num">' + k662Att(o.activity) + '</td><td class="num">' + k62Act(o.activity, 'emails') + '</td><td class="num">' + k62Act(o.activity, 'calls') + '</td><td class="num">-</td><td>-</td><td class="num">' + k62Money(o.revenueYtd) + '</td><td class="num">-</td><td class="num">-</td></tr>'; })), 'Add team members under "Payroll, team and cost inputs" below to see activity against cost.', 900) +
     '<div class="note-line">Activity is for ' + esc(k.month) + ' with the arrow against ' + esc(vs) + '. Team return: <strong>' + (s.teamRoiPct == null ? '-' : s.teamRoiPct + '%') + '</strong> (revenue less team cost, divided by team cost). Commission: ' + k62Money(cm.recognised) + ' counted as cost, ' + k62Money(cm.due) + ' due to pay, ' + k62Money(cm.paidOut) + ' paid out, ' + k62Money(cm.pending) + ' still to come.</div>';
 
   /* VAT threshold watch */
@@ -23007,6 +23009,7 @@ function k62RenderMine(k){
   var tile = function(label, key, sub){ var x = a[key] || {now: 0}; return k62Tile(label, x.now, {arrow: k62Arrow(x, false, vs), sub: sub || ''}); };
   host.innerHTML = '<div class="k62-h">Your activity in ' + esc(k.month) + ' <small>arrows compare with ' + esc(vs) + '</small></div><div class="tile-grid">' +
     tile('Candidates added', 'candidatesAdded') + tile('Candidates submitted', 'submissions') + tile('Interviews booked', 'interviewsBooked') +
+    tile('Interviews attended', 'interviewsHeld', 'Attendance: ' + k662Att(a) + ((a.interviewsAwaiting || {}).now ? '. ' + a.interviewsAwaiting.now + ' with no outcome recorded' : '')) +
     tile('Emails logged', 'emails') + tile('Calls logged', 'calls', 'Spoke to them: ' + ((a.callsSpoke || {}).now || 0)) + tile('Tasks completed', 'tasksDone') +
     k62Tile('Your placements this quarter', k.placements.quarter, {cls: 'gold', sub: (t ? 'Target for ' + esc(k.quarter) + ': ' + t.targetRoles + ' roles' : 'No personal target set for ' + esc(k.quarter)) + '. This year: ' + k.placements.ytd}) +
     k62Tile('Team roles filled this quarter', k.teamRolesFilledQuarter, {sub: tt ? 'Team target: ' + tt.targetRoles + ' roles' : ''}) +
