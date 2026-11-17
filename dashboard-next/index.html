@@ -1549,6 +1549,7 @@ h1,h2,.view-head h2,#leadClientsHeader h2,#clientsHeader h2,.modal h2{font-famil
         <!-- Build 62: the owner's view (Ella sees her own activity only). Filled by k62Load(). -->
         <div id="k62Owner" style="margin-bottom:32px;"></div>
         <div id="p64Payroll" style="margin-bottom:32px;"></div>
+        <div id="p65Reports" style="margin-bottom:32px;"></div>
         
         <!-- KPI Targets Section -->
         <div style="margin-bottom:32px;">
@@ -17479,7 +17480,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '16 Nov 2026 - build 64 (Payroll control: Today payroll banner, KPI Reporting Payroll panel with pay date, payroll pack, commission list, clawback check, open payroll email, Mark as sent, history; built on page build 63) preview';
+var PAGE_BUILD = '17 Nov 2026 - build 65 (Reports: KPI Reporting Reports panel with owner report, Ella performance report and weekly brief, view, PDF, make, resend, rebuild; note box for the Ella performance report in Emails to review; built on page build 64) preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -22041,15 +22042,16 @@ var BG47 = {missed:{}, lastOps:Date.now()};
    re-consent emails). Each one must be looked at, then a tick unlocks Send. The server checks the
    same content again, so what is sent is exactly what was shown.
    ============================================================ */
-var RV = {cfg:null, items:[], i:0, viewed:{}, checked:false, busy:false, err:''};
+var RV = {cfg:null, items:[], i:0, viewed:{}, checked:false, busy:false, err:'', draft:null};
 function rvShowText(t){ return String(t || '').split('{{PORTAL_LINK}}').join('[their personal secure link is added when it is sent]'); }
 function rvOpen(cfg){
-  RV.cfg = cfg; RV.items = cfg.items || []; RV.i = 0; RV.viewed = {0:true}; RV.checked = false; RV.busy = false; RV.err = '';
+  RV.cfg = cfg; RV.items = cfg.items || []; RV.i = 0; RV.viewed = {0:true}; RV.checked = false; RV.busy = false; RV.err = ''; RV.draft = null;
   rvRender();
 }
 function rvAllViewed(){ return RV.items.every((_, i) => RV.viewed[i]); }
 function rvGo(i){ RV.i = i; RV.viewed[i] = true; rvRender(); }
-function rvTick(on){ RV.checked = !!on; const b = document.getElementById('rvSend'); if(b) b.disabled = !RV.checked || RV.busy; }
+function rvNoteUnsaved(){ const it = RV.items[RV.i] || {}; return !!(it.canNote && RV.draft !== null && RV.draft !== (it.note || '')); }
+function rvTick(on){ if(on && rvNoteUnsaved()){ showToast('Save your note first, then read the email again and tick'); const cb = document.querySelector('.rv-check input'); if(cb) cb.checked = false; RV.checked = false; return; } RV.checked = !!on; const b = document.getElementById('rvSend'); if(b) b.disabled = !RV.checked || RV.busy; }
 function rvRender(){
   const box = b46Shell('rvOv'), c = RV.cfg, it = RV.items[RV.i] || {}, many = RV.items.length > 1, ready = rvAllViewed();
   const tabs = many ? '<div class="b46-tabs">' + RV.items.map((x, i) => '<button class="' + (i === RV.i ? 'on' : '') + '" onclick="rvGo(' + i + ')">' + (i + 1) + '. ' + esc(x.label || ('Email ' + (i + 1))) + (RV.viewed[i] ? ' &#10003;' : '') + '</button>').join('') + '</div>' : '';
@@ -22062,6 +22064,9 @@ function rvRender(){
     '<div class="rv-meta"><div><b>From</b>' + esc(it.from || '') + '</div><div><b>To</b>' + esc(it.to || '') + '</div><div><b>Subject</b><strong>' + esc(it.subject || '') + '</strong></div>' +
     '<div><b>Attached</b>' + (atts || '<span class="b46-sub">Nothing attached</span>') + '</div></div>' +
     '<div class="rv-body">' + esc(rvShowText(it.text)) + '</div>' +
+    (it.canNote && c.noteId ? '<div class="rv-note"><label>Your personal note (optional). It is added to the email above.</label><textarea id="rvNote" rows="4" maxlength="2500" oninput="rvNoteInput(this.value)" placeholder="For example: well done on the placement this month. Let us catch up on Thursday.">' + esc(RV.draft !== null ? RV.draft : (it.note || '')) + '</textarea>' +
+      '<div class="b46-row" style="justify-content:flex-start;align-items:center;margin-top:6px;"><button class="b46-btn" onclick="rvSaveNote()" ' + (RV.busy ? 'disabled' : '') + '>Save note</button>' +
+      '<span class="b46-sub">Keep pay, commission, margin, revenue and any money figures out. Say those in person.</span></div></div>' : '') +
     (RV.err ? '<div class="b46-err">' + esc(RV.err) + '</div>' : '') +
     '<label class="rv-check' + (ready ? '' : ' off') + '"><input type="checkbox" ' + (RV.checked ? 'checked ' : '') + (ready ? '' : 'disabled ') + 'onchange="rvTick(this.checked)"><span>' +
       (many ? 'I have read all ' + RV.items.length + ' emails and they are correct.' : 'I have read this email and it is correct.') +
@@ -22072,8 +22077,27 @@ function rvRender(){
       '<button class="b46-btn gold" id="rvSend" onclick="rvSend()" ' + ((RV.busy || !RV.checked) ? 'disabled' : '') + '>' + (RV.busy ? 'Sending...' : esc(c.sendLabel || 'Send now')) + '</button></div>';
 }
 function rvClose(){ if(RV.busy) return; b46Close('rvOv'); }
+// Build 65 (page): Daniel Brown's note on Ella's performance report. The server checks it for money wording and rebuilds the email.
+function rvNoteInput(v){
+  RV.draft = v; RV.checked = false;
+  const cb = document.querySelector('.rv-check input'); if(cb) cb.checked = false;
+  const b = document.getElementById('rvSend'); if(b) b.disabled = true;
+}
+async function rvSaveNote(){
+  const it = RV.items[RV.i];
+  if(!it || !it.canNote || !RV.cfg.noteId || RV.busy) return;
+  const v = (document.getElementById('rvNote') || {}).value || '';
+  RV.busy = true; RV.err = ''; RV.draft = v; rvRender();
+  try{
+    const j = await b2Post('/api/outbox/' + encodeURIComponent(RV.cfg.noteId) + '/note', {note: v});
+    RV.items[RV.i] = j.item; RV.cfg.token = j.token; RV.checked = false; RV.draft = null; RV.busy = false;
+    showToast('Note saved. Read the email again, then tick to send');
+    rvRender();
+  }catch(e){ RV.busy = false; RV.err = e.message; rvRender(); }
+}
 async function rvSend(){
   if(!RV.checked || !rvAllViewed()) return;
+  if(rvNoteUnsaved()){ RV.checked = false; RV.err = 'Your note has changes that are not saved yet. Save the note, read the email again, then send.'; rvRender(); return; }
   RV.busy = true; RV.err = ''; rvRender();
   try{ await RV.cfg.onSend(RV.cfg.token); RV.busy = false; b46Close('rvOv'); }
   catch(e){ RV.busy = false; RV.err = e.message; rvRender(); }
@@ -22093,7 +22117,7 @@ async function obxLoad(force){
   try{ OBX.d = await b2Api('/api/outbox'); OBX.at = Date.now(); }catch(e){ /* optional */ }
   return OBX.d;
 }
-const OBX_KIND = {onboarding_reminder:'Onboarding reminder', reconsent:'Talent pool re-consent', retention_request:'Request to keep records'};
+const OBX_KIND = {onboarding_reminder:'Onboarding reminder', reconsent:'Talent pool re-consent', retention_request:'Request to keep records', ella_report:'Performance report'};
 async function outboxOpen(){
   const box = b46Shell('obOv');
   box.innerHTML = '<div class="b46-sub">Loading...</div>';
@@ -22112,7 +22136,7 @@ async function outboxReview(id){
   try{
     const j = await b2Api('/api/outbox/' + encodeURIComponent(id));
     b46Close('obOv');
-    rvOpen({title: (j.item.label || 'Email') + ' to ' + j.item.to, intro: 'Read it exactly as they will get it.', items: [j.item], token: j.token, sendLabel: 'Send now',
+    rvOpen({title: (j.item.label || 'Email') + ' to ' + j.item.to, intro: 'Read it exactly as they will get it.', items: [j.item], token: j.token, sendLabel: 'Send now', noteId: j.item.canNote ? id : '',
       onSend: async tok => { await b2Post('/api/outbox/' + encodeURIComponent(id) + '/send', {reviewToken: tok}); showToast('Email sent'); await obxLoad(true); if(typeof renderHome === 'function') renderHome(); outboxOpen(); },
       onSkip: async () => { await b2Post('/api/outbox/' + encodeURIComponent(id) + '/skip', {}); showToast('Skipped'); await obxLoad(true); if(typeof renderHome === 'function') renderHome(); outboxOpen(); }});
   }catch(e){ showToast(e.message); outboxOpen(); }
@@ -22495,7 +22519,155 @@ function rtDelete(id, category, recordId){
   #k62Owner .k62-months div{flex:1;background:var(--gold);opacity:.75;min-height:2px;border-radius:1px 1px 0 0;}
   #k62Owner td.num,#k62Owner th.num{text-align:right;}
   #k62OldHealth > summary{cursor:pointer;font-size:16px;color:var(--dark);font-weight:500;margin-bottom:14px;}
+  #p65Reports .k62-h{font-size:16px;color:var(--dark);margin:0 0 12px;font-weight:500;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
+  #p65Reports .k62-h small{font-size:11.5px;color:#999;font-weight:400;}
+  #p65Reports .p65-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
+  #p65Reports .p65-row label{display:block;font-size:11px;color:#999;margin-bottom:3px;}
+  #p65Reports .p65-row select{padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:12px;font-family:inherit;background:#fff;}
+  #p65Reports .p65-flag{margin-top:10px;padding:10px 12px;border-left:3px solid #c9703f;background:#FBF3EC;font-size:12.5px;color:#5a3a1f;line-height:1.5;}
+  #p65Reports .p65-st{display:inline-block;padding:2px 9px;border-radius:12px;font-size:11.5px;background:#f4f1e8;color:#555;}
+  #p65Reports .p65-st.sent{background:#E4F2EA;color:#2E7D4F;} #p65Reports .p65-st.queued{background:#FBF3EC;color:#8a5a1f;} #p65Reports .p65-st.failed{background:#FBE9E7;color:#B3372B;}
+  #p65Reports td.act{text-align:right;white-space:nowrap;} #p65Reports td.act .p64-btn{padding:5px 10px;margin-left:4px;}
+  .rv-note{margin-top:12px;} .rv-note label{display:block;font-size:11px;color:#888;margin-bottom:4px;}
+  .rv-note textarea{width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;}
+  .p65-pdf{width:100%;height:68vh;border:1px solid var(--border);margin-top:10px;}
 </style>
+<script>
+/* ============================================================
+   Build 65 (page): KPI Reporting > Reports panel (owner only).
+   Lists the reports the server has made (owner monthly, Ella's performance report, Monday brief), opens them,
+   shows the PDF, and makes, emails or rebuilds them. The server holds one frozen report per month, so asking
+   again never sends twice. Ella never sees this panel and the routes behind it are owner only.
+   ============================================================ */
+var P65 = {d:null, busy:false, month:''};
+var P65_KIND = {owner:'Owner report', ella:'Performance report (Ella)', weekly:'Weekly brief'};
+var P65_STATUS = {generated:'Made, not sent', sent:'Sent', queued:'Waiting in Emails to review', skipped:'Skipped', failed:'Could not be made'};
+function p65MonthName(m){ var d = new Date(String(m || '') + '-01T00:00:00Z'); return isNaN(d) ? String(m || '') : d.toLocaleDateString('en-GB', {month: 'long', year: 'numeric', timeZone: 'UTC'}); }
+function p65PeriodName(r){ return r.kind === 'weekly' ? 'Week of ' + p64Day(r.period) : p65MonthName(r.period); }
+function p65Months(latest){
+  var out = [], m = latest;
+  while(m && m >= '2026-01' && out.length < 12){
+    out.push(m);
+    var p = m.split('-'), y = +p[0], mo = +p[1];
+    m = mo === 1 ? (y - 1) + '-12' : y + '-' + String(mo - 1).padStart(2, '0');
+  }
+  return out;
+}
+async function p65Load(){
+  var host = document.getElementById('p65Reports');
+  if(!host) return;
+  if(!p64Owner()){ host.innerHTML = ''; return; }
+  if(!P65.d) host.innerHTML = '<div class="k62-h">Reports</div><div class="panel" style="padding:16px;color:#999;font-size:12.5px;">Loading the reports...</div>';
+  try{ P65.d = await b2Api('/api/reports'); p65Render(); }
+  catch(e){ host.innerHTML = '<div class="k62-h">Reports</div><div class="panel" style="padding:16px;font-size:12.5px;color:#b3261e;">Could not load the reports: ' + esc(e.message) + '</div>'; }
+}
+function p65Render(){
+  var host = document.getElementById('p65Reports'), d = P65.d || {reports: []};
+  var months = p65Months(d.latestMonth);
+  if(!P65.month || months.indexOf(P65.month) < 0) P65.month = months[0] || '';
+  var h = '<div class="k62-h">Reports <small>only you can see this</small></div><div class="panel" style="padding:16px;">';
+  if(!d.stored) h += '<div class="p65-flag" style="margin-top:0;margin-bottom:12px;">Reports are only kept in the database, and the database is not connected here, so none can be made.</div>';
+  h += '<div class="p65-row"><div><label>Month</label><select id="p65Month" onchange="P65.month = this.value">' +
+    months.map(function(m){ return '<option value="' + esc(m) + '"' + (m === P65.month ? ' selected' : '') + '>' + esc(p65MonthName(m)) + '</option>'; }).join('') + '</select></div>' +
+    '<button class="p64-btn gold" onclick="p65Gen(\'owner\')"' + (P65.busy || !months.length ? ' disabled' : '') + '>Make owner report</button>' +
+    '<button class="p64-btn" onclick="p65Gen(\'ella\')"' + (P65.busy || !months.length ? ' disabled' : '') + '>Make Ella\'s report</button>' +
+    '<button class="p64-btn" onclick="p65Weekly()"' + (P65.busy ? ' disabled' : '') + '>Send this week\'s brief</button></div>';
+  h += '<div class="note-line" style="margin-top:8px;">' +
+    'Owner report: emailed to you on the first working day of each month, starting with ' + (d.startMonth ? esc(p65MonthName(d.startMonth)) : 'the first month after the first morning run') + '. ' +
+    'Ella\'s report: written into Emails to review for you to add a note and send. It is never sent on its own and holds no pay, commission or money figures. ' +
+    'Weekly brief: emailed to you only, on Mondays. Making a report for a month that already has one opens the stored one and sends nothing more.</div>';
+  var rows = d.reports || [];
+  if(!rows.length){
+    h += '<div class="note-line" style="margin-top:12px;">No reports yet. The first automatic one is the ' + (d.startMonth ? esc(p65MonthName(d.startMonth)) : 'first month') + ' owner report.</div>';
+  }else{
+    h += '<div class="ops-table-wrap" style="margin-top:12px;"><table class="ops-table"><thead><tr><th>Report</th><th>Period</th><th>Status</th><th>Made</th><th>Sent</th><th></th></tr></thead><tbody>' +
+      rows.map(function(r){
+        var id = esc(r.id), canPdf = r.kind !== 'weekly' && r.status !== 'failed';
+        var b = '';
+        if(r.status !== 'failed') b += '<button class="p64-btn" onclick="p65View(\'' + id + '\')">View</button>';
+        if(canPdf) b += '<button class="p64-btn" onclick="p65Pdf(\'' + id + '\')">PDF</button>';
+        if(r.kind === 'owner' && r.status === 'generated') b += '<button class="p64-btn gold" onclick="p65Gen(\'owner\',\'' + esc(r.period) + '\',{send:true})">Email it to me</button>';
+        if(r.kind === 'owner' && r.status === 'sent') b += '<button class="p64-btn" onclick="p65Resend(\'' + esc(r.period) + '\')">Resend</button>';
+        if(r.kind === 'ella' && r.status === 'queued') b += '<button class="p64-btn gold" onclick="outboxOpen()">Open Emails to review</button>';
+        if(r.kind === 'owner' || r.kind === 'ella') b += '<button class="p64-btn" onclick="p65Rebuild(\'' + esc(r.kind) + '\',\'' + esc(r.period) + '\')">' + (r.status === 'failed' ? 'Try again' : 'Rebuild') + '</button>';
+        return '<tr><td class="strong">' + esc(P65_KIND[r.kind] || r.kind) + '</td><td>' + esc(p65PeriodName(r)) + '</td>' +
+          '<td><span class="p65-st ' + esc(r.status) + '">' + esc(P65_STATUS[r.status] || r.status) + '</span>' + (r.note ? '<div class="note-line">' + esc(r.note) + '</div>' : '') + '</td>' +
+          '<td>' + esc(p64Day(r.generated_at)) + '</td><td>' + esc(p64Day(r.sent_at)) + '</td><td class="act">' + b + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+  host.innerHTML = h + '</div>';
+}
+async function p65Gen(kind, period, opts){
+  if(P65.busy) return;
+  period = period || P65.month;
+  if(!period){ showToast('Choose a month first'); return; }
+  P65.busy = true; p65Render();
+  try{
+    var r = await b2Post('/api/reports/generate', Object.assign({kind: kind, period: period}, opts || {}));
+    var name = p65MonthName(period);
+    if(kind === 'ella'){
+      showToast(r.queued ? 'Ella\'s ' + name + ' report is in Emails to review' : r.skipped ? 'Ella\'s ' + name + ' report already exists (' + (P65_STATUS[r.skipped] || r.skipped).toLowerCase() + '). Use Rebuild for a fresh one' : 'Done');
+      if(typeof obxLoad === 'function') obxLoad(true).then(function(){ if(typeof renderHome === 'function') renderHome(); });
+    }else if(opts && opts.send){
+      showToast(r.skipped === 'already sent' ? 'That report was already emailed. Use Resend to send it again' : r.sent ? 'Owner report for ' + name + ' emailed to you' : (r.error || 'Not sent'));
+    }else showToast('Owner report for ' + name + ' is ready');
+  }catch(e){ showToast(e.message); }
+  P65.busy = false;
+  await p65Load();
+}
+async function p65Weekly(){
+  if(P65.busy) return;
+  if(!confirm('Send this week\'s brief to Daniel Brown now? It goes to your own inbox only. If it was already sent this Monday, nothing more is sent.')) return;
+  P65.busy = true; p65Render();
+  try{
+    var r = await b2Post('/api/reports/generate', {kind: 'weekly'});
+    showToast(r.skipped === 'already sent' ? 'This week\'s brief was already sent' : r.sent ? 'This week\'s brief is on its way to you' : 'The brief was made but the email could not be sent');
+  }catch(e){ showToast(e.message); }
+  P65.busy = false;
+  await p65Load();
+}
+function p65Resend(period){
+  if(!confirm('Email the ' + p65MonthName(period) + ' owner report to Daniel Brown again? The stored report is sent, not a new one.')) return;
+  p65Gen('owner', period, {send: true, resend: true});
+}
+function p65Rebuild(kind, period){
+  var msg = kind === 'ella'
+    ? 'Rebuild Ella\'s ' + p65MonthName(period) + ' report from today\'s figures?\n\nAny report still waiting in Emails to review is replaced, and your note on it is lost. Nothing is sent.'
+    : 'Rebuild the ' + p65MonthName(period) + ' owner report from today\'s figures?\n\nThe stored report is replaced. Nothing is emailed until you press Email it to me.';
+  if(!confirm(msg)) return;
+  p65Gen(kind, period, {replace: true});
+}
+async function p65View(id){
+  var box = b46Shell('p65Ov');
+  box.innerHTML = '<div class="b46-sub">Loading...</div>';
+  try{
+    var j = await b2Api('/api/reports/' + encodeURIComponent(id));
+    var em = j.email || {};
+    var pdfBtn = j.kind !== 'weekly' ? '<button class="b46-btn" onclick="p65Pdf(\'' + esc(j.id) + '\')">Open PDF</button>' : '';
+    box.innerHTML = '<div style="display:flex;justify-content:space-between;gap:10px;"><div><div class="b46-k">' + esc((P65_KIND[j.kind] || 'Report').toUpperCase()) + '</div><h3>' + esc(p65PeriodName(j)) + '</h3>' +
+      '<div class="b46-sub">' + esc(P65_STATUS[j.status] || j.status) + (j.sent_at ? ' on ' + esc(p64Day(j.sent_at)) : '') + (j.to ? ' - to ' + esc(j.to) : '') + '</div></div>' +
+      '<button onclick="b46Close(\'p65Ov\')" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;align-self:flex-start;">&times;</button></div>' +
+      '<div class="rv-meta"><div><b>Subject</b><strong>' + esc(em.subject || j.subject || '') + '</strong></div></div>' +
+      '<label style="font-size:11px;color:#888;">' + (j.kind === 'ella' ? 'The email, before your note is added' : 'The email') + '</label>' +
+      '<div class="rv-body" style="max-height:22vh;">' + esc(em.text || '') + '</div>' +
+      (j.markdown ? '<label style="font-size:11px;color:#888;display:block;margin-top:10px;">The report</label><div class="rv-body" style="max-height:34vh;">' + esc(j.markdown) + '</div>' : '') +
+      '<div class="b46-row" style="justify-content:flex-end;margin-top:14px;">' + pdfBtn + '<button class="b46-btn" onclick="b46Close(\'p65Ov\')">Close</button></div>';
+  }catch(e){ box.innerHTML = '<div class="b46-err">' + esc(e.message) + '</div><div class="b46-row" style="justify-content:flex-end;"><button class="b46-btn" onclick="b46Close(\'p65Ov\')">Close</button></div>'; }
+}
+async function p65Pdf(id){
+  var box = b46Shell('p65Ov');
+  box.innerHTML = '<div class="b46-sub">Opening the PDF...</div>';
+  try{
+    var r = await fetch(API_BASE + '/api/reports/' + encodeURIComponent(id) + '/pdf');
+    if(!r.ok){ var j = await r.json().catch(function(){ return {}; }); throw new Error(j.error || 'Could not open the PDF'); }
+    var url = URL.createObjectURL(await r.blob());
+    box.innerHTML = '<div style="display:flex;justify-content:space-between;gap:10px;"><div><div class="b46-k">PDF</div><h3>' + esc(id.replace(':', ' ')) + '</h3></div>' +
+      '<button onclick="b46Close(\'p65Ov\')" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;align-self:flex-start;">&times;</button></div>' +
+      '<iframe class="p65-pdf" title="Report PDF" src="' + url + '"></iframe>' +
+      '<div class="b46-row" style="justify-content:flex-end;margin-top:14px;"><a class="b46-btn" href="' + url + '" download="' + esc(id.replace(':', ' ')) + '.pdf" style="text-decoration:none;">Download</a><button class="b46-btn" onclick="p65View(\'' + esc(id) + '\')">Back</button><button class="b46-btn" onclick="b46Close(\'p65Ov\')">Close</button></div>';
+  }catch(e){ box.innerHTML = '<div class="b46-err">' + esc(e.message) + '</div><div class="b46-row" style="justify-content:flex-end;"><button class="b46-btn" onclick="b46Close(\'p65Ov\')">Close</button></div>'; }
+}
+</script>
 <script>
 /* ============================================================
    Build 62: KPI Reporting as an owner's view.
@@ -22812,6 +22984,7 @@ function k62Render(k){
   host.innerHTML = h;
   k63After(k);
   p64Load(); // build 64: the payroll panel under the owner view
+  if(typeof p65Load === 'function') p65Load(); // build 65: the reports panel under the payroll panel
 }
 
 function k62RenderMine(k){
