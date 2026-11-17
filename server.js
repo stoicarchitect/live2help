@@ -22,6 +22,7 @@ import { createMailEngine, ENGINE_LOG_HEADER, msSecretExpires, msSecretDaysLeft 
 import { looksLikeNdr, failedRecipient, classifyBounce, replyIntent } from './cold-bounce.js'; // build 60.3
 import { STARLING_LIVE, STARLING_SANDBOX, BANK_HEADER, DEFAULT_BANK_RULES, createStarlingClient, createDemoStarling, toBankRow, classifyRow, categoriseCost, matchPayments, findPayoutFor, reconcilePayout, latePayerScores } from './bank.js'; // build 63
 import * as reports from './reports.js'; // build 65
+import { createMailSync, SUGGESTION_KINDS, isClientType } from './mailsync.js'; // build 66
 import { londonToday, monthOf, readPayrollSettings, validOverride, payDateFor, payrollWatch, currentPayrollMonth, bannerFor, reminderFor, payrollPack, clawbackCheck, payrollBankCheck, payrollEmail, runRecords, monthName as payrollMonthName } from './payroll.js'; // build 64
 import { computeOwnerKpi, computeMyKpi, vatAlertsDue, vatAlertText, monthKey, KPI_SETTING_DEFAULTS, KPI_SETTING_KEYS } from './kpi-owner.js'; // build 62
 
@@ -322,6 +323,7 @@ const TABLE_GROUPS = {
   'Audit Log': 'system', 'Retention Reviews': 'system', 'Email Log': 'system', 'Engine Log': 'system', 'AI Usage': 'system', 'Settings': 'system', 'Suppression List': 'system', 'Bank Transactions': 'system', 'Bank Rules': 'system',
   'Payroll Settings': 'system', 'Payroll Runs': 'system', 'Commission Ledger': 'system', // build 64
   'Report Runs': 'system', // build 65
+  'Mailbox Log': 'system', 'Mail Suggestions': 'system', 'Mail Do Not Log': 'system', // build 66
   'Company Settings': 'clients', 'Contact Audience': 'clients',
   'Gap Problems': 'clients', 'Gap Briefs': 'clients', 'Gap Sends': 'clients', 'Cold Sequences': 'clients', 'Cold Sends': 'clients', 'Cold Picks': 'clients', 'Mail Scan': 'clients',
   'Users': 'auth',
@@ -11843,7 +11845,7 @@ app.post('/api/storage/preview-seed', requireAdmin, async (req, res) => {
   } catch (e) { console.error('Preview seed error:', e.message); res.status(500).json({ error: e.message }); }
 });
 
-const NOT_IN_READABLE_BACKUP = new Set(['Bank Transactions', 'Payroll Runs', 'Commission Ledger', 'Payroll Settings', 'Report Runs']);
+const NOT_IN_READABLE_BACKUP = new Set(['Bank Transactions', 'Payroll Runs', 'Commission Ledger', 'Payroll Settings', 'Report Runs', 'Mailbox Log', 'Mail Suggestions', 'Mail Do Not Log']);
 // Nightly: everything held in the live database, as a readable dated Google Sheet in the backup folder
 async function backupDatabaseToDrive(drive, folderId, date) {
   if (!pgLivePool) return null;
@@ -16312,6 +16314,7 @@ async function runMorningChain() {
   });
   await step('invoiceReminders', sendInvoiceReminders);
   await step('reports', reportsMorningStep); // build 65
+  await step('mailsync', mailsyncMorningStep); // build 66
   const dow = new Date().toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'Europe/London' });
   if (dow === 'Mon') await step('weeklyDigest', async () => ({ sent: await mailDan('Your Live 2 Help week at a glance', await buildDigest()) }));
   out.finishedAt = new Date().toISOString();
@@ -17125,7 +17128,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '16 Nov 2026 - build 65 (monthly owner report and weekly owner brief to Daniel Brown, Ella performance report through Emails to review and her HR record, commission in the 90 day cash forecast; owner only)';
+const SERVER_BUILD = '17 Nov 2026 - build 66 (mailbox sync: client and candidate email from the Microsoft 365 mailboxes of Daniel Brown and Ella logged on timelines, one click suggested updates, no reply follow up tasks, do not log list; built on server build 65)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -23584,6 +23587,248 @@ app.post('/api/reports/generate', bankGuard, async (req, res) => {
     if (out.error) return res.status(409).json({ error: out.error });
     res.json({ ok: true, ...out });
   } catch (e) { console.error('POST /api/reports/generate error:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+/* ======================================================================
+   Build 66: Mailbox sync
+   Reads the Microsoft 365 mailboxes of Daniel Brown and Ella every 15 minutes (Mon-Fri 07:00-19:00 UK) and keeps the workspace
+   up to date from email to or from people who are already on a client, lead, prospect or candidate record.
+   - Only matched mail is kept. Unmatched mail is counted and dropped. No bodies and no attachments are ever stored.
+   - Each matched email is a line on the account or candidate timeline (Comms Log, subject only) and a row in Mailbox Log
+     (Postgres, system group, left out of the readable Sheet backup) with a short preview that expires.
+   - Suggested updates wait for a click. Client mail nobody has answered for N working days creates a follow up task.
+   - Do not log list per address. Suppression List addresses are never logged. Off until Daniel Brown switches it on.
+   - Reads use the same Entra app and mail permission as build 60.3, limited by Exchange to two mailboxes.
+   Pure logic and the engine: mailsync.js. Tests: scripts/test-mailsync.mjs
+   ====================================================================== */
+const mailboxLogTable = makeSimpleTable({
+  tab: 'Mailbox Log', path: null, label: 'Mailbox log entry',
+  header: ['id', 'mailbox', 'owner', 'direction', 'contact_email', 'contact_name', 'contact_type', 'company', 'role', 'subject', 'preview', 'at', 'conversation_id', 'logged_at'],
+});
+const mailSuggestTable = makeSimpleTable({
+  tab: 'Mail Suggestions', path: null, label: 'Mail suggestion',
+  header: ['id', 'kind', 'contact_email', 'contact_name', 'contact_type', 'company', 'role', 'mailbox', 'owner', 'mail_id', 'subject', 'evidence', 'status', 'created_at', 'handled_by', 'handled_at', 'result'],
+});
+const mailDnlTable = makeSimpleTable({ tab: 'Mail Do Not Log', path: null, label: 'Do not log address', header: ['id', 'email', 'added_by', 'added_at'] });
+
+const mailSetGet = async k => ((await settingsTable.list()).find(r => r.id === k) || {}).value;
+const mailSetSet = (k, v) => settingsTable.upsert({ id: k, value: String(v == null ? '' : v), updated_by: 'system' });
+const MAIL_PUBLIC_DOMAINS = new Set(['gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'hotmail.co.uk', 'yahoo.com', 'yahoo.co.uk', 'icloud.com', 'live.com', 'live.co.uk', 'msn.com']);
+function mailInternalDomains() {
+  const s = new Set(['live2helprecruitment.co.uk', 'live2help.co.uk']);
+  [profileOf('dan').email, profileOf('ella').email, process.env.BREVO_SENDER_EMAIL].forEach(e => { const d = lc(String(e || '').split('@')[1]); if (d && !MAIL_PUBLIC_DOMAINS.has(d)) s.add(d); });
+  return s;
+}
+const mailMailboxes = () => ['dan', 'ella'].map(o => ({ owner: o, mailbox: lc(profileOf(o).email) })).filter(b => b.mailbox);
+
+// Everyone on a record. Throws if a source cannot be read, so a failed read never looks like "no contacts".
+let mailDirCache = { at: 0, list: [] };
+async function mailLoadDirectory() {
+  if (mailDirCache.list.length && Date.now() - mailDirCache.at < 5 * 60 * 1000) return mailDirCache.list;
+  const out = [];
+  const [clientRows, leadRows, pipeline, cands, ivs] = await Promise.all([readClientRows(), readLeadClientRows(), lpxTable.list(), readAllRows(), interviewsTable.list()]);
+  clientRows.filter(r => r && r[1]).map(rowToClient).forEach(c => out.push({ email: c.email, name: c.contactName, company: c.company, role: '', type: 'client' }));
+  const activeCos = new Set(clientRows.filter(r => r && r[1]).map(r => lc(r[1])));
+  leadRows.filter(r => r && r[1] && !activeCos.has(lc(r[1]))).map(rowToClient).forEach(c => out.push({ email: c.email, name: c.contactName, company: c.company, role: '', type: 'lead' }));
+  pipeline.filter(l => l.email && !['lost', 'archived'].includes(l.stage)).forEach(l => out.push({ email: l.email, name: l.contact_name, company: l.company, role: '', type: 'prospect' }));
+  cands.filter(r => r && r[3]).map(rowToCandidate).forEach(c => { if (c.email) out.push({ email: c.email, name: c.name, company: c.company, role: c.role, type: 'candidate' }); });
+  ivs.forEach(i => { if (i.candidate_email) out.push({ email: i.candidate_email, name: i.candidate_name, company: i.company, role: i.role, type: 'candidate' }); });
+  mailDirCache = { at: Date.now(), list: out };
+  return out;
+}
+
+const mailSync = createMailSync({
+  graph: (m, u) => engineMail.graph(m, u),
+  mailLog: mailboxLogTable, suggestions: mailSuggestTable, doNotLog: mailDnlTable, comms: commsTable,
+  settingsGet: mailSetGet, settingsSet: mailSetSet,
+  loadDirectory: mailLoadDirectory,
+  loadSuppressed: async () => new Set((await suppressionTable.list().catch(() => [])).map(x => lc(x.email)).filter(Boolean)),
+  internalDomains: mailInternalDomains, mailboxes: mailMailboxes,
+  holidays: payrollHolidays, today: () => londonToday(), now: () => new Date().toISOString(),
+  addTasks: addAutoTasks, alert: alertDan,
+  ready: () => !isPreview() && !!pgPoolFor('system'),
+  log: m => console.error('Mail sync:', m),
+});
+
+// every 15 minutes, weekdays 07:00-19:00 UK, live database only (the switch inside decides whether anything is read)
+if (pgLivePool) setInterval(() => {
+  const h = gapHourUK();
+  if (!coldIsWeekday() || h < 7 || h >= 19) return;
+  mailSync.run().catch(e => console.error('Mail sync failed:', e.message));
+}, 15 * 60 * 1000);
+
+async function mailsyncMorningStep() {
+  if (isPreview() || !pgPoolFor('system')) return { skipped: true };
+  return { previewsCleared: await mailSync.purgeOldPreviews() };
+}
+
+const mailOwnerGuard = (req, res, next) => {
+  if (!ownerOnly(req)) return res.status(403).json({ error: 'Only Daniel Brown can change mailbox sync' });
+  next();
+};
+const mailStaffGuard = (req, res, next) => {
+  if (!ownerOnly(req) && !['ella'].includes(lc(actorOf(req)))) return res.status(403).json({ error: 'Sign in to see mailbox sync' });
+  next();
+};
+const mailMine = (req, owner) => ownerOnly(req) || lc(owner) === lc(actorOf(req));
+const mailSugView = s => ({ id: s.id, kind: s.kind, label: SUGGESTION_KINDS[s.kind] || s.kind, contact_email: s.contact_email, contact_name: s.contact_name, contact_type: s.contact_type, company: s.company, role: s.role, mailbox: s.mailbox, owner: s.owner, subject: s.subject, evidence: s.evidence, status: s.status, created_at: s.created_at, handled_by: s.handled_by, handled_at: s.handled_at, result: s.result });
+
+app.get('/api/mailsync/status', mailOwnerGuard, async (req, res) => {
+  try {
+    const st = await mailSync.settings();
+    const [rows, sugs, dnl, last] = await Promise.all([mailboxLogTable.list().catch(() => []), mailSuggestTable.list().catch(() => []), mailDnlTable.list().catch(() => []), mailSetGet('mail_sync_status')]);
+    let saved = {}; try { saved = JSON.parse(last || '{}'); } catch (e) { saved = {}; }
+    const t = londonToday();
+    res.json({
+      stored: !!pgPoolFor('system') && !isPreview(), preview: isPreview(), enabled: st.enabled, sinceDay: st.sinceDay, noReplyDays: st.noReplyDays, previewMonths: st.previewMonths,
+      mailboxes: mailMailboxes().map(b => ({ owner: b.owner, mailbox: b.mailbox, logged: rows.filter(r => lc(r.mailbox) === b.mailbox).length })),
+      running: mailSync.state.running, last: saved.at || mailSync.state.last || '', lastOk: saved.ok === true ? saved.at : mailSync.state.lastOk || '', error: saved.error || mailSync.state.error || '', needsPermission: !!mailSync.state.needsPermission, counts: saved.counts || mailSync.state.counts || {},
+      loggedTotal: rows.length, loggedToday: rows.filter(r => String(r.logged_at || '').slice(0, 10) === t).length,
+      pending: sugs.filter(x => x.status === 'pending').length,
+      doNotLog: dnl.map(x => ({ email: x.email, added_by: x.added_by, added_at: x.added_at })).sort((a, b) => a.email.localeCompare(b.email)),
+    });
+  } catch (e) { console.error('GET /api/mailsync/status error:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Switch on or off, and the settings. Switching on starts from a chosen number of days back (default 7).
+app.post('/api/mailsync/settings', mailOwnerGuard, async (req, res) => {
+  try {
+    if (isPreview() || !pgPoolFor('system')) return res.status(409).json({ error: 'Mailbox sync only runs in the live workspace with the database connected.' });
+    const b = req.body || {};
+    const cur = await mailSync.settings();
+    if (b.enabled !== undefined) {
+      const on = !!b.enabled;
+      if (on && !cur.enabled) {
+        const back = Math.max(0, Math.min(90, parseInt(b.backfillDays, 10) || 0));
+        await mailSetSet('mail_sync_since', new Date(Date.now() - back * 86400000).toISOString().slice(0, 10));
+      }
+      await mailSetSet('mail_sync_enabled', on ? 'yes' : 'no');
+      auditLog(auditActorOf(req), on ? 'switched_on' : 'switched_off', 'mailbox_sync', 'mailbox sync', on ? 'Mailbox sync switched on' : 'Mailbox sync switched off');
+    }
+    if (b.noReplyDays !== undefined) await mailSetSet('mail_noreply_days', Math.max(1, Math.min(10, parseInt(b.noReplyDays, 10) || 2)));
+    if (b.previewMonths !== undefined) await mailSetSet('mail_preview_months', Math.max(1, Math.min(60, parseInt(b.previewMonths, 10) || 12)));
+    res.json({ ok: true, ...(await mailSync.settings()) });
+  } catch (e) { console.error('POST /api/mailsync/settings error:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/mailsync/run', mailOwnerGuard, async (req, res) => {
+  try {
+    if (isPreview()) return res.status(409).json({ error: 'Preview: nothing is read from mailboxes here. Use the live workspace.' });
+    const day = String((req.body || {}).sinceDay || '').slice(0, 10);
+    const out = await mailSync.run({ sinceDay: /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : '' });
+    auditLog(auditActorOf(req), 'ran', 'mailbox_sync', 'mailbox sync', JSON.stringify(out.counts || out.skipped || {}));
+    if (out.skipped === 'off') return res.status(409).json({ error: 'Mailbox sync is switched off. Switch it on first.' });
+    if (out.skipped) return res.status(409).json({ error: String(out.skipped) });
+    res.json({ ok: true, ...out });
+  } catch (e) { console.error('POST /api/mailsync/run error:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Mail on a contact or account timeline. Daniel Brown sees both mailboxes, everyone else only their own.
+app.get('/api/mailsync/log', mailStaffGuard, async (req, res) => {
+  try {
+    const email = lc(req.query.email), company = lc(req.query.company);
+    if (!email && !company) return res.status(400).json({ error: 'Give an email address or a company' });
+    const rows = (await mailboxLogTable.list()).filter(r => (email ? lc(r.contact_email) === email : lc(r.company) === company) && mailMine(req, r.owner))
+      .sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 100);
+    res.json({ rows: rows.map(r => ({ id: r.id, direction: r.direction, contact_email: r.contact_email, contact_name: r.contact_name, company: r.company, subject: r.subject, preview: r.preview, at: r.at, mailbox: r.mailbox, owner: r.owner })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/mailsync/suggestions', mailStaffGuard, async (req, res) => {
+  try {
+    const all = (await mailSuggestTable.list()).filter(s => mailMine(req, s.owner));
+    const pending = all.filter(s => s.status === 'pending').sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+    const recent = all.filter(s => s.status !== 'pending').sort((a, b) => String(b.handled_at).localeCompare(String(a.handled_at))).slice(0, 15);
+    res.json({ pending: pending.map(mailSugView), recent: recent.map(mailSugView) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+const MAIL_OPEN_STAGES = ['applied', 'ready_to_submit', 'submitted', 'interview_requested', 'interview_scheduled', 'interviewed', 'offer', 'start_date', 'day1', 'week1', 'month1'];
+// What pressing Accept does. Each case uses the same code the dashboard uses for the same change by hand.
+async function mailSuggestApply(s, actor) {
+  const day = formatDateUK(todayISO());
+  const ref = { name: s.contact_name, role: s.role, company: s.company };
+  const stage = async (newStage, allowFrom, note) => {
+    const r = await applyStageChange(ref, newStage, allowFrom, note);
+    if (!r) throw new Error(`Could not find ${s.contact_name || 'the candidate'} on the pipeline for ${s.role || 'that role'}, so nothing was changed. Open their card and update it there.`);
+    return r;
+  };
+  const timeline = text => commsTable.append({ id: 'cm-sg-' + hashShort(s.id), timestamp: new Date().toISOString(), user: lc(actor), entity_type: s.contact_type === 'candidate' ? 'candidate' : 'client', entity_name: s.contact_name || s.contact_email, company: s.company || '', role: s.role || '', channel: 'email', direction: 'inbound', summary: text.slice(0, 300), follow_up_date: '', follow_up_done: '' }).catch(() => {});
+  if (s.contact_type === 'candidate') {
+    if (s.kind === 'candidate_withdrawn') {
+      const r = await stage('withdrawn', MAIL_OPEN_STAGES, `Withdrew by email, moved to Withdrawn on ${day}`);
+      return r.changed ? `Moved ${s.contact_name} to Withdrawn` : `${s.contact_name} was already past that point (${String(r.before).replace(/_/g, ' ')}), so the stage was left alone and a note added`;
+    }
+    if (s.kind === 'offer_accepted') {
+      await stage(null, null, `Offer accepted by email on ${day}. Check the information request has gone out.`);
+      return 'Note added to the candidate card. The stage is unchanged: the next steps are on their task list';
+    }
+    if (s.kind === 'interview_confirmed') {
+      const r = await stage('interview_scheduled', ['applied', 'ready_to_submit', 'submitted', 'interview_requested'], `Interview confirmed by email on ${day}`);
+      return r.changed ? `Moved ${s.contact_name} to Interview scheduled` : `${s.contact_name} is already at ${String(r.before).replace(/_/g, ' ')}, so a note was added and the stage left alone`;
+    }
+  }
+  if (isClientType(s.contact_type)) {
+    if (s.kind === 'role_on_hold' || s.kind === 'role_filled') {
+      const roles = (await rolesTable.list()).filter(r => lc(r.company) === lc(s.company) && ['open', 'hold'].includes(lc(r.status) || 'open'));
+      let pick = roles.filter(r => s.role && lc(r.role) === lc(s.role));
+      if (!pick.length) {
+        const text = lc(`${s.subject} ${s.evidence}`);
+        pick = roles.filter(r => r.role && text.includes(lc(r.role)));
+      }
+      if (!pick.length && roles.length === 1) pick = roles;
+      if (pick.length !== 1) throw new Error(roles.length ? `${s.company} has ${roles.length} open roles and the email does not say which. Open Roles and change the right one.` : `No open role found for ${s.company}. Check Roles.`);
+      const want = s.kind === 'role_filled' ? 'filled' : 'hold';
+      await rolesTable.updateWhere(o => o.id === pick[0].id, o => { o.status = want; if (want === 'filled') o.date_closed = todayISO(); return o; });
+      return `${pick[0].role} at ${pick[0].company} set to ${want === 'hold' ? 'On hold' : 'Filled'}`;
+    }
+    if (s.kind === 'client_feedback') {
+      await timeline(`Client feedback by email: ${s.evidence || s.subject}`);
+      return 'Added to the account timeline. If it changes a role or a candidate, update that too';
+    }
+    if (s.kind === 'interview_confirmed') {
+      await timeline(`Interview confirmed by email: ${s.subject}`);
+      return 'Noted on the account timeline. The email does not say which candidate, so move the candidate card yourself';
+    }
+  }
+  throw new Error('This suggestion does not apply to this kind of contact');
+}
+const hashShort = x => crypto.createHash('sha1').update(String(x)).digest('hex').slice(0, 10);
+
+async function mailSuggestHandle(req, res, accept) {
+  try {
+    const s = (await mailSuggestTable.list()).find(x => x.id === req.params.id);
+    if (!s || !mailMine(req, s.owner)) return res.status(404).json({ error: 'Suggestion not found' });
+    if (s.status !== 'pending') return res.status(409).json({ error: `Already ${s.status}` });
+    const actor = actorOf(req);
+    let result = 'Dismissed';
+    if (accept) {
+      try { result = await mailSuggestApply(s, actor); }
+      catch (e) { return res.status(409).json({ error: e.message }); }
+    }
+    await mailSuggestTable.updateWhere(x => x.id === s.id, x => ({ ...x, status: accept ? 'accepted' : 'dismissed', handled_by: lc(actor), handled_at: new Date().toISOString(), result }));
+    auditLog(auditActorOf(req), accept ? 'accepted' : 'dismissed', 'mail_suggestion', s.id, `${s.kind} for ${s.contact_name || s.contact_email}: ${result}`.slice(0, 200));
+    res.json({ ok: true, result });
+  } catch (e) { console.error('mail suggestion error:', e.message); res.status(500).json({ error: e.message }); }
+}
+app.post('/api/mailsync/suggestions/:id/accept', mailStaffGuard, (req, res) => mailSuggestHandle(req, res, true));
+app.post('/api/mailsync/suggestions/:id/dismiss', mailStaffGuard, (req, res) => mailSuggestHandle(req, res, false));
+
+// Do not log: owner only. Adding an address also clears what was already stored for it.
+app.post('/api/mailsync/do-not-log', mailOwnerGuard, async (req, res) => {
+  try {
+    if (isPreview() || !pgPoolFor('system')) return res.status(409).json({ error: 'Only in the live workspace' });
+    const out = await mailSync.addDoNotLog(String((req.body || {}).email || ''), lc(actorOf(req)));
+    auditLog(auditActorOf(req), 'added', 'mailbox_sync_do_not_log', String((req.body || {}).email || ''), `cleared ${out.removed} logged emails`);
+    res.json({ ok: true, ...out });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+app.delete('/api/mailsync/do-not-log/:email', mailOwnerGuard, async (req, res) => {
+  try {
+    await mailSync.removeDoNotLog(req.params.email);
+    auditLog(auditActorOf(req), 'removed', 'mailbox_sync_do_not_log', req.params.email, 'logging can resume for this address');
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
