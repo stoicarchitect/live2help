@@ -78,6 +78,11 @@ try {
   ok((await call('GET', '/api/mailsync/log', 'dan')).status === 400, 'the log needs an address or a company');
   ok(J(await call('GET', '/api/mailsync/log?company=Acme', 'dan')).rows.length === 3, 'a company timeline shows all its contacts');
 
+  const pv = await call('GET', '/api/mailsync/preview/cm-ml-b', 'ella');
+  ok(pv.status === 200 && J(pv).preview === 'hi there' && J(pv).contact_email === 'jane@acme.co.uk', 'Ella opens the preview of her own mail');
+  ok((await call('GET', '/api/mailsync/preview/cm-ml-a', 'ella')).status === 404, 'Ella cannot open a preview from his mailbox');
+  ok((await call('GET', '/api/mailsync/preview/cm-ml-a', 'dan')).status === 200, 'Daniel Brown can open either');
+  ok((await call('GET', '/api/mailsync/preview/cm-ml-a', '')).status === 403, 'signed out cannot');
   const dn = await call('POST', '/api/mailsync/do-not-log', 'dan', { email: 'Jane@Acme.co.uk' });
   ok(dn.status === 200 && J(dn).removed === 2, 'do not log clears what was stored: ' + dn.text);
   ok((await pool.query("select count(*)::int as n from st_mailbox_log where contact_email = 'jane@acme.co.uk'")).rows[0].n === 0, 'nothing is left for that address');

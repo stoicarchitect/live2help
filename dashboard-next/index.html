@@ -1550,6 +1550,7 @@ h1,h2,.view-head h2,#leadClientsHeader h2,#clientsHeader h2,.modal h2{font-famil
         <div id="k62Owner" style="margin-bottom:32px;"></div>
         <div id="p64Payroll" style="margin-bottom:32px;"></div>
         <div id="p65Reports" style="margin-bottom:32px;"></div>
+        <div id="p66Mail" style="margin-bottom:32px;"></div>
         
         <!-- KPI Targets Section -->
         <div style="margin-bottom:32px;">
@@ -1787,6 +1788,7 @@ h1,h2,.view-head h2,#leadClientsHeader h2,#clientsHeader h2,.modal h2{font-famil
       </div>
       <div class="view-body">
         <div id="p64Banner"></div>
+        <div id="p66Sug"></div>
         <div class="tile-grid" id="homeTiles"></div>
         <div class="panel-grid">
           <div class="panel">
@@ -6542,6 +6544,7 @@ function renderHome(){
     ? recent.map(r => `<div class="mini-row"><div><div class="t">${esc(r.x.c.name)}</div><div class="d">${esc(r.x.role)}${r.x.company && r.x.company !== UNASSIGNED_LABEL ? ' - ' + esc(r.x.company) : ''}</div></div><div class="r">${esc(poolStageLabel(r.x.c.stage))}<br>${esc(opsFmt(r.d))}</div></div>`).join('')
     : '<div class="panel-empty">No candidate activity yet.</div>';
   p64RenderBanner(); // build 64: payroll banner for Daniel Brown until the month is marked sent
+  if(typeof p66SugLoad === 'function') p66SugLoad(); // build 66: suggested updates from email
 }
 
 /* ---------- Roles ---------- */
@@ -7327,7 +7330,7 @@ function commRowsHtml(list, today){
       <td class="strong">${esc(c.entity_name)}</td>
       <td>${esc(c.company)}${c.role ? '<div class="pool-muted">' + esc(c.role) + '</div>' : ''}</td>
       <td>${esc(CM_CHANNELS[c.channel] || c.channel)}<div class="pool-muted">${c.direction === 'inbound' ? 'Inbound' : 'Outbound'}</div></td>
-      <td style="max-width:320px;white-space:pre-wrap;">${esc(c.summary)}</td>
+      <td style="max-width:320px;white-space:pre-wrap;">${esc(c.summary)}${String(c.id).indexOf('cm-ml-') === 0 ? ' <a class="p66-lnk" onclick="p66Open(\'' + esc(c.id) + '\')">View</a>' : ''}</td>
       <td>${fuHtml}</td><td>${esc(userLabel(c.user))}</td>
       <td><div class="row-actions">
         ${fuDate && c.follow_up_done !== 'yes' ? `<button onclick="commDone('${esc(c.id)}')">Done</button>` : ''}
@@ -17480,7 +17483,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '17 Nov 2026 - build 65 (Reports: KPI Reporting Reports panel with owner report, Ella performance report and weekly brief, view, PDF, make, resend, rebuild; note box for the Ella performance report in Emails to review; built on page build 64) preview';
+var PAGE_BUILD = '17 Nov 2026 - build 66 (Mailbox sync: suggested updates from email on Home with one click accept, Mailbox sync panel in KPI Reporting with switch, run now, settings and do not log list, View link on email entries in the comms logs; built on page build 65) preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -22531,6 +22534,16 @@ function rtDelete(id, category, recordId){
   .rv-note{margin-top:12px;} .rv-note label{display:block;font-size:11px;color:#888;margin-bottom:4px;}
   .rv-note textarea{width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;}
   .p65-pdf{width:100%;height:68vh;border:1px solid var(--border);margin-top:10px;}
+  #p66Sug .p66-card{background:#fff;border:1px solid var(--border);border-left:3px solid var(--gold,#c9a24b);border-radius:2px;padding:12px 14px;margin-bottom:8px;display:flex;gap:14px;flex-wrap:wrap;align-items:center;justify-content:space-between;}
+  #p66Sug .p66-card .t{font-size:13px;font-weight:500;} #p66Sug .p66-card .m{font-size:12px;color:#777;margin-top:2px;} #p66Sug .p66-card .e{font-size:12px;color:#555;margin-top:4px;font-style:italic;}
+  #p66Sug .p66-card .b{display:flex;gap:8px;}
+  .p66-lnk{color:var(--gold,#a8802b);cursor:pointer;font-size:12px;margin-left:6px;text-decoration:underline;}
+  #p66Mail .p66-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:12px;}
+  #p66Mail .p66-row label{display:block;font-size:11px;color:#999;margin-bottom:3px;}
+  #p66Mail .p66-row select,#p66Mail .p66-row input{padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:12px;font-family:inherit;background:#fff;}
+  #p66Mail .p66-flag{background:#fdf3e1;border:1px solid #ecd49b;padding:9px 12px;font-size:12.5px;border-radius:2px;margin-bottom:12px;}
+  #p66Mail .p66-dn{display:inline-flex;gap:6px;align-items:center;background:#f4f1ea;padding:4px 8px;border-radius:2px;font-size:12px;margin:4px 6px 0 0;}
+  #p66Mail .p66-dn a{cursor:pointer;color:#b3261e;}
 </style>
 <script>
 /* ============================================================
@@ -22985,6 +22998,7 @@ function k62Render(k){
   k63After(k);
   p64Load(); // build 64: the payroll panel under the owner view
   if(typeof p65Load === 'function') p65Load(); // build 65: the reports panel under the payroll panel
+  if(typeof p66Load === 'function') p66Load(); // build 66: the mailbox sync panel under the reports panel
 }
 
 function k62RenderMine(k){
@@ -23014,6 +23028,117 @@ async function k62VatTest(){
     showToast(r.levelsThatWouldAlert.length ? (r.sent ? 'Test alert sent to your inbox: ' + r.pct + '% of ' + k62Money(r.threshold) : 'An alert would fire at ' + r.pct + '%, but the email was not sent (no emails go out from the preview)') : 'No alert at that threshold: turnover is only ' + r.pct + '% of it');
   }catch(e){ showToast(e.message || 'Could not run the test'); }
 }
+
+/* ============================================================
+   Build 66: mailbox sync. Suggested updates on Home, the sync panel in KPI Reporting, and the View link on email entries
+   ============================================================ */
+var P66 = {sug: null, st: null, busy: false};
+function p66When(iso){ if(!iso) return ''; var d = new Date(iso); return isNaN(d) ? '' : d.toLocaleString('en-GB', {weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London'}); }
+async function p66SugLoad(){
+  var host = document.getElementById('p66Sug');
+  if(!host) return;
+  try{ P66.sug = await b2Api('/api/mailsync/suggestions'); }catch(e){ host.innerHTML = ''; return; }
+  p66SugRender();
+}
+function p66SugRender(){
+  var host = document.getElementById('p66Sug'), list = (P66.sug && P66.sug.pending) || [];
+  if(!host) return;
+  if(!list.length){ host.innerHTML = ''; return; }
+  host.innerHTML = '<div class="k62-h" style="margin-top:0;">Suggested updates from email <small>' + list.length + ' waiting, nothing changes until you click</small></div>' +
+    list.map(function(s){
+      var who = s.contact_name || s.contact_email, where = [s.company, s.role].filter(Boolean).join(' - ');
+      return '<div class="p66-card"><div style="min-width:220px;flex:1;"><div class="t">' + esc(s.label) + ': ' + esc(who) + '</div>' +
+        '<div class="m">' + esc(where) + (where ? ' - ' : '') + esc(s.subject || '') + ' - ' + esc(p66When(s.created_at)) + (P66.sug.mine === false ? '' : '') + '</div>' +
+        (s.evidence ? '<div class="e">&ldquo;' + esc(s.evidence) + '&rdquo;</div>' : '') + '</div>' +
+        '<div class="b"><button class="p64-btn gold" onclick="p66Handle(\'' + esc(s.id) + '\',true)">Accept</button><button class="p64-btn" onclick="p66Handle(\'' + esc(s.id) + '\',false)">Dismiss</button></div></div>';
+    }).join('');
+}
+async function p66Handle(id, accept){
+  try{
+    var r = await b2Post('/api/mailsync/suggestions/' + encodeURIComponent(id) + (accept ? '/accept' : '/dismiss'), {});
+    showToast(accept ? (r.result || 'Done') : 'Dismissed');
+    if(accept){ try{ if(typeof loadComms === 'function') loadComms(); }catch(e){} }
+  }catch(e){ showToast('Could not do that: ' + e.message); }
+  p66SugLoad();
+}
+async function p66Open(commId){
+  var box = b46Shell('p66Ov');
+  box.innerHTML = '<div style="color:#999;font-size:13px;">Loading...</div>';
+  try{
+    var r = await b2Api('/api/mailsync/preview/' + encodeURIComponent(commId));
+    var owner = p64Owner();
+    box.innerHTML = '<div style="display:flex;justify-content:space-between;gap:12px;"><div><div style="font-size:16px;font-weight:500;">' + esc(r.subject || '(no subject)') + '</div>' +
+      '<div class="note-line" style="margin-top:4px;">' + (r.direction === 'in' ? 'Received' : 'Sent') + ' ' + esc(p66When(r.at)) + ' - ' + esc(r.contact_name || r.contact_email) + ' (' + esc(r.contact_email) + ') - ' + esc(r.mailbox) + '</div></div>' +
+      '<button onclick="b46Close(\'p66Ov\')" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;align-self:flex-start;">&times;</button></div>' +
+      '<div style="margin-top:14px;padding:12px;background:#faf8f3;border:1px solid var(--border);white-space:pre-wrap;font-size:13px;line-height:1.5;">' + (r.preview ? esc(r.preview) : 'No preview stored. Previews are kept for a limited time, then only the subject is kept.') + '</div>' +
+      '<div class="b46-row" style="justify-content:flex-end;margin-top:14px;">' + (owner ? '<button class="b46-btn" onclick="p66StopLogging(\'' + esc(r.contact_email) + '\')">Do not log this contact</button>' : '') + '<button class="b46-btn" onclick="b46Close(\'p66Ov\')">Close</button></div>';
+  }catch(e){ box.innerHTML = '<div class="b46-err">' + esc(e.message) + '</div><div class="b46-row" style="justify-content:flex-end;"><button class="b46-btn" onclick="b46Close(\'p66Ov\')">Close</button></div>'; }
+}
+async function p66StopLogging(email){
+  if(!confirm('Stop logging email with ' + email + '? Everything already stored for this address is removed from the mail log and the comms logs.')) return;
+  try{ var r = await b2Post('/api/mailsync/do-not-log', {email: email}); showToast('Done. ' + (r.removed || 0) + ' stored email' + (r.removed === 1 ? '' : 's') + ' removed'); b46Close('p66Ov'); if(typeof loadComms === 'function') loadComms(); p66Load(); }
+  catch(e){ showToast('Could not do that: ' + e.message); }
+}
+async function p66Load(){
+  var host = document.getElementById('p66Mail');
+  if(!host) return;
+  if(!p64Owner()){ host.innerHTML = ''; return; }
+  try{ P66.st = await b2Api('/api/mailsync/status'); p66Render(); }
+  catch(e){ host.innerHTML = '<div class="k62-h">Mailbox sync</div><div class="panel" style="padding:16px;font-size:12.5px;color:#b3261e;">Could not load mailbox sync: ' + esc(e.message) + '</div>'; }
+}
+function p66Render(){
+  var host = document.getElementById('p66Mail'), s = P66.st;
+  if(!host || !s) return;
+  var h = '<div class="k62-h">Mailbox sync <small>only you can see this</small></div><div class="panel" style="padding:16px;">';
+  if(!s.stored) h += '<div class="p66-flag">Mailbox sync only runs in the live workspace with the database connected. Nothing is read here.</div>';
+  if(s.needsPermission) h += '<div class="p66-flag">Microsoft is refusing access to a mailbox. Check that the Mail permission is granted and the access policy lists both mailboxes.</div>';
+  if(s.error) h += '<div class="p66-flag">The last run reported a problem: ' + esc(s.error) + '</div>';
+  h += '<div style="font-size:13px;line-height:1.6;"><strong>' + (s.enabled ? 'On' : 'Off') + '</strong>' + (s.enabled ? ' - reading mail from ' + esc(s.sinceDay || 'the switch on date') + ' onwards, every 15 minutes on weekdays 07:00 to 19:00' : ' - no mail is being read') + '.<br>' +
+    'Last successful run: ' + (s.lastOk ? esc(p66When(s.lastOk)) : 'none yet') + '. Logged in total: ' + (s.loggedTotal || 0) + ', today: ' + (s.loggedToday || 0) + '. ' +
+    (s.mailboxes || []).map(function(m){ return esc(m.owner === 'dan' ? 'Daniel Brown' : 'Ella') + ': ' + m.logged; }).join(', ') + '. Suggested updates waiting: ' + (s.pending || 0) + '.</div>';
+  h += '<div class="p66-row">';
+  if(!s.enabled) h += '<div><label>Start reading from</label><select id="p66Back"><option value="0">Today</option><option value="7" selected>7 days back</option><option value="14">14 days back</option><option value="30">30 days back</option></select></div>' +
+    '<button class="p64-btn gold" onclick="p66Switch(true)"' + (P66.busy || !s.stored ? ' disabled' : '') + '>Switch on</button>';
+  else h += '<button class="p64-btn gold" onclick="p66Run()"' + (P66.busy ? ' disabled' : '') + '>Run now</button><button class="p64-btn" onclick="p66Switch(false)"' + (P66.busy ? ' disabled' : '') + '>Switch off</button>';
+  h += '<div><label>Follow up after no reply (working days)</label><select id="p66Nr" onchange="p66Set()">' + [1,2,3,4,5].map(function(n){ return '<option value="' + n + '"' + (n === s.noReplyDays ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select></div>' +
+    '<div><label>Keep email previews for (months)</label><select id="p66Pm" onchange="p66Set()">' + [3,6,12,24].map(function(n){ return '<option value="' + n + '"' + (n === s.previewMonths ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select></div></div>';
+  h += '<div class="p66-row"><div><label>Never log email with this address</label><input id="p66Dn" placeholder="name@company.com" style="width:260px;"></div><button class="p64-btn" onclick="p66AddDn()">Add</button></div>';
+  h += '<div style="margin-top:8px;">' + ((s.doNotLog || []).length ? s.doNotLog.map(function(d){ return '<span class="p66-dn">' + esc(d.email) + ' <a onclick="p66RemoveDn(\'' + esc(d.email) + '\')" title="Start logging again">remove</a></span>'; }).join('') : '<span class="note-line">No addresses on the do not log list.</span>') + '</div>';
+  h += '<div class="note-line" style="margin-top:12px;">Only email to or from an address already on a client, lead, contact or candidate record is kept. Anything else is never stored. Each email appears on the timeline with its subject and a short preview that is kept for the months set above. Attachments are never stored. Mail from addresses on the suppression list, our own addresses and automatic replies are ignored. Changes to a candidate or role only happen when you click Accept on a suggestion. Rules only, no AI reads the mail.</div></div>';
+  host.innerHTML = h;
+}
+async function p66Switch(on){
+  if(!on && !confirm('Switch mailbox sync off? Nothing more is read until you switch it on again. Stored entries stay.')) return;
+  var back = document.getElementById('p66Back');
+  P66.busy = true; p66Render();
+  try{ await b2Post('/api/mailsync/settings', {enabled: on, backfillDays: back ? back.value : 0}); showToast(on ? 'Mailbox sync is on' : 'Mailbox sync is off'); }
+  catch(e){ showToast('Could not change it: ' + e.message); }
+  P66.busy = false; p66Load();
+}
+async function p66Set(){
+  try{ await b2Post('/api/mailsync/settings', {noReplyDays: document.getElementById('p66Nr').value, previewMonths: document.getElementById('p66Pm').value}); showToast('Saved'); }
+  catch(e){ showToast('Could not save: ' + e.message); }
+  p66Load();
+}
+async function p66Run(){
+  P66.busy = true; p66Render();
+  try{ var r = await b2Post('/api/mailsync/run', {}); var c = r.counts || {}; showToast((r.errors && r.errors.length) ? 'Run finished with a problem: ' + r.errors[0] : 'Run finished. ' + (c.logged || 0) + ' logged, ' + (c.suggested || 0) + ' suggestions'); }
+  catch(e){ showToast('Could not run: ' + e.message); }
+  P66.busy = false; p66Load(); p66SugLoad();
+}
+async function p66AddDn(){
+  var el = document.getElementById('p66Dn'), v = el ? el.value.trim() : '';
+  if(!v) return;
+  try{ var r = await b2Post('/api/mailsync/do-not-log', {email: v}); showToast('Added. ' + (r.removed || 0) + ' stored email' + (r.removed === 1 ? '' : 's') + ' removed'); if(typeof loadComms === 'function') loadComms(); }
+  catch(e){ showToast('Could not add: ' + e.message); }
+  p66Load();
+}
+async function p66RemoveDn(email){
+  try{ await b2Api('/api/mailsync/do-not-log/' + encodeURIComponent(email), {method: 'DELETE'}); showToast('Removed. New email with this address will be logged again.'); }
+  catch(e){ showToast('Could not remove: ' + e.message); }
+  p66Load();
+}
+setInterval(function(){ if(document.visibilityState === 'visible' && typeof p66SugLoad === 'function') p66SugLoad(); }, 300000);
 </script>
 
 <style id="freeze63">

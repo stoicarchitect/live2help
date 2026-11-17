@@ -23734,6 +23734,16 @@ app.get('/api/mailsync/log', mailStaffGuard, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// One mail on a timeline: the comms row id is 'cm-' plus the mailbox log id. Staff see only their own mailbox, Daniel Brown sees both.
+app.get('/api/mailsync/preview/:id', mailStaffGuard, async (req, res) => {
+  try {
+    const id = String(req.params.id || '').replace(/^cm-/, '');
+    const r = (await mailboxLogTable.list()).find(x => x.id === id);
+    if (!r || !mailMine(req, r.owner)) return res.status(404).json({ error: 'No stored preview for this email' });
+    res.json({ id: r.id, direction: r.direction, contact_email: r.contact_email, contact_name: r.contact_name, company: r.company, subject: r.subject, preview: r.preview, at: r.at, mailbox: r.mailbox, owner: r.owner });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/mailsync/suggestions', mailStaffGuard, async (req, res) => {
   try {
     const all = (await mailSuggestTable.list()).filter(s => mailMine(req, s.owner));
