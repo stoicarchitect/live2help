@@ -304,7 +304,7 @@ export function createMailSync(deps) {
           catch (e) {
             if (e.status === 403 || /Authorization_RequestDenied|ErrorAccessDenied|AccessDenied/i.test(e.code || '')) {
               state.needsPermission = true;
-              errors.push(`${box.mailbox}: Microsoft 365 refused access (${e.status || e.code}). Check the Mail.ReadWrite permission and the application access policy.`);
+              errors.push(`${box.mailbox} ${folder}: Microsoft 365 refused access (${e.status || e.code}). Microsoft said: ${String(e.message || '').replace(/^Microsoft Graph [A-Z]+ failed /, '').slice(0, 220)}. Check the Mail.ReadWrite permission and the application access policy.`);
             } else errors.push(`${box.mailbox} ${folder}: ${e.message}`);
           }
         }
