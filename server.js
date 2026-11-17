@@ -24,7 +24,7 @@ import { STARLING_LIVE, STARLING_SANDBOX, BANK_HEADER, DEFAULT_BANK_RULES, creat
 import * as reports from './reports.js'; // build 65
 import { createMailSync, SUGGESTION_KINDS, isClientType } from './mailsync.js'; // build 66
 import { londonToday, monthOf, readPayrollSettings, validOverride, payDateFor, payrollWatch, currentPayrollMonth, bannerFor, reminderFor, payrollPack, clawbackCheck, payrollBankCheck, payrollEmail, runRecords, monthName as payrollMonthName } from './payroll.js'; // build 64
-import { computeOwnerKpi, computeMyKpi, vatAlertsDue, vatAlertText, monthKey, KPI_SETTING_DEFAULTS, KPI_SETTING_KEYS } from './kpi-owner.js'; // build 62
+import { computeOwnerKpi, computeMyKpi, vatAlertsDue, vatAlertText, monthKey, KPI_SETTING_DEFAULTS, KPI_SETTING_KEYS, personKey } from './kpi-owner.js'; // build 62
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -4993,6 +4993,18 @@ app.post('/api/cold-calls', async (req, res) => {
       }
     });
     
+    // build 66.2: a cold call saved from the Cold Calls screen is also a Comms Log call row, so it counts in the KPI and in Ella's report.
+    // Calls saved from a contact already have their own Comms Log row (the page adds "(logged from contact)"), so those are not added twice.
+    if (!/\(logged from contact\)/i.test(String(notes || '')) && !(req.body && req.body.skipComms)) {
+      try {
+        const asEmail = String(contactType || '').toLowerCase() === 'email';
+        await commsTable.upsert({
+          id: 'cm-cc-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), timestamp: new Date().toISOString(), user: actorOf(req),
+          entity_type: 'client', entity_name: contactNames, company, role: '', channel: asEmail ? 'email' : 'call', direction: 'outbound',
+          summary: `${asEmail ? 'Cold email' : 'Cold call'} - ${outcome || 'attempt'}${notes ? ': ' + String(notes).slice(0, 300) : ''}`, follow_up_date: followupDate || '', follow_up_done: '',
+        });
+      } catch (e) { console.error('cold call comms row failed:', e.message); }
+    }
     scheduleTaskTidy();
     res.json({ ok: true, company, contactNames });
   } catch (e) {
@@ -17128,7 +17140,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '17 Nov 2026 - build 66 (mailbox sync: client and candidate email from the Microsoft 365 mailboxes of Daniel Brown and Ella logged on timelines, one click suggested updates, no reply follow up tasks, do not log list; built on server build 65)';
+const SERVER_BUILD = '17 Nov 2026 - build 66.2 (activity figures: calls from the Cold Calls screen now counted and every user spelling grouped under one person, interview attendance rate in Ella\'s KPIs and reports and the owner team table, owner only activity check route; built on server build 66.1)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -22703,6 +22715,26 @@ app.get('/api/kpi/owner', requireAdmin, async (req, res) => {
     console.error('GET /api/kpi/owner error:', e.message);
     res.status(500).json({ error: e.message });
   }
+});
+
+// build 66.2: owner only. Counts of calls, emails and interviews by who logged them for one month, so a missing figure can be traced. Counts only, no names or text.
+app.get('/api/kpi/activity-check', requireAdmin, async (req, res) => {
+  try {
+    const period = /^\d{4}-\d{2}$/.test(String(req.query.period || '')) ? String(req.query.period) : new Date().toISOString().slice(0, 7);
+    const input = await loadKpiInput(true);
+    const inP = v => String(v || '').slice(0, 7) === period;
+    const tally = (rows, f) => { const o = {}; rows.forEach(r => { const k = f(r); o[k] = (o[k] || 0) + 1; }); return o; };
+    const comms = (input.comms || []).filter(c => inP(c.timestamp));
+    const ivs = (input.interviews || []).filter(i => inP(i.date));
+    res.json({
+      period, commsRowsInPeriod: comms.length, commsRowsAll: (input.comms || []).length,
+      commsByUserAndChannel: tally(comms, c => `${String(c.user || '(blank)')} | ${String(c.channel || '(blank)').toLowerCase()}`),
+      commsCountedAs: tally(comms, c => `${personKey(c.user) || 'unknown'} | ${String(c.channel || '').toLowerCase()}`),
+      interviewsInPeriod: ivs.length,
+      interviewsByArrangerAndStatus: tally(ivs, i => `${String(i.created_by || '(blank)')} | ${String(i.status || 'scheduled').toLowerCase()}`),
+      coldCallsSheetRows: await getColdCallsSheet().then(r => r.length).catch(() => -1),
+    });
+  } catch (e) { console.error('GET /api/kpi/activity-check:', e.message); res.status(500).json({ error: e.message }); }
 });
 
 // Each person's own activity. The response is built by computeMyKpi, which holds no money figures at all.

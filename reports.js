@@ -229,8 +229,8 @@ export function ownerReportMarkdown(s) {
 
   h('Team performance');
   if (!s.team.length) L.push('No one is on the payroll list yet.', '');
-  else table(['Person', 'Submissions', 'Interviews', 'Calls', 'Emails', 'Placements this quarter', 'Revenue this year', 'Cost this year', 'Return'],
-    s.team.map(p => [p.name, String(p.activity.submissions.now), String(p.activity.interviewsBooked.now), String(p.activity.calls.now), String(p.activity.emails.now), String(p.placementsQuarter), gbp(p.revenueYtd), gbp(p.employmentCostYtd), p.roiPct == null ? 'n/a' : `${p.roiPct}%`]));
+  else table(['Person', 'Submissions', 'Interviews', 'Interviews attended', 'Calls', 'Emails', 'Placements this quarter', 'Revenue this year', 'Cost this year', 'Return'],
+    s.team.map(p => [p.name, String(p.activity.submissions.now), String(p.activity.interviewsBooked.now), attendTxt(p.activity), String(p.activity.calls.now), String(p.activity.emails.now), String(p.placementsQuarter), gbp(p.revenueYtd), gbp(p.employmentCostYtd), p.roiPct == null ? 'n/a' : `${p.roiPct}%`]));
   return tidy(L.join('\n'));
 }
 
@@ -313,7 +313,7 @@ export function weeklyBriefEmail(f) {
    Built only from her own activity (computeMyKpi, which holds no money figure), the names of her placements and her review
    objectives. It never receives a pound figure, so none can appear.
    ====================================================================== */
-const ACT_LABELS = [['candidatesAdded', 'Candidates added'], ['submissions', 'Candidates submitted'], ['interviewsBooked', 'Interviews arranged'], ['emails', 'Emails to clients and candidates'], ['calls', 'Calls made'], ['callsSpoke', 'Calls where you spoke to someone'], ['tasksDone', 'Tasks completed']];
+const ACT_LABELS = [['candidatesAdded', 'Candidates added'], ['submissions', 'Candidates submitted'], ['interviewsBooked', 'Interviews arranged'], ['emails', 'Emails to clients and candidates'], ['calls', 'Calls made'], ['callsSpoke', 'Calls where you spoke to someone'], ['tasksDone', 'Tasks completed'], ['interviewsHeld', 'Interviews attended'], ['interviewsNoShow', 'Interviews missed (did not attend)']];
 
 // my: computeMyKpi as at the last day of the month. wins: [{company, role, candidate}] placements in the month. reviews: her review rows.
 export function buildEllaSnapshot({ period, my, wins, reviews, firstName, generatedAt }) {
@@ -323,6 +323,7 @@ export function buildEllaSnapshot({ period, my, wins, reviews, firstName, genera
   const ratios = {
     interviewPerSubmission: { now: ratio(cur('interviewsBooked'), cur('submissions')), before: ratio(prev('interviewsBooked'), prev('submissions')) },
     connectRate: { now: ratio(cur('callsSpoke'), cur('calls')), before: ratio(prev('callsSpoke'), prev('calls')) },
+    attendanceRate: { now: ratio(cur('interviewsHeld'), cur('interviewsHeld') + cur('interviewsNoShow')), before: ratio(prev('interviewsHeld'), prev('interviewsHeld') + prev('interviewsNoShow')) },
   };
   const qMonth = Number(period.slice(5, 7)) - 1, monthsIn = (qMonth % 3) + 1, quarterGone = Math.round((monthsIn / 3) * 100);
   const snap = {
@@ -330,6 +331,7 @@ export function buildEllaSnapshot({ period, my, wins, reviews, firstName, genera
     quarter: my.quarter, quarterGonePct: quarterGone,
     activity: ACT_LABELS.map(([key, label]) => ({ key, label, now: cur(key), before: A[key] ? A[key].before : null, diff: A[key] ? A[key].diff : 0, pct: A[key] ? A[key].pct : null })),
     quarterActivity: { submissions: q.submissions || 0, interviewsBooked: q.interviewsBooked || 0, calls: q.calls || 0, emails: q.emails || 0 },
+    interviewsAwaiting: cur('interviewsAwaiting'),
     placements: my.placements, ratios,
     target: my.target, teamTarget: my.teamTarget, teamRolesFilledQuarter: my.teamRolesFilledQuarter,
     wins: (wins || []).map(w => ({ company: w.company, role: w.role, candidate: w.candidate || 'A candidate' })),
@@ -341,12 +343,19 @@ export function buildEllaSnapshot({ period, my, wins, reviews, firstName, genera
   snap.focus = ellaFocus(snap);
   return snap;
 }
+// build 66.2: attended / (attended + did not attend), for the owner report team table
+function attendTxt(a) {
+  const h = a && a.interviewsHeld ? a.interviewsHeld.now : 0, m = a && a.interviewsNoShow ? a.interviewsNoShow.now : 0;
+  return h + m > 0 ? `${h} of ${h + m} (${Math.round((h / (h + m)) * 100)}%)` : 'none recorded';
+}
 function ellaHighlights(s) {
   const out = [];
   s.wins.forEach(w => out.push(`Placement: ${w.candidate} at ${w.company} as ${w.role}.`));
   s.activity.filter(a => a.diff > 0 && a.now >= 3 && a.key !== 'tasksDone').forEach(a => out.push(`${a.label} rose from ${a.before} to ${a.now}${a.pct != null ? ` (${a.pct > 0 ? '+' : ''}${a.pct}%)` : ''}.`));
   const r = s.ratios.connectRate;
   if (r.now != null && r.before != null && r.now > r.before && s.activity.find(a => a.key === 'calls').now >= 10) out.push(`More of your calls reached someone: ${r.now}% against ${r.before}% the month before.`);
+  const ar = s.ratios.attendanceRate, held = s.activity.find(a => a.key === 'interviewsHeld'), miss = s.activity.find(a => a.key === 'interviewsNoShow');
+  if (ar.now != null && held && miss && held.now + miss.now >= 3 && ar.now >= 80) out.push(`Candidates turned up for ${ar.now}% of interviews (${held.now} of ${held.now + miss.now}).`);
   if (!out.length) out.push('A steady month. The figures below show where the effort went.');
   return out.map(tidy).slice(0, 6);
 }
@@ -359,6 +368,9 @@ function ellaImprove(s) {
   if (calls.now >= 10 && cr != null && cr < 30) out.push(`You spoke to someone on ${get('callsSpoke').now} of ${calls.now} calls (${cr}%). Try different times of day, and follow each missed call with a short email the same day.`);
   const ip = s.ratios.interviewPerSubmission.now;
   if (sub.now >= 4 && ip != null && ip < 25) out.push(`Fewer than one in four submissions led to an interview (${ints.now} from ${sub.now}). Check the match against the role requirements before submitting, and ask the client what held the others back.`);
+  const ar = s.ratios.attendanceRate, held = get('interviewsHeld'), miss = get('interviewsNoShow');
+  if (held && miss && held.now + miss.now >= 3 && ar.now != null && ar.now < 70) out.push(`Candidates attended ${held.now} of ${held.now + miss.now} interviews (${ar.now}%). Confirm each interview with the candidate the day before, and share the address and who to ask for.`);
+  if (s.interviewsAwaiting > 0) out.push(`${s.interviewsAwaiting} interview${s.interviewsAwaiting === 1 ? ' has' : 's have'} no outcome recorded. Mark each one Completed or No show so the attendance figure is right.`);
   if (calls.now + emails.now === 0) out.push('No calls or emails were logged. If you did the work outside the workspace, log it there so the figures show your real effort.');
   const t = s.target && Number(s.target.targetRoles);
   if (t > 0 && s.placements.quarter < t * (s.quarterGonePct / 100) - 0.5) out.push(`You have ${s.placements.quarter} of ${t} placements for ${s.quarter} with ${s.quarterGonePct}% of the quarter gone. Decide which roles are closest to an offer and put the most time there.`);
@@ -394,6 +406,7 @@ export function ellaReportMarkdown(s, note) {
   table(['What the numbers mean', s.periodName, 'Month before'], [
     ['Interviews arranged for every 100 submissions', r.interviewPerSubmission.now == null ? 'n/a' : String(r.interviewPerSubmission.now), r.interviewPerSubmission.before == null ? 'n/a' : String(r.interviewPerSubmission.before)],
     ['Calls that reached someone', r.connectRate.now == null ? 'n/a' : `${r.connectRate.now}%`, r.connectRate.before == null ? 'n/a' : `${r.connectRate.before}%`],
+    ['Interviews attended, out of those with an outcome', r.attendanceRate.now == null ? 'n/a' : `${r.attendanceRate.now}%`, r.attendanceRate.before == null ? 'n/a' : `${r.attendanceRate.before}%`],
   ]);
   h(`Placements and targets for ${s.quarter}`);
   table(['Measure', 'Figure'], [

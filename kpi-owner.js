@@ -533,10 +533,12 @@ function commissionSummary(invoices, yS, yE) {
 }
 
 /* ---------- activity (counts only, never money) ---------- */
-const ACTIVITY_KEYS = ['candidatesAdded', 'submissions', 'interviewsBooked', 'emails', 'calls', 'callsSpoke', 'tasksDone'];
+const ACTIVITY_KEYS = ['candidatesAdded', 'submissions', 'interviewsBooked', 'emails', 'calls', 'callsSpoke', 'tasksDone', 'interviewsHeld', 'interviewsNoShow', 'interviewsAwaiting'];
+// build 66.2: one person key however the user was stored (ella, Ella, Ella Pietrzak, ella@live2helprecruitment.co.uk all become ella)
+export function personKey(u) { return lc(u).split('@')[0].split(/[\s.]+/)[0] || ''; }
 function activityCounts(input, a, b) {
   const by = {};
-  const g = u => { const k = lc(u) || 'unknown'; if (!by[k]) { by[k] = {}; ACTIVITY_KEYS.forEach(x => { by[k][x] = 0; }); } return by[k]; };
+  const g = u => { const k = personKey(u) || 'unknown'; if (!by[k]) { by[k] = {}; ACTIVITY_KEYS.forEach(x => { by[k][x] = 0; }); } return by[k]; };
   (input.activity || []).forEach(r => {
     if (!within(parseDate(r.timestamp), a, b)) return;
     const o = g(r.user);
@@ -550,6 +552,17 @@ function activityCounts(input, a, b) {
     const ch = lc(c.channel), o = g(c.user);
     if (ch === 'email') o.emails++;
     else if (ch === 'call') { o.calls++; if (/ - spoke to them/i.test(String(c.summary || ''))) o.callsSpoke++; }
+  });
+  // build 66.2: interview attendance. Credited to the person who arranged the interview. Completed = attended, no show = did not attend.
+  // Cancelled interviews are left out. A scheduled interview whose day has passed has no outcome recorded yet and is counted separately.
+  const todayStart = dayOf(input.now ? new Date(input.now) : new Date());
+  (input.interviews || []).forEach(iv => {
+    const d = parseDate(iv.date);
+    if (!within(d, a, b)) return;
+    const st = lc(iv.status) || 'scheduled', o = g(iv.created_by);
+    if (st === 'completed') o.interviewsHeld++;
+    else if (st === 'no_show' || st === 'no show' || st === 'noshow') o.interviewsNoShow++;
+    else if (st === 'scheduled' && d < todayStart) o.interviewsAwaiting++;
   });
   return by;
 }
@@ -592,7 +605,7 @@ export function computeMyKpi(input, userKey) {
   const { now, today, cands } = p;
   const tomorrow = new Date(today.getTime() + DAY);
   const mS = monthStart(today), lmS = monthStart(today, -1), qS = quarterStart(today);
-  const key = lc(userKey);
+  const key = personKey(userKey);
   const act = activityCounts(input, mS, tomorrow), prev = activityCounts(input, lmS, mS), qAct = activityCounts(input, qS, tomorrow);
   const qLabel = `Q${Math.floor(today.getUTCMonth() / 3) + 1} ${today.getUTCFullYear()}`;
   const target = t => new RegExp(`^${qLabel}$`, 'i').test(String(t.quarter).trim().replace(/\s+/g, ' '));
