@@ -8268,19 +8268,29 @@ async function syncInterviewsWithPipeline(force) {
         (!iv.company || !p.company || lc(p.company) === lc(iv.company)));
     };
     const today = todayISO();
-    const cancel = new Set();
+    const cancel = new Set(), held = new Set();
     open.forEach(iv => {
       const hits = findPerson(iv);
       // every record for this person on this role is rejected (none still live)
-      if (hits.length && hits.every(p => isRejected(p.stage))) cancel.add(iv.id);
+      if (hits.length && hits.every(p => isRejected(p.stage))) {
+        // build 66.4: an interview whose day has already passed went ahead before the rejection, so it is completed, not cancelled.
+        // (A no show must be recorded as No show before the rejection.) Only today or later interviews are cancelled.
+        const d = String(iv.date || '').slice(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(d) && d < today) held.add(iv.id); else cancel.add(iv.id);
+      }
     });
-    if (!cancel.size) return;
-    await interviewsTable.updateWhere(o => cancel.has(o.id), o => {
+    if (!cancel.size && !held.size) return;
+    if (held.size) await interviewsTable.updateWhere(o => held.has(o.id), o => {
+      o.status = 'completed';
+      o.notes = [o.notes, `Marked completed automatically on ${formatDateUK(today)}: the interview date had passed before the candidate was rejected.`].filter(Boolean).join('\n');
+      return o;
+    });
+    if (cancel.size) await interviewsTable.updateWhere(o => cancel.has(o.id), o => {
       o.status = 'cancelled';
       o.notes = [o.notes, `Cancelled automatically on ${formatDateUK(today)}: candidate rejected on the pipeline.`].filter(Boolean).join('\n');
       return o;
     });
-    console.log(`Interviews: cancelled ${cancel.size} for rejected candidates`);
+    console.log(`Interviews: cancelled ${cancel.size}, completed ${held.size} for rejected candidates`);
   })().then(() => { ivSyncAt = Date.now(); }, e => { console.error('Interview sync failed:', e.message); })
     .finally(() => { ivSyncing = null; });
   return ivSyncing;
@@ -17194,7 +17204,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '18 Nov 2026 - build 66.3.1 (mailbox sync: one run at a time with a lease, duplicate safe inserts, result for each mailbox so a partial success is shown as one, owner health check and repair routes; cold bounce scan skips a refused mailbox and still scans the others; built on server build 66.2)';
+const SERVER_BUILD = '18 Nov 2026 - build 66.4 (interviews: a past interview of a candidate who was later rejected counts as attended instead of being cancelled, Interviews arranged also counts interview rows; owner one-off to credit old Cold Calls screen rows to Ella; built on server build 66.3.1)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -22791,6 +22801,40 @@ app.get('/api/kpi/activity-check', requireAdmin, async (req, res) => {
       coldCallsSheetRows: await getColdCallsSheet().then(r => r.length).catch(() => -1),
     });
   } catch (e) { console.error('GET /api/kpi/activity-check:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// build 66.4: owner only, one-off. Cold Calls screen rows saved before server 66.2 (17 Nov 2026 15:10 UTC) have no Comms Log row, so they never counted.
+// Daniel Brown confirmed Ella is the only person who uses that screen, so each becomes a Comms Log row credited to ella. Safe to run again: the id comes from the row, so nothing is added twice.
+// ?dry=1 only counts. Rows with no readable call date, or saved from a contact (already logged), are skipped.
+app.post('/api/kpi/backfill-cold-calls', requireAdmin, async (req, res) => {
+  try {
+    if (isPreview()) return res.status(403).json({ error: 'Not available on the preview' });
+    const dry = String(req.query.dry || '') === '1';
+    const cutoff = Date.parse('2026-11-17T00:00:00Z'); // calls dated 17 Nov or later already have their own Comms Log row from server 66.2
+    const rows = await getColdCallsSheet();
+    const have = new Set((await commsTable.list()).map(c => c.id));
+    const out = { sheetRows: rows.length, added: 0, alreadyThere: 0, skippedFromContact: 0, skippedNoDate: 0, skippedAfterFix: 0 };
+    for (const r of rows) {
+      if (/\(logged from contact\)/i.test(String(r.notes || ''))) { out.skippedFromContact++; continue; }
+      let t = Date.parse(r.dateCalled);
+      if (isNaN(t)) { const m = String(r.dateCalled || '').match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/); if (m) t = Date.parse(`${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}T12:00:00Z`); }
+      if (isNaN(t)) { out.skippedNoDate++; continue; }
+      if (t >= cutoff) { out.skippedAfterFix++; continue; }
+      const key = crypto.createHash('sha1').update([r.company, r.contactNames, r.dateCalled, r.notes, r.contactType].join('|')).digest('hex').slice(0, 12);
+      const id = 'cm-ccb-' + key;
+      if (have.has(id)) { out.alreadyThere++; continue; }
+      have.add(id);
+      const asEmail = String(r.contactType || '').toLowerCase() === 'email';
+      if (!dry) await commsTable.upsert({
+        id, timestamp: new Date(t).toISOString(), user: 'Ella', entity_type: 'client', entity_name: r.contactNames, company: r.company, role: '',
+        channel: asEmail ? 'email' : 'call', direction: 'outbound',
+        summary: `${asEmail ? 'Cold email' : 'Cold call'} - ${r.outcome || 'attempt'}${r.notes ? ': ' + String(r.notes).slice(0, 300) : ''}`, follow_up_date: '', follow_up_done: '',
+      });
+      out.added++;
+    }
+    if (!dry) kpiCache.clear();
+    res.json({ dry, ...out });
+  } catch (e) { console.error('POST /api/kpi/backfill-cold-calls:', e.message); res.status(500).json({ error: e.message }); }
 });
 
 // Each person's own activity. The response is built by computeMyKpi, which holds no money figures at all.

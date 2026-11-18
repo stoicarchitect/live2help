@@ -55,5 +55,18 @@ const low = computeMyKpi({ now, comms: [], interviews: [iv('2026-10-02', 'comple
 const lowSnap = buildEllaSnapshot({ period: '2026-10', my: low, wins: [], reviews: [], firstName: 'Ella', generatedAt: '2026-11-01T08:00:00Z' });
 ok(lowSnap.improve.some(x => /attended 1 of 3/.test(x)), 'low attendance advice');
 
+// build 66.4: a past interview cancelled only because the candidate was later rejected did go ahead
+const auto = { id: 'a1', date: '2026-10-14', status: 'cancelled', created_by: 'ella', notes: 'Cancelled automatically on 20/10/2026: candidate rejected on the pipeline.' };
+const manual = { id: 'a2', date: '2026-10-15', status: 'cancelled', created_by: 'ella', notes: 'Client cancelled' };
+const futureAuto = { id: 'a3', date: '2026-11-20', status: 'cancelled', created_by: 'ella', notes: 'Cancelled automatically on 18/11/2026: candidate rejected on the pipeline.' };
+const done = { id: 'a4', date: '2026-10-16', status: 'completed', created_by: 'ella', notes: 'Marked completed automatically' };
+const m4 = computeMyKpi({ now: new Date('2026-11-18T12:00:00Z'), comms: [], interviews: [auto, manual, futureAuto, done], invoices: [], candidates: [] }, 'ella');
+ok(m4.activity.interviewsHeld.now === 0, 'month is November so none of these count there');
+const m5 = computeMyKpi({ now: new Date('2026-10-31T12:00:00Z'), comms: [], interviews: [auto, manual, done], invoices: [], candidates: [] }, 'ella');
+ok(m5.activity.interviewsHeld.now === 2, 'auto cancelled past interview and the completed one are attended: ' + m5.activity.interviewsHeld.now);
+ok(m5.activity.interviewsBooked.now === 2, 'arranged counts the interview rows even with no activity log entry, not the manual cancel: ' + m5.activity.interviewsBooked.now);
+const m6 = computeMyKpi({ now: new Date('2026-10-31T12:00:00Z'), comms: [], interviews: [auto, done], activity: [1, 2, 3].map(i => ({ timestamp: '2026-10-0' + i + 'T09:00:00Z', user: 'ella', action: 'interview_booked' })), invoices: [], candidates: [] }, 'ella');
+ok(m6.activity.interviewsBooked.now === 3, 'arranged is the larger of the log and the rows, never added: ' + m6.activity.interviewsBooked.now);
+
 console.log(bad ? `${bad} of ${n} checks failed` : `activity: all ${n} checks passed`);
 process.exit(bad ? 1 : 0);

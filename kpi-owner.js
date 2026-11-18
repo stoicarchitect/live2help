@@ -557,14 +557,20 @@ function activityCounts(input, a, b) {
   // build 66.2: interview attendance. Credited to the person who arranged the interview. Completed = attended, no show = did not attend.
   // Cancelled interviews are left out. A scheduled interview whose day has passed has no outcome recorded yet and is counted separately.
   const todayStart = dayOf(input.now ? new Date(input.now) : new Date());
+  const rows = {};
   (input.interviews || []).forEach(iv => {
     const d = parseDate(iv.date);
     if (!within(d, a, b)) return;
     const st = lc(iv.status) || 'scheduled', o = g(iv.created_by);
-    if (st === 'completed') o.interviewsHeld++;
+    // build 66.4: interviews cancelled automatically only because the candidate was later rejected, whose day had passed, did go ahead.
+    const autoCancelled = st === 'cancelled' && /cancelled automatically/i.test(String(iv.notes || '')) && d < todayStart;
+    rows[personKey(iv.created_by) || 'unknown'] = (rows[personKey(iv.created_by) || 'unknown'] || 0) + (st === 'cancelled' && !autoCancelled ? 0 : 1);
+    if (st === 'completed' || autoCancelled) o.interviewsHeld++;
     else if (st === 'no_show' || st === 'no show' || st === 'noshow') o.interviewsNoShow++;
     else if (st === 'scheduled' && d < todayStart) o.interviewsAwaiting++;
   });
+  // build 66.4: Interviews arranged is the larger of the activity log count and the interview rows, so an interview made without a log entry still counts.
+  Object.keys(rows).forEach(k => { g(k); by[k].interviewsBooked = Math.max(by[k].interviewsBooked || 0, rows[k]); });
   return by;
 }
 function personActivity(now, before, key) {
