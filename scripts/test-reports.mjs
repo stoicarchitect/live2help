@@ -165,6 +165,12 @@ ok(kcl > 0, 'owner view forecast includes commission for the person on payroll')
 ok(Math.abs(kcl - (915 + 1245 + 1380 + 750) * 1.03) < 0.1, 'every unpaid commission of the person on payroll, with 3 percent employer pension on top, goes out in the December payroll (got ' + kcl + ')');
 const kd = computeOwnerKpi({ ...base, now: NOW, invoices: [inv('RS992226', '2026-11-21', 'Acme Ltd', 5000, 'paid', '2026-11-25', 'Dan', 750)] });
 eq(kd.bank.forecast.events.filter(e => /Commission/.test(e.label)).length, 0, 'the director takes dividends, so his commission is not in the forecast');
+// build 67: targets in Ella's report are counts only and pass the money guard
+const withT = buildEllaSnapshot({ period: '2026-11', my: myNov, wins, reviews, monthTargets: [{ key: 'submissions', done: 12, target: 10.4 }, { key: 'calls', done: 30, target: 60 }], firstName: 'Ella', generatedAt: 'x' });
+const mdT = ellaReportMarkdown(withT, '');
+ok(/Your targets for/.test(mdT) && /Candidates submitted \| 12 \| 10.4 \| Met/.test(mdT) && /50% of target/.test(mdT), 'Ella report shows month targets with done, target and result');
+ok(assertEllaClean(withT, '').markdown.length > 0, 'report with targets passes the money guard');
+ok(!/Your targets for/.test(ellaReportMarkdown(es, '')), 'no targets section when no goal is set');
 // the tidy helper
 eq(tidy('a — b – c -- d'), 'a - b - c - d', 'dashes become a plain hyphen');
 

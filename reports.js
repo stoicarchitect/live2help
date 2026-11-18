@@ -315,8 +315,10 @@ export function weeklyBriefEmail(f) {
    ====================================================================== */
 const ACT_LABELS = [['candidatesAdded', 'Candidates added'], ['submissions', 'Candidates submitted'], ['interviewsBooked', 'Interviews arranged'], ['emails', 'Emails to clients and candidates'], ['calls', 'Calls made'], ['tasksDone', 'Tasks completed'], ['interviewsHeld', 'Interviews attended'], ['interviewsNoShow', 'Interviews missed (did not attend)']];
 
+const TARGET_LABELS = { candidatesAdded: 'Candidates added', submissions: 'Candidates submitted', interviews: 'Interviews arranged', calls: 'Calls made', emails: 'Emails to clients and candidates' };
+
 // my: computeMyKpi as at the last day of the month. wins: [{company, role, candidate}] placements in the month. reviews: her review rows.
-export function buildEllaSnapshot({ period, my, wins, reviews, firstName, generatedAt }) {
+export function buildEllaSnapshot({ period, my, wins, reviews, monthTargets, firstName, generatedAt }) {
   const A = my.activity, q = my.activityQuarter || {};
   const cur = k => (A[k] ? A[k].now : 0), prev = k => (A[k] ? A[k].before || 0 : 0);
   const ratio = (n, d) => (d > 0 ? Math.round((n / d) * 100) : null);
@@ -331,6 +333,8 @@ export function buildEllaSnapshot({ period, my, wins, reviews, firstName, genera
     activity: ACT_LABELS.map(([key, label]) => ({ key, label, now: cur(key), before: A[key] ? A[key].before : null, diff: A[key] ? A[key].diff : 0, pct: A[key] ? A[key].pct : null })),
     quarterActivity: { submissions: q.submissions || 0, interviewsBooked: q.interviewsBooked || 0, calls: q.calls || 0, emails: q.emails || 0 },
     interviewsAwaiting: cur('interviewsAwaiting'),
+    // build 67: counts only (done and target for the month), no pound figure
+    monthTargets: (monthTargets || []).map(t => ({ key: t.key, label: TARGET_LABELS[t.key] || t.key, done: Number(t.done) || 0, target: Math.round((Number(t.target) || 0) * 10) / 10 })),
     placements: my.placements, ratios,
     target: my.target, teamTarget: my.teamTarget, teamRolesFilledQuarter: my.teamRolesFilledQuarter,
     wins: (wins || []).map(w => ({ company: w.company, role: w.role, candidate: w.candidate || 'A candidate' })),
@@ -402,6 +406,10 @@ export function ellaReportMarkdown(s, note) {
     ['Interviews arranged for every 100 submissions', r.interviewPerSubmission.now == null ? 'n/a' : String(r.interviewPerSubmission.now), r.interviewPerSubmission.before == null ? 'n/a' : String(r.interviewPerSubmission.before)],
     ['Interviews attended, out of those with an outcome', r.attendanceRate.now == null ? 'n/a' : `${r.attendanceRate.now}%`, r.attendanceRate.before == null ? 'n/a' : `${r.attendanceRate.before}%`],
   ]);
+  if (s.monthTargets && s.monthTargets.length) {
+    h(`Your targets for ${s.periodName}`);
+    table(['Measure', 'Done', 'Target', 'Result'], s.monthTargets.map(t => [t.label, String(t.done), String(t.target), t.done >= t.target ? 'Met' : `${Math.round((t.done / t.target) * 100)}% of target`]));
+  }
   h(`Placements and targets for ${s.quarter}`);
   table(['Measure', 'Figure'], [
     ['Your placements this month', String(s.placements.month)], [`Your placements this quarter`, String(s.placements.quarter)], ['Your placements this year', String(s.placements.ytd)],

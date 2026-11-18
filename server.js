@@ -17205,7 +17205,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '18 Nov 2026 - build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1)';
+const SERVER_BUILD = '18 Nov 2026 - build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -23641,7 +23641,21 @@ async function reportsBuildElla(period) {
     .map(i => ({ company: i.company, role: i.role, candidate: i.candidateName })); // names only, never an amount
   let reviews = [];
   try { reviews = (await hrReviews.list()).filter(r => lc(r.employee) === 'ella'); } catch (e) { /* HR sheet not available: the report simply has no review section */ }
-  return reports.buildEllaSnapshot({ period, my, wins, reviews, firstName: profileOf('ella').name || 'Ella', generatedAt: new Date().toISOString() });
+  // build 67: her activity targets for the month (counts only, no goal or money figure ever reaches the report)
+  let monthTargets = null;
+  try {
+    const year = Number(period.slice(0, 4));
+    const t = await loadTargetsInput(false, year);
+    if (parseFloat(t.goal.total) > 0) {
+      const endDay = reports.monthEndDate(period);
+      const day = new Date(Date.UTC(endDay.getUTCFullYear(), endDay.getUTCMonth(), endDay.getUTCDate()));
+      const back = backwardsTargets({ ...t.goal, year }, historicalRatios(t.input, day));
+      const share = parseFloat(t.set.get('target_share:ella')) || 1;
+      const prog = personProgress(t.input, 'ella', targetsForPerson(back, share, t.jparse('target_override:ella')), day);
+      if (prog.month === period) monthTargets = prog.rows.filter(r => r.monthTarget > 0).map(r => ({ key: r.key, done: r.monthDone, target: r.monthTarget }));
+    }
+  } catch (e) { /* no targets set or not readable: the report simply has no targets section */ }
+  return reports.buildEllaSnapshot({ period, my, wins, reviews, monthTargets, firstName: profileOf('ella').name || 'Ella', generatedAt: new Date().toISOString() });
 }
 
 // Writes Ella's report into Emails to review (never sends it). One per month, unless Daniel Brown asks for a fresh one.
