@@ -17205,7 +17205,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '18 Nov 2026 - build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella)';
+const SERVER_BUILD = '18 Nov 2026 - build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -22939,7 +22939,7 @@ app.get('/api/targets/mine', async (req, res) => {
     if (!(parseFloat(t.goal.total) > 0)) return res.json({ set: false });
     const now = new Date();
     const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-    const back = backwardsTargets({ ...t.goal, year }, historicalRatios(t.input, day));
+    const back = backwardsTargets({ ...t.goal, year }, historicalRatios(t.input, day), { input: t.input, today: day });
     const share = parseFloat(t.set.get('target_share:' + key)) || (key === 'ella' ? 1 : 0.5);
     const targets = targetsForPerson(back, share, t.jparse('target_override:' + key));
     const prog = personProgress(t.input, key, targets, day);
@@ -23649,7 +23649,7 @@ async function reportsBuildElla(period) {
     if (parseFloat(t.goal.total) > 0) {
       const endDay = reports.monthEndDate(period);
       const day = new Date(Date.UTC(endDay.getUTCFullYear(), endDay.getUTCMonth(), endDay.getUTCDate()));
-      const back = backwardsTargets({ ...t.goal, year }, historicalRatios(t.input, day));
+      const back = backwardsTargets({ ...t.goal, year }, historicalRatios(t.input, day), { input: t.input, today: day });
       const share = parseFloat(t.set.get('target_share:ella')) || 1;
       const prog = personProgress(t.input, 'ella', targetsForPerson(back, share, t.jparse('target_override:ella')), day);
       if (prog.month === period) monthTargets = prog.rows.filter(r => r.monthTarget > 0).map(r => ({ key: r.key, done: r.monthDone, target: r.monthTarget }));

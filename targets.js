@@ -97,25 +97,43 @@ export function normaliseGoal(g) {
   return { year, total, lines };
 }
 
-export function backwardsTargets(goalIn, hist) {
+// ctx (optional, build 67.2): { input, today }. When the goal year is already under way, the activity targets are worked out
+// from what is STILL TO SELL (permanent placement goal minus permanent sold so far) over the months left, so being behind raises
+// the monthly targets and being ahead lowers them. Without ctx, or outside the goal year, the targets are the flat yearly share.
+export function backwardsTargets(goalIn, hist, ctx) {
   const goal = normaliseGoal(goalIn);
   const R = hist.ratios;
   const perYear = goal.lines.perm;
   const placementsYear = R.avgFee > 0 ? perYear / R.avgFee : 0;
-  const mk = n => ({ year: r1(n), month: r1(n / 12), week: r1(n / WORKING_WEEKS) });
-  const placementsRounded = Math.ceil(placementsYear * 10) / 10;
+  let catchUp = { active: false };
+  let monthsLeft = 12, perToSell = perYear;
+  if (ctx && ctx.today && ctx.input && goal.year) {
+    const ys = new Date(Date.UTC(goal.year, 0, 1)), ye = new Date(Date.UTC(goal.year + 1, 0, 1)), t = ctx.today;
+    if (t >= ys && t < ye) {
+      const sold = salesByLine(ctx.input, ys, new Date(t.getTime() + DAY));
+      const daysIn = Math.round((t.getTime() + DAY - ys) / DAY), daysYear = Math.round((ye - ys) / DAY);
+      monthsLeft = Math.max(1, 12 - (daysIn / daysYear) * 12);
+      perToSell = Math.max(0, perYear - sold.byLine.perm);
+      catchUp = { active: true, permGoal: r2(perYear), permSold: r2(sold.byLine.perm), permToSell: r2(perToSell), monthsLeft: r1(monthsLeft), flatMonthPlacements: r1(placementsYear / 12), goalMet: perToSell <= 0 };
+    }
+  }
+  const toGo = catchUp.active ? (R.avgFee > 0 ? perToSell / R.avgFee : 0) : placementsYear; // placements still needed
+  const monthDiv = catchUp.active ? monthsLeft : 12, weekDiv = catchUp.active ? WORKING_WEEKS * monthsLeft / 12 : WORKING_WEEKS;
+  const mk = n => ({ year: r1(catchUp.active ? n : n), month: r1(n / monthDiv), week: r1(n / weekDiv) });
+  const placementsRounded = Math.ceil(toGo * 10) / 10;
   return {
     goal,
     revenue: { year: r2(goal.total), month: r2(goal.total / 12), week: r2(goal.total / WORKING_WEEKS) },
     byLine: LINE_KEYS.map(k => ({ key: k, label: lineLabel(k), year: r2(goal.lines[k]), month: r2(goal.lines[k] / 12) })),
     activity: {
       placements: mk(placementsRounded),
-      candidatesAdded: mk(placementsYear * R.candidatesPerPlacement),
-      submissions: mk(placementsYear * R.submissionsPerPlacement),
-      interviews: mk(placementsYear * R.interviewsPerPlacement),
-      calls: mk(placementsYear * R.callsPerPlacement),
-      emails: mk(placementsYear * R.emailsPerPlacement),
+      candidatesAdded: mk(toGo * R.candidatesPerPlacement),
+      submissions: mk(toGo * R.submissionsPerPlacement),
+      interviews: mk(toGo * R.interviewsPerPlacement),
+      calls: mk(toGo * R.callsPerPlacement),
+      emails: mk(toGo * R.emailsPerPlacement),
     },
+    catchUp,
     assumptions: { ...R, source: hist.source, placementsLast12Months: hist.placementsLast12Months, usedHistory: hist.usedHistory, workingWeeksPerYear: WORKING_WEEKS, note: hist.usedHistory ? 'Ratios are measured from the last 12 months of placements.' : `Fewer than ${MIN_PLACEMENTS_FOR_HISTORY} placements in the last 12 months, so steering defaults are used until there is more history.` },
   };
 }
@@ -229,7 +247,7 @@ export function computeTargets(input, goalIn, opts = {}) {
   const today = input.now ? new Date(input.now) : new Date();
   const day = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
   const hist = historicalRatios(input, day);
-  const back = backwardsTargets(goalIn, hist);
+  const back = backwardsTargets(goalIn, hist, { input, today: day });
   const progress = goalProgress(input, goalIn, day);
   const ytd = salesByLine(input, new Date(Date.UTC(day.getUTCFullYear(), 0, 1)), new Date(day.getTime() + DAY));
   const ella = targetsForPerson(back, opts.ellaShare, opts.ellaOverride);

@@ -88,5 +88,19 @@ ok(prof.roles[0].company === 'Gamma', 'flagged roles come first');
 const all = computeTargets({ ...input, activity, comms: [], interviews: [], roles: [], candidates: [], adSpend: [], settings: {}, fin: {} }, { year: 2027, total: 100000 }, { ellaShare: 1 });
 ok(all.thisYearTotal === 22148 && all.back.goal.total === 100000 && all.ella.placements.month > 0, 'computeTargets ties it together');
 
+// build 67.2: catch-up. Goal year under way: targets follow what is still to sell over the months left
+const day = new Date('2027-07-02T00:00:00Z');
+const flat = backwardsTargets({ year: 2027, total: 100000 }, hist);
+const cu = backwardsTargets({ year: 2027, total: 100000 }, hist, { input, today: day });
+ok(cu.catchUp.active && cu.catchUp.permSold === 20000 && cu.catchUp.permToSell === 80000, 'catch-up: sold and still to sell ' + JSON.stringify(cu.catchUp));
+ok(cu.activity.submissions.month > flat.activity.submissions.month, 'behind the pace, so the monthly targets rise (' + flat.activity.submissions.month + ' to ' + cu.activity.submissions.month + ')');
+// 80,000 / 4,000 = 20 placements over about 5.97 months, 5 submissions each = about 16.7 a month
+ok(near(cu.activity.submissions.month, 16.7, 0.3), 'hand check submissions a month ' + cu.activity.submissions.month);
+const ahead = backwardsTargets({ year: 2027, total: 30000 }, hist, { input, today: day });
+ok(ahead.activity.submissions.month < backwardsTargets({ year: 2027, total: 30000 }, hist).activity.submissions.month, 'ahead of the pace, so the monthly targets fall');
+const met = backwardsTargets({ year: 2027, total: 15000 }, hist, { input, today: day });
+ok(met.catchUp.goalMet && met.activity.submissions.month === 0 && met.activity.placements.month === 0, 'goal already met, nothing more needed');
+ok(!backwardsTargets({ year: 2028, total: 100000 }, hist, { input, today: day }).catchUp.active, 'a future goal year stays flat');
+
 console.log(bad ? `${bad} of ${n} checks failed` : `targets: all ${n} checks passed`);
 process.exit(bad ? 1 : 0);
