@@ -1515,6 +1515,7 @@ h1,h2,.view-head h2,#leadClientsHeader h2,#clientsHeader h2,.modal h2{font-famil
         <div id="p64Payroll" style="margin-bottom:32px;"></div>
         <div id="p65Reports" style="margin-bottom:32px;"></div>
         <div id="p66Mail" style="margin-bottom:32px;"></div>
+        <div id="p67Targets" style="margin-bottom:32px;"></div>
         
         <!-- KPI Targets Section -->
         <div style="margin-bottom:32px;">
@@ -17447,7 +17448,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '18 Nov 2026 - build 66.3 (Mailbox sync panel: a result for each mailbox and for Run now, partial success shown, health check and repair; suggestion errors shown on the card; calls where someone was spoken to removed; received email no longer counted as email sent; built on page build 66.2)';
+var PAGE_BUILD = '18 Nov 2026 - build 67 (Targets and profitability panel: annual goal, targets worked out from your own history, service lines and invoice tagging, role and client profitability, Ella own targets with counts only; built on page build 66.3)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -22964,6 +22965,7 @@ function k62Render(k){
   p64Load(); // build 64: the payroll panel under the owner view
   if(typeof p65Load === 'function') p65Load(); // build 65: the reports panel under the payroll panel
   if(typeof p66Load === 'function') p66Load(); // build 66: the mailbox sync panel under the reports panel
+  if(typeof p67Load === 'function') p67Load(); // build 67: targets and profitability under the mailbox sync panel
 }
 
 function k62RenderMine(k){
@@ -22976,7 +22978,8 @@ function k62RenderMine(k){
     tile('Emails logged', 'emails') + tile('Calls logged', 'calls') + tile('Tasks completed', 'tasksDone') +
     k62Tile('Your placements this quarter', k.placements.quarter, {cls: 'gold', sub: (t ? 'Target for ' + esc(k.quarter) + ': ' + t.targetRoles + ' roles' : 'No personal target set for ' + esc(k.quarter)) + '. This year: ' + k.placements.ytd}) +
     k62Tile('Team roles filled this quarter', k.teamRolesFilledQuarter, {sub: tt ? 'Team target: ' + tt.targetRoles + ' roles' : ''}) +
-    '</div>';
+    '</div><div id="p67Mine"></div>';
+  if(typeof p67LoadMine === 'function') p67LoadMine(); // build 67: counts only, no money
 }
 
 async function k62SaveSettings(){
@@ -22998,6 +23001,108 @@ async function k62VatTest(){
 /* ============================================================
    Build 66: mailbox sync. Suggested updates on Home, the sync panel in KPI Reporting, and the View link on email entries
    ============================================================ */
+
+/* ===== Build 67: targets that set themselves, service lines, role profitability ===== */
+var P67 = {d: null, busy: false, err: ''};
+var P67_LABEL = {placements: 'Placements', candidatesAdded: 'Candidates added', submissions: 'Candidates submitted', interviews: 'Interviews arranged', calls: 'Calls made', emails: 'Emails to clients and candidates'};
+var P67_STATUS = {ahead: 'Ahead', on_track: 'On track', behind: 'Behind', none: '-'};
+function p67Num(n){ return n == null ? '-' : (Math.round(n * 10) / 10).toString(); }
+async function p67Load(fresh){
+  var host = document.getElementById('p67Targets');
+  if(!host) return;
+  if(!p64Owner()){ host.innerHTML = ''; return; }
+  try{ P67.d = await b2Api('/api/targets' + (fresh ? '?fresh=1' : '')); P67.err = ''; p67Render(); }
+  catch(e){ host.innerHTML = '<div class="k62-h">Targets and profitability</div><div class="panel" style="padding:16px;font-size:12.5px;color:#b3261e;">Could not load targets: ' + esc(e.message) + '</div>'; }
+}
+function p67StatusPill(st){ var c = st === 'ahead' ? '#2E7D4F' : st === 'behind' ? '#B3372B' : '#6b6b6b'; return '<strong style="color:' + c + ';">' + esc(P67_STATUS[st] || st) + '</strong>'; }
+function p67Render(){
+  var host = document.getElementById('p67Targets'), d = P67.d;
+  if(!host || !d) return;
+  var goal = d.back.goal, pr = d.progress, A = d.back.activity, as = d.back.assumptions;
+  var h = '<div class="k62-h">Targets and profitability <small>only you can see the money on this panel</small></div><div class="panel" style="padding:16px;">';
+  if(!d.bankConnected) h += '<div class="p66-flag">Reminder: the Starling bank is not connected yet, so advertising cost here comes from the Ad Spend entries and the manual figure only. Add STARLING_TOKEN in Render when you are ready.</div>';
+  // goal form
+  h += '<div class="k62-sub">Annual revenue goal for ' + esc(d.year) + ' (all service lines)</div><div class="p64-row">' +
+    '<div><label>Year</label><select id="p67Year" onchange="p67Year(this.value)">' + [2026,2027,2028].map(function(y){ return '<option value="' + y + '"' + (y === d.year ? ' selected' : '') + '>' + y + '</option>'; }).join('') + '</select></div>' +
+    '<div><label>Goal in pounds</label><input id="p67Total" type="text" value="' + (goal.total || '') + '" style="width:110px;" placeholder="100000"></div>';
+  (d.lines || []).forEach(function(l){ var v = (d.back.goal.lines || {})[l.key]; h += '<div><label>' + esc(l.label) + (l.key === 'perm' ? ' (the rest)' : ' (optional)') + '</label><input id="p67L_' + l.key + '" type="text" ' + (l.key === 'perm' ? 'disabled value="' + (v || '') + '"' : 'value="' + (v || '') + '"') + ' style="width:110px;"></div>'; });
+  h += '<div><button class="btn btn-primary" onclick="p67SaveGoal()"' + (P67.busy ? ' disabled' : '') + '>Save goal</button></div></div>';
+  h += '<div style="font-size:11.5px;color:#999;margin-top:6px;">Any money you do not give to a service line goes to permanent placement, so the lines always add up to the goal.</div>';
+  if(P67.err) h += '<div class="p66-flag" style="margin-top:10px;">' + esc(P67.err) + '</div>';
+  if(!goal.total){ h += '</div>'; host.innerHTML = h; return; }
+  // progress
+  h += '<div class="k62-sub" style="margin-top:20px;">Progress against the goal</div>';
+  if(!pr.started) h += '<div style="font-size:13px;">The ' + esc(d.year) + ' goal starts on ' + esc(pr.startsOn) + '. Sold so far this calendar year: ' + k62Money(d.thisYearTotal) + '.</div>';
+  else h += '<div style="font-size:13px;line-height:1.7;">' + p67StatusPill(pr.status) + ': sold ' + k62Money(pr.soldToDate) + ' against ' + k62Money(pr.expectedToDate) + ' expected by today (' + (pr.gap >= 0 ? 'ahead by ' : 'gap of ') + k62Money(Math.abs(pr.gap)) + '). To reach ' + k62Money(pr.goal) + ' you need ' + k62Money(pr.needPerMonthFromNow) + ' a month from now.</div>';
+  // service lines
+  h += '<div class="k62-sub" style="margin-top:20px;">Service lines</div><div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>Line</th><th>' + esc(d.year) + ' goal</th><th>Per month</th><th>Sold ' + (pr.started ? esc(d.year) : 'this year') + '</th></tr></thead><tbody>';
+  var soldBy = {}; (pr.started ? pr.lines : []).forEach(function(l){ soldBy[l.key] = l.sold; }); (d.thisYearByLine || []).forEach(function(l){ if(!pr.started) soldBy[l.key] = l.amount; });
+  d.back.byLine.forEach(function(l){ h += '<tr><td>' + esc(l.label) + '</td><td>' + k62Money(l.year) + '</td><td>' + k62Money(l.month) + '</td><td>' + k62Money(soldBy[l.key] || 0) + '</td></tr>'; });
+  h += '</tbody></table></div>';
+  // targets working backwards
+  h += '<div class="k62-sub" style="margin-top:20px;">What the goal needs (worked out from your own history)</div><div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>Measure</th><th>Per year</th><th>Per month</th><th>Per week</th></tr></thead><tbody>';
+  ['placements','candidatesAdded','submissions','interviews','calls','emails'].forEach(function(k){ var a = A[k]; h += '<tr><td>' + esc(P67_LABEL[k]) + '</td><td>' + p67Num(a.year) + '</td><td>' + p67Num(a.month) + '</td><td>' + p67Num(a.week) + '</td></tr>'; });
+  h += '</tbody></table></div><div style="font-size:12px;color:#777;margin-top:8px;line-height:1.6;"><strong>Assumptions.</strong> ' + esc(as.note) + ' Average fee ' + k62Money(as.avgFee) + ' (' + esc(as.source.avgFee) + '); per placement: ' + p67Num(as.candidatesPerPlacement) + ' candidates added, ' + p67Num(as.submissionsPerPlacement) + ' submitted, ' + p67Num(as.interviewsPerPlacement) + ' interviews, ' + p67Num(as.callsPerPlacement) + ' calls, ' + p67Num(as.emailsPerPlacement) + ' emails. ' + esc(as.placementsLast12Months) + ' permanent placements in the last 12 months. ' + esc(as.workingWeeksPerYear) + ' working weeks a year. They are recalculated every time you open this panel.</div>';
+  // Ella
+  var ov = d.ellaOverride || {};
+  h += '<div class="k62-sub" style="margin-top:20px;">Ella\'s targets <small style="font-weight:400;color:#999;">counts only, she never sees money</small></div><div style="font-size:12px;color:#777;margin-bottom:8px;">She carries <input id="p67Share" type="text" value="' + Math.round((d.ellaShare || 1) * 100) + '" style="width:44px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;"> % of the business targets. Type a figure in a box to override it, empty means use the calculated one.</div><div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>Measure</th><th>Month (calculated)</th><th>Month override</th><th>Week (calculated)</th><th>Week override</th></tr></thead><tbody>';
+  ['placements','candidatesAdded','submissions','interviews','calls','emails'].forEach(function(k){
+    var o = ov[k] || {}, share = (d.ellaShare || 1), a = A[k];
+    h += '<tr><td>' + esc(P67_LABEL[k]) + '</td><td>' + p67Num(a.month * share) + '</td><td><input id="p67OM_' + k + '" type="text" value="' + (o.month || '') + '" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;"></td><td>' + p67Num(a.week * share) + '</td><td><input id="p67OW_' + k + '" type="text" value="' + (o.week || '') + '" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;"></td></tr>';
+  });
+  h += '</tbody></table></div><div style="margin-top:8px;"><button class="btn btn-secondary" onclick="p67SaveOverride()">Save Ella\'s targets</button></div>';
+  // tag invoices
+  h += '<div class="k62-sub" style="margin-top:20px;">Tag invoices with a service line <small style="font-weight:400;color:#999;">client invoices count as permanent placement unless you change them. Talent Suite sales are tagged automatically.</small></div><div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>Invoice</th><th>Date</th><th>Client</th><th>Amount</th><th>Service line</th></tr></thead><tbody>';
+  (d.invoices || []).forEach(function(i){
+    h += '<tr><td>' + esc(i.number) + '</td><td>' + esc(i.date) + '</td><td>' + esc(i.company) + (i.role ? ' - ' + esc(i.role) : '') + '</td><td>' + k62Money(i.amount) + '</td><td><select onchange="p67Tag(\'' + esc(i.number).replace(/'/g, '') + '\', this.value)">' + (d.lines || []).map(function(l){ return '<option value="' + l.key + '"' + (l.key === i.line ? ' selected' : '') + '>' + esc(l.label) + '</option>'; }).join('') + '</select></td></tr>';
+  });
+  if(!(d.invoices || []).length) h += '<tr><td colspan="5" style="color:#999;">No invoices yet.</td></tr>';
+  h += '</tbody></table></div>';
+  // profitability
+  var pf = d.profitability;
+  h += '<div class="k62-sub" style="margin-top:20px;">Role profitability</div><div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>Client and role</th><th>Status</th><th>Days open</th><th>Fee earned</th><th>Advertising</th><th>Net</th><th>Candidates / submitted</th><th>Flag</th></tr></thead><tbody>';
+  pf.roles.forEach(function(r){ h += '<tr><td>' + esc(r.company) + ' - ' + esc(r.role) + '</td><td>' + esc(r.status) + '</td><td>' + (r.daysOpen == null ? '-' : r.daysOpen) + '</td><td>' + k62Money(r.feeEarned) + '</td><td>' + k62Money(r.adSpend) + '</td><td style="color:' + (r.net < 0 ? '#B3372B' : 'inherit') + ';">' + k62Money(r.net) + '</td><td>' + r.candidates + ' / ' + r.submitted + '</td><td style="color:#B3372B;">' + esc(r.flags.join('. ')) + '</td></tr>'; });
+  if(!pf.roles.length) h += '<tr><td colspan="8" style="color:#999;">No roles yet.</td></tr>';
+  h += '</tbody></table></div>';
+  h += '<div class="k62-sub" style="margin-top:16px;">Clients</div><div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>Client</th><th>Roles</th><th>Fee earned</th><th>Advertising</th><th>Net</th><th>Verdict</th></tr></thead><tbody>';
+  pf.clients.forEach(function(c){ h += '<tr><td>' + esc(c.company) + '</td><td>' + c.roles + '</td><td>' + k62Money(c.feeEarned) + '</td><td>' + k62Money(c.adSpend) + '</td><td>' + k62Money(c.net) + '</td><td>' + esc(c.worth) + '</td></tr>'; });
+  h += '</tbody></table></div><div style="font-size:12px;color:#777;margin-top:8px;line-height:1.6;">' + pf.notes.map(esc).join(' ') + ' Advertising with no role in the last 12 months: ' + k62Money(pf.unallocatedAdSpend12m) + (pf.manualAdMonthly ? '. Manual advertising cost: ' + k62Money(pf.manualAdMonthly) + ' a month.' : '.') + '</div>';
+  h += '</div>';
+  host.innerHTML = h;
+}
+function p67Year(y){ if(P67.d) P67.d.year = parseInt(y, 10); p67LoadYear(parseInt(y, 10)); }
+async function p67LoadYear(y){ try{ P67.d = await b2Api('/api/targets?year=' + y); P67.err = ''; p67Render(); }catch(e){ P67.err = e.message; p67Render(); } }
+async function p67SaveGoal(){
+  var lines = {}; ['partnership','suite','youth'].forEach(function(k){ var el = document.getElementById('p67L_' + k); if(el && el.value.trim() !== '') lines[k] = el.value; });
+  P67.busy = true; P67.err = '';
+  try{ await b2Post('/api/targets/goal', {year: P67.d.year, total: document.getElementById('p67Total').value, lines: lines}); showToast('Goal saved'); P67.d = await b2Api('/api/targets?year=' + P67.d.year + '&fresh=1'); }
+  catch(e){ P67.err = e.message || 'Could not save the goal'; }
+  P67.busy = false; p67Render();
+}
+async function p67Tag(number, line){
+  try{ await b2Post('/api/targets/service-line', {number: number, line: line}); showToast('Service line saved'); P67.d = await b2Api('/api/targets?year=' + P67.d.year + '&fresh=1'); P67.err = ''; }
+  catch(e){ P67.err = e.message || 'Could not save the service line'; }
+  p67Render();
+}
+async function p67SaveOverride(){
+  var ov = {}; ['placements','candidatesAdded','submissions','interviews','calls','emails'].forEach(function(k){ var m = document.getElementById('p67OM_' + k).value, w = document.getElementById('p67OW_' + k).value; if(m.trim() !== '' || w.trim() !== '') ov[k] = {month: m, week: w}; });
+  var share = parseFloat(document.getElementById('p67Share').value) / 100;
+  try{ await b2Post('/api/targets/override', {person: 'ella', override: ov, share: share > 0 && share <= 1 ? share : ''}); showToast('Ella\'s targets saved'); P67.d = await b2Api('/api/targets?year=' + P67.d.year + '&fresh=1'); P67.err = ''; }
+  catch(e){ P67.err = e.message || 'Could not save the targets'; }
+  p67Render();
+}
+async function p67LoadMine(){
+  var host = document.getElementById('p67Mine'); if(!host) return;
+  try{
+    var m = await b2Api('/api/targets/mine');
+    if(!m || m.owner || !m.set){ host.innerHTML = ''; return; }
+    var h = '<div class="k62-h" style="margin-top:24px;">Your targets <small>this month and this week, worked out from the business goal</small></div><div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>Measure</th><th>This month</th><th>Month target</th><th>This week</th><th>Week target</th><th>Status</th></tr></thead><tbody>';
+    m.rows.forEach(function(r){ h += '<tr><td>' + esc(P67_LABEL[r.key] || r.key) + (r.manual ? ' <small style="color:#999;">(set by Daniel)</small>' : '') + '</td><td>' + r.monthDone + '</td><td>' + p67Num(r.monthTarget) + '</td><td>' + r.weekDone + '</td><td>' + p67Num(r.weekTarget) + '</td><td>' + p67StatusPill(r.status) + (r.status === 'behind' && r.gapMonth > 0 ? ' <small style="color:#999;">' + p67Num(r.gapMonth) + ' to go this month</small>' : '') + '</td></tr>'; });
+    h += '</tbody></table></div>';
+    host.innerHTML = h;
+  }catch(e){ host.innerHTML = ''; }
+}
+
 var P66 = {sug: null, st: null, busy: false, result: null, check: null, err: {}};
 function p66When(iso){ if(!iso) return ''; var d = new Date(iso); return isNaN(d) ? '' : d.toLocaleString('en-GB', {weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London'}); }
 async function p66SugLoad(){
