@@ -1,0 +1,24 @@
+// Build 67.3: contact closes chase and call tasks. Run: node scripts/test-attention.mjs
+import { contactDoneReason } from '../attention.js';
+let n = 0; const ok = (c, m) => { n++; if (!c) { console.log('FAIL', m); process.exitCode = 1; } };
+const lc = s => String(s || '').toLowerCase();
+const h = { lc, parseISODate: s => { const d = new Date(String(s).slice(0, 10) + 'T00:00:00Z'); return isNaN(d) ? null : d; }, msOf: s => Date.parse(s) || 0, personNameMatches: (a, b) => lc(a) === lc(b), formatDateUK: s => s.split('-').reverse().join('/') };
+const p = { name: 'Jo Smith', role: 'Fitter', company: 'Acme' };
+const email = (extra) => ({ channel: 'email', direction: 'outbound', entity_type: 'client', entity_name: 'Pat', company: 'Acme', role: 'Fitter', timestamp: '2026-11-19T10:00:00Z', ...extra });
+const task = (due) => ({ dueDate: due });
+ok(contactDoneReason(p, 'chase1', task('2026-11-19'), [email()], h), 'email to the client on the due day closes the chase');
+ok(!contactDoneReason(p, 'chase1', task('2026-11-19'), [email({ timestamp: '2026-11-18T15:00:00Z' })], h), 'the submission email sent the day the task was created does not close it');
+ok(!contactDoneReason(p, 'chase1', task('2026-11-19'), [email({ direction: 'inbound' })], h), 'a received email does not close a chase');
+ok(!contactDoneReason(p, 'chase1', task('2026-11-19'), [email({ company: 'Other Ltd' })], h), 'contact with another client does not close it');
+ok(contactDoneReason(p, 'chase1', task('2026-11-19'), [email({ channel: 'call' })], h).startsWith('a call'), 'a logged call closes it');
+ok(!contactDoneReason(p, 'chase1', task('2026-11-19'), [email({ channel: 'pipeline' })], h), 'a pipeline note is not contact');
+ok(contactDoneReason(p, 'chase3', task('2026-11-21'), [email({ timestamp: '2026-11-19T09:00:00Z' })], h), 'day 3 chase accepts contact from the day after it was created');
+ok(!contactDoneReason(p, 'chase3', task('2026-11-21'), [email({ timestamp: '2026-11-18T09:00:00Z' })], h), 'day 3 chase ignores contact on the day it was created');
+const cand = { entity_type: 'candidate', entity_name: 'Jo Smith', company: 'Acme', timestamp: '2026-11-19T10:00:00Z' };
+ok(contactDoneReason(p, 'avail', task('2026-11-19'), [email(cand)], h), 'email to the candidate closes the availability call');
+ok(!contactDoneReason(p, 'avail', task('2026-11-19'), [email({ ...cand, entity_name: 'Someone Else' })], h), 'another candidate does not');
+ok(!contactDoneReason(p, 'chase1', task('2026-11-19'), [email(cand)], h), 'candidate contact does not close a client chase');
+ok(contactDoneReason(p, 'iv-after-r2', task('2026-11-19'), [email(cand)], h), 'round suffixes are understood');
+ok(!contactDoneReason(p, 'offer-letter', task('2026-11-19'), [email(cand)], h), 'tasks that need a document are never closed by contact');
+ok(!contactDoneReason(p, 'chase1', { dueDate: '' }, [email()], h), 'no due date, no decision');
+console.log(`attention: all ${n} checks passed`);

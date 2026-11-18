@@ -22,6 +22,7 @@ import { createMailEngine, ENGINE_LOG_HEADER, msSecretExpires, msSecretDaysLeft 
 import { looksLikeNdr, failedRecipient, classifyBounce, replyIntent } from './cold-bounce.js'; // build 60.3
 import { STARLING_LIVE, STARLING_SANDBOX, BANK_HEADER, DEFAULT_BANK_RULES, createStarlingClient, createDemoStarling, toBankRow, classifyRow, categoriseCost, matchPayments, findPayoutFor, reconcilePayout, latePayerScores } from './bank.js'; // build 63
 import * as reports from './reports.js'; // build 65
+import { contactDoneReason as contactDoneReasonPure } from './attention.js'; // build 67.3
 import { createMailSync, SUGGESTION_KINDS, isClientType } from './mailsync.js'; // build 66
 import { londonToday, monthOf, readPayrollSettings, validOverride, payDateFor, payrollWatch, currentPayrollMonth, bannerFor, reminderFor, payrollPack, clawbackCheck, payrollBankCheck, payrollEmail, runRecords, monthName as payrollMonthName } from './payroll.js'; // build 64
 import { computeTargets, backwardsTargets, historicalRatios, normaliseGoal, targetsForPerson, personProgress, goalProgress, salesByLine, SERVICE_LINES, cleanLine } from './targets.js'; // build 67
@@ -12450,6 +12451,7 @@ async function sweepAutoTasks() {
     if (p) {
       if (!autoTaskStillValid(ev, p.stage, p, hasIv(p))) reason = ev === 'ivmissing' ? 'the interview is now on the Interviews tab' : `${p.name} is now at ${pipelineStageLabel(p.stage)}`;
       else if (ev === 'reject-email' && rejectionSent(p, t, comms)) reason = 'the rejection email has been logged as sent';
+      else { const cr = contactDoneReason(p, ev, t, comms); if (cr) { reason = cr; count('contactLogged'); } }
     } else {
       // A candidate task whose candidate is no longer on the pipeline at all
       const parts = key.split('-');
@@ -12472,6 +12474,12 @@ async function sweepAutoTasks() {
   console.log(`Auto task sweep: closed ${closed.length}`, byType, `added ${added}`);
   return lastAutoSweep;
 }
+
+// Build 67.3: a chase or call task is done once the contact it asks for is logged (mailbox sync, Accept, manual log or a logged call).
+// Client chases need an outbound email or call to the client's company; candidate calls need one to the candidate. The contact must
+// be dated on or after the day the task falls due (chase3 from the day after it was created), so the submission email itself,
+// sent when the task was created, never closes it. Rejection emails and cold call follow ups are handled above.
+const contactDoneReason = (p, ev, t, comms) => contactDoneReasonPure(p, ev, t, comms, { parseISODate, msOf, lc, personNameMatches, formatDateUK });
 
 // Contact logged, cold call completed: tidy up shortly afterwards (several saves in a row run one sweep)
 let taskTidyTimer = null;
@@ -17205,7 +17213,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '18 Nov 2026 - build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year)';
+const SERVER_BUILD = '18 Nov 2026 - build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year; 67.3 chase and call tasks close once the contact is logged and Needs attention can be dismissed or snoozed)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -22927,6 +22935,47 @@ app.post('/api/targets/override', requireAdmin, async (req, res) => {
   } catch (e) { console.error('POST /api/targets/override:', e.message); res.status(500).json({ error: e.message }); }
 });
 
+/* ---------- Needs attention: dismissed and snoozed items (build 67.3) ----------
+   Notifications are worked out in the page. What a person has dismissed or snoozed is kept per person in the Settings table
+   (attn:<person>) as { <item id>: { sig, until } }. An item stays hidden only while its situation signature is unchanged
+   (an overdue task that was due today, an invoice that grows more overdue in severity) and until the snooze date, if there is one. */
+const attnKey = req => 'attn:' + personKey(actorOf(req) || 'unknown');
+async function attnLoad(req) {
+  const rows = await settingsTable.list().catch(() => []);
+  const r = rows.find(x => x.id === attnKey(req));
+  try { const o = JSON.parse((r && r.value) || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; }
+}
+app.get('/api/attention/hidden', async (req, res) => {
+  try {
+    const me = actorOf(req); if (!me || me === 'unknown') return res.status(401).json({ error: 'Sign in first' });
+    res.json({ hidden: await attnLoad(req) });
+  } catch (e) { console.error('GET /api/attention/hidden:', e.message); res.status(500).json({ error: e.message }); }
+});
+app.post('/api/attention/hide', async (req, res) => {
+  try {
+    const me = actorOf(req); if (!me || me === 'unknown') return res.status(401).json({ error: 'Sign in first' });
+    if (isPreview()) return res.status(403).json({ error: 'Dismissing is saved in the live workspace only' });
+    const items = Array.isArray(req.body && req.body.items) ? req.body.items.slice(0, 500) : [];
+    const days = Math.max(0, Math.min(90, parseInt(req.body && req.body.days, 10) || 0)); // 0 = until its situation changes
+    const today = londonToday();
+    const cur = await attnLoad(req);
+    Object.keys(cur).forEach(k => { if (cur[k] && cur[k].until && cur[k].until < today) delete cur[k]; }); // tidy expired snoozes
+    const until = days ? new Date(Date.now() + days * 86400000).toISOString().slice(0, 10) : '';
+    items.forEach(i => { if (i && typeof i.id === 'string' && i.id.length < 200) cur[i.id] = { sig: String(i.sig || '').slice(0, 60), until }; });
+    if (Object.keys(cur).length > 2000) return res.status(400).json({ error: 'Too many dismissed items' });
+    await settingsTable.upsert({ id: attnKey(req), value: JSON.stringify(cur), updated_by: me });
+    res.json({ ok: true, hidden: cur });
+  } catch (e) { console.error('POST /api/attention/hide:', e.message); res.status(500).json({ error: e.message }); }
+});
+app.post('/api/attention/restore', async (req, res) => {
+  try {
+    const me = actorOf(req); if (!me || me === 'unknown') return res.status(401).json({ error: 'Sign in first' });
+    if (isPreview()) return res.status(403).json({ error: 'Restoring is saved in the live workspace only' });
+    await settingsTable.upsert({ id: attnKey(req), value: '{}', updated_by: me });
+    res.json({ ok: true });
+  } catch (e) { console.error('POST /api/attention/restore:', e.message); res.status(500).json({ error: e.message }); }
+});
+
 // A person's own targets and progress. Counts only: no revenue, fee, goal in pounds or cost ever leaves this route.
 app.get('/api/targets/mine', async (req, res) => {
   try {
@@ -23910,7 +23959,7 @@ const mailSync = createMailSync({
 if (pgLivePool) setInterval(() => {
   const h = gapHourUK();
   if (!coldIsWeekday() || h < 7 || h >= 19) return;
-  mailSync.run().catch(e => console.error('Mail sync failed:', e.message));
+  mailSync.run().then(() => scheduleTaskTidy()).catch(e => console.error('Mail sync failed:', e.message));
 }, 15 * 60 * 1000);
 
 async function mailsyncMorningStep() {
@@ -23976,7 +24025,7 @@ app.post('/api/mailsync/run', mailOwnerGuard, async (req, res) => {
   try {
     if (isPreview()) return res.status(409).json({ error: 'Preview: nothing is read from mailboxes here. Use the live workspace.' });
     const day = String((req.body || {}).sinceDay || '').slice(0, 10);
-    const out = await mailSync.run({ sinceDay: /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : '' });
+    const out = await mailSync.run({ sinceDay: /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : '' }); scheduleTaskTidy();
     auditLog(auditActorOf(req), 'ran', 'mailbox_sync', 'mailbox sync', JSON.stringify(out.counts || out.skipped || {}));
     if (out.skipped === 'off') return res.status(409).json({ error: 'Mailbox sync is switched off. Switch it on first.' });
     if (out.skipped) return res.status(409).json({ error: String(out.skipped) });

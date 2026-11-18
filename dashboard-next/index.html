@@ -373,6 +373,10 @@
     cursor:pointer;border-radius:2px;font-family:inherit;white-space:nowrap;
   }
   .notif-item button:hover{background:var(--lightbg);}
+  .notif-btns{display:flex;gap:6px;flex-shrink:0;}
+  .notif-clear{margin-left:10px;font-size:12px;font-weight:400;color:var(--gold);cursor:pointer;}
+  .notif-hidden{margin:18px 0;font-size:12.5px;color:#999;}
+  .notif-hidden a{color:var(--gold);cursor:pointer;margin-left:6px;}
   .all-clear{text-align:center;padding:48px 16px;color:#999;font-size:14px;}
   .all-clear strong{display:block;font-size:18px;color:var(--dark);font-weight:500;margin-bottom:6px;}
 
@@ -6247,7 +6251,7 @@ function chooseHome(){
 
 /* ---------- shared helpers ---------- */
 
-const OPS = {tasks:[], invoices:[], placements:[], roles:[], notes:[], fetchedAt:0, loading:null, defaultWeeks:12};
+const OPS = {tasks:[], invoices:[], placements:[], roles:[], notes:[], comms:[], hidden:{}, hiddenCount:0, fetchedAt:0, loading:null, defaultWeeks:12};
 const STALE_DAYS = {interview_requested:3, interview_scheduled:7, interviewed:5, offer:5};
 
 function opsToday(){ return new Date().toISOString().slice(0,10); }
@@ -6291,12 +6295,16 @@ async function refreshOps(force){
   };
   const p = (async () => {
     const hdr = {'X-User-Role': currentUserRole};
-    const [tasks, invoices, placements, roles] = await Promise.all([
+    const [tasks, invoices, placements, roles, comms, hid] = await Promise.all([
       get('/api/tasks', hdr),
       signedInUser.admin ? get('/api/invoices') : Promise.resolve(null),
       get('/api/placements'),
       get('/api/roles'),
+      get('/api/comms'),
+      get('/api/attention/hidden'),
     ]);
+    if(comms && Array.isArray(comms.data)){ const cut = new Date(Date.now() - 75 * 86400000).toISOString().slice(0, 10); OPS.comms = comms.data.filter(c => String(c.timestamp || '').slice(0, 10) >= cut && /^(email|call)$/i.test(c.channel || '') && !/^in/i.test(c.direction || '')); }
+    if(hid && hid.hidden) OPS.hidden = hid.hidden;
     if(Array.isArray(tasks)) OPS.tasks = tasks;
     if(invoices && invoices.data) OPS.invoices = invoices.data;
     if(placements && placements.data){ OPS.placements = placements.data; OPS.defaultWeeks = placements.defaultWeeks || 12; }
@@ -6357,7 +6365,11 @@ function buildNotifications(){
   if(!signedInUser) return out;
   const today = opsToday();
   const admin = signedInUser.admin;
-  const add = (sev, title, detail, act) => out.push({sev, title, detail, act});
+  const add = (sev, title, detail, act, id, sig) => out.push({sev, title, detail, act, id: id || (title + '|' + detail), sig: sig || sev});
+  // build 67.3: has the team been in touch since this day? (a later day, so the submission email itself does not count)
+  const lcs = v => String(v || '').trim().toLowerCase();
+  const touched = (day, company, name) => OPS.comms.some(m => String(m.timestamp || '').slice(0, 10) > day &&
+    ((company && lcs(m.company || m.entity_name) === lcs(company) && lcs(m.entity_type) !== 'candidate') || (name && lcs(m.entity_name) === lcs(name) && lcs(m.entity_type) === 'candidate')));
 
   OPS.tasks.forEach(t => {
     if(t.status === 'Complete' || t.archived) return;
@@ -6365,14 +6377,14 @@ function buildNotifications(){
     if(!due) return;
     const d = opsDaysBetween(due, today);
     const ctx = opsTrunc(t.context, 90);
-    if(d > 0) add('high', 'Overdue task: ' + t.title, d + ' day' + (d === 1 ? '' : 's') + ' overdue' + (ctx ? ' - ' + ctx : ''), {type:'tab', tab:'tasks'});
-    else if(d === 0) add('med', 'Task due today: ' + t.title, ctx, {type:'tab', tab:'tasks'});
+    if(d > 0) add('high', 'Overdue task: ' + t.title, d + ' day' + (d === 1 ? '' : 's') + ' overdue' + (ctx ? ' - ' + ctx : ''), {type:'tab', tab:'tasks', taskId:t.id}, 'task:' + t.id, 'high');
+    else if(d === 0) add('med', 'Task due today: ' + t.title, ctx, {type:'tab', tab:'tasks', taskId:t.id}, 'task:' + t.id, 'med');
   });
 
   const unassigned = DATA[UNASSIGNED_LABEL] ? Object.keys(DATA[UNASSIGNED_LABEL]).reduce((n, r) => n + DATA[UNASSIGNED_LABEL][r].length, 0) : 0;
   if(unassigned > 0){
     add('med', unassigned + ' new application' + (unassigned === 1 ? ' needs' : 's need') + ' a company assigned',
-      'Assign a company and contact to move them into a client pipeline', {type:'unassigned'});
+      'Assign a company and contact to move them into a client pipeline', {type:'unassigned'}, 'unassigned', String(unassigned));
   }
 
   Object.keys(DATA).forEach(co => Object.keys(DATA[co]).forEach(role => DATA[co][role].forEach(c => {
@@ -6380,17 +6392,19 @@ function buildNotifications(){
     if(isNaN(days)) return;
     const where = role + (co && co !== UNASSIGNED_LABEL ? ' at ' + co : '');
     const act = {type:'candidate', company:co, role, id:c.id};
+    const since = opsDateOnly(c.date);
     if(c.stage === 'submitted' && co !== UNASSIGNED_LABEL && days >= 1){
-      add(days >= 3 ? 'high' : 'med', 'Chase client for feedback: ' + c.name,
-        where + ' - submitted ' + days + ' day' + (days === 1 ? '' : 's') + ' ago', act);
+      // an email or call to the client since the submission day means it has been chased: leave it to the chase tasks
+      if(!touched(since, co, '')) add(days >= 3 ? 'high' : 'med', 'Chase client for feedback: ' + c.name,
+        where + ' - submitted ' + days + ' day' + (days === 1 ? '' : 's') + ' ago', act, 'chase:' + c.id, days >= 3 ? 'high' : 'med');
     }else if(STALE_DAYS[c.stage] && days >= STALE_DAYS[c.stage]){
-      add('med', 'No movement: ' + c.name, poolStageLabel(c.stage) + ' for ' + days + ' days - ' + where, act);
+      if(!touched(since, co, c.name)) add('med', 'No movement: ' + c.name, poolStageLabel(c.stage) + ' for ' + days + ' days - ' + where, act, 'stale:' + c.id, c.stage);
     }
   })));
 
   if(typeof poolLoaded !== 'undefined' && poolLoaded){
     const n = POOL.filter(poolNeedsCv).length;
-    if(n > 0) add('med', n + ' submitted candidate' + (n === 1 ? ' has' : 's have') + ' no CV on file', 'Upload them from the Candidate Pool tab', {type:'tab', tab:'candidatePool'});
+    if(n > 0) add('med', n + ' submitted candidate' + (n === 1 ? ' has' : 's have') + ' no CV on file', 'Upload them from the Candidate Pool tab', {type:'tab', tab:'candidatePool'}, 'nocv', String(n));
   }
 
   if(admin){
@@ -6398,34 +6412,38 @@ function buildNotifications(){
       if(inv.status === 'paid') return;
       const due = opsDateOnly(inv.dueDate);
       if(due && opsDaysBetween(due, today) > 0){
-        add('high', 'Invoice overdue: ' + inv.number, inv.company + ' - ' + inv.candidateName + ' - ' + opsMoney(inv.amount) + ' (due ' + opsFmt(due) + ')', {type:'tab', tab:'invoices'});
+        add('high', 'Invoice overdue: ' + inv.number, inv.company + ' - ' + inv.candidateName + ' - ' + opsMoney(inv.amount) + ' (due ' + opsFmt(due) + ')', {type:'tab', tab:'invoices'}, 'inv:' + inv.number, 'high');
       }
     });
     OPS.placements.forEach(p => {
       if(p.invoiceNumber || !p.salary || !p.startDate) return;
       const diff = opsDaysBetween(today, p.startDate);
-      if(diff < 0) add('high', 'Invoice not raised: ' + p.name, p.company + ' - started ' + opsFmt(p.startDate), {type:'candidate', company:p.company, role:p.role, id:null, name:p.name});
-      else if(diff <= 3) add('med', 'Raise invoice: ' + p.name, p.company + ' - starts ' + opsFmt(p.startDate), {type:'candidate', company:p.company, role:p.role, id:null, name:p.name});
+      if(diff < 0) add('high', 'Invoice not raised: ' + p.name, p.company + ' - started ' + opsFmt(p.startDate), {type:'candidate', company:p.company, role:p.role, id:null, name:p.name}, 'noinv:' + p.name + '|' + p.role, 'high');
+      else if(diff <= 3) add('med', 'Raise invoice: ' + p.name, p.company + ' - starts ' + opsFmt(p.startDate), {type:'candidate', company:p.company, role:p.role, id:null, name:p.name}, 'noinv:' + p.name + '|' + p.role, 'med');
     });
   }
 
   OPS.placements.forEach(p => {
     if(p.status !== 'active' || p.daysLeft === null || p.daysLeft === undefined) return;
-    if(p.daysLeft < 0) add('low', 'Guarantee period finished: ' + p.name, p.company + ' - mark the placement as completed', {type:'tab', tab:'placements'});
-    else if(p.daysLeft <= 14) add('low', 'Guarantee ends in ' + p.daysLeft + ' day' + (p.daysLeft === 1 ? '' : 's') + ': ' + p.name, p.company + ' - ends ' + opsFmt(p.guaranteeEnd), {type:'tab', tab:'placements'});
+    if(p.daysLeft < 0) add('low', 'Guarantee period finished: ' + p.name, p.company + ' - mark the placement as completed', {type:'tab', tab:'placements'}, 'gdone:' + p.name + '|' + p.role, 'low');
+    else if(p.daysLeft <= 14) add('low', 'Guarantee ends in ' + p.daysLeft + ' day' + (p.daysLeft === 1 ? '' : 's') + ': ' + p.name, p.company + ' - ends ' + opsFmt(p.guaranteeEnd), {type:'tab', tab:'placements'}, 'gend:' + p.name + '|' + p.role, 'low');
   });
 
   OPS.roles.forEach(r => {
     if(r.status !== 'open') return;
     const merged = mergedRoles().find(m => m.id === r.id);
     if(merged && merged.active === 0){
-      add('low', 'Open role has no active candidates: ' + r.role, r.company, {type:'tab', tab:'roles'});
+      add('low', 'Open role has no active candidates: ' + r.role, r.company, {type:'tab', tab:'roles'}, 'norole:' + r.id, 'low');
     }
   });
 
   const rank = {high:0, med:1, low:2};
   out.sort((a, b) => rank[a.sev] - rank[b.sev]);
-  return out;
+  // build 67.3: dismissed and snoozed items stay hidden while their situation is unchanged
+  const hidden = OPS.hidden || {}, tdy = opsToday();
+  const shown = out.filter(n => { const h = hidden[n.id]; return !(h && h.sig === n.sig && (!h.until || h.until >= tdy)); });
+  OPS.hiddenCount = out.length - shown.length;
+  return shown;
 }
 
 function updateNotifBadge(){
@@ -6450,6 +6468,44 @@ function opsAct(i){
   if(a.type === 'candidate') opsOpenCandidate(a.company, a.role, a.id, a.name);
 }
 
+/* ---------- build 67.3: Done, Snooze and Clear all ---------- */
+async function opsHide(items, days, msg){
+  try{
+    const r = await b2Post('/api/attention/hide', {items: items.map(n => ({id:n.id, sig:n.sig})), days: days});
+    OPS.hidden = r.hidden || OPS.hidden;
+    recomputeOps();
+    showToast(msg || 'Hidden');
+  }catch(e){ showToast(e.message || 'Could not save that'); }
+}
+function opsSnooze(i, days){ const n = OPS.notes[i]; if(n) opsHide([n], days, 'Hidden for ' + days + ' day' + (days === 1 ? '' : 's')); }
+function opsDismiss(i){ const n = OPS.notes[i]; if(n) opsHide([n], 0, 'Dismissed. It comes back only if the situation changes.'); }
+async function opsDone(i){
+  const n = OPS.notes[i];
+  if(!n) return;
+  if(n.act && n.act.taskId){
+    try{
+      const r = await fetch(API_BASE + '/api/tasks/' + encodeURIComponent(n.act.taskId) + '/complete', {method:'POST', headers:{'X-User-Role':currentUserRole}});
+      if(!r.ok) throw new Error('Server returned ' + r.status);
+      OPS.tasks = OPS.tasks.filter(t => t.id !== n.act.taskId);
+      recomputeOps();
+      showToast('Task completed');
+    }catch(e){ showToast('Could not complete the task: ' + (e.message || '')); }
+    return;
+  }
+  opsDismiss(i);
+}
+function opsClearGroup(sev){
+  const items = OPS.notes.filter(n => n.sev === sev);
+  if(!items.length) return;
+  const label = {high:'urgent', med:'action needed', low:'for awareness'}[sev];
+  if(!confirm('Hide all ' + items.length + ' ' + label + ' items for 7 days? Tasks are not completed. An item comes back sooner if its situation changes.')) return;
+  opsHide(items, 7, items.length + ' items hidden for 7 days');
+}
+async function opsRestoreHidden(){
+  try{ await b2Post('/api/attention/restore', {}); OPS.hidden = {}; recomputeOps(); showToast('Hidden items are back'); }
+  catch(e){ showToast(e.message || 'Could not restore'); }
+}
+
 function opsOpenCandidate(company, role, id, name){
   let realCompany = company, realRole = role, realId = id;
   if(!realId){
@@ -6469,19 +6525,23 @@ function renderNotifications(){
     ? notes.length + ' item' + (notes.length === 1 ? '' : 's') + ' need attention'
     : 'Everything that needs action, in one place.';
   if(!notes.length){
-    body.innerHTML = '<div class="all-clear"><strong>All clear</strong>Nothing needs your attention right now.</div>';
+    body.innerHTML = '<div class="all-clear"><strong>All clear</strong>Nothing needs your attention right now.</div>' + (OPS.hiddenCount ? '<div class="notif-hidden">' + OPS.hiddenCount + ' hidden item' + (OPS.hiddenCount === 1 ? '' : 's') + ' <a onclick="opsRestoreHidden()">Show them again</a></div>' : '');
     return;
   }
   const groups = [['high','Urgent'], ['med','Action needed'], ['low','For awareness']];
   body.innerHTML = groups.map(([sev, label]) => {
     const items = notes.map((n, i) => ({n, i})).filter(x => x.n.sev === sev);
     if(!items.length) return '';
-    return '<div class="notif-group-title">' + label + ' (' + items.length + ')</div>' + items.map(x => `
+    return '<div class="notif-group-title">' + label + ' (' + items.length + ') <a class="notif-clear" onclick="opsClearGroup(\'' + sev + '\')">Clear all</a></div>' + items.map(x => `
       <div class="notif-item ${sev}">
         <div><div class="t">${esc(x.n.title)}</div><div class="d">${esc(x.n.detail)}</div></div>
-        <button onclick="opsAct(${x.i})">Open</button>
+        <div class="notif-btns">
+          <button onclick="opsAct(${x.i})">Open</button>
+          <button onclick="opsDone(${x.i})">${x.n.act && x.n.act.taskId ? 'Complete' : 'Dismiss'}</button>
+          <button onclick="opsSnooze(${x.i}, 3)" title="Hide for 3 days">Snooze</button>
+        </div>
       </div>`).join('');
-  }).join('');
+  }).join('') + (OPS.hiddenCount ? '<div class="notif-hidden">' + OPS.hiddenCount + ' hidden item' + (OPS.hiddenCount === 1 ? '' : 's') + ' <a onclick="opsRestoreHidden()">Show them again</a></div>' : '');
 }
 
 /* ---------- Home ---------- */
@@ -6514,7 +6574,7 @@ function renderHome(){
 
   const top = OPS.notes.slice(0, 6);
   document.getElementById('homeAttention').innerHTML = top.length
-    ? top.map((n, i) => `<div class="mini-row"><div><div class="t"><span class="sev-dot ${n.sev}"></span>${esc(n.title)}</div><div class="d">${esc(n.detail)}</div></div><div class="r"><a style="color:var(--gold);cursor:pointer;" onclick="opsAct(${i})">Open</a></div></div>`).join('')
+    ? top.map((n, i) => `<div class="mini-row"><div><div class="t"><span class="sev-dot ${n.sev}"></span>${esc(n.title)}</div><div class="d">${esc(n.detail)}</div></div><div class="r"><a style="color:var(--gold);cursor:pointer;" onclick="opsAct(${i})">Open</a> <a style="color:#999;cursor:pointer;margin-left:8px;" onclick="opsDone(${i})">${n.act && n.act.taskId ? 'Complete' : 'Dismiss'}</a></div></div>`).join('')
     : '<div class="panel-empty">All clear. Nothing needs attention.</div>';
 
   const soon = myTasks
@@ -17484,7 +17544,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '18 Nov 2026 - build 67 (Targets and profitability panel: annual goal, targets worked out from your own history, service lines and invoice tagging, role and client profitability, Ella own targets with counts only; built on page build 66.3) preview';
+var PAGE_BUILD = '18 Nov 2026 - build 67.3 (Needs attention: items clear themselves once you have emailed or called, Complete or Dismiss and Snooze on each item, Clear all per group; built on page build 67) preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
