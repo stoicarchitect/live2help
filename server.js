@@ -24,6 +24,7 @@ import { STARLING_LIVE, STARLING_SANDBOX, BANK_HEADER, DEFAULT_BANK_RULES, creat
 import * as reports from './reports.js'; // build 65
 import { createMailSync, SUGGESTION_KINDS, isClientType } from './mailsync.js'; // build 66
 import { londonToday, monthOf, readPayrollSettings, validOverride, payDateFor, payrollWatch, currentPayrollMonth, bannerFor, reminderFor, payrollPack, clawbackCheck, payrollBankCheck, payrollEmail, runRecords, monthName as payrollMonthName } from './payroll.js'; // build 64
+import { computeTargets, backwardsTargets, historicalRatios, normaliseGoal, targetsForPerson, personProgress, goalProgress, salesByLine, SERVICE_LINES, cleanLine } from './targets.js'; // build 67
 import { computeOwnerKpi, computeMyKpi, vatAlertsDue, vatAlertText, monthKey, KPI_SETTING_DEFAULTS, KPI_SETTING_KEYS, personKey } from './kpi-owner.js'; // build 62
 
 const __filename = fileURLToPath(import.meta.url);
@@ -17204,7 +17205,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '18 Nov 2026 - build 66.4.1 (interviews: a past interview counts as attended unless marked No show or Cancelled, and one of a candidate who was later rejected is completed instead of cancelled, Interviews arranged also counts interview rows; owner one-off to credit old Cold Calls screen rows to Ella; built on server build 66.3.1)';
+const SERVER_BUILD = '18 Nov 2026 - build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -22835,6 +22836,115 @@ app.post('/api/kpi/backfill-cold-calls', requireAdmin, async (req, res) => {
     if (!dry) kpiCache.clear();
     res.json({ dry, ...out });
   } catch (e) { console.error('POST /api/kpi/backfill-cold-calls:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+/* ---------- build 67: targets, service lines and role profitability ----------
+   Stored in the Settings table (Postgres, already in the nightly dump): goal:YYYY (JSON), svc:<invoice number> (service line), target_override:<person> (JSON), target_share:<person> (0 to 1).
+   Owner routes carry money. /api/targets/mine carries counts only and is what Ella gets. */
+const TARGET_YEAR_DEFAULT = 2027;
+async function loadTargetsInput(fresh, year) {
+  const input = await loadKpiInput(fresh);
+  const rows = await settingsTable.list().catch(() => []);
+  const set = new Map(rows.map(r => [r.id, r.value]));
+  const serviceTags = {};
+  set.forEach((v, id) => { if (id.startsWith('svc:')) { const k = cleanLine(v); if (k) serviceTags[id.slice(4)] = k; } });
+  let goal = null; try { goal = JSON.parse(set.get('goal:' + year) || 'null'); } catch (e) { goal = null; }
+  const jparse = id => { try { return JSON.parse(set.get(id) || 'null'); } catch (e) { return null; } };
+  return { input: { ...input, serviceTags }, goal: goal || { year, total: 0, lines: {} }, set, jparse };
+}
+const targetYear = req => { const y = parseInt(req.query && req.query.year, 10); return y >= 2026 && y <= 2040 ? y : TARGET_YEAR_DEFAULT; };
+
+app.get('/api/targets', requireAdmin, async (req, res) => {
+  try {
+    const year = targetYear(req);
+    const t = await loadTargetsInput(req.query.fresh === '1', year);
+    const out = computeTargets({ ...t.input, now: new Date() }, { ...t.goal, year }, { ellaShare: t.set.get('target_share:ella'), ellaOverride: t.jparse('target_override:ella') });
+    // the invoices that can be tagged, newest first (owner only, money)
+    const tags = t.input.serviceTags || {};
+    out.invoices = (t.input.invoices || []).slice().sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 60).map(i => ({ number: i.number, date: i.date, company: i.company, role: i.role, amount: i.amount, line: tags[i.number] || 'perm', tagged: !!tags[i.number] }));
+    out.lines = SERVICE_LINES;
+    out.year = year;
+    out.ellaShare = parseFloat(t.set.get('target_share:ella')) || 1;
+    out.ellaOverride = t.jparse('target_override:ella') || {};
+    out.bankConnected = !!(t.input.bank && t.input.bank.connected);
+    res.json(out);
+  } catch (e) { console.error('GET /api/targets:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/targets/goal', requireAdmin, async (req, res) => {
+  try {
+    if (isPreview()) return res.status(403).json({ error: 'Goals are saved in the live workspace only' });
+    const b = req.body || {};
+    const year = parseInt(b.year, 10);
+    if (!(year >= 2026 && year <= 2040)) return res.status(400).json({ error: 'Enter a year between 2026 and 2040' });
+    const money = v => { const x = parseFloat(String(v == null ? '' : v).replace(/[£,\s]/g, '')); return Number.isFinite(x) && x >= 0 ? x : null; };
+    const total = money(b.total);
+    if (total === null || total > 100000000) return res.status(400).json({ error: 'Enter the annual revenue goal as a number, for example 100000' });
+    const lines = {};
+    for (const l of SERVICE_LINES) { if (b.lines && b.lines[l.key] != null && b.lines[l.key] !== '') { const x = money(b.lines[l.key]); if (x === null) return res.status(400).json({ error: `Enter ${l.label} as a number or leave it blank` }); lines[l.key] = x; } }
+    const g = normaliseGoal({ year, total, lines });
+    await settingsTable.upsert({ id: 'goal:' + year, value: JSON.stringify({ year, total, lines }), updated_by: actorOf(req) });
+    kpiCache.clear();
+    res.json({ ok: true, goal: g });
+  } catch (e) { console.error('POST /api/targets/goal:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/targets/service-line', requireAdmin, async (req, res) => {
+  try {
+    if (isPreview()) return res.status(403).json({ error: 'Service lines are saved in the live workspace only' });
+    const number = String((req.body && req.body.number) || '').trim();
+    const line = String((req.body && req.body.line) || '').trim().toLowerCase();
+    if (!number || number.length > 60) return res.status(400).json({ error: 'Choose an invoice' });
+    if (line !== 'perm' && !cleanLine(line)) return res.status(400).json({ error: 'Choose one of the four service lines' });
+    // permanent placement is the default, so tagging an invoice back to it just removes the tag
+    if (line === 'perm') { await settingsTable.upsert({ id: 'svc:' + number, value: '', updated_by: actorOf(req) }); }
+    else await settingsTable.upsert({ id: 'svc:' + number, value: line, updated_by: actorOf(req) });
+    kpiCache.clear();
+    res.json({ ok: true, number, line });
+  } catch (e) { console.error('POST /api/targets/service-line:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// manual override of the calculated targets for one person, and the share of the team target they carry
+app.post('/api/targets/override', requireAdmin, async (req, res) => {
+  try {
+    if (isPreview()) return res.status(403).json({ error: 'Overrides are saved in the live workspace only' });
+    const person = personKey(req.body && req.body.person) || 'ella';
+    const keys = ['placements', 'candidatesAdded', 'submissions', 'interviews', 'calls', 'emails'];
+    const clean = {};
+    for (const k of keys) {
+      const o = req.body && req.body.override && req.body.override[k]; if (!o) continue;
+      const m = parseFloat(o.month), w = parseFloat(o.week);
+      const e = {}; if (Number.isFinite(m) && m > 0 && m < 100000) e.month = m; if (Number.isFinite(w) && w > 0 && w < 100000) e.week = w;
+      if (e.month || e.week) clean[k] = e;
+    }
+    await settingsTable.upsert({ id: 'target_override:' + person, value: JSON.stringify(clean), updated_by: actorOf(req) });
+    if (req.body && req.body.share != null && req.body.share !== '') {
+      const sh = parseFloat(req.body.share); if (!(sh > 0 && sh <= 1)) return res.status(400).json({ error: 'The share must be between 0.1 and 1' });
+      await settingsTable.upsert({ id: 'target_share:' + person, value: String(sh), updated_by: actorOf(req) });
+    }
+    kpiCache.clear();
+    res.json({ ok: true, person, override: clean });
+  } catch (e) { console.error('POST /api/targets/override:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// A person's own targets and progress. Counts only: no revenue, fee, goal in pounds or cost ever leaves this route.
+app.get('/api/targets/mine', async (req, res) => {
+  try {
+    const me = actorOf(req);
+    if (!me || me === 'unknown') return res.status(401).json({ error: 'Sign in first' });
+    const key = personKey(me);
+    if (isAdmin(req)) return res.json({ owner: true });
+    const year = targetYear(req);
+    const t = await loadTargetsInput(false, year);
+    if (!(parseFloat(t.goal.total) > 0)) return res.json({ set: false });
+    const now = new Date();
+    const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const back = backwardsTargets({ ...t.goal, year }, historicalRatios(t.input, day));
+    const share = parseFloat(t.set.get('target_share:' + key)) || (key === 'ella' ? 1 : 0.5);
+    const targets = targetsForPerson(back, share, t.jparse('target_override:' + key));
+    const prog = personProgress(t.input, key, targets, day);
+    res.json({ set: true, year, ...prog });
+  } catch (e) { console.error('GET /api/targets/mine:', e.message); res.status(500).json({ error: e.message }); }
 });
 
 // Each person's own activity. The response is built by computeMyKpi, which holds no money figures at all.
