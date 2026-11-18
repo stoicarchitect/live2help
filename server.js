@@ -17204,7 +17204,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '18 Nov 2026 - build 66.4 (interviews: a past interview of a candidate who was later rejected counts as attended instead of being cancelled, Interviews arranged also counts interview rows; owner one-off to credit old Cold Calls screen rows to Ella; built on server build 66.3.1)';
+const SERVER_BUILD = '18 Nov 2026 - build 66.4.1 (interviews: a past interview counts as attended unless marked No show or Cancelled, and one of a candidate who was later rejected is completed instead of cancelled, Interviews arranged also counts interview rows; owner one-off to credit old Cold Calls screen rows to Ella; built on server build 66.3.1)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

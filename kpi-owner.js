@@ -567,7 +567,7 @@ function activityCounts(input, a, b) {
     rows[personKey(iv.created_by) || 'unknown'] = (rows[personKey(iv.created_by) || 'unknown'] || 0) + (st === 'cancelled' && !autoCancelled ? 0 : 1);
     if (st === 'completed' || autoCancelled) o.interviewsHeld++;
     else if (st === 'no_show' || st === 'no show' || st === 'noshow') o.interviewsNoShow++;
-    else if (st === 'scheduled' && d < todayStart) o.interviewsAwaiting++;
+    else if (st === 'scheduled' && d < todayStart) o.interviewsHeld++; // build 66.4: a past interview still marked Scheduled is counted as attended unless it was marked No show or Cancelled
   });
   // build 66.4: Interviews arranged is the larger of the activity log count and the interview rows, so an interview made without a log entry still counts.
   Object.keys(rows).forEach(k => { g(k); by[k].interviewsBooked = Math.max(by[k].interviewsBooked || 0, rows[k]); });

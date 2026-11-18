@@ -26,8 +26,8 @@ const A = my.activity;
 ok(A.calls.now === 3, 'three Ella calls counted whatever the user was stored as: ' + A.calls.now);
 ok(A.callsSpoke === undefined, 'calls where someone was spoken to are no longer measured');
 ok(A.calls.before === 1, 'last month calls');
-ok(A.interviewsHeld.now === 3 && A.interviewsNoShow.now === 1, 'attended 3, did not attend 1');
-ok(A.interviewsAwaiting.now === 1, 'only the past scheduled interview has no outcome (the one on the 31st is today)');
+ok(A.interviewsHeld.now === 4 && A.interviewsNoShow.now === 1, 'attended 4 (3 completed and the past scheduled one), did not attend 1: ' + A.interviewsHeld.now);
+ok(A.interviewsAwaiting.now === 0, 'no interview is left awaiting, a past scheduled one counts as attended (the one on the 31st is today and does not)');
 ok(A.interviewsHeld.before === 1 && A.interviewsNoShow.before === 1, 'month before');
 // build 66.3: received email does not count as email sent
 const inb = [
@@ -42,11 +42,11 @@ const dan = computeMyKpi({ now, comms, interviews, invoices: [], candidates: [] 
 ok(dan.activity.interviewsHeld.now === 1 && dan.activity.calls.now === 1, 'dan is separate');
 
 const snap = buildEllaSnapshot({ period: '2026-10', my, wins: [], reviews: [], firstName: 'Ella', generatedAt: '2026-11-01T08:00:00Z' });
-ok(snap.ratios.attendanceRate.now === 75 && snap.ratios.attendanceRate.before === 50, 'attendance 75 percent, 50 before');
-ok(snap.interviewsAwaiting === 1, 'awaiting carried');
+ok(snap.ratios.attendanceRate.now === 80 && snap.ratios.attendanceRate.before === 50, 'attendance 80 percent, 50 before: ' + snap.ratios.attendanceRate.now);
+ok(snap.interviewsAwaiting === 0, 'awaiting carried');
 const md = ellaReportMarkdown(snap, '');
-ok(/Interviews attended/.test(md) && /75%/.test(md), 'report shows attendance');
-ok(/no outcome recorded/.test(md), 'report asks for the missing outcome');
+ok(/Interviews attended/.test(md) && /80%/.test(md), 'report shows attendance');
+ok(!/no outcome recorded/.test(md), 'report no longer asks for outcomes, a past interview counts as attended');
 ok(!/[£$]|commission|salary|margin|revenue/i.test(md), 'no money wording in Ella report');
 ok(!/[–—]/.test(md), 'no dashes');
 
