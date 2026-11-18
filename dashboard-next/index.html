@@ -17483,7 +17483,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '17 Nov 2026 - build 66.2 (Interview attendance: attended tile with attendance rate in Your activity, Interviews attended column in the Staff table; built on page build 66) preview';
+var PAGE_BUILD = '18 Nov 2026 - build 66.3 (Mailbox sync panel: a result for each mailbox and for Run now, partial success shown, health check and repair; suggestion errors shown on the card; calls where someone was spoken to removed; received email no longer counted as email sent; built on page build 66.2) preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -21651,7 +21651,7 @@ function c47WeekStart(offsetWeeks){
 }
 function c47Activity(){
   const wk = c47WeekStart(0), prev = c47WeekStart(1);
-  const blank = () => ({emails:0, calls:0, spoke:0, fu:0, pemails:0, pcalls:0});
+  const blank = () => ({emails:0, calls:0, fu:0, pemails:0, pcalls:0});
   const by = {};
   (B2.comms || []).forEach(c => {
     const d = String(c.timestamp || '').slice(0, 10); if(d < prev) return;
@@ -21659,10 +21659,9 @@ function c47Activity(){
     const u = c47n(c.user) || 'unknown';
     const r = by[u] = by[u] || blank();
     if(d >= wk){
-      if(ch === 'email') r.emails++; else r.calls++;
-      if(ch === 'call' && / - spoke to them/i.test(String(c.summary || ''))) r.spoke++;
+      if(ch === 'email'){ if(c47n(c.direction) !== 'inbound') r.emails++; } else r.calls++;
       if(c.follow_up_date) r.fu++;
-    }else{ if(ch === 'email') r.pemails++; else r.pcalls++; }
+    }else{ if(ch === 'email'){ if(c47n(c.direction) !== 'inbound') r.pemails++; } else r.pcalls++; }
   });
   return {wk, by};
 }
@@ -21685,13 +21684,13 @@ async function c47ActivityRender(){
   const admin = !!(signedInUser && signedInUser.admin);
   const people = (typeof USERS !== 'undefined' ? USERS : []).map(u => u.key).filter(k => admin || k === signedInUser.key);
   Object.keys(by).forEach(k => { if(admin && !people.includes(k) && k !== 'unknown' && k !== 'system') people.push(k); });
-  const rows = people.map(k => ({k, r: by[k] || {emails:0, calls:0, spoke:0, fu:0, pemails:0, pcalls:0}}));
+  const rows = people.map(k => ({k, r: by[k] || {emails:0, calls:0, fu:0, pemails:0, pcalls:0}}));
   const tot = rows.reduce((t, x) => { Object.keys(x.r).forEach(f => t[f] = (t[f] || 0) + x.r[f]); return t; }, {});
   const stale = c47StaleClients().length;
-  const line = (label, r, strong) => '<tr' + (strong ? ' style="font-weight:700;"' : '') + '><td>' + esc(label) + '</td><td>' + r.emails + c47Trend(r.emails, r.pemails) + '</td><td>' + r.calls + c47Trend(r.calls, r.pcalls) + '</td><td>' + r.spoke + (r.calls ? ' <span class="b46-sub">(' + Math.round(r.spoke / r.calls * 100) + '%)</span>' : '') + '</td><td>' + r.fu + '</td></tr>';
+  const line = (label, r, strong) => '<tr' + (strong ? ' style="font-weight:700;"' : '') + '><td>' + esc(label) + '</td><td>' + r.emails + c47Trend(r.emails, r.pemails) + '</td><td>' + r.calls + c47Trend(r.calls, r.pcalls) + '</td><td>' + r.fu + '</td></tr>';
   sec.innerHTML = '<h3 style="font-size:16px;color:var(--dark);margin-bottom:6px;font-weight:500;">Emails and calls - this week</h3>' +
     '<div style="font-size:12px;color:#999;margin-bottom:12px;">Counted from the communications log since Monday ' + esc(c47Fmt(wk)) + ', against the whole of last week. Emails and calls made from a contact are logged automatically.</div>' +
-    '<div style="overflow-x:auto;"><table class="c47-rep"><thead><tr><th>' + (admin ? 'Person' : 'You') + '</th><th>Emails sent</th><th>Calls logged</th><th>Spoke to</th><th>Follow-ups set</th></tr></thead><tbody>' +
+    '<div style="overflow-x:auto;"><table class="c47-rep"><thead><tr><th>' + (admin ? 'Person' : 'You') + '</th><th>Emails sent</th><th>Calls logged</th><th>Follow-ups set</th></tr></thead><tbody>' +
     rows.map(x => line(userLabel(x.k), x.r)).join('') + (admin && rows.length > 1 ? line('Team total', tot, true) : '') + '</tbody></table></div>' +
     '<div style="font-size:12.5px;margin-top:10px;color:var(--dark);">' + (stale ? '<strong>' + stale + '</strong> client' + (stale === 1 ? ' has' : 's have') + ' not been contacted in 30+ days. <a style="color:var(--gold);cursor:pointer;" onclick="switchTab(\'home\')">See them on Overview</a>' : 'Every client has been contacted in the last 30 days.') + '</div>';
 }
@@ -23010,7 +23009,7 @@ function k62RenderMine(k){
   host.innerHTML = '<div class="k62-h">Your activity in ' + esc(k.month) + ' <small>arrows compare with ' + esc(vs) + '</small></div><div class="tile-grid">' +
     tile('Candidates added', 'candidatesAdded') + tile('Candidates submitted', 'submissions') + tile('Interviews booked', 'interviewsBooked') +
     tile('Interviews attended', 'interviewsHeld', 'Attendance: ' + k662Att(a) + ((a.interviewsAwaiting || {}).now ? '. ' + a.interviewsAwaiting.now + ' with no outcome recorded' : '')) +
-    tile('Emails logged', 'emails') + tile('Calls logged', 'calls', 'Spoke to them: ' + ((a.callsSpoke || {}).now || 0)) + tile('Tasks completed', 'tasksDone') +
+    tile('Emails logged', 'emails') + tile('Calls logged', 'calls') + tile('Tasks completed', 'tasksDone') +
     k62Tile('Your placements this quarter', k.placements.quarter, {cls: 'gold', sub: (t ? 'Target for ' + esc(k.quarter) + ': ' + t.targetRoles + ' roles' : 'No personal target set for ' + esc(k.quarter)) + '. This year: ' + k.placements.ytd}) +
     k62Tile('Team roles filled this quarter', k.teamRolesFilledQuarter, {sub: tt ? 'Team target: ' + tt.targetRoles + ' roles' : ''}) +
     '</div>';
@@ -23035,7 +23034,7 @@ async function k62VatTest(){
 /* ============================================================
    Build 66: mailbox sync. Suggested updates on Home, the sync panel in KPI Reporting, and the View link on email entries
    ============================================================ */
-var P66 = {sug: null, st: null, busy: false};
+var P66 = {sug: null, st: null, busy: false, result: null, check: null, err: {}};
 function p66When(iso){ if(!iso) return ''; var d = new Date(iso); return isNaN(d) ? '' : d.toLocaleString('en-GB', {weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London'}); }
 async function p66SugLoad(){
   var host = document.getElementById('p66Sug');
@@ -23048,20 +23047,23 @@ function p66SugRender(){
   if(!host) return;
   if(!list.length){ host.innerHTML = ''; return; }
   host.innerHTML = '<div class="k62-h" style="margin-top:0;">Suggested updates from email <small>' + list.length + ' waiting, nothing changes until you click</small></div>' +
+    (P66.sug.preview ? '<div style="background:#fdf3e1;border:1px solid #ecd49b;padding:9px 12px;font-size:12.5px;border-radius:2px;margin-bottom:10px;">Preview: Accept and Dismiss here only change the test data. They do not change the live workspace, so these suggestions will still be waiting on the live page.</div>' : '') +
     list.map(function(s){
       var who = s.contact_name || s.contact_email, where = [s.company, s.role].filter(Boolean).join(' - ');
       return '<div class="p66-card"><div style="min-width:220px;flex:1;"><div class="t">' + esc(s.label) + ': ' + esc(who) + '</div>' +
         '<div class="m">' + esc(where) + (where ? ' - ' : '') + esc(s.subject || '') + ' - ' + esc(p66When(s.created_at)) + (P66.sug.mine === false ? '' : '') + '</div>' +
-        (s.evidence ? '<div class="e">&ldquo;' + esc(s.evidence) + '&rdquo;</div>' : '') + '</div>' +
+        (s.evidence ? '<div class="e">&ldquo;' + esc(s.evidence) + '&rdquo;</div>' : '') +
+        (P66.err[s.id] ? '<div style="margin-top:6px;font-size:12px;color:#b3261e;">Not applied: ' + esc(P66.err[s.id]) + ' It stays here until you apply it by hand and press Dismiss.</div>' : '') + '</div>' +
         '<div class="b"><button class="p64-btn gold" onclick="p66Handle(\'' + esc(s.id) + '\',true)">Accept</button><button class="p64-btn" onclick="p66Handle(\'' + esc(s.id) + '\',false)">Dismiss</button></div></div>';
     }).join('');
 }
 async function p66Handle(id, accept){
   try{
     var r = await b2Post('/api/mailsync/suggestions/' + encodeURIComponent(id) + (accept ? '/accept' : '/dismiss'), {});
+    delete P66.err[id];
     showToast(accept ? (r.result || 'Done') : 'Dismissed');
     if(accept){ try{ if(typeof loadComms === 'function') loadComms(); }catch(e){} }
-  }catch(e){ showToast('Could not do that: ' + e.message); }
+  }catch(e){ P66.err[id] = e.message; showToast('Could not do that: ' + e.message); }
   p66SugLoad();
 }
 async function p66Open(commId){
@@ -23094,21 +23096,63 @@ function p66Render(){
   if(!host || !s) return;
   var h = '<div class="k62-h">Mailbox sync <small>only you can see this</small></div><div class="panel" style="padding:16px;">';
   if(!s.stored) h += '<div class="p66-flag">Mailbox sync only runs in the live workspace with the database connected. Nothing is read here.</div>';
-  if(s.needsPermission) h += '<div class="p66-flag">Microsoft is refusing access to a mailbox. Check that the Mail permission is granted and the access policy lists both mailboxes.</div>';
-  if(s.error) h += '<div class="p66-flag">The last run reported a problem: ' + esc(s.error) + '</div>';
+  var bx = s.mailboxes || [], bad = bx.filter(function(m){ return m.ranOk === false; }), good = bx.filter(function(m){ return m.ranOk === true; });
+  if(s.enabled && bad.length && good.length) h += '<div class="p66-flag"><strong>Partly working.</strong> ' + esc(good.map(function(m){ return p66Name(m.owner); }).join(' and ')) + (good.length > 1 ? ' are' : ' is') + ' being read. ' + esc(bad.map(function(m){ return p66Name(m.owner); }).join(' and ')) + (bad.length > 1 ? ' are' : ' is') + ' being refused by Microsoft (the Exchange application access policy). Nothing is lost: mail is picked up from where it left off as soon as access is allowed.</div>';
+  else if(s.enabled && bad.length) h += '<div class="p66-flag"><strong>Not working.</strong> Microsoft is refusing access to every mailbox. Check the Mail permission and the application access policy.</div>';
+  else if(s.enabled && s.outcome === 'ok') h += '<div class="p66-flag" style="background:#eef6ee;border-color:#b9d8b9;"><strong>Working.</strong> Every mailbox was read on the last run.</div>';
+  if(s.error) h += '<details style="margin-bottom:12px;font-size:12px;color:#666;"><summary style="cursor:pointer;">What Microsoft said</summary><div style="margin-top:6px;">' + esc(s.error) + '</div></details>';
+  if(s.running) h += '<div class="p66-flag">A sync is running now. Wait for it to finish before pressing Run now again.</div>';
   h += '<div style="font-size:13px;line-height:1.6;"><strong>' + (s.enabled ? 'On' : 'Off') + '</strong>' + (s.enabled ? ' - reading mail from ' + esc(s.sinceDay || 'the switch on date') + ' onwards, every 15 minutes on weekdays 07:00 to 19:00' : ' - no mail is being read') + '.<br>' +
-    'Last successful run: ' + (s.lastOk ? esc(p66When(s.lastOk)) : 'none yet') + '. Logged in total: ' + (s.loggedTotal || 0) + ', today: ' + (s.loggedToday || 0) + '. ' +
-    (s.mailboxes || []).map(function(m){ return esc(m.owner === 'dan' ? 'Daniel Brown' : 'Ella') + ': ' + m.logged; }).join(', ') + '. Suggested updates waiting: ' + (s.pending || 0) + '.</div>';
+    'Last run: ' + (s.last ? esc(p66When(s.last)) + (s.outcome === 'ok' ? ', all mailboxes read' : s.outcome === 'partial' ? ', one mailbox refused' : s.outcome === 'failed' ? ', no mailbox could be read' : '') : 'none yet') + '. Logged in total: ' + (s.loggedTotal || 0) + ', today: ' + (s.loggedToday || 0) + '. Suggested updates waiting: ' + (s.pending || 0) + '.</div>' +
+    '<div style="font-size:13px;line-height:1.6;margin-top:6px;">' + bx.map(p66BoxLine).join('') + '</div>';
   h += '<div class="p66-row">';
   if(!s.enabled) h += '<div><label>Start reading from</label><select id="p66Back"><option value="0">Today</option><option value="7" selected>7 days back</option><option value="14">14 days back</option><option value="30">30 days back</option></select></div>' +
     '<button class="p64-btn gold" onclick="p66Switch(true)"' + (P66.busy || !s.stored ? ' disabled' : '') + '>Switch on</button>';
   else h += '<button class="p64-btn gold" onclick="p66Run()"' + (P66.busy ? ' disabled' : '') + '>Run now</button><button class="p64-btn" onclick="p66Switch(false)"' + (P66.busy ? ' disabled' : '') + '>Switch off</button>';
   h += '<div><label>Follow up after no reply (working days)</label><select id="p66Nr" onchange="p66Set()">' + [1,2,3,4,5].map(function(n){ return '<option value="' + n + '"' + (n === s.noReplyDays ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select></div>' +
     '<div><label>Keep email previews for (months)</label><select id="p66Pm" onchange="p66Set()">' + [3,6,12,24].map(function(n){ return '<option value="' + n + '"' + (n === s.previewMonths ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select></div></div>';
+  if(P66.result) h += '<div class="p66-flag" style="margin-top:12px;' + (P66.result.cls === 'good' ? 'background:#eef6ee;border-color:#b9d8b9;' : P66.result.cls === 'bad' ? 'background:#fbeceb;border-color:#e6b7b3;' : '') + '"><strong>' + esc(P66.result.when) + '</strong> ' + esc(P66.result.text) + '</div>';
+  h += '<div class="p66-row"><button class="p64-btn" onclick="p66Check()"' + (P66.busy ? ' disabled' : '') + '>Health check</button>' + p66CheckRepairBtn() + '</div>' + p66CheckHtml();
   h += '<div class="p66-row"><div><label>Never log email with this address</label><input id="p66Dn" placeholder="name@company.com" style="width:260px;"></div><button class="p64-btn" onclick="p66AddDn()">Add</button></div>';
   h += '<div style="margin-top:8px;">' + ((s.doNotLog || []).length ? s.doNotLog.map(function(d){ return '<span class="p66-dn">' + esc(d.email) + ' <a onclick="p66RemoveDn(\'' + esc(d.email) + '\')" title="Start logging again">remove</a></span>'; }).join('') : '<span class="note-line">No addresses on the do not log list.</span>') + '</div>';
   h += '<div class="note-line" style="margin-top:12px;">Only email to or from an address already on a client, lead, contact or candidate record is kept. Anything else is never stored. Each email appears on the timeline with its subject and a short preview that is kept for the months set above. Attachments are never stored. Mail from addresses on the suppression list, our own addresses and automatic replies are ignored. Changes to a candidate or role only happen when you click Accept on a suggestion. Rules only, no AI reads the mail.</div></div>';
   host.innerHTML = h;
+}
+function p66Name(o){ return o === 'dan' ? 'Daniel Brown' : 'Ella'; }
+function p66BoxLine(m){
+  var bits;
+  if(m.ranOk === false) bits = '<span style="color:#b3261e;">refused by Microsoft</span>' + (m.lastFail ? ' (tried ' + esc(p66When(m.lastFail)) + ')' : '') + '. Last read: ' + (m.lastOk ? esc(p66When(m.lastOk)) : 'never');
+  else if(m.ranOk === true) bits = '<span style="color:#2e7d32;">working</span>, last read ' + esc(p66When(m.lastOk));
+  else bits = m.lastOk ? 'last read ' + esc(p66When(m.lastOk)) : 'not read yet';
+  return '<div>' + esc(p66Name(m.owner)) + ': ' + bits + ' - ' + (m.logged || 0) + ' emails logged</div>';
+}
+function p66Summary(r){
+  var c = r.counts || {}, boxes = r.boxes || [];
+  var parts = boxes.map(function(b){ return p66Name(b.owner) + ': ' + (b.ok ? b.logged + ' new email' + (b.logged === 1 ? '' : 's') + ' logged' : 'refused by Microsoft'); });
+  var head = r.outcome === 'ok' ? 'Finished. Every mailbox was read.' : r.outcome === 'partial' ? 'Finished, but one mailbox was refused.' : 'Could not read any mailbox.';
+  return {cls: r.outcome === 'ok' ? 'good' : (r.outcome === 'partial' ? 'warn' : 'bad'), when: new Date().toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'}),
+    text: head + ' ' + parts.join('. ') + '. ' + (c.suggested || 0) + ' new suggestion' + (c.suggested === 1 ? '' : 's') + '.' + (c.more ? ' More mail is still being caught up and will be read on the next run.' : '')};
+}
+async function p66Check(){
+  P66.busy = true; p66Render();
+  try{ P66.check = await b2Api('/api/mailsync/check'); }catch(e){ P66.check = {error: e.message}; }
+  P66.busy = false; p66Render();
+}
+function p66Dups(){ var c = P66.check; return c && !c.error ? ((c.mailboxLog.duplicates.extraRows || 0) + (c.suggestions.duplicates.extraRows || 0)) : 0; }
+function p66CheckRepairBtn(){ return p66Dups() ? '<button class="p64-btn gold" onclick="p66Repair()"' + (P66.busy ? ' disabled' : '') + '>Remove ' + p66Dups() + ' repeated rows</button>' : ''; }
+function p66CheckHtml(){
+  var c = P66.check; if(!c) return '';
+  if(c.error) return '<div class="note-line" style="margin-top:8px;color:#b3261e;">Health check failed: ' + esc(c.error) + '</div>';
+  var st = c.suggestions.byStatus || {};
+  var per = Object.keys(c.perMailbox || {}).map(function(k){ var m = c.perMailbox[k], d = m.byDirection || {}; return esc(p66Name(k)) + ': ' + m.rows + ' rows, ' + m.distinctIds + ' different, ' + (d['in'] || 0) + ' received, ' + (d.out || 0) + ' sent'; }).join('; ');
+  return '<div class="note-line" style="margin-top:8px;line-height:1.6;">Emails logged: ' + c.mailboxLog.rows + ', repeated rows: ' + (c.mailboxLog.duplicates.extraRows || 0) + '. ' + per + '.<br>Suggestions: ' + Object.keys(st).map(function(k){ return st[k] + ' ' + k; }).join(', ') + ', repeated rows: ' + (c.suggestions.duplicates.extraRows || 0) + ', pending with a result already recorded: ' + (c.suggestions.withResultButPending || 0) + '.</div>';
+}
+async function p66Repair(){
+  if(!confirm('Remove repeated rows? One row is kept for each email and each suggestion, and a handled suggestion is always the one kept.')) return;
+  P66.busy = true; p66Render();
+  try{ var r = await b2Post('/api/mailsync/repair', {}); showToast('Removed ' + ((r.mailboxLog || {}).removed || 0) + ' repeated emails and ' + ((r.suggestions || {}).removed || 0) + ' repeated suggestions'); }
+  catch(e){ showToast('Could not repair: ' + e.message); }
+  P66.busy = false; await p66Check(); p66SugLoad();
 }
 async function p66Switch(on){
   if(!on && !confirm('Switch mailbox sync off? Nothing more is read until you switch it on again. Stored entries stay.')) return;
@@ -23124,9 +23168,10 @@ async function p66Set(){
   p66Load();
 }
 async function p66Run(){
-  P66.busy = true; p66Render();
-  try{ var r = await b2Post('/api/mailsync/run', {}); var c = r.counts || {}; showToast((r.errors && r.errors.length) ? 'Run finished with a problem: ' + r.errors[0] : 'Run finished. ' + (c.logged || 0) + ' logged, ' + (c.suggested || 0) + ' suggestions'); }
-  catch(e){ showToast('Could not run: ' + e.message); }
+  if(P66.busy) return;
+  P66.busy = true; P66.result = null; p66Render();
+  try{ var r = await b2Post('/api/mailsync/run', {}); P66.result = p66Summary(r); }
+  catch(e){ P66.result = {cls: 'bad', when: new Date().toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'}), text: 'Did not run: ' + e.message}; }
   P66.busy = false; p66Load(); p66SugLoad();
 }
 async function p66AddDn(){
