@@ -17194,7 +17194,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '18 Nov 2026 - build 66.3 (mailbox sync: one run at a time with a lease, duplicate safe inserts, result for each mailbox so a partial success is shown as one, owner health check and repair routes; built on server build 66.2)';
+const SERVER_BUILD = '18 Nov 2026 - build 66.3.1 (mailbox sync: one run at a time with a lease, duplicate safe inserts, result for each mailbox so a partial success is shown as one, owner health check and repair routes; cold bounce scan skips a refused mailbox and still scans the others; built on server build 66.2)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -22623,14 +22623,16 @@ async function coldScanAll({ since, actor } = {}) {
     const from = since || coldDaysAgoISO(3);
     const results = [];
     coldScanState.needsPermission = false; coldScanState.error = '';
+    const refused = new Set();
     for (const o of owners) {
       try { results.push(await coldScanMailbox(o, from, ctx)); }
       catch (e) {
-        if (e.status === 403 || /Authorization_RequestDenied|ErrorAccessDenied|AccessDenied/i.test(e.code || '')) { coldScanState.needsPermission = true; coldScanState.error = 'Microsoft 365 will not let the workspace read mailboxes yet. Add the Mail.ReadWrite application permission in Entra and grant admin consent.'; break; }
-        coldScanState.error = e.message; results.push({ owner: o, error: e.message });
+        // build 66.3: a refused mailbox is skipped, the others are still scanned and still get the bounce rate check
+        if (e.status === 403 || /Authorization_RequestDenied|ErrorAccessDenied|AccessDenied/i.test(e.code || '')) { coldScanState.needsPermission = true; coldScanState.error = 'Microsoft 365 will not let the workspace read the mailbox of ' + (profileOf(o).fullName || o) + ' yet. Check the application access policy and the Mail.ReadWrite permission.'; refused.add(o); results.push({ owner: o, error: 'refused' }); continue; }
+        coldScanState.error = e.message; results.push({ owner: o, error: e.message }); refused.add(o);
       }
     }
-    const paused = coldScanState.needsPermission ? [] : await coldCheckBounceRate(owners);
+    const paused = await coldCheckBounceRate(owners.filter(o => !refused.has(o)));
     const sum = k => results.reduce((s, r) => s + (r[k] || 0), 0);
     coldScanState.last = rfxNow(); if (!coldScanState.error) coldScanState.lastOk = coldScanState.last;
     coldScanState.counts = { hard: sum('hard'), soft: sum('soft'), policy: sum('policy'), replies: sum('replies'), stops: sum('stops'), moved: sum('moved'), scanned: sum('scanned') };
