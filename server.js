@@ -6109,7 +6109,61 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
       } catch (e) { console.error(`DELETE ${path} error:`, e.message); res.status(500).json({ error: e.message }); }
     });
   }
-  return { list, listAll, upsert, append, remove, updateWhere, ensure, invalidate, meta };
+  // Build 66.3: insert only when no row with this id exists (a second run can never write the same row twice)
+  function appendIfAbsent(obj) {
+    return lock(async () => {
+      await ensure();
+      const pool = poolNow();
+      if (pool) {
+        if (await firstRowOf(pool, toRow(obj)[0]) != null) return false;
+        await pgInsertRows(pool, pgName, header, [toRow(obj)]);
+        pgWrote();
+        return true;
+      }
+      const rows = await readRows();
+      if (rows.some(r => r && r[0] === obj.id)) return false;
+      invalidate();
+      const sheets = getSheetsClient();
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SID_OF(), range: `'${tab}'!A:${lastCol}`, valueInputOption: 'RAW',
+        insertDataOption: 'INSERT_ROWS', requestBody: { values: [toRow(obj)] },
+      });
+      return true;
+    });
+  }
+
+  // Build 66.3: remove rows that repeat an id (only rows whose id passes `onlyIf`), keeping the one `prefer` picks (default: the first).
+  // Database tables only. Returns { removed, groups }.
+  function dedupeById(onlyIf, prefer) {
+    return lock(async () => {
+      const pool = poolNow();
+      if (!pool) return { removed: 0, groups: 0, skipped: 'not a database table' };
+      await ensure();
+      const r = await pool.query({ text: `select _row, ${header.map(pgIdent).join(', ')} from ${pgIdent(pgName)} order by _row`, rowMode: 'array' });
+      const by = new Map();
+      r.rows.forEach(([at, ...vals]) => {
+        const row = vals.map(v => (v == null ? '' : v));
+        if (!row[0] || (onlyIf && !onlyIf(row[0]))) return;
+        if (!by.has(row[0])) by.set(row[0], []);
+        by.get(row[0]).push({ at, o: toObj(row) });
+      });
+      const drop = [];
+      let groups = 0;
+      for (const list of by.values()) {
+        if (list.length < 2) continue;
+        groups++;
+        const keep = prefer ? (prefer(list.map(x => x.o)) || 0) : 0;
+        list.forEach((x, i) => { if (i !== keep) drop.push(x.at); });
+      }
+      if (drop.length) {
+        await pool.query(`delete from ${pgIdent(pgName)} where _row = any($1::bigint[])`, [drop]);
+        pgWrote();
+      }
+      return { removed: drop.length, groups };
+    });
+  }
+
+  return { list, listAll, upsert, append, appendIfAbsent, dedupeById, remove, updateWhere, ensure, invalidate, meta };
 }
 
 /* ---------- Users (personal passwords, stored as hashes only) ---------- */
@@ -17140,7 +17194,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '17 Nov 2026 - build 66.2 (activity figures: calls from the Cold Calls screen now counted and every user spelling grouped under one person, interview attendance rate in Ella\'s KPIs and reports and the owner team table, owner only activity check route; built on server build 66.1)';
+const SERVER_BUILD = '18 Nov 2026 - build 66.3 (mailbox sync: one run at a time with a lease, duplicate safe inserts, result for each mailbox so a partial success is shown as one, owner health check and repair routes; built on server build 66.2)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -23708,13 +23762,18 @@ const mailSugView = s => ({ id: s.id, kind: s.kind, label: SUGGESTION_KINDS[s.ki
 app.get('/api/mailsync/status', mailOwnerGuard, async (req, res) => {
   try {
     const st = await mailSync.settings();
-    const [rows, sugs, dnl, last] = await Promise.all([mailboxLogTable.list().catch(() => []), mailSuggestTable.list().catch(() => []), mailDnlTable.list().catch(() => []), mailSetGet('mail_sync_status')]);
+    const [rows, sugs, dnl, last, boxStates] = await Promise.all([mailboxLogTable.list().catch(() => []), mailSuggestTable.list().catch(() => []), mailDnlTable.list().catch(() => []), mailSetGet('mail_sync_status'), mailSync.boxStates().catch(() => ({}))]);
     let saved = {}; try { saved = JSON.parse(last || '{}'); } catch (e) { saved = {}; }
     const t = londonToday();
     res.json({
       stored: !!pgPoolFor('system') && !isPreview(), preview: isPreview(), enabled: st.enabled, sinceDay: st.sinceDay, noReplyDays: st.noReplyDays, previewMonths: st.previewMonths,
-      mailboxes: mailMailboxes().map(b => ({ owner: b.owner, mailbox: b.mailbox, logged: rows.filter(r => lc(r.mailbox) === b.mailbox).length })),
-      running: mailSync.state.running, last: saved.at || mailSync.state.last || '', lastOk: saved.ok === true ? saved.at : mailSync.state.lastOk || '', error: saved.error || mailSync.state.error || '', needsPermission: !!mailSync.state.needsPermission, counts: saved.counts || mailSync.state.counts || {},
+      mailboxes: mailMailboxes().map(b => {
+        const bs = boxStates[b.mailbox] || {}, lastRun = (saved.boxes || []).find(x => lc(x.mailbox) === b.mailbox) || {};
+        return { owner: b.owner, mailbox: b.mailbox, logged: rows.filter(r => lc(r.mailbox) === b.mailbox).length, lastOk: bs.lastOk || '', lastFail: bs.lastFail || '', error: bs.error || '', ranOk: lastRun.ok === undefined ? null : !!lastRun.ok };
+      }),
+      running: mailSync.state.running, last: saved.at || mailSync.state.last || '', lastOk: saved.ok === true ? saved.at : mailSync.state.lastOk || '',
+      outcome: saved.ok === true ? 'ok' : (saved.at ? ((saved.boxes || []).some(x => x.ok) ? 'partial' : 'failed') : ''),
+      error: saved.error || mailSync.state.error || '', needsPermission: !!mailSync.state.needsPermission, counts: saved.counts || mailSync.state.counts || {},
       loggedTotal: rows.length, loggedToday: rows.filter(r => String(r.logged_at || '').slice(0, 10) === t).length,
       pending: sugs.filter(x => x.status === 'pending').length,
       doNotLog: dnl.map(x => ({ email: x.email, added_by: x.added_by, added_at: x.added_at })).sort((a, b) => a.email.localeCompare(b.email)),
@@ -23755,6 +23814,24 @@ app.post('/api/mailsync/run', mailOwnerGuard, async (req, res) => {
   } catch (e) { console.error('POST /api/mailsync/run error:', e.message); res.status(500).json({ error: e.message }); }
 });
 
+// Build 66.3: owner only health check (counts only: duplicates, suggestion status, rows per mailbox and day) and a repair that removes
+// repeated rows left by overlapping runs. Repair keeps one row per id and never touches handled suggestions.
+app.get('/api/mailsync/check', mailOwnerGuard, async (req, res) => {
+  try {
+    if (isPreview() || !pgPoolFor('system')) return res.status(409).json({ error: 'Only in the live workspace' });
+    res.json({ ok: true, storage: { preview: isPreview() }, ...(await mailSync.check()) });
+  } catch (e) { console.error('GET /api/mailsync/check error:', e.message); res.status(500).json({ error: e.message }); }
+});
+app.post('/api/mailsync/repair', mailOwnerGuard, async (req, res) => {
+  try {
+    if (isPreview() || !pgPoolFor('system')) return res.status(409).json({ error: 'Only in the live workspace' });
+    if (mailSync.state.running) return res.status(409).json({ error: 'A sync is running. Try again in a minute.' });
+    const out = await mailSync.repair(() => commsTable.dedupeById(id => String(id).startsWith('cm-ml-')));
+    auditLog(auditActorOf(req), 'repaired', 'mailbox_sync', 'mailbox sync', JSON.stringify(out).slice(0, 200));
+    res.json({ ok: true, ...out });
+  } catch (e) { console.error('POST /api/mailsync/repair error:', e.message); res.status(500).json({ error: e.message }); }
+});
+
 // Mail on a contact or account timeline. Daniel Brown sees both mailboxes, everyone else only their own.
 app.get('/api/mailsync/log', mailStaffGuard, async (req, res) => {
   try {
@@ -23781,7 +23858,7 @@ app.get('/api/mailsync/suggestions', mailStaffGuard, async (req, res) => {
     const all = (await mailSuggestTable.list()).filter(s => mailMine(req, s.owner));
     const pending = all.filter(s => s.status === 'pending').sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
     const recent = all.filter(s => s.status !== 'pending').sort((a, b) => String(b.handled_at).localeCompare(String(a.handled_at))).slice(0, 15);
-    res.json({ pending: pending.map(mailSugView), recent: recent.map(mailSugView) });
+    res.json({ preview: isPreview(), pending: pending.map(mailSugView), recent: recent.map(mailSugView) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

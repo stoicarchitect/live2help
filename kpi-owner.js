@@ -533,7 +533,7 @@ function commissionSummary(invoices, yS, yE) {
 }
 
 /* ---------- activity (counts only, never money) ---------- */
-const ACTIVITY_KEYS = ['candidatesAdded', 'submissions', 'interviewsBooked', 'emails', 'calls', 'callsSpoke', 'tasksDone', 'interviewsHeld', 'interviewsNoShow', 'interviewsAwaiting'];
+const ACTIVITY_KEYS = ['candidatesAdded', 'submissions', 'interviewsBooked', 'emails', 'calls', 'tasksDone', 'interviewsHeld', 'interviewsNoShow', 'interviewsAwaiting'];
 // build 66.2: one person key however the user was stored (ella, Ella, Ella Pietrzak, ella@live2helprecruitment.co.uk all become ella)
 export function personKey(u) { return lc(u).split('@')[0].split(/[\s.]+/)[0] || ''; }
 function activityCounts(input, a, b) {
@@ -550,8 +550,9 @@ function activityCounts(input, a, b) {
   (input.comms || []).forEach(c => {
     if (!within(parseDate(c.timestamp), a, b)) return;
     const ch = lc(c.channel), o = g(c.user);
-    if (ch === 'email') o.emails++;
-    else if (ch === 'call') { o.calls++; if (/ - spoke to them/i.test(String(c.summary || ''))) o.callsSpoke++; }
+    // build 66.3: only email the person sent counts. Mail received (logged by mailbox sync) and suggestion notes are inbound and do not.
+    if (ch === 'email') { if (lc(c.direction) !== 'inbound') o.emails++; }
+    else if (ch === 'call') o.calls++;
   });
   // build 66.2: interview attendance. Credited to the person who arranged the interview. Completed = attended, no show = did not attend.
   // Cancelled interviews are left out. A scheduled interview whose day has passed has no outcome recorded yet and is counted separately.

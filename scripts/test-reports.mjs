@@ -135,7 +135,8 @@ ok(!NO_DASH.test(everything) && !NO_DASH.test(withNote.markdown), 'no dashes in 
 // the numbers mean something: ratios and what to improve come from her figures
 eq(es.activity.find(a => a.key === 'submissions').now, 5, 'her 5 submissions in November');
 eq(es.activity.find(a => a.key === 'calls').now, 12, 'her 12 calls');
-ok(es.improve.some(x => /spoke to someone on 2 of 12 calls/.test(x)), 'low connect rate is called out with her own numbers');
+ok(!es.improve.some(x => /spoke to someone/i.test(x)), 'no coaching on calls that reached someone (not measured since build 66.3)');
+ok(!/spoke to someone|reached someone/i.test(ellaReportEmail(es, '').text + ellaReportMarkdown(es)), 'the report holds no spoke to someone figure');
 ok(es.improve.length >= 1 && es.focus.length >= 2 && es.focus.length <= 3, 'improvement points and a focus for next month');
 ok(es.highlights.some(x => /Placement: Ann Placed/.test(x)), 'wins listed');
 // a fresh report for a quiet month still renders and still passes

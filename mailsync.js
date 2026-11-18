@@ -179,8 +179,11 @@ export function createMailSync(deps) {
     log = () => {},
   } = deps;
 
-  const state = { running: false, last: null, lastOk: null, error: '', needsPermission: false, counts: {} };
+  const state = { running: false, last: null, lastOk: null, error: '', needsPermission: false, counts: {}, boxes: [] };
   const enc = encodeURIComponent;
+  // Build 66.3: insert a row only if its id is not already there (tables without the helper fall back to a plain append)
+  const addNew = async (table, row) => (table.appendIfAbsent ? table.appendIfAbsent(row) : table.append(row).then(() => true));
+  const LEASE_KEY = 'mail_sync_lease', LEASE_MINUTES = 10;
 
   async function settings() {
     const g = async (k, d) => { const v = await settingsGet(k); return v === undefined || v === null || v === '' ? d : v; };
@@ -210,22 +213,23 @@ export function createMailSync(deps) {
       const rowId = hashId('ml-', `${n.mailbox}|${n.key}|${c.email}`);
       if (ctx.keys.has(rowId)) { counts.duplicates++; continue; }
       ctx.keys.add(rowId);
-      await mailLog.append({
+      const added = await addNew(mailLog, {
         id: rowId, mailbox: n.mailbox, owner: n.owner, direction: n.direction, contact_email: c.email, contact_name: c.name, contact_type: c.type,
         company: c.company, role: c.role, subject: n.subject, preview: n.preview, at: n.at, conversation_id: n.conversationId, logged_at: now(),
       });
-      await comms.append(commsRow(rowId, n, c)).catch(e => log('comms append failed: ' + e.message));
+      if (!added) { counts.duplicates++; continue; } // another run wrote it first
+      await addNew(comms, commsRow(rowId, n, c)).catch(e => log('comms append failed: ' + e.message));
       counts.logged++;
       for (const s of detectSuggestions(n, c)) {
         const sid = hashId('sg-', rowId + '|' + s.kind);
         if (ctx.sugKeys.has(sid)) continue;
         ctx.sugKeys.add(sid);
-        await suggestions.append({
+        const made = await addNew(suggestions, {
           id: sid, kind: s.kind, contact_email: c.email, contact_name: c.name, contact_type: c.type, company: c.company, role: c.role,
           mailbox: n.mailbox, owner: n.owner, mail_id: rowId, subject: n.subject, evidence: s.evidence, status: 'pending', created_at: now(),
           handled_by: '', handled_at: '', result: '',
         });
-        counts.suggested++;
+        if (made) counts.suggested++;
       }
     }
   }
@@ -269,21 +273,44 @@ export function createMailSync(deps) {
     return tasks.length;
   }
 
+  const parseBox = async mailbox => { try { return JSON.parse((await settingsGet('mail_box:' + mailbox)) || '{}'); } catch (e) { return {}; } };
+
+  // Build 66.3: one run at a time. The in-process flag is set before anything is awaited, so two presses of Run now (or a
+  // press during a scheduled run) can never both start. A short lease kept in settings also stops an old and a new server
+  // instance running together during a deploy. A lease older than LEASE_MINUTES is treated as left behind by a crash.
+  async function takeLease() {
+    const cur = String((await settingsGet(LEASE_KEY)) || '');
+    const at = Date.parse(cur.split('|')[0]);
+    if (cur && !isNaN(at) && Date.parse(now()) - at < LEASE_MINUTES * 60000) return { ok: false, since: cur.split('|')[0] };
+    await settingsSet(LEASE_KEY, now() + '|' + Math.random().toString(36).slice(2, 8));
+    return { ok: true };
+  }
+  const releaseLease = () => settingsSet(LEASE_KEY, '').catch(() => {});
+
   async function run({ force = false, sinceDay = '' } = {}) {
     if (!ready()) return { skipped: 'no database' };
-    if (state.running) return { skipped: 'A sync is already running' };
-    const st = await settings();
-    if (!st.enabled && !force) return { skipped: 'off' };
-    state.running = true;
+    if (state.running) return { skipped: 'A sync is already running. Wait for it to finish, then press Run now again.' };
+    state.running = true; // set at once, before any await
+    let leased = false;
     const counts = { scanned: 0, logged: 0, ignored: 0, skipped: 0, duplicates: 0, suggested: 0, resets: 0, tasks: 0, more: false };
     const errors = [];
+    const boxes = [];
+    const finish = async (ok, msg) => {
+      state.error = msg; state.last = now(); state.counts = counts; state.boxes = boxes;
+      if (ok) state.lastOk = state.last;
+      await settingsSet('mail_sync_status', JSON.stringify({ at: state.last, ok, error: msg, counts, boxes }).slice(0, 4000)).catch(() => {});
+    };
     const stop = async msg => {
-      state.error = msg; state.last = now(); state.counts = counts;
-      await settingsSet('mail_sync_status', JSON.stringify({ at: state.last, ok: false, error: msg, counts }).slice(0, 4000)).catch(() => {});
+      await finish(false, msg);
       await alert('mailsync', 'Live 2 Help: mailbox sync could not start', msg).catch(() => {});
-      return { counts, errors: [msg], needsPermission: false };
+      return { counts, errors: [msg], boxes, outcome: 'failed', needsPermission: false };
     };
     try {
+      const st = await settings();
+      if (!st.enabled && !force) return { skipped: 'off' };
+      const lease = await takeLease();
+      if (!lease.ok) return { skipped: `A sync that started at ${lease.since} is still running or was interrupted. Try again in a few minutes.` };
+      leased = true;
       state.needsPermission = false; state.error = '';
       let loaded;
       try { loaded = await Promise.all([loadDirectory(), doNotLog.list(), loadSuppressed(), mailLog.list(), suggestions.list()]); }
@@ -299,24 +326,66 @@ export function createMailSync(deps) {
       const since = (sinceDay || st.sinceDay || isoOfDaysAgo(today(), 7)) + 'T00:00:00Z';
       for (const box of mailboxes()) {
         if (!box.mailbox) continue;
+        const b = { owner: box.owner, mailbox: box.mailbox, ok: true, error: '', scanned: 0, logged: 0 };
+        const before = { scanned: counts.scanned, logged: counts.logged };
         for (const folder of MAIL_FOLDERS) {
           try { await syncFolder(box, folder, ctx, counts, since); }
           catch (e) {
+            b.ok = false;
             if (e.status === 403 || /Authorization_RequestDenied|ErrorAccessDenied|AccessDenied/i.test(e.code || '')) {
               state.needsPermission = true;
-              errors.push(`${box.mailbox} ${folder}: Microsoft 365 refused access (${e.status || e.code}). Microsoft said: ${String(e.message || '').replace(/^Microsoft Graph [A-Z]+ failed /, '').slice(0, 220)}. Check the Mail.ReadWrite permission and the application access policy.`);
-            } else errors.push(`${box.mailbox} ${folder}: ${e.message}`);
+              const m = `${box.mailbox} ${folder}: Microsoft 365 refused access (${e.status || e.code}). Microsoft said: ${String(e.message || '').replace(/^Microsoft Graph [A-Z]+ failed /, '').slice(0, 220)}. Check the Mail.ReadWrite permission and the application access policy.`;
+              errors.push(m); b.error = b.error || m;
+            } else { const m = `${box.mailbox} ${folder}: ${e.message}`; errors.push(m); b.error = b.error || m; }
           }
         }
+        b.scanned = counts.scanned - before.scanned; b.logged = counts.logged - before.logged;
+        b.at = now();
+        if (b.ok) await settingsSet('mail_box:' + box.mailbox, JSON.stringify({ lastOk: b.at })).catch(() => {});
+        else { const prev = await parseBox(box.mailbox); await settingsSet('mail_box:' + box.mailbox, JSON.stringify({ lastOk: prev.lastOk || '', lastFail: b.at, error: b.error.slice(0, 300) })).catch(() => {}); }
+        boxes.push(b);
       }
       try { counts.tasks = await followUps(ctx, st); } catch (e) { errors.push('Follow up check: ' + e.message); }
-      state.error = errors.join(' | ');
-      state.last = now(); if (!errors.length) state.lastOk = state.last;
-      state.counts = counts;
-      await settingsSet('mail_sync_status', JSON.stringify({ at: state.last, ok: !errors.length, error: state.error, counts }).slice(0, 4000)).catch(() => {});
+      const okCount = boxes.filter(b => b.ok).length;
+      const outcome = !errors.length ? 'ok' : (okCount > 0 ? 'partial' : 'failed');
+      await finish(outcome === 'ok', errors.join(' | '));
+      if (outcome === 'partial') state.lastPartial = state.last;
       if (errors.length) await alert('mailsync', 'Live 2 Help: mailbox sync problem', errors.join('\n') + '\n\nNothing was lost. The sync tries again at the next run (every 15 minutes in working hours).').catch(() => {});
-      return { counts, errors, needsPermission: state.needsPermission };
-    } finally { state.running = false; }
+      return { counts, errors, boxes, outcome, needsPermission: state.needsPermission };
+    } finally {
+      if (leased) await releaseLease();
+      state.running = false;
+    }
+  }
+
+  // Build 66.3: owner only health check. Counts only, no names, subjects or text.
+  async function check() {
+    const [logRows, sugRows, boxState] = await Promise.all([mailLog.list(), suggestions.list(), Promise.all(mailboxes().map(async b => [b.mailbox, await parseBox(b.mailbox)]))]);
+    const dupIds = rows => { const seen = new Map(); rows.forEach(r => seen.set(r.id, (seen.get(r.id) || 0) + 1)); let ids = 0, extra = 0; for (const n of seen.values()) if (n > 1) { ids++; extra += n - 1; } return { ids, extraRows: extra }; };
+    const by = (rows, f) => { const o = {}; rows.forEach(r => { const k = f(r); o[k] = (o[k] || 0) + 1; }); return o; };
+    const perMailbox = {};
+    for (const b of mailboxes()) {
+      const rows = logRows.filter(r => lc(r.mailbox) === b.mailbox);
+      perMailbox[b.owner] = {
+        rows: rows.length, distinctIds: new Set(rows.map(r => r.id)).size, distinctMessages: new Set(rows.map(r => r.conversation_id + '|' + r.at + '|' + r.contact_email)).size,
+        byDirection: by(rows, r => r.direction), byContactType: by(rows, r => r.contact_type), byLoggedDay: by(rows, r => String(r.logged_at || '').slice(0, 10)), byMailDay: by(rows, r => String(r.at || '').slice(0, 10)),
+        lastOk: (boxState.find(x => x[0] === b.mailbox) || [0, {}])[1].lastOk || '', lastFail: (boxState.find(x => x[0] === b.mailbox) || [0, {}])[1].lastFail || '',
+      };
+    }
+    const pend = sugRows.filter(s => s.status === 'pending');
+    return {
+      mailboxLog: { rows: logRows.length, duplicates: dupIds(logRows) },
+      suggestions: { rows: sugRows.length, byStatus: by(sugRows, s => s.status || '(blank)'), duplicates: dupIds(sugRows), pendingDuplicates: dupIds(pend), pendingByKind: by(pend, s => s.kind), withResultButPending: pend.filter(s => s.result).length },
+      perMailbox,
+    };
+  }
+
+  // Build 66.3: remove repeated rows left by overlapping runs. Keeps one row per id. For suggestions the row that was handled wins.
+  async function repair(commsDedupe) {
+    const handledFirst = list => { const i = list.findIndex(o => o.status && o.status !== 'pending'); return i >= 0 ? i : 0; };
+    const out = { mailboxLog: await mailLog.dedupeById(null, null), suggestions: await suggestions.dedupeById(null, handledFirst) };
+    if (commsDedupe) out.comms = await commsDedupe();
+    return out;
   }
 
   // Do not log: stop logging an address and remove what was already stored for it
@@ -338,7 +407,7 @@ export function createMailSync(deps) {
     return mailLog.updateWhere(r => r.preview && String(r.at) < cut, r => ({ ...r, preview: '' }));
   }
 
-  return { run, state, settings, addDoNotLog, removeDoNotLog, purgeOldPreviews, followUps };
+  return { run, state, settings, addDoNotLog, removeDoNotLog, purgeOldPreviews, followUps, check, repair, boxStates: async () => Object.fromEntries(await Promise.all(mailboxes().map(async b => [b.mailbox, await parseBox(b.mailbox)]))) };
 }
 
 function isoOfDaysAgo(todayISO, n) { return isoOf(new Date(dayDate(todayISO).getTime() - n * 86400000)); }

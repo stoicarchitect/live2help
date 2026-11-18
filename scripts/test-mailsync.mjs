@@ -70,6 +70,14 @@ const mem = () => {
     rows,
     list: async () => rows.map(r => ({ ...r })),
     append: async r => { rows.push({ ...r }); },
+    appendIfAbsent: async r => { if (rows.some(x => x.id === r.id)) return false; rows.push({ ...r }); return true; },
+    dedupeById: async (onlyIf, prefer) => {
+      const by = new Map(); rows.forEach(r => { if (!by.has(r.id)) by.set(r.id, []); by.get(r.id).push(r); });
+      let removed = 0, groups = 0; const keepSet = new Set();
+      for (const list of by.values()) { const k = list.length > 1 && prefer ? (prefer(list) || 0) : 0; keepSet.add(list[k]); if (list.length > 1) { groups++; removed += list.length - 1; } }
+      const kept = rows.filter(r => keepSet.has(r)); rows.length = 0; kept.forEach(r => rows.push(r));
+      return { removed, groups };
+    },
     upsert: async r => { const i = rows.findIndex(x => x.id === r.id); if (i >= 0) rows[i] = { ...r }; else rows.push({ ...r }); },
     remove: async id => { const i = rows.findIndex(x => x.id === id); if (i >= 0) rows.splice(i, 1); },
     updateWhere: async (p, f) => { let c = 0; rows.forEach((r, i) => { if (p(r)) { rows[i] = f({ ...r }); c++; } }); return c; },
@@ -289,6 +297,69 @@ const strip = x => JSON.stringify(x);
   await old.eng.run({ sinceDay: '2025-01-01' });
   eq(await old.eng.purgeOldPreviews(), 1, 'old previews are cleared');
   eq([old.mailLog.rows[0].preview, old.mailLog.rows[0].subject], ['', 'Old news'], 'the subject line stays when the preview goes');
+}
+
+
+/* ---------- build 66.3: one run at a time, partial success, duplicate safety, check and repair ---------- */
+{
+  // two runs started together: one runs, the other is told to wait, and nothing is written twice
+  const w = world();
+  const m = g('jane@acme.co.uk', [DAN], 'Welder vacancy', 'Hi Dan, please can you confirm the interview works for me. Jane');
+  w.q(DAN, 'inbox').queue.push([m]);
+  const [a, b] = await Promise.all([w.eng.run(), w.eng.run()]);
+  const ran = [a, b].filter(x => !x.skipped), waited = [a, b].filter(x => x.skipped);
+  eq([ran.length, waited.length], [1, 1], 'two runs at once: one runs, one waits');
+  ok(/already running/i.test(waited[0].skipped), 'the second press says a sync is already running');
+  eq([w.mailLog.rows.length, w.comms.rows.length, w.suggestions.rows.length], [1, 1, 1], 'nothing is written twice');
+  eq(w.settings.get('mail_sync_lease'), '', 'the lease is released after the run');
+
+  // a recent lease from another instance blocks a run, an old one (left by a crash) does not
+  const l1 = world({ settings: { mail_sync_lease: '2026-11-19T09:58:00Z|abc' } });
+  const rl = await l1.eng.run();
+  ok(rl.skipped && /still running or was interrupted/.test(rl.skipped), 'a recent lease from another instance blocks the run');
+  const l2 = world({ settings: { mail_sync_lease: '2026-11-19T08:00:00Z|abc' } });
+  l2.q(DAN, 'inbox').queue.push([m]);
+  const rl2 = await l2.eng.run();
+  ok(!rl2.skipped && rl2.counts.logged === 1, 'an old lease (left by a crash) is ignored');
+
+  // inserting a row that already exists is refused by the table, so a late second writer cannot duplicate it
+  const t = world();
+  t.q(DAN, 'inbox').queue.push([m]);
+  await t.eng.run();
+  eq(await t.mailLog.appendIfAbsent({ ...t.mailLog.rows[0] }), false, 'an existing id is not inserted again');
+
+  // one mailbox works, one is refused: the result says partial and each mailbox has its own status
+  const p = world();
+  p.q(DAN, 'inbox').queue.push(Object.assign(new Error('Microsoft Graph GET failed (ErrorAccessDenied): Access to OData is disabled'), { status: 403, code: 'ErrorAccessDenied' }));
+  p.q(DAN, 'sentitems').queue.push(Object.assign(new Error('Microsoft Graph GET failed (ErrorAccessDenied): Access to OData is disabled'), { status: 403, code: 'ErrorAccessDenied' }));
+  p.q(ELLA, 'inbox').queue.push([g('jane@acme.co.uk', [ELLA], 'Hello Ella', 'x')]);
+  const rpart = await p.eng.run();
+  eq(rpart.outcome, 'partial', 'one mailbox worked and one failed is reported as partial');
+  eq(rpart.boxes.map(x => [x.owner, x.ok, x.logged]), [['dan', false, 0], ['ella', true, 1]], 'each mailbox has its own result');
+  const saved = JSON.parse(p.settings.get('mail_sync_status'));
+  eq([saved.ok, saved.boxes.length], [false, 2], 'the saved status keeps the per mailbox results');
+  const bs = await p.eng.boxStates();
+  ok(bs[ELLA].lastOk && !bs[DAN].lastOk && bs[DAN].lastFail, 'the working mailbox has a last success, the refused one a last failure');
+  ok(p.eng.state.lastOk === null, 'a partial run is not recorded as a full success');
+  const rfull = await p.eng.run();
+  eq(rfull.outcome, 'ok', 'a clean run is ok');
+  ok(!/—|–/.test(strip(rpart.errors)), 'no em or en dashes in the messages');
+}
+{
+  // health check and repair on rows left by overlapping runs
+  const w = world();
+  const row = (id, extra = {}) => ({ id, mailbox: ELLA, owner: 'ella', direction: 'in', contact_email: 'jane@acme.co.uk', contact_name: 'Jane', contact_type: 'client', company: 'Acme', role: '', subject: 's', preview: '', at: '2026-11-17T09:00:00Z', conversation_id: 'c', logged_at: '2026-11-18T09:00:00Z', ...extra });
+  w.mailLog.rows.push(row('ml-1'), row('ml-1'), row('ml-2'));
+  const sg = (id, status) => ({ id, kind: 'role_filled', contact_email: 'jane@acme.co.uk', contact_name: 'Jane', contact_type: 'client', company: 'Acme', role: '', mailbox: ELLA, owner: 'ella', mail_id: 'ml-1', subject: 's', evidence: 'e', status, created_at: '2026-11-18T09:00:00Z', handled_by: '', handled_at: '', result: '' });
+  w.suggestions.rows.push(sg('sg-1', 'pending'), sg('sg-1', 'accepted'), sg('sg-2', 'pending'));
+  const c = await w.eng.check();
+  eq([c.mailboxLog.rows, c.mailboxLog.duplicates.extraRows, c.suggestions.duplicates.extraRows], [3, 1, 1], 'the check counts repeated rows');
+  eq(c.suggestions.byStatus, { pending: 2, accepted: 1 }, 'the check counts suggestions by status');
+  ok(!/jane|Acme/.test(strip(c)), 'the check holds counts only, no names');
+  const r = await w.eng.repair();
+  eq([r.mailboxLog.removed, r.suggestions.removed], [1, 1], 'repair removes one row per repeated id');
+  eq(w.suggestions.rows.filter(x => x.id === 'sg-1').map(x => x.status), ['accepted'], 'the handled suggestion is the one kept');
+  eq([w.mailLog.rows.length, w.suggestions.rows.length], [2, 2], 'nothing else is touched');
 }
 
 console.log(`mailsync: all ${n} checks passed`);

@@ -24,11 +24,20 @@ const interviews = [
 const my = computeMyKpi({ now, comms, interviews, invoices: [], candidates: [] }, 'ella');
 const A = my.activity;
 ok(A.calls.now === 3, 'three Ella calls counted whatever the user was stored as: ' + A.calls.now);
-ok(A.callsSpoke.now === 1, 'spoke to them counted');
+ok(A.callsSpoke === undefined, 'calls where someone was spoken to are no longer measured');
 ok(A.calls.before === 1, 'last month calls');
 ok(A.interviewsHeld.now === 3 && A.interviewsNoShow.now === 1, 'attended 3, did not attend 1');
 ok(A.interviewsAwaiting.now === 1, 'only the past scheduled interview has no outcome (the one on the 31st is today)');
 ok(A.interviewsHeld.before === 1 && A.interviewsNoShow.before === 1, 'month before');
+// build 66.3: received email does not count as email sent
+const inb = [
+  { timestamp: '2026-10-05T09:00:00Z', user: 'ella', channel: 'email', direction: 'outbound', summary: 'sent' },
+  { timestamp: '2026-10-05T09:05:00Z', user: 'ella', channel: 'email', direction: '', summary: 'older row with no direction' },
+  { timestamp: '2026-10-05T09:10:00Z', user: 'ella', channel: 'email', direction: 'inbound', summary: 'Email received: hello' },
+  { timestamp: '2026-10-05T09:15:00Z', user: 'ella', channel: 'email', direction: 'inbound', summary: 'Client feedback by email' },
+];
+const mi = computeMyKpi({ now, comms: inb, interviews: [], invoices: [], candidates: [] }, 'ella');
+ok(mi.activity.emails.now === 2, 'only sent email (and older rows with no direction) counts: ' + mi.activity.emails.now);
 const dan = computeMyKpi({ now, comms, interviews, invoices: [], candidates: [] }, 'dan');
 ok(dan.activity.interviewsHeld.now === 1 && dan.activity.calls.now === 1, 'dan is separate');
 

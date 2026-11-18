@@ -313,7 +313,7 @@ export function weeklyBriefEmail(f) {
    Built only from her own activity (computeMyKpi, which holds no money figure), the names of her placements and her review
    objectives. It never receives a pound figure, so none can appear.
    ====================================================================== */
-const ACT_LABELS = [['candidatesAdded', 'Candidates added'], ['submissions', 'Candidates submitted'], ['interviewsBooked', 'Interviews arranged'], ['emails', 'Emails to clients and candidates'], ['calls', 'Calls made'], ['callsSpoke', 'Calls where you spoke to someone'], ['tasksDone', 'Tasks completed'], ['interviewsHeld', 'Interviews attended'], ['interviewsNoShow', 'Interviews missed (did not attend)']];
+const ACT_LABELS = [['candidatesAdded', 'Candidates added'], ['submissions', 'Candidates submitted'], ['interviewsBooked', 'Interviews arranged'], ['emails', 'Emails to clients and candidates'], ['calls', 'Calls made'], ['tasksDone', 'Tasks completed'], ['interviewsHeld', 'Interviews attended'], ['interviewsNoShow', 'Interviews missed (did not attend)']];
 
 // my: computeMyKpi as at the last day of the month. wins: [{company, role, candidate}] placements in the month. reviews: her review rows.
 export function buildEllaSnapshot({ period, my, wins, reviews, firstName, generatedAt }) {
@@ -322,7 +322,6 @@ export function buildEllaSnapshot({ period, my, wins, reviews, firstName, genera
   const ratio = (n, d) => (d > 0 ? Math.round((n / d) * 100) : null);
   const ratios = {
     interviewPerSubmission: { now: ratio(cur('interviewsBooked'), cur('submissions')), before: ratio(prev('interviewsBooked'), prev('submissions')) },
-    connectRate: { now: ratio(cur('callsSpoke'), cur('calls')), before: ratio(prev('callsSpoke'), prev('calls')) },
     attendanceRate: { now: ratio(cur('interviewsHeld'), cur('interviewsHeld') + cur('interviewsNoShow')), before: ratio(prev('interviewsHeld'), prev('interviewsHeld') + prev('interviewsNoShow')) },
   };
   const qMonth = Number(period.slice(5, 7)) - 1, monthsIn = (qMonth % 3) + 1, quarterGone = Math.round((monthsIn / 3) * 100);
@@ -352,8 +351,6 @@ function ellaHighlights(s) {
   const out = [];
   s.wins.forEach(w => out.push(`Placement: ${w.candidate} at ${w.company} as ${w.role}.`));
   s.activity.filter(a => a.diff > 0 && a.now >= 3 && a.key !== 'tasksDone').forEach(a => out.push(`${a.label} rose from ${a.before} to ${a.now}${a.pct != null ? ` (${a.pct > 0 ? '+' : ''}${a.pct}%)` : ''}.`));
-  const r = s.ratios.connectRate;
-  if (r.now != null && r.before != null && r.now > r.before && s.activity.find(a => a.key === 'calls').now >= 10) out.push(`More of your calls reached someone: ${r.now}% against ${r.before}% the month before.`);
   const ar = s.ratios.attendanceRate, held = s.activity.find(a => a.key === 'interviewsHeld'), miss = s.activity.find(a => a.key === 'interviewsNoShow');
   if (ar.now != null && held && miss && held.now + miss.now >= 3 && ar.now >= 80) out.push(`Candidates turned up for ${ar.now}% of interviews (${held.now} of ${held.now + miss.now}).`);
   if (!out.length) out.push('A steady month. The figures below show where the effort went.');
@@ -364,8 +361,6 @@ function ellaImprove(s) {
   const get = k => s.activity.find(a => a.key === k);
   const sub = get('submissions'), calls = get('calls'), ints = get('interviewsBooked'), emails = get('emails');
   if (sub.before >= 3 && sub.now < sub.before * 0.8) out.push(`Submissions fell from ${sub.before} to ${sub.now}. Aim to get back to ${sub.before} next month by keeping two or three strong candidates ready for each open role.`);
-  const cr = s.ratios.connectRate.now;
-  if (calls.now >= 10 && cr != null && cr < 30) out.push(`You spoke to someone on ${get('callsSpoke').now} of ${calls.now} calls (${cr}%). Try different times of day, and follow each missed call with a short email the same day.`);
   const ip = s.ratios.interviewPerSubmission.now;
   if (sub.now >= 4 && ip != null && ip < 25) out.push(`Fewer than one in four submissions led to an interview (${ints.now} from ${sub.now}). Check the match against the role requirements before submitting, and ask the client what held the others back.`);
   const ar = s.ratios.attendanceRate, held = get('interviewsHeld'), miss = get('interviewsNoShow');
@@ -405,7 +400,6 @@ export function ellaReportMarkdown(s, note) {
   const r = s.ratios;
   table(['What the numbers mean', s.periodName, 'Month before'], [
     ['Interviews arranged for every 100 submissions', r.interviewPerSubmission.now == null ? 'n/a' : String(r.interviewPerSubmission.now), r.interviewPerSubmission.before == null ? 'n/a' : String(r.interviewPerSubmission.before)],
-    ['Calls that reached someone', r.connectRate.now == null ? 'n/a' : `${r.connectRate.now}%`, r.connectRate.before == null ? 'n/a' : `${r.connectRate.before}%`],
     ['Interviews attended, out of those with an outcome', r.attendanceRate.now == null ? 'n/a' : `${r.attendanceRate.now}%`, r.attendanceRate.before == null ? 'n/a' : `${r.attendanceRate.before}%`],
   ]);
   h(`Placements and targets for ${s.quarter}`);
@@ -429,7 +423,7 @@ export function ellaReportEmail(s, note) {
   const parts = [`Hi ${s.firstName},`, '', `Your performance report for ${s.periodName} is attached.`, ''];
   const get = k => s.activity.find(a => a.key === k);
   parts.push('The headlines:', `- Candidates submitted: ${vs({ now: get('submissions').now, before: get('submissions').before, pct: get('submissions').pct })}`,
-    `- Interviews arranged: ${get('interviewsBooked').now}`, `- Calls made: ${get('calls').now}, and you spoke to someone on ${get('callsSpoke').now}`,
+    `- Interviews arranged: ${get('interviewsBooked').now}`, `- Calls made: ${get('calls').now}`,
     `- Placements this month: ${s.placements.month}, this quarter: ${s.placements.quarter}`, '');
   if (note && String(note).trim()) parts.push(tidy(String(note).trim()), '');
   parts.push('Have a read, and we will talk it through at our next catch up.', '', 'Daniel', 'Daniel Brown', 'Managing Director, Live 2 Help Recruitment');
