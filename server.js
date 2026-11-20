@@ -17213,7 +17213,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '18 Nov 2026 - build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year; 67.3 chase and call tasks close once the contact is logged and Needs attention can be dismissed or snoozed)';
+const SERVER_BUILD = '18 Nov 2026 - build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year; 67.3 chase and call tasks close once the contact is logged and Needs attention can be dismissed or snoozed; 67.4 cold sending resumes properly after a bounce pause, only bounces after the resume count, the pause email lists the bounced addresses, guessed email addresses cannot be chosen for cold outreach)';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -20879,7 +20879,7 @@ async function audSourceContacts() {
     out.set(email, {
       email, name: o.name || '', company: o.company || '', jobTitle: o.jobTitle || '', kind, alsoIn: [],
       roleSeen: o.roleSeen || '', roleWhere: o.roleWhere || '', roleSince: o.roleSince || '',
-      baseStatus: o.status || 'Cold', baseSource: o.source || '', baseDate: o.date || '',
+      baseStatus: o.status || 'Cold', baseSource: o.source || '', baseDate: o.date || '', emailStatus: o.emailStatus || '',
     });
   };
   clientRows.filter(r => r[1]).map(rowToClient).forEach(c => add('client', { email: c.email, name: c.contactName, company: c.company, jobTitle: c.jobTitle, status: 'Warm', source: 'Client' }));
@@ -20887,7 +20887,7 @@ async function audSourceContacts() {
   ts.filter(u => lc(u.marketing) === 'yes').forEach(u => add('talent', { email: u.email, name: u.name, company: '', jobTitle: u.target_role, status: 'Warm', source: 'Talent Suite marketing', date: String(u.marketing_at || '').slice(0, 10) }));
   const activeCos = new Set(clientRows.map(r => audCompanyKey(r[1])).filter(Boolean));
   leadRows.filter(r => r[1] && !activeCos.has(audCompanyKey(r[1]))).map(rowToClient).forEach(c => add('lead', { email: c.email, name: c.contactName, company: c.company, jobTitle: c.jobTitle, ...audRoleFromNotes(c.notes) }));
-  pipeline.filter(l => l.email && !['lost', 'archived'].includes(l.stage)).forEach(l => add('prospect', { email: l.email, name: l.contact_name, company: l.company, jobTitle: l.job_title, ...audRoleFromSeen(l.role_seen) }));
+  pipeline.filter(l => l.email && !['lost', 'archived'].includes(l.stage)).forEach(l => add('prospect', { email: l.email, name: l.contact_name, company: l.company, jobTitle: l.job_title, emailStatus: l.email_status, ...audRoleFromSeen(l.role_seen) }));
   return out;
 }
 
@@ -20922,6 +20922,7 @@ async function audResolve() {
       email: b.email, name: b.name, company: b.company, jobTitle: b.jobTitle, kind: b.kind, alsoIn: b.alsoIn, roleSeen: b.roleSeen || '', roleWhere: b.roleWhere || '', roleSince: b.roleSince || '',
       owner, ownerFrom, sector, sectors, sectorFrom, lastSector: a.last_sector || '', status, consentSource, consentDate, consentNote: a.consent_note || '',
       needsRecording, suppressed, unsubscribedAt: a.unsubscribed_at || '', route, hasRow: !!a.id,
+      emailStatus: b.emailStatus || '', // build 67.4: 'guess' = built from a name, never seen anywhere
       // build 60.3: an address that bounced is flagged, the contact itself is kept
       emailBad: bad.has(b.email) ? String(bad.get(b.email).detected_at).slice(0, 10) : '', emailBadReason: bad.has(b.email) ? bad.get(b.email).reason : '',
     });
@@ -22267,6 +22268,7 @@ function coldWhyNot(c, seq, owner, today) {
   if (!c) return 'Not found in Lead Clients or Role Finder prospects';
   if (c.emailBad) return 'Email bounced on ' + c.emailBad + (c.emailBadReason ? ' (' + c.emailBadReason + ')' : '') + ': find a new address';
   if (c.suppressed) return 'Opted out: ' + c.suppressed;
+  if (lc(c.emailStatus) === 'guess') return 'Guessed email address (not found on their website): confirm it, then set the email status to checked';
   if (c.status !== 'Cold') return c.status === 'Warm' ? 'Warm: gets the Gap Brief instead' : 'Status ' + c.status;
   if (c.route !== 'm365') return 'Cannot be emailed';
   if (lc(c.owner) !== lc(owner)) return 'Owned by ' + c.owner + ' (change the owner under CRM > Audience)';
@@ -22616,7 +22618,11 @@ async function coldCheckBounceRate(owners) {
   for (const owner of owners) {
     if (paused.has(lc(owner))) continue;
     const sent = sends.filter(x => lc(x.owner) === lc(owner) && x.status === 'sent' && String(x.at) >= cutoff).length;
-    const hard = scan.filter(x => lc(x.owner) === lc(owner) && x.kind === 'bounce-hard' && String(x.detected_at) >= cutoff).length;
+    // build 67.4: bounces from before the last Resume are already suppressed, so they are not counted again (otherwise resuming re-paused within 15 minutes)
+    const lastResume = scan.filter(x => lc(x.owner) === lc(owner) && x.kind === 'pause' && x.status === 'cleared' && x.cleared_at).map(x => String(x.cleared_at)).sort().pop() || '';
+    const from = lastResume > cutoff ? lastResume : cutoff;
+    const bounced = scan.filter(x => lc(x.owner) === lc(owner) && x.kind === 'bounce-hard' && String(x.detected_at) >= from);
+    const hard = bounced.length;
     if (sent < COLD_BOUNCE_MIN_SENT || hard / sent <= COLD_BOUNCE_RATE) continue;
     await mailScanTable.upsert({ id: coldScanId('pause', owner + '|' + rfxToday()), kind: 'pause', email: '', owner: lc(owner), company: '', seq_id: '',
       reason: `${hard} hard bounces from ${sent} emails in ${COLD_BOUNCE_DAYS} days (${Math.round(hard / sent * 100)}%)`, code: '', subject: '', detected_at: rfxNow(), status: 'active', cleared_by: '', cleared_at: '' });
@@ -22624,7 +22630,7 @@ async function coldCheckBounceRate(owners) {
     for (const to of [...new Set([profileOf('dan').email, p.email].filter(Boolean))]) {
       await engineMail.send({ route: 'm365', from: profileOf('dan').email, fromName: 'Live 2 Help Workspace', to, kind: 'cold-alert', user: 'system',
         subject: `Cold sending paused for ${p.fullName || owner}: too many bounces`,
-        text: `${hard} of ${sent} cold emails sent from ${p.fullName || owner}'s mailbox in the last ${COLD_BOUNCE_DAYS} days bounced (${Math.round(hard / sent * 100)}%). Cold sending from this mailbox is paused so the domain's reputation is protected.\n\nCheck the addresses being chosen (company websites, not guessed addresses), then an admin can resume sending under Marketing > Cold Outreach.` }).catch(() => {});
+        text: `${hard} of ${sent} cold emails sent from ${p.fullName || owner}'s mailbox in the last ${COLD_BOUNCE_DAYS} days bounced (${Math.round(hard / sent * 100)}%). Cold sending from this mailbox is paused so the domain's reputation is protected.\n\nBounced addresses (already on the Do not email list, they will not be emailed again):\n${bounced.map(b => '- ' + (b.email || 'unknown') + (b.company ? ' (' + b.company + ')' : '') + ': ' + (b.reason || 'hard bounce')).join('\n')}\n\nCheck the addresses being chosen (company websites, not guessed addresses), then an admin can resume sending under Marketing > Cold Outreach. After you resume, only new bounces count towards the limit.` }).catch(() => {});
     }
     made.push(owner);
   }
