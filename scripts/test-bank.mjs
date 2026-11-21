@@ -134,4 +134,29 @@ eq(corporationTax(100000, 20), 20000, 'flat rate setting overrides');
   const mine = JSON.stringify(computeMyKpi({ ...base, bank: { connected: true, balance: { amount: 12000 }, rows } }, 'ella'));
   ok(!/balance|spendable|forecast|bank|12000|taxReserve|HMRC/i.test(mine), 'Ella\'s response holds no bank word or value');
 }
+
+/* Build 70.1: Starling refuses a read that reaches too far back, so the window is halved until it works */
+{
+  const seen = [];
+  const now = Date.parse('2026-11-21T15:00:00Z');
+  const fetchImpl = async (url) => {
+    const since = new URL(url).searchParams.get('changesSince');
+    seen.push(since);
+    const days = (now - Date.parse(since)) / 86400000;
+    if (days > 120) return { ok: false, status: 400, text: async () => '{"errors":[{"message":"QUERY_EXCEEDING_MAX_TIME_RANGE"}],"success":false}', json: async () => ({}) };
+    return { ok: true, json: async () => ({ feedItems: [{ feedItemUid: 'x1' }] }), text: async () => '' };
+  };
+  const c = createStarlingClient({ token: 't0ken', fetchImpl });
+  const r = await c.feedAdaptive('acc', 'cat', new Date(now - 400 * 86400000).toISOString(), now);
+  ok(r.items.length === 1 && seen.length === 3, 'window halves 400, 200, 100 days until Starling accepts it');
+  ok((now - Date.parse(r.since)) / 86400000 <= 120, 'the read reports the date it actually started from');
+  // other errors are never swallowed
+  const bad = createStarlingClient({ token: 't', fetchImpl: async () => ({ ok: false, status: 401, text: async () => 'no', json: async () => ({}) }) });
+  let threw = false; try { await bad.feedAdaptive('a', 'c', new Date(now - 400 * 86400000).toISOString(), now); } catch (e) { threw = /401/.test(e.message); }
+  ok(threw, 'a rejected token still fails loudly');
+  // a range error that never clears stops at 14 days
+  const never = createStarlingClient({ token: 't', fetchImpl: async () => ({ ok: false, status: 400, text: async () => 'QUERY_EXCEEDING_MAX_TIME_RANGE', json: async () => ({}) }) });
+  let stopped = false; try { await never.feedAdaptive('a', 'c', new Date(now - 400 * 86400000).toISOString(), now); } catch (e) { stopped = /QUERY_EXCEEDING/.test(e.message); }
+  ok(stopped, 'gives up at 14 days rather than looping');
+}
 console.log(`bank: all ${n} checks passed`);

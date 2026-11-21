@@ -47,6 +47,22 @@ export function createStarlingClient({ token, base = STARLING_LIVE, fetchImpl = 
     async feed(accountUid, categoryUid, changesSinceISO) {
       return ((await get(`/api/v2/feed/account/${accountUid}/category/${categoryUid}`, { changesSince: changesSinceISO })).feedItems) || [];
     },
+    /* build 70.1: Starling refuses a changesSince that reaches too far back (QUERY_EXCEEDING_MAX_TIME_RANGE).
+       On that error the window is halved and tried again, down to 14 days, so the first read always works.
+       Returns the items and the date the read actually started from. */
+    async feedAdaptive(accountUid, categoryUid, sinceISO, nowMs = Date.now()) {
+      let since = sinceISO;
+      for (let i = 0; i < 8; i++) {
+        try { return { items: await this.feed(accountUid, categoryUid, since), since }; }
+        catch (e) {
+          if (!/QUERY_EXCEEDING_MAX_TIME_RANGE/.test(String(e.message))) throw e;
+          const span = nowMs - Date.parse(since);
+          if (span <= 14 * DAY) throw e;
+          since = new Date(nowMs - Math.max(14 * DAY, Math.floor(span / 2))).toISOString();
+        }
+      }
+      throw new Error('Starling would not accept any date range for the bank feed');
+    },
   };
 }
 

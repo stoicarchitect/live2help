@@ -23186,7 +23186,9 @@ async function bankPoll(reason) {
     const backfillDays = Math.min(730, Math.max(30, parseInt(set.get('bank_backfill_days') || '400', 10) || 400));
     const cursor = set.get('bank_cursor');
     const since = cursor ? new Date(Date.parse(cursor) - 3 * 86400000).toISOString() : new Date(Date.now() - backfillDays * 86400000).toISOString();
-    const items = await client.feed(accountUid, categoryUid, since);
+    const read = await (client.feedAdaptive ? client.feedAdaptive(accountUid, categoryUid, since) : client.feed(accountUid, categoryUid, since).then(items => ({ items, since })));
+    const items = read.items;
+    if (read.since !== since) await bankSet('bank_backfill_note', `Starling limits how far back one read can go, so history starts from ${read.since.slice(0, 10)}`).catch(() => {});
     const existing = new Map((await bankTxTable.list()).map(o => [o.id, o]));
     const rules = await bankRules();
     let added = 0, changed = 0, newest = cursor || '';
