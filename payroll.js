@@ -5,6 +5,8 @@
    the payroll email is always opened for Daniel Brown to review and send himself.
    Dates are plain YYYY-MM-DD strings in London time. Tests: node scripts/test-payroll.mjs */
 
+import { pensionActive, pensionStatusOf, niExemptOf, employerNiMonth, autoEnrolDue } from './employee-pay.js'; // build 70
+
 const DAY = 86400000;
 const round2 = n => Math.round((Number(n) || 0) * 100) / 100;
 const num = v => { const x = parseFloat(String(v == null ? '' : v).replace(/[£,\s]/g, '')); return Number.isFinite(x) ? x : 0; };
@@ -136,7 +138,7 @@ const paidOn = i => String(i.paymentDate || i.date || '').slice(0, 10);
 
 /* employees: the dashboard employee list (name, salary a year, startDate, endDate, pensionPct, commissionPct, pensionOnComm)
    invoices: rowToInvoice shapes. ledger: Commission Ledger rows. cutoffDay: optional day of the month for commission. */
-export function payrollPack({ month, payDate, employees, invoices, ledger, cutoffDay }) {
+export function payrollPack({ month, payDate, employees, invoices, ledger, cutoffDay, niRates, today }) {
   const mStart = `${month}-01`, mEnd = monthEnd(month), days = Number(mEnd.slice(8));
   const cd = parseInt(cutoffDay, 10);
   const cutoff = cd >= 1 && cd <= 31 ? `${month}-${String(Math.min(cd, days)).padStart(2, '0')}` : (payDate && payDate < mEnd ? payDate : mEnd);
@@ -165,18 +167,31 @@ export function payrollPack({ month, payDate, employees, invoices, ledger, cutof
     const waiting = mine.filter(i => lc(i.status) !== 'paid');
     const commission = round2(lines.reduce((s, l) => s + l.amount, 0));
     const pensionPct = num(e.pensionPct);
-    const pension = round2(pensionPct / 100 * (salary + (e.pensionOnComm === false ? 0 : commission)));
+    // build 70: employer pension only counts once the person is enrolled (auto-enrolment is usually after three months)
+    const pensionOn = pensionActive(e, mEnd);
+    const pension = pensionOn ? round2(pensionPct / 100 * (salary + (e.pensionOnComm === false ? 0 : commission))) : 0;
     const gross = round2(salary + commission);
+    const niExempt = niExemptOf(e);
+    const employerNi = employerNiMonth(e, gross, niRates);
+    const due = autoEnrolDue(e);
+    const status = pensionStatusOf(e);
+    if (status === 'not_enrolled' && due && today) {
+      const left = daysBetween(today, due);
+      if (left < 0) warnings.push(`${e.name} is not enrolled in the pension and auto-enrolment was due by ${due}. Check the date on the team list.`);
+      else if (left <= 30) warnings.push(`${e.name}: auto-enrolment into the pension is due by ${due} (${left} day${left === 1 ? '' : 's'} away). Set them as enrolled on the team list from that month.`);
+    }
     people.push({
       name: e.name, role: e.role || '', salaryYear: num(e.salary), salary, partMonth: activeDays < days, activeDays,
       commissionRate: rate, commission, lines, later, waitingCount: waiting.length, waitingAmount: round2(waiting.reduce((s, i) => s + num(i.commissionAmount), 0)),
-      pensionPct, pensionOnCommission: e.pensionOnComm !== false, pension, gross, employerCost: round2(gross + pension), endDate: end,
+      pensionPct, pensionOnCommission: e.pensionOnComm !== false, pension, gross, endDate: end,
+      pensionStatus: status, pensionActive: pensionOn, pensionStart: ISO.test(e.pensionStart || '') ? e.pensionStart : '', pensionDue: due,
+      niExempt, employerNi, employerCost: round2(gross + pension + employerNi),
     });
   });
   const tot = k => round2(people.reduce((s, p) => s + p[k], 0));
   return {
     month, monthName: monthName(month), payDate, cutoff, people, warnings,
-    totals: { salary: tot('salary'), commission: tot('commission'), pension: tot('pension'), gross: tot('gross'), employerCost: tot('employerCost') },
+    totals: { salary: tot('salary'), commission: tot('commission'), pension: tot('pension'), employerNi: tot('employerNi'), gross: tot('gross'), employerCost: tot('employerCost') },
     invoices: people.flatMap(p => p.lines.map(l => l.invoice)),
   };
 }
@@ -243,7 +258,10 @@ export function payrollEmail(pack, signer) {
       lines.push(`  Commission total: ${gbp(p.commission)} gross`);
     } else if (p.commissionRate) lines.push('- Commission: none this month');
     lines.push(`- Total gross pay: ${gbp(p.gross)}`);
-    if (p.pensionPct) lines.push(`- Employer pension (${p.pensionPct}%${p.pensionOnCommission ? ' on salary and commission' : ' on salary only'}): ${gbp(p.pension)}`);
+    if (p.pensionActive && p.pensionPct) lines.push(`- Pension: enrolled. Employer pension (${p.pensionPct}%${p.pensionOnCommission ? ' on salary and commission' : ' on salary only'}): ${gbp(p.pension)}`);
+    else if (p.pensionStatus === 'not_enrolled') lines.push(`- Pension: not enrolled, so no pension deduction or employer pension this month${p.pensionDue ? ` (auto-enrolment due by ${ukDate(p.pensionDue)})` : ''}`);
+    else if (p.pensionStart && !p.pensionActive) lines.push(`- Pension: enrolled from ${ukDate(p.pensionStart)}, so no employer pension this month`);
+    lines.push(p.niExempt ? '- National Insurance: employer NI exempt' : `- Employer National Insurance: ${gbp(p.employerNi)}`);
     if (p.later.length) {
       lines.push('- Commission moving to next month (client paid after the cut-off):');
       p.later.forEach(l => lines.push(`    ${l.candidate}, ${l.company}, invoice ${l.invoice}: ${gbp(l.amount)}${l.clientPaid ? ', client paid ' + ukDate(l.clientPaid) : ''}`));
@@ -259,7 +277,7 @@ export function payrollEmail(pack, signer) {
 export function runRecords(pack, { by, at, to, bankCheck }) {
   const run = {
     id: pack.month, month: pack.month, pay_date: pack.payDate, status: 'sent', sent_at: at, sent_by: by, to: to || '',
-    salary: String(pack.totals.salary), commission: String(pack.totals.commission), pension: String(pack.totals.pension),
+    salary: String(pack.totals.salary), commission: String(pack.totals.commission), pension: String(pack.totals.pension), note: pack.totals.employerNi ? `employer NI ${pack.totals.employerNi}` : '',
     gross: String(pack.totals.gross), employer_cost: String(pack.totals.employerCost), invoices: pack.invoices.join(' '),
     people: pack.people.map(p => p.name).join(', '), bank_check: bankCheck && bankCheck.connected ? String(bankCheck.total) : '',
   };

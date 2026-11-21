@@ -183,4 +183,19 @@ const flat = JSON.stringify(mine).toLowerCase();
 const moneyValues = new Set([6000, 4500, 8000, 3000, 9000, 26000, 600, 800, 900, 23000, 30500, 10500]);
 (function walk(v) { if (typeof v === 'number') assert.ok(!moneyValues.has(v), 'money value leaked: ' + v); else if (v && typeof v === 'object') Object.values(v).forEach(walk); })(mine);
 
+
+/* Build 70: pension status and NI exempt in the cost figures */
+{
+  const same = computeOwnerKpi(base).cost;
+  const notEnrolled = computeOwnerKpi({ ...base, employees: [{ ...employees[0], pensionStatus: 'not_enrolled', niExempt: true }] }).cost;
+  assert.equal(notEnrolled.pensionYtd, 0, 'not enrolled: no employer pension in the cost figures');
+  assert.ok(notEnrolled.teamCostYtd < same.teamCostYtd, 'not enrolled: team cost is lower');
+  assert.equal(notEnrolled.niYtd, 0, 'NI exempt: no employer NI');
+  const later = computeOwnerKpi({ ...base, employees: [{ ...employees[0], pensionStatus: 'enrolled', pensionStart: '2026-11-01' }] }).cost;
+  assert.ok(later.pensionYtd > 0 && later.pensionYtd < same.pensionYtd, 'enrolled from November: pension only from November');
+  const ni = computeOwnerKpi({ ...base, employees: [{ ...employees[0], niExempt: false }] }).cost;
+  assert.ok(ni.niYtd > 0 && ni.teamCostYtd > same.teamCostYtd, 'not exempt: employer NI is added to team cost');
+  assert.equal(computeOwnerKpi({ ...base, employees: [{ ...employees[0], pensionStatus: undefined }] }).cost.teamCostYtd, same.teamCostYtd, 'people added before build 70 are unchanged');
+}
+
 console.log('kpi-owner: all checks passed');

@@ -9,6 +9,7 @@
    ====================================================================== */
 
 import { bankKpi } from './bank.js';
+import { pensionActive, employerNiDays, niExemptOf, NI_DEFAULTS } from './employee-pay.js'; // build 70
 
 export const KPI_SETTING_DEFAULTS = {
   vat_threshold: '90000',          // HMRC registration threshold, checked 16 Nov 2026. Held as a setting, never hardcode elsewhere.
@@ -149,8 +150,13 @@ export function empCostBetween(emp, from, to) {
   const days = weekdaysBetween(a, b);
   const annual = num(emp.salary);
   const sal = Math.min(annual, (annual / 260) * days);
-  const pen = sal * (num(emp.pensionPct) / 100);
-  return { salary: round2(sal), pension: round2(pen), total: round2(sal + pen), days };
+  // build 70: pension only from the month the person is enrolled (not enrolled means none at all)
+  const ps = emp.pensionStart && /^\d{4}-\d{2}-\d{2}$/.test(emp.pensionStart) ? parseDate(emp.pensionStart.slice(0, 7) + '-01') : null;
+  const penFrom = emp.pensionStatus === 'not_enrolled' ? null : (ps && ps > a ? ps : a);
+  const penDays = penFrom && penFrom <= b ? weekdaysBetween(penFrom, b) : 0;
+  const penSal = Math.min(annual, (annual / 260) * penDays);
+  const pen = penSal * (num(emp.pensionPct) / 100);
+  return { salary: round2(sal), pension: round2(pen), total: round2(sal + pen), days, penSalary: round2(penSal) };
 }
 function empMatches(emp, key) {
   const full = lc(emp.name), first = full.split(/\s+/)[0], kk = lc(key);
@@ -407,8 +413,9 @@ export function computeOwnerKpi(input) {
     return employees.map(e => {
       const c = empCostBetween(e, a, bIncl);
       const cm = sumFor(e, comm);
-      const cmPension = e.pensionOnComm === false ? 0 : cm * (num(e.pensionPct) / 100);
-      return { e, salary: c.salary, pension: round2(c.pension + cmPension), commission: round2(cm), total: round2(c.total + cm + cmPension) };
+      const cmPension = e.pensionOnComm === false || !pensionActive(e, iso(bIncl)) ? 0 : cm * (num(e.pensionPct) / 100);
+      const ni = employerNiDays(e, c.salary + cm, c.days, input.niRates || NI_DEFAULTS);
+      return { e, salary: c.salary, pension: round2(c.pension + cmPension), ni, commission: round2(cm), total: round2(c.total + cm + cmPension + ni) };
     });
   };
   const lastMonthEnd = new Date(mS.getTime() - DAY);
@@ -438,18 +445,18 @@ export function computeOwnerKpi(input) {
   const todayISO = iso(today);
   const recurringAds = (input.adSpend || []).filter(e => e.frequency === 'monthly' && num(e.amount) && dateOnly(e.date) && dateOnly(e.date) <= todayISO && (!dateOnly(e.end_date) || dateOnly(e.end_date) >= todayISO))
     .map(e => ({ name: [e.channel, e.role].filter(Boolean).join(' - ') || 'Monthly spend', amount: num(e.amount) }));
-  const monthlyPayroll = sum(employees.filter(e => (!e.endDate || e.endDate >= todayISO) && e.startDate && e.startDate <= todayISO), e => num(e.salary) * (1 + num(e.pensionPct) / 100)) / 12;
+  const monthlyPayroll = sum(employees.filter(e => (!e.endDate || e.endDate >= todayISO) && e.startDate && e.startDate <= todayISO), e => num(e.salary) * (1 + (pensionActive(e, todayISO) ? num(e.pensionPct) / 100 : 0)) + (niExemptOf(e) ? 0 : Math.max(0, num(e.salary) - (input.niRates || NI_DEFAULTS).thresholdYear) * (input.niRates || NI_DEFAULTS).ratePct / 100)) / 12;
   const overheads = num(input.fin && input.fin.overheads);
   // build 65: commission still to go through payroll, with employer pension on it, for people on payroll only (the director takes dividends, not commission)
   const commissionItems = invoices.filter(i => i.commissionAmount > 0 && !i.commissionPaidDate).map(i => {
     const e = employees.find(x => empMatches(x, i.consultant));
     if (!e) return null;
-    const pen = e.pensionOnComm === false ? 0 : num(e.pensionPct) / 100;
+    const pen = e.pensionOnComm === false || !pensionActive(e, todayISO) ? 0 : num(e.pensionPct) / 100;
     return { number: i.number, company: i.company, amount: round2(i.commissionAmount * (1 + pen)), paid: i.paid, paidDate: i.paid && i.pd ? iso(i.pd) : '' };
   }).filter(Boolean);
   const recurringTotal = monthlyPayroll + sum(recurringAds, r => r.amount) + overheads;
   const cost = {
-    teamCostYtd: round2(teamYtd), salaryYtd: round2(sum(ytdCosts, x => x.salary)), pensionYtd: round2(sum(ytdCosts, x => x.pension)), commissionYtd: round2(sum(ytdCosts, x => x.commission)),
+    teamCostYtd: round2(teamYtd), salaryYtd: round2(sum(ytdCosts, x => x.salary)), pensionYtd: round2(sum(ytdCosts, x => x.pension)), commissionYtd: round2(sum(ytdCosts, x => x.commission)), niYtd: round2(sum(ytdCosts, x => x.ni)),
     teamCostMonth: trend(sum(mCosts, x => x.total), sum(lmCosts, x => x.total), 'down'),
     adSpendYtd: round2(adTotal), adSpendLogged: round2(adLogged), adSpendManual: round2(manualAd),
     adSpendMonth: trend(adIn(mS, today), adIn(lmS, lastMonthEnd), 'down'),
@@ -474,7 +481,7 @@ export function computeOwnerKpi(input) {
       name: x.e.name, role: x.e.role || '', key,
       activity: personActivity(act, actPrev, key), target: targetFor(key),
       placementsYtd: ytdInv.filter(mine).length, placementsQuarter: invoices.filter(i => within(i.d, qS, tomorrow) && mine(i)).length,
-      revenueYtd: round2(rev), salaryAndPension: round2(x.salary + x.pension - (x.e.pensionOnComm === false ? 0 : x.commission * (num(x.e.pensionPct) / 100))),
+      revenueYtd: round2(rev), salaryAndPension: round2(x.salary + x.pension - (x.e.pensionOnComm === false || !pensionActive(x.e, iso(today)) ? 0 : x.commission * (num(x.e.pensionPct) / 100))),
       commission: x.commission, employmentCostYtd: x.total, roiPct: x.total > 0 ? Math.round(((rev - x.total) / x.total) * 100) : null,
     };
   });

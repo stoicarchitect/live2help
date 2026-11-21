@@ -24,6 +24,7 @@ import { STARLING_LIVE, STARLING_SANDBOX, BANK_HEADER, DEFAULT_BANK_RULES, creat
 import * as reports from './reports.js'; // build 65
 import { contactDoneReason as contactDoneReasonPure } from './attention.js'; // build 67.3
 import { createMailSync, SUGGESTION_KINDS, isClientType } from './mailsync.js'; // build 66
+import { niRatesFrom } from './employee-pay.js'; // build 70
 import { londonToday, monthOf, readPayrollSettings, validOverride, payDateFor, payrollWatch, currentPayrollMonth, bannerFor, reminderFor, payrollPack, clawbackCheck, payrollBankCheck, payrollEmail, runRecords, monthName as payrollMonthName } from './payroll.js'; // build 64
 import { computeTargets, backwardsTargets, historicalRatios, normaliseGoal, targetsForPerson, personProgress, goalProgress, salesByLine, SERVICE_LINES, cleanLine } from './targets.js'; // build 67
 import { computeOwnerKpi, computeMyKpi, vatAlertsDue, vatAlertText, monthKey, KPI_SETTING_DEFAULTS, KPI_SETTING_KEYS, personKey } from './kpi-owner.js'; // build 62
@@ -17213,7 +17214,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '18 Nov 2026 - build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year; 67.3 chase and call tasks close once the contact is logged and Needs attention can be dismissed or snoozed; 67.4 cold sending resumes properly after a bounce pause, only bounces after the resume count, the pause email lists the bounced addresses, guessed email addresses cannot be chosen for cold outreach)';
+const SERVER_BUILD = '21 Nov 2026 - build 70 (pension status and employer NI exempt per person in the payroll pack, payroll email and cost reports, employer NI calculated for anyone not exempt, auto-enrolment due warnings; built on server build 67.4; earlier: build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year; 67.3 chase and call tasks close once the contact is logged and Needs attention can be dismissed or snoozed; 67.4 cold sending resumes properly after a bounce pause, only bounces after the resume count, the pause email lists the bounced addresses, guessed email addresses cannot be chosen for cold outreach))';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -22775,6 +22776,7 @@ async function loadKpiInput(fresh) {
     kpiTargets: targetRows.filter(r => r && r[0]).map(rowToKPITarget),
     clientFirstSeen: clientRows.filter(r => r && r[1]).map(r => ({ date: r[0], name: r[1] })),
     employees: json('fin:l2h-employees', []),
+    niRates: niRatesFrom(k => set.get(k)),
     fin: { manualAd: set.get('fin:l2h-advertising-cost') || 0, overheads: set.get('fin:l2h-monthly-overheads') || 0, payrollCutoff: set.get('fin:l2h-payroll-cutoff') || '' },
     forecastWeights: json('forecast_weights', null),
   };
@@ -23484,7 +23486,7 @@ async function payrollBuildPack(month, state) {
   if (!Array.isArray(employees)) employees = [];
   const invoices = invRows.filter(r => r && r[0]).map(rowToInvoice);
   const pd = payDateFor(month, state.settings, state.bank);
-  const pack = payrollPack({ month, payDate: pd.date, employees, invoices, ledger, cutoffDay: set.get('fin:l2h-payroll-cutoff') || '' });
+  const pack = payrollPack({ month, payDate: pd.date, employees, invoices, ledger, cutoffDay: set.get('fin:l2h-payroll-cutoff') || '', niRates: niRatesFrom(k => set.get(k)), today: state.today });
   pack.payDateSource = pd.source;
   const clawback = clawbackCheck({ pack, employees, hrEmployees: hrRows, ledger, placements, today: state.today, bank: state.bank, settings: state.settings });
   const bankCheck = payrollBankCheck(bankRows ? bankRows.map(r => ({ ...r, bucket: r.cost_bucket })) : null, pd.date);

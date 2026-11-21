@@ -5014,6 +5014,7 @@ async function loadEmployeeList(){
       <div style="padding:12px 16px;font-size:12px;color:#999;">£${emp.salary.toLocaleString('en-GB')}</div>
       <div style="padding:12px 16px;font-size:12px;color:var(--gold);font-weight:600;">£${ytdSalary.toLocaleString('en-GB')} YTD${isPartYear ? ' *' : ''}</div>
       <div style="padding:12px 16px;font-size:12px;color:#999;display:flex;gap:6px;">
+        <button onclick="editPayInputs(${idx})" style="padding:4px 8px;background:none;border:1px solid var(--gold);color:var(--gold);border-radius:2px;cursor:pointer;font-size:11px;">Pension and NI</button>
         <button onclick="editEmployee(${idx})" style="padding:4px 8px;background:none;border:1px solid var(--border);border-radius:2px;cursor:pointer;font-size:11px;">Edit</button>
         <button onclick="deleteEmployee(${idx})" style="padding:4px 8px;background:var(--danger);color:white;border:none;border-radius:2px;cursor:pointer;font-size:11px;">Delete</button>
       </div>
@@ -14050,6 +14051,29 @@ function serverBuildLabel(b){
    ============================================================ */
 
 /* ---------- Team payroll ---------- */
+/* ---------- Build 70: pension status and employer NI per person (matches employee-pay.js on the server) ---------- */
+var EP_ISO = /^\d{4}-\d{2}-\d{2}$/;
+function epPensionStatus(e){ return e && e.pensionStatus === 'not_enrolled' ? 'not_enrolled' : 'enrolled'; }
+function epPensionActive(e, periodEndISO){ if(epPensionStatus(e) !== 'enrolled') return false; var f = EP_ISO.test((e && e.pensionStart) || '') ? e.pensionStart : ''; return !f || f <= periodEndISO; }
+function epNiExempt(e){ return !(e && (e.niExempt === false || e.niExempt === 'no')); }
+function epAddMonths(iso, n){
+  if(!EP_ISO.test(iso || '')) return '';
+  var p = iso.split('-').map(Number), t = (p[1] - 1) + n, yy = p[0] + Math.floor(t / 12), mm = ((t % 12) + 12) % 12;
+  var last = new Date(Date.UTC(yy, mm + 1, 0)).getUTCDate();
+  return yy + '-' + String(mm + 1).padStart(2, '0') + '-' + String(Math.min(p[2], last)).padStart(2, '0');
+}
+function epAutoEnrolDue(e){ return epAddMonths(e && e.startDate, 3); }
+function epNiRates(){ var r = parseFloat(finGet('l2h-ni-rate-pct')), t = parseFloat(finGet('l2h-ni-threshold-year')); return {ratePct: r > 0 && r < 100 ? r : 15, thresholdYear: t > 0 ? t : 5000}; }
+function epNiDays(e, gross, weekdays){ if(epNiExempt(e)) return 0; var r = epNiRates(); return Math.round(Math.max(0, gross - r.thresholdYear / 260 * weekdays) * r.ratePct) / 100; }
+function epPensionLine(e){
+  var iso = new Date().toISOString().slice(0, 10);
+  if(epPensionStatus(e) === 'enrolled'){
+    var f = EP_ISO.test(e.pensionStart || '') ? e.pensionStart : '';
+    return f && f > iso ? 'Pension: enrolled from ' + f : 'Pension: enrolled ' + (parseFloat(e.pensionPct) || 0) + '%';
+  }
+  var due = epAutoEnrolDue(e);
+  return 'Pension: not enrolled' + (due ? ' (auto-enrolment due by ' + due + ')' : '');
+}
 function payPeriod(year){
   const now = new Date();
   const y = parseInt(year, 10) || now.getFullYear();
@@ -14083,8 +14107,13 @@ function empCost(emp, year){
   const days = weekdaysBetween(from, to);
   const annual = parseFloat(emp.salary) || 0;
   const sal = Math.min(annual, annual / 260 * days);
-  const pen = sal * ((parseFloat(emp.pensionPct) || 0) / 100);
-  return {salary: round2(sal), pension: round2(pen), total: round2(sal + pen), days};
+  let penFrom = from;
+  if(epPensionStatus(emp) === 'not_enrolled') penFrom = null;
+  else if(EP_ISO.test(emp.pensionStart || '')){ const ps = new Date(emp.pensionStart.slice(0, 7) + '-01T00:00:00Z'); if(ps > from) penFrom = ps; }
+  const penDays = penFrom && penFrom <= to ? weekdaysBetween(penFrom, to) : 0;
+  const pen = Math.min(annual, annual / 260 * penDays) * ((parseFloat(emp.pensionPct) || 0) / 100);
+  const ni = epNiDays(emp, sal, days);
+  return {salary: round2(sal), pension: round2(pen), ni: round2(ni), total: round2(sal + pen + ni), days};
 }
 function calculateEmployeeYTDSalary(emp){ return empCost(emp, new Date().getFullYear()).salary; }
 function payEmployees(){ try{ return JSON.parse(finGet('l2h-employees') || '[]'); }catch(e){ return []; } }
@@ -14123,6 +14152,11 @@ async function loadEmployeeList(){
     employees.forEach(e => { if(/ella/i.test(e.name || '') && e.commissionPct === undefined){ e.commissionPct = 15; e.pensionOnComm = true; } });
     finSet('l2h-seed-ella-comm', '1');
   }
+  if(!finGet('l2h-seed-ella-pension70')){
+    // build 70: Ella joined on 2 Nov 2026 and is not in the pension until auto-enrolment, which is usually three months after the start
+    employees.forEach(e => { if(/ella/i.test(e.name || '') && e.pensionStatus === undefined){ e.pensionStatus = 'not_enrolled'; e.pensionStart = ''; e.niExempt = true; } });
+    finSet('l2h-seed-ella-pension70', '1');
+  }
   finSet('l2h-employees', JSON.stringify(employees));
   const list = document.getElementById('employeeList');
   const year = document.getElementById('healthYearSelector')?.value || new Date().getFullYear();
@@ -14140,8 +14174,8 @@ async function loadEmployeeList(){
     row.style.cssText = 'display:grid;grid-template-columns:1.4fr 1.1fr 1.3fr auto;gap:0;border-bottom:1px solid var(--border);align-items:center;';
     row.innerHTML = `
       <div style="padding:12px 16px;font-size:13px;color:var(--dark);font-weight:500;">${esc(emp.name)}<div style="font-size:11px;color:#999;font-weight:400;">${esc(emp.role || '')}${emp.endDate ? ' - left ' + esc(emp.endDate) : ''}</div></div>
-      <div style="padding:12px 16px;font-size:12px;color:#999;">${gbp(emp.salary)} a year, paid weekly<div style="font-size:11px;">Pension ${parseFloat(emp.pensionPct) || 0}%${parseFloat(emp.commissionPct) ? ' - Commission ' + parseFloat(emp.commissionPct) + '%' + (emp.pensionOnComm === false ? ' (no pension on commission)' : '') : ''}</div></div>
-      <div style="padding:12px 16px;font-size:12px;color:var(--gold);font-weight:600;">${gbp(c.total)} salary and pension YTD<div style="font-size:11px;color:#999;font-weight:400;">${gbp(c.salary)} salary (${c.days} working days) + ${gbp(c.pension)} pension</div></div>
+      <div style="padding:12px 16px;font-size:12px;color:#999;">${gbp(emp.salary)} a year, paid weekly<div style="font-size:11px;">${esc(epPensionLine(emp))} - ${epNiExempt(emp) ? 'Employer NI exempt' : 'Employer NI charged'}${parseFloat(emp.commissionPct) ? ' - Commission ' + parseFloat(emp.commissionPct) + '%' + (emp.pensionOnComm === false ? ' (no pension on commission)' : '') : ''}</div></div>
+      <div style="padding:12px 16px;font-size:12px;color:var(--gold);font-weight:600;">${gbp(c.total)} salary and pension YTD<div style="font-size:11px;color:#999;font-weight:400;">${gbp(c.salary)} salary (${c.days} working days) + ${gbp(c.pension)} pension${c.ni ? ' + ' + gbp(c.ni) + ' employer NI' : ''}</div></div>
       <div style="padding:12px 16px;font-size:12px;display:flex;gap:6px;">
         <button onclick="editEmployee(${idx})" style="padding:4px 8px;background:none;border:1px solid var(--border);border-radius:2px;cursor:pointer;font-size:11px;">Edit</button>
         <button onclick="deleteEmployee(${idx})" style="padding:4px 8px;background:var(--danger);color:white;border:none;border-radius:2px;cursor:pointer;font-size:11px;">Delete</button>
@@ -14180,9 +14214,52 @@ function editEmployee(idx){
     if(a === null) return;
     pOnC = !/^n/i.test(a.trim());
   }
-  employees[idx] = {name: name.trim() || e.name, role: role.trim(), salary: parseInt(salary) || e.salary, startDate: start.trim() || e.startDate, endDate: end.trim(), pensionPct: parseFloat(pension) || 0, commissionPct: parseFloat(comm) || 0, pensionOnComm: pOnC};
+  employees[idx] = {name: name.trim() || e.name, role: role.trim(), salary: parseInt(salary) || e.salary, startDate: start.trim() || e.startDate, endDate: end.trim(), pensionPct: parseFloat(pension) || 0, commissionPct: parseFloat(comm) || 0, pensionOnComm: pOnC, pensionStatus: e.pensionStatus, pensionStart: e.pensionStart, niExempt: e.niExempt};
   finSet('l2h-employees', JSON.stringify(employees));
   showToast('Team member updated');
+  loadBusinessHealth();
+}
+
+function editPayInputs(idx){
+  const employees = payEmployees();
+  const e = employees[idx]; if(!e) return;
+  const old = document.getElementById('payInputsModal'); if(old) old.remove();
+  const due = epAutoEnrolDue(e);
+  const inp = 'padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:13px;font-family:inherit;background:#fff;width:100%;box-sizing:border-box;';
+  const wrap = document.createElement('div');
+  wrap.id = 'payInputsModal';
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(10,20,40,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+  wrap.innerHTML = `<div style="background:#fff;border-radius:4px;max-width:440px;width:100%;padding:20px;font-size:13px;">
+    <div style="font-weight:600;font-size:15px;color:var(--dark);margin-bottom:2px;">Pension and NI for ${esc(e.name)}</div>
+    <div style="font-size:11px;color:#999;margin-bottom:14px;">Only you can see this. It controls what the payroll email, payroll pack and cost reports show.</div>
+    <label style="font-size:11px;color:#999;">Pension</label>
+    <select id="piStatus" style="${inp}"><option value="not_enrolled"${epPensionStatus(e) === 'not_enrolled' ? ' selected' : ''}>Not enrolled</option><option value="enrolled"${epPensionStatus(e) === 'enrolled' ? ' selected' : ''}>Enrolled</option></select>
+    <div style="font-size:11px;color:#999;margin:4px 0 10px;">${due ? 'Auto-enrolment is due by ' + esc(ukDate(due)) + ' (3 months after the start date of ' + esc(ukDate(e.startDate)) + ').' : 'Add a start date on the team member to see the auto-enrolment date.'}</div>
+    <label style="font-size:11px;color:#999;">Employer pension starts from (the enrolment date)</label>
+    <input id="piStart" type="date" value="${esc(e.pensionStart || (epPensionStatus(e) === 'not_enrolled' ? due : ''))}" style="${inp}">
+    <div style="font-size:11px;color:#999;margin:4px 0 10px;">The month that holds this date is the first payroll with an employer pension line. Ignored while Not enrolled.</div>
+    <label style="font-size:11px;color:#999;">Employer National Insurance</label>
+    <select id="piNi" style="${inp}"><option value="yes"${epNiExempt(e) ? ' selected' : ''}>NI exempt (no employer NI)</option><option value="no"${!epNiExempt(e) ? ' selected' : ''}>Not exempt (calculate employer NI)</option></select>
+    <div style="font-size:11px;color:#999;margin:4px 0 14px;">Not exempt charges ${epNiRates().ratePct}% of pay above ${gbp(epNiRates().thresholdYear / 12)} a month. The Employment Allowance is not taken off.</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="document.getElementById('payInputsModal').remove()" style="padding:8px 14px;background:none;border:1px solid var(--border);border-radius:2px;cursor:pointer;font-size:12px;">Cancel</button>
+      <button onclick="savePayInputs(${idx})" style="padding:8px 14px;background:var(--dark);color:#fff;border:none;border-radius:2px;cursor:pointer;font-size:12px;">Save</button>
+    </div></div>`;
+  document.body.appendChild(wrap);
+}
+function savePayInputs(idx){
+  const employees = payEmployees();
+  const e = employees[idx]; if(!e) return;
+  const status = document.getElementById('piStatus').value === 'enrolled' ? 'enrolled' : 'not_enrolled';
+  const start = document.getElementById('piStart').value;
+  if(status === 'enrolled' && start && !EP_ISO.test(start)){ showToast('Enter the pension start date as a full date'); return; }
+  e.pensionStatus = status;
+  e.pensionStart = status === 'enrolled' ? start : '';
+  e.niExempt = document.getElementById('piNi').value !== 'no';
+  finSet('l2h-employees', JSON.stringify(employees));
+  document.getElementById('payInputsModal').remove();
+  showToast('Pension and NI saved for ' + e.name);
+  P64.at = 0;
   loadBusinessHealth();
 }
 
@@ -14199,8 +14276,9 @@ function kpiRender(metrics, bank, ytdRevenue, manualAd, year){
   const costs = employees.map(e => {
     const c = empCost(e, year);
     const cm = sumFor(e, commBy).sum;
-    const cmPension = e.pensionOnComm === false ? 0 : cm * ((parseFloat(e.pensionPct) || 0) / 100);
-    return {e, c, cm: round2(cm), cmPension: round2(cmPension), total: round2(c.total + cm + cmPension)};
+    const cmPension = e.pensionOnComm === false || !epPensionActive(e, payPeriod(year).end.toISOString().slice(0, 10)) ? 0 : cm * ((parseFloat(e.pensionPct) || 0) / 100);
+    const cmNi = epNiExempt(e) ? 0 : epNiDays(e, c.salary + cm, c.days) - c.ni;
+    return {e, c, cm: round2(cm), cmPension: round2(cmPension), cmNi: round2(cmNi), total: round2(c.total + cm + cmPension + cmNi)};
   });
   const teamCost = costs.reduce((s, x) => s + x.total, 0);
   const teamSalary = costs.reduce((s, x) => s + x.c.salary, 0);
@@ -14271,8 +14349,11 @@ function renderPayrollTools(){
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
       <div><div style="font-size:11px;color:#999;">Commission cut-off day of the month</div><input id="payCutoff" type="number" min="1" max="31" value="${st.cutoff || ''}" placeholder="e.g. 25" style="${inp}width:120px;"></div>
       <div><div style="font-size:11px;color:#999;">Send payroll to (email)</div><input id="payEmail" value="${esc(st.email)}" placeholder="payroll or accountant email" style="${inp}width:230px;"></div>
+      <div><div style="font-size:11px;color:#999;">Employer NI rate %</div><input id="payNiRate" type="number" step="0.1" value="${epNiRates().ratePct}" style="${inp}width:90px;"></div>
+      <div><div style="font-size:11px;color:#999;">NI threshold a year (£)</div><input id="payNiThr" type="number" value="${epNiRates().thresholdYear}" style="${inp}width:110px;"></div>
       <button onclick="savePaySettings()" style="padding:8px 14px;background:none;border:1px solid var(--border);border-radius:2px;cursor:pointer;font-size:12px;">Save settings</button>
     </div>
+    <div class="note-line" style="margin-top:6px;">Employer NI only applies to people marked "Not exempt" under Pension and NI on the team list. 2026/27 rate and threshold are 15% and £5,000 a year.</div>
     <div class="note-line" style="margin-top:6px;">Commission is included once the client has paid on or before the cut-off day (if no cut-off is set, up to the pay date). Anything paid later moves to the next month. The pay date, the payroll pack and the payroll email itself are in the Payroll panel at the top of KPI Reporting (build 64).</div>`;
 }
 /* ---------- Build 64: payroll control (Daniel Brown only; the server refuses everyone else) ---------- */
@@ -14342,13 +14423,15 @@ function p64Render(j, s, runs){
   // the pack
   var t = p.totals;
   h += '<div class="tile-grid" style="margin-top:14px;">' +
-    [['Salary', t.salary], ['Commission', t.commission], ['Gross pay', t.gross], ['Employer pension', t.pension], ['Employer cost', t.employerCost]]
+    [['Salary', t.salary], ['Commission', t.commission], ['Gross pay', t.gross], ['Employer pension', t.pension], ['Employer NI', t.employerNi || 0], ['Employer cost', t.employerCost]]
       .map(function(x){ return '<div class="tile"><div class="n">' + p64Gbp(x[1]) + '</div><div class="l">' + x[0] + '</div></div>'; }).join('') + '</div>';
   p.people.forEach(function(e){
     h += '<div class="k62-sub" style="margin-top:12px;">' + esc(e.name) + (e.role ? ' - ' + esc(e.role) : '') + '</div>' +
       '<div style="font-size:12.5px;color:#555;line-height:1.7;">Salary ' + p64Gbp(e.salary) + (e.partMonth ? ' (part month, ' + e.activeDays + ' days)' : ' (' + p64Gbp(e.salaryYear) + ' a year / 12)') +
       ' - Commission ' + p64Gbp(e.commission) + (e.commissionRate ? ' at ' + e.commissionRate + '%' : '') +
-      ' - Employer pension ' + p64Gbp(e.pension) + ' (' + e.pensionPct + '%' + (e.pensionOnCommission ? ' on salary and commission' : ' on salary') + ')</div>';
+      ' - ' + (e.pensionActive ? 'Pension enrolled, employer pension ' + p64Gbp(e.pension) + ' (' + e.pensionPct + '%' + (e.pensionOnCommission ? ' on salary and commission' : ' on salary') + ')'
+        : e.pensionStatus === 'not_enrolled' ? 'Pension not enrolled' + (e.pensionDue ? ', auto-enrolment due by ' + esc(p64Day(e.pensionDue)) : '') : 'Pension enrolled from ' + esc(p64Day(e.pensionStart))) +
+      ' - ' + (e.niExempt ? 'Employer NI exempt' : 'Employer NI ' + p64Gbp(e.employerNi)) + '</div>';
     if(e.lines.length){
       h += '<div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>Invoice</th><th>Client</th><th>Candidate</th><th>Invoice amount</th><th>Client paid</th><th>Commission</th></tr></thead><tbody>' +
         e.lines.map(function(l){ return '<tr><td class="strong">' + esc(l.invoice) + '</td><td>' + esc(l.company) + '</td><td>' + esc(l.candidate) + '</td><td>' + p64Gbp(l.invoiceAmount) + '</td><td>' + esc(p64Day(l.clientPaid)) + '</td><td><strong>' + p64Gbp(l.amount) + '</strong></td></tr>'; }).join('') + '</tbody></table></div>';
@@ -14425,6 +14508,9 @@ function savePaySettings(){
   if(raw && !(c >= 1 && c <= 31)){ showToast('Enter a cut-off day between 1 and 31, or leave it blank to use the pay date'); return; }
   finSet('l2h-payroll-cutoff', raw ? String(c) : '');
   finSet('l2h-payroll-email', document.getElementById('payEmail').value.trim());
+  const nr = parseFloat(document.getElementById('payNiRate').value), nt = parseFloat(document.getElementById('payNiThr').value);
+  finSet('l2h-ni-rate-pct', nr > 0 && nr < 100 ? String(nr) : '');
+  finSet('l2h-ni-threshold-year', nt > 0 ? String(nt) : '');
   showToast('Payroll settings saved');
 }
 function ukDate(iso){ const d = new Date(String(iso).slice(0, 10) + 'T00:00:00Z'); return isNaN(d) ? '' : d.toLocaleDateString('en-GB', {day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC'}); }
@@ -14463,7 +14549,7 @@ async function createPayrollEmail(){
     const moved = mine.filter(i => paidOn(i) > cutISO);
     const waiting = invoices.filter(i => i.commissionAmount > 0 && empMatches(e, i.consultant) && String(i.status) !== 'paid');
     const comm = round2(inc.reduce((s, i) => s + i.commissionAmount, 0));
-    const pension = round2(((parseFloat(e.pensionPct) || 0) / 100) * (salary + (e.pensionOnComm === false ? 0 : comm)));
+    const pension = !epPensionActive(e, monthEnd) ? 0 : round2(((parseFloat(e.pensionPct) || 0) / 100) * (salary + (e.pensionOnComm === false ? 0 : comm)));
     const gross = round2(salary + comm);
     grand += gross;
     inc.forEach(i => include.push(i.number));
@@ -14477,7 +14563,9 @@ async function createPayrollEmail(){
       }else lines.push('- Commission: none this month');
     }
     lines.push(`- Total gross pay: ${gbp2(gross)}`);
-    if(parseFloat(e.pensionPct)) lines.push(`- Employer pension (${parseFloat(e.pensionPct)}%${e.pensionOnComm === false ? ' on salary only' : ' on salary and commission'}): ${gbp2(pension)}`);
+    if(epPensionActive(e, monthEnd) && parseFloat(e.pensionPct)) lines.push(`- Pension: enrolled. Employer pension (${parseFloat(e.pensionPct)}%${e.pensionOnComm === false ? ' on salary only' : ' on salary and commission'}): ${gbp2(pension)}`);
+    else if(epPensionStatus(e) === 'not_enrolled') lines.push(`- Pension: not enrolled, so no pension deduction or employer pension this month${epAutoEnrolDue(e) ? ' (auto-enrolment due by ' + ukDate(epAutoEnrolDue(e)) + ')' : ''}`);
+    lines.push(epNiExempt(e) ? '- National Insurance: employer NI exempt' : `- Employer National Insurance: ${gbp2(epNiRates().ratePct / 100 * Math.max(0, gross - epNiRates().thresholdYear / 12))}`);
     if(moved.length){
       lines.push('- Commission moving to next month (client paid after the cut-off):');
       moved.forEach(i => lines.push(`    ${i.candidateName}, ${i.company}, invoice ${i.number}: ${gbp2(i.commissionAmount)}, client paid ${ukDate(paidOn(i))}`));
@@ -14571,7 +14659,7 @@ function saveOverheads(){
 }
 function runwayParts(employees, todayISO){
   const payroll = employees.filter(e => (!e.endDate || e.endDate >= todayISO) && e.startDate && e.startDate <= todayISO)
-    .reduce((s, e) => s + (parseFloat(e.salary) || 0) * (1 + (parseFloat(e.pensionPct) || 0) / 100), 0) / 12;
+    .reduce((s, e) => s + (parseFloat(e.salary) || 0) * (1 + (epPensionActive(e, todayISO) ? (parseFloat(e.pensionPct) || 0) / 100 : 0)) + (epNiExempt(e) ? 0 : Math.max(0, (parseFloat(e.salary) || 0) - epNiRates().thresholdYear) * epNiRates().ratePct / 100), 0) / 12;
   const d90 = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
   let commitments = 0, oneOff = 0;
   (B3.adspend || []).forEach(e => {
@@ -17544,7 +17632,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '18 Nov 2026 - build 67.3 (Needs attention: items clear themselves once you have emailed or called, Complete or Dismiss and Snooze on each item, Clear all per group; built on page build 67) preview';
+var PAGE_BUILD = '21 Nov 2026 - build 70 (Pension status and employer NI exempt option per person: the payroll email and pack show whether each person is in the pension and whether employer NI applies, Ella set to not enrolled until auto-enrolment; built on page build 67.3) preview preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;

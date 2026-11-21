@@ -90,7 +90,7 @@ const ledger = [{ id: 'RS006', invoice: 'RS006', employee: 'Ella Pietrzak', amou
   eq(e.later.map(l => l.invoice), ['RS002'], 'paid after the cut-off moves to next month');
   eq([e.waitingCount, e.waitingAmount], [1, 750], 'unpaid invoice is waiting');
   eq(e.pension, 80.5, 'employer pension 3% on salary and commission');
-  eq(p.totals, { salary: 2083.33, commission: 600, pension: 80.5, gross: 2683.33, employerCost: 2763.83 }, 'totals and employer cost');
+  eq(p.totals, { salary: 2083.33, commission: 600, pension: 80.5, employerNi: 0, gross: 2683.33, employerCost: 2763.83 }, 'totals and employer cost (people added before build 70 stay enrolled and NI exempt)');
   eq(p.invoices, ['RS001'], 'invoices to flag as paid');
   eq(p.warnings, [], 'no warnings');
   // counted once: after the run, the same invoice never comes back
@@ -138,6 +138,46 @@ const ledger = [{ id: 'RS006', invoice: 'RS006', employee: 'Ella Pietrzak', amou
   eq([b.connected, b.rows.length, b.total], [true, 1, 1850.2], 'payroll rows near the pay date are found');
   eq(payrollBankCheck(null, '2026-11-30').connected, false, 'no bank, nothing shown');
 }
+
+
+// ---------- Build 70: pension status and NI exempt ----------
+{
+  const base = { month: '2026-11', payDate: '2026-11-30', invoices, ledger, cutoffDay: 25, today: '2026-11-21' };
+  // Ella: starts 2 Nov 2026, not enrolled until auto-enrolment (3 months), NI exempt
+  const ellaNew = { ...ella, startDate: '2026-11-02', pensionStatus: 'not_enrolled', niExempt: true };
+  const p = payrollPack({ ...base, employees: [ellaNew] });
+  const e = p.people[0];
+  eq([e.pension, e.pensionActive, e.pensionStatus, e.pensionDue], [0, false, 'not_enrolled', '2027-02-02'], 'not enrolled: no employer pension, due 3 months after the start date');
+  eq([e.employerNi, e.niExempt], [0, true], 'NI exempt: no employer NI');
+  eq(e.employerCost, e.gross, 'employer cost is gross only while not enrolled and NI exempt');
+  eq(p.warnings, [], 'no auto-enrolment warning 73 days out');
+  const em = payrollEmail(p, 'Daniel Brown').body;
+  ok(/Pension: not enrolled, so no pension deduction or employer pension this month \(auto-enrolment due by 2 Feb 2027\)/.test(em), 'email says not enrolled and when it is due');
+  ok(/National Insurance: employer NI exempt/.test(em), 'email says employer NI exempt');
+  ok(!/Employer pension \(/.test(em), 'email has no employer pension line while not enrolled');
+  ok(!/—/.test(em), 'no em dash in the email');
+  // warning inside 30 days and after the date
+  eq(payrollPack({ ...base, employees: [ellaNew], today: '2027-01-15' }).warnings.length, 1, 'warning within 30 days of the due date');
+  ok(/was due by 2027-02-02/.test(payrollPack({ ...base, employees: [ellaNew], today: '2027-02-10' }).warnings[0]), 'warning after the due date has passed');
+  // enrolled from the due date: the month holding the date counts in full
+  const enrolled = { ...ellaNew, pensionStatus: 'enrolled', pensionStart: '2027-02-02' };
+  eq(payrollPack({ ...base, month: '2027-01', payDate: '2027-01-29', employees: [enrolled] }).people[0].pension, 0, 'enrolled from Feb: nothing in January');
+  eq(payrollPack({ ...base, month: '2027-01', payDate: '2027-01-29', employees: [enrolled] }).people[0].pensionActive, false, 'January not active');
+  const feb = payrollPack({ ...base, month: '2027-02', payDate: '2027-02-26', employees: [enrolled], invoices: [] }).people[0];
+  eq([feb.pensionActive, feb.pension], [true, round(25000 / 12 * 0.03)], 'February onwards: employer pension 3% on salary');
+  ok(/Pension: enrolled\. Employer pension \(3%/.test(payrollEmail(payrollPack({ ...base, month: '2027-02', payDate: '2027-02-26', employees: [enrolled], invoices: [] }), 'Daniel Brown').body), 'email shows enrolled once active');
+  // NI not exempt: 15% above 416.67 a month
+  const ni = payrollPack({ ...base, employees: [{ ...ellaNew, niExempt: false }] }).people[0];
+  eq(ni.employerNi, round((ni.gross - 5000 / 12) * 0.15), 'employer NI 15% above the monthly secondary threshold (part month pay)');
+  eq(ni.employerCost, round(ni.gross + ni.pension + ni.employerNi), 'employer cost includes employer NI');
+  ok(new RegExp('Employer National Insurance: £' + ni.employerNi.toFixed(2).replace('.', '\\.')).test(payrollEmail(payrollPack({ ...base, employees: [{ ...ellaNew, niExempt: false }] }), 'D').body), 'email shows the employer NI amount');
+  eq(payrollPack({ ...base, employees: [{ ...ellaNew, niExempt: false }], niRates: { ratePct: 20, thresholdYear: 6000 } }).people[0].employerNi, round((ni.gross - 500) * 0.2), 'rates from settings are used');
+  eq(payrollPack({ ...base, employees: [{ ...ellaNew, niExempt: false, salary: 3000 }], invoices: [] }).people[0].employerNi, 0, 'pay under the threshold has no employer NI');
+  // Mark as sent keeps the NI total in the run note
+  const run = runRecords(payrollPack({ ...base, employees: [{ ...ellaNew, niExempt: false }] }), { by: 'dan', at: '2026-11-30T10:00:00Z', to: 'x' }).run;
+  ok(/employer NI 329/.test(run.note), 'run record notes the employer NI');
+}
+function round(n) { return Math.round(n * 100) / 100; }
 
 // ---------- Ella sees nothing ----------
 {
