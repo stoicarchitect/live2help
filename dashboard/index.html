@@ -17596,7 +17596,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '21 Nov 2026 - build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1)))';
+var PAGE_BUILD = '21 Nov 2026 - build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1))))';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -22964,11 +22964,16 @@ async function k63LoadTx(){
     var r = await b2Api('/api/bank/transactions?limit=' + (view === 'latest' ? 40 : 100) + (view === 'latest' ? '' : '&view=' + view));
     var tab = function(v, label){ return '<button class="k62-btn' + (view === v ? ' gold' : '') + '" onclick="K63.txView=\'' + v + '\';k63LoadTx()">' + label + '</button>'; };
     var intro = view === 'other' ? '<div class="note-line">Payments out this year still filed as Other, biggest first. These are what feeds the "less other costs from the bank" figure. Pick what each one is and the workspace files every payment to the same payee the same way.</div>'
-      : view === 'out' ? '<div class="note-line">Every payment out this year, biggest first. Change the Filed under box on any of them.</div>' : '';
-    host.innerHTML = '<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;">' + tab('latest', 'Latest') + tab('other', 'Needs filing (Other)') + tab('out', 'Biggest payments out') + '</div>' + intro +
+      : view === 'out' ? '<div class="note-line">Every payment out this year, biggest first. Change the Filed under box on any of them.</div>'
+      : view === 'in' ? '<div class="note-line">Money in this year that is not matched to an invoice, biggest first. If one is a refund of something you paid for, choose Refund and pick the cost it refunds. It is then taken off that cost, and off Ad Spend for advertising, so costs are worked out net.</div>' : '';
+    host.innerHTML = '<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;">' + tab('latest', 'Latest') + tab('other', 'Needs filing (Other)') + tab('out', 'Biggest payments out') + tab('in', 'Money in to check') + '</div>' + intro +
       k62Table(['Date', 'Who', 'Filed under', '#In', '#Out', 'Role'], (r.data || []).map(function(x){
         var out = x.direction === 'OUT', adv = out && x.cost_bucket === 'Advertising';
-        var typ = out && x.kind !== 'transfer' ? '<select style="max-width:150px;padding:5px 7px;border:1px solid var(--border);font-size:12px;" onchange="k63File(\'' + esc(x.id) + '\',this.value)">' + k63BucketOptions(x.cost_bucket || 'Other') + '</select>'
+        var canType = !out && x.kind !== 'stripe_payout' && x.match_status !== 'matched' && x.match_status !== 'confirmed' && x.match_status !== 'confirm';
+        var inSel = canType ? '<select style="max-width:170px;padding:5px 7px;border:1px solid var(--border);font-size:12px;" onchange="k63InType(\'' + esc(x.id) + '\',this.value,\'' + esc(x.paid_before || '') + '\')">' +
+          '<option value="client_payment"' + (x.kind === 'client_payment' ? ' selected' : '') + '>Client payment</option><option value="refund"' + (x.kind === 'refund' ? ' selected' : '') + '>Refund of a cost' + (x.kind !== 'refund' && x.paid_before ? ' (we paid them before)' : '') + '</option><option value="transfer">Transfer (my own money)</option></select>' : '';
+        var refSel = !out && x.kind === 'refund' ? '<div style="margin-top:4px;font-size:11px;">Refunds: <select style="max-width:150px;padding:4px 6px;border:1px solid var(--border);font-size:11px;" onchange="k63InType(\'' + esc(x.id) + '\',\'refund\',this.value)">' + k63BucketOptions(x.cost_bucket || '') + '</select></div>' : '';
+        var typ = !out ? (inSel ? inSel + refSel : esc(x.kind === 'client_payment' ? 'Client payment' : x.kind === 'stripe_payout' ? 'Stripe payout' : x.kind === 'transfer' ? 'Transfer' : x.kind)) : out && x.kind !== 'transfer' ? '<select style="max-width:150px;padding:5px 7px;border:1px solid var(--border);font-size:12px;" onchange="k63File(\'' + esc(x.id) + '\',this.value)">' + k63BucketOptions(x.cost_bucket || 'Other') + '</select>'
           : esc(x.kind === 'cost' ? (x.cost_bucket || 'Cost') : x.kind === 'client_payment' ? 'Client payment' : x.kind === 'stripe_payout' ? 'Stripe payout' : x.kind === 'transfer' ? 'Transfer' : x.kind);
         return '<tr><td>' + esc(k63Day(x.date)) + '</td><td class="strong">' + esc(x.counterparty) + '<div class="pool-muted">' + esc(x.reference || '') + (x.match_status === 'matched' ? ' - matched to ' + esc(x.invoice_numbers) : '') + '</div></td><td>' + typ + '</td>' +
           '<td class="num">' + (out ? '' : k63Gbp(x.amount)) + '</td><td class="num">' + (out ? k63Gbp(x.amount) : '') + '</td>' +
@@ -22980,6 +22985,14 @@ async function k63Tag(id, value){
   var parts = String(value || '').split('||'), company = parts.length > 1 ? parts[0] : '', role = parts.length > 1 ? parts[1] : String(value || '');
   try{ await b2Post('/api/bank/tx/' + encodeURIComponent(id) + '/tag', {role: role, company: company}); showToast(role ? 'Cost tagged to ' + (company ? company + ' - ' : '') + role : 'Tag cleared'); }
   catch(e){ showToast(e.message || 'Could not tag'); }
+}
+async function k63InType(id, type, bucket){
+  try{
+    if(type === 'refund' && (!bucket || bucket === '__transfer')) bucket = 'Other';
+    await b2Post('/api/bank/tx/' + encodeURIComponent(id) + '/in-type', {type: type, bucket: bucket});
+    showToast(type === 'refund' ? 'Marked as a refund of ' + bucket + '. It is taken off that cost.' : type === 'transfer' ? 'Marked as a transfer of your own money' : 'Marked as a client payment');
+    k62Load(true);
+  }catch(e){ showToast(e.message || 'Could not change it'); k62Load(true); }
 }
 async function k63File(id, bucket){
   if(!bucket) return;

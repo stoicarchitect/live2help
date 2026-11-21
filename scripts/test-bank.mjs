@@ -159,4 +159,19 @@ eq(corporationTax(100000, 20), 20000, 'flat rate setting overrides');
   let stopped = false; try { await never.feedAdaptive('a', 'c', new Date(now - 400 * 86400000).toISOString(), now); } catch (e) { stopped = /QUERY_EXCEEDING/.test(e.message); }
   ok(stopped, 'gives up at 14 days rather than looping');
 }
+
+/* Build 70.5: a refund of a cost is netted off the cost and the money out */
+{
+  const row = (id, date, direction, amount, name, kind, bucket) => ({ id, date, direction, amount: String(amount), counterparty: name, reference: '', kind, cost_bucket: bucket || '', status: 'SETTLED', match_status: '' });
+  const mk = rows => bankKpi({ connected: true, mode: 'live', balance: { amount: 10000, at: '2026-11-21T10:00:00Z' }, rows, settings: {}, status: {} },
+    { todayISO: '2026-11-21', invoices: [], monthlyPayroll: 0, profitYtd: 0, monthlyOverheads: 0, ytdStartISO: '2026-01-01' }).panel;
+  const base = [row('a', '2026-11-05', 'OUT', 1200, 'CHARTER INSURANCE', 'cost', 'Other'), row('b', '2026-11-06', 'OUT', 100, 'ICO', 'cost', 'Other'), row('c', '2026-11-10', 'IN', 5000, 'ACME LTD', 'client_payment')];
+  const before = mk(base);
+  const after = mk([...base, row('d', '2026-11-12', 'IN', 400, 'CHARTER INSURANCE', 'refund', 'Other')]);
+  eq([before.outMonth, after.outMonth], [1300, 900], 'a refund reduces money out for the month');
+  eq([before.inMonth, after.inMonth], [5000, 5000], 'a refund is not counted as money in');
+  eq([before.tax.overheadsYtd, after.tax.overheadsYtd], [1300, 900], 'a refund reduces the other costs used for the tax reserve');
+  eq(after.costBuckets.find(b => b.bucket === 'Other').amount, 900, 'the cost type is net of the refund');
+  eq(after.recurring.length, before.recurring.length, 'a refund never creates a recurring cost');
+}
 console.log(`bank: all ${n} checks passed`);

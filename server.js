@@ -23296,6 +23296,13 @@ async function bankReconcile(reason) {
       await bankPatch(r.id, { adspend_id: id });
       out.filedCosts++;
     }
+    // build 70.5: a refund of an advertising cost reduces Ad Spend (a negative entry, once each)
+    for (const r of rows.filter(r => r.kind === 'refund' && r.cost_bucket === 'Advertising' && r.status === 'SETTLED' && !r.adspend_id)) {
+      const id = 'bank-' + r.id;
+      await adSpendTable.upsert({ id, date: r.date, channel: categoriseCost({ counterparty: r.counterparty, reference: r.reference, direction: 'OUT' }, rules).channel || r.counterparty, role: r.role_tag || '', company: '', amount: String(-Math.abs(num0(r.amount))), notes: 'Refund from the bank feed', logged_by: 'bank', frequency: '', end_date: '', applies_to: '' });
+      await bankPatch(r.id, { adspend_id: id });
+      out.filedCosts++;
+    }
   } catch (e) { out.costError = String(e.message || e).slice(0, 200); console.error('Bank cost filing failed:', e.message); }
   return out;
 }
@@ -23334,9 +23341,17 @@ app.get('/api/bank/transactions', bankGuard, async (req, res) => {
     let rows = (await bankTxTable.list()).filter(r => r.status === 'SETTLED' && (!kind || r.kind === kind));
     // build 70.2: the biggest payments out this year, and the ones still filed as Other, so they can be filed by hand
     if (view === 'other') rows = rows.filter(r => r.direction === 'OUT' && r.kind === 'cost' && (!r.cost_bucket || r.cost_bucket === 'Other') && r.date >= yStart).sort((a, b) => num0(b.amount) - num0(a.amount));
+    else if (view === 'in') rows = rows.filter(r => r.direction === 'IN' && ['client_payment', 'refund'].includes(r.kind) && !['matched', 'confirmed'].includes(r.match_status) && r.date >= yStart).sort((a, b) => num0(b.amount) - num0(a.amount));
     else if (view === 'out') rows = rows.filter(r => r.direction === 'OUT' && r.kind !== 'transfer' && r.date >= yStart).sort((a, b) => num0(b.amount) - num0(a.amount));
     else rows = rows.sort((a, b) => (b.date + b.id).localeCompare(a.date + a.id));
-    res.json({ data: rows.slice(0, limit) });
+    // for money in, suggest the cost type of the latest payment out to the same payee, so a refund is one click
+    const all = await bankTxTable.list(), norm = x => String(x || '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+    const out = rows.slice(0, limit).map(r => {
+      if (r.direction !== 'IN') return r;
+      const prev = all.filter(o => o.direction === 'OUT' && o.kind === 'cost' && norm(o.counterparty) === norm(r.counterparty)).sort((a, b) => b.date.localeCompare(a.date))[0];
+      return prev ? { ...r, paid_before: prev.cost_bucket || 'Other', paid_before_amount: prev.amount } : r;
+    });
+    res.json({ data: out });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // payments that need one click: each with the invoices it might be for
@@ -23413,12 +23428,38 @@ app.post('/api/bank/tx/:id/file', bankGuard, async (req, res) => {
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+// build 70.5: say what a payment in really is: a client payment, a refund of a cost (nets off that cost), or a transfer of your own money
+app.post('/api/bank/tx/:id/in-type', bankGuard, async (req, res) => {
+  try {
+    const tx = (await bankTxTable.list()).find(r => r.id === req.params.id);
+    if (!tx) return res.status(404).json({ error: 'Bank item not found' });
+    if (tx.direction !== 'IN') return res.status(400).json({ error: 'Only payments in can be changed here' });
+    if (['matched', 'confirmed'].includes(tx.match_status)) return res.status(400).json({ error: 'This payment is matched to an invoice. Undo the match first.' });
+    const type = String((req.body || {}).type || ''), bucket = String((req.body || {}).bucket || '').trim().slice(0, 60);
+    // changing a refund back to something else cancels the negative Ad Spend entry it made
+    if (tx.kind === 'refund' && type !== 'refund' && tx.adspend_id && String(tx.adspend_id).startsWith('bank-')) {
+      const e = (await adSpendTable.list()).find(x => x.id === tx.adspend_id);
+      if (e) await adSpendTable.upsert({ ...e, amount: '0', notes: 'Refund reversed' });
+      await bankPatch(tx.id, { adspend_id: '' });
+    }
+    if (type === 'refund') {
+      if (!bucket) return res.status(400).json({ error: 'Choose which cost this refunds' });
+      await bankPatch(tx.id, { kind: 'refund', cost_bucket: bucket, match_status: '' });
+    } else if (type === 'transfer') await bankPatch(tx.id, { kind: 'transfer', cost_bucket: '', match_status: '' });
+    else if (type === 'client_payment') await bankPatch(tx.id, { kind: 'client_payment', cost_bucket: '', match_status: '', adspend_id: '' });
+    else return res.status(400).json({ error: 'Unknown type' });
+    await bankReconcile('in-type').catch(e => console.error('Bank in-type reconcile:', e.message));
+    kpiCache.clear();
+    auditLog(auditActorOf(req), 'bank_in_typed', 'bank', tx.id, `${tx.counterparty} ${tx.amount} -> ${type}${bucket ? ' of ' + bucket : ''}`);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 // after editing the rules, put every cost back through them
 app.post('/api/bank/reclassify', bankGuard, async (req, res) => {
   try {
     const rules = await bankRules(); let n = 0;
     for (const r of await bankTxTable.list()) {
-      if (['client_payment', 'stripe_payout'].includes(r.kind) || (r.kind === 'transfer')) continue;
+      if (['client_payment', 'stripe_payout', 'refund'].includes(r.kind) || (r.kind === 'transfer')) continue;
       const c = classifyRow(r, rules);
       if (c.kind !== r.kind || c.cost_bucket !== r.cost_bucket) { await bankPatch(r.id, { kind: c.kind, cost_bucket: c.cost_bucket || '' }); n++; }
     }

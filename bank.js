@@ -283,7 +283,7 @@ export function latePayerScores(invoices, now) {
 export function normCounterparty(s) { return nameTokens(s).slice(0, 3).join(' ') || String(s || '').toUpperCase().trim(); }
 export function detectRecurring(rows, todayISO) {
   const by = new Map();
-  rows.filter(r => counts(r) && r.kind === 'cost').forEach(r => { const k = normCounterparty(r.counterparty); const a = by.get(k) || { name: r.counterparty, bucket: r.cost_bucket, items: [] }; a.items.push(r); by.set(k, a); });
+  rows.filter(r => counts(r) && r.kind === 'cost' && num(r.amount) > 0).forEach(r => { const k = normCounterparty(r.counterparty); const a = by.get(k) || { name: r.counterparty, bucket: r.cost_bucket, items: [] }; a.items.push(r); by.set(k, a); });
   const out = [];
   by.forEach(g => {
     if (['Tax (HMRC)', 'Director payments'].includes(g.bucket)) return;
@@ -395,7 +395,9 @@ export function cashForecast({ balance, openInvoices, scores, recurring, monthly
 export function bankKpi(bank, ctx) {
   const none = { connected: false, note: bank && bank.status && bank.status.paused ? 'Bank feed is paused (BANK_FEED_ON)' : 'Bank not connected yet: add STARLING_TOKEN in Render' };
   if (!bank || !bank.connected) return { tiles: none, panel: { ...none, status: (bank && bank.status) || {} } };
-  const rows = (bank.rows || []).filter(counts), today = ctx.todayISO, monthStart = today.slice(0, 7) + '-01';
+  // build 70.5: a refund of a cost (money in from a payee we paid) is counted as a negative payment out, so costs and money out are net of it
+  const rowsRaw = (bank.rows || []).filter(counts);
+  const rows = rowsRaw.map(r => r.kind === 'refund' ? { ...r, direction: 'OUT', kind: 'cost', amount: String(-Math.abs(num(r.amount))) } : r), today = ctx.todayISO, monthStart = today.slice(0, 7) + '-01';
   const lastMonthStart = isoDay(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 2, 1));
   const real = rows.filter(r => r.kind !== 'transfer');
   const sumRows = (arr, dir, from, to) => round2(arr.filter(r => r.direction === dir && r.date >= from && (!to || r.date < to)).reduce((s, r) => s + num(r.amount), 0));
@@ -403,7 +405,7 @@ export function bankKpi(bank, ctx) {
   const inLast = sumRows(real, 'IN', lastMonthStart, monthStart), outLast = sumRows(real, 'OUT', lastMonthStart, monthStart);
   const balance = bank.balance ? num(bank.balance.amount) : 0;
   const scores = latePayerScores(ctx.invoices || [], today);
-  const recurring = detectRecurring(rows, today);
+  const recurring = detectRecurring(rowsRaw.filter(r => r.kind !== 'refund'), today);
   const ytdStart = ctx.ytdStartISO || today.slice(0, 4) + '-01-01';
   const overheadsYtd = real.filter(r => r.direction === 'OUT' && r.date >= ytdStart && !['Advertising', 'Payroll', 'Pension', 'Tax (HMRC)', 'Director payments'].includes(r.cost_bucket)).reduce((s, r) => s + num(r.amount), 0)
     + rows.filter(r => r.kind === 'stripe_payout' && r.date >= ytdStart).reduce((s, r) => s + num(r.stripe_fee), 0);
