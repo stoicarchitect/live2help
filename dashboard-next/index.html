@@ -17632,7 +17632,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '21 Nov 2026 - build 70 (Pension status and employer NI exempt option per person: the payroll email and pack show whether each person is in the pension and whether employer NI applies, Ella set to not enrolled until auto-enrolment; built on page build 67.3) preview preview';
+var PAGE_BUILD = '21 Nov 2026 - build 70.1 (Bank section: Check the bank now button and the reason for a failed read now sit at the top; built on page build 70) preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -22892,6 +22892,10 @@ function k63Section(k){
     var hgt = Math.max(2, Math.round(((p.balance - min) / span) * 60));
     return '<div title="' + esc(k63Day(p.date) + ': ' + k63Gbp(p.balance)) + '" style="height:' + hgt + 'px;' + (f.floor != null && p.balance < f.floor ? 'background:var(--danger);' : '') + '"></div>';
   }).join('');
+  // build 70.1: the button and the reason for a failed read sit at the top, not only in the settings at the bottom
+  h += '<div class="' + (st.ok === false ? 'warn-box' : 'note-line') + '" style="margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">' +
+    '<span>' + (st.ok === false ? '<strong>The last bank read failed:</strong> ' + esc(st.error || 'no reason given') : 'Last read ' + esc(k63When(st.lastPoll)) + (st.added != null ? ': ' + st.added + ' new item' + (st.added === 1 ? '' : 's') : '')) + (st.warning ? ' <span style="color:var(--danger);">Needs a look: ' + esc(st.warning) + '</span>' : '') + '</span>' +
+    '<button class="k62-btn gold" onclick="k63Poll()">Check the bank now</button></div>';
   h += (b.mode === 'demo' ? '<div class="warn-box" style="margin-bottom:12px;"><strong>Demo data.</strong> This is a pretend account on the preview so you can see the layout. Nothing here is real.</div>' : '') +
     '<div class="tile-grid">' +
     k62Tile('Bank balance', k63Gbp(b.balance), {cls: 'gold', sub: 'Read ' + esc(k63When(b.balanceAt)) + (st.ok === false ? '. <span style="color:var(--danger);">Last read failed</span>' : '')}) +
