@@ -23329,9 +23329,14 @@ app.post('/api/bank/poll', bankGuard, async (req, res) => {
 });
 app.get('/api/bank/transactions', bankGuard, async (req, res) => {
   try {
-    const limit = Math.min(300, Math.max(10, parseInt(req.query.limit || '80', 10) || 80)), kind = String(req.query.kind || '');
-    const rows = (await bankTxTable.list()).filter(r => r.status === 'SETTLED' && (!kind || r.kind === kind)).sort((a, b) => (b.date + b.id).localeCompare(a.date + a.id)).slice(0, limit);
-    res.json({ data: rows });
+    const limit = Math.min(300, Math.max(10, parseInt(req.query.limit || '80', 10) || 80)), kind = String(req.query.kind || ''), view = String(req.query.view || '');
+    const yStart = new Date().getFullYear() + '-01-01';
+    let rows = (await bankTxTable.list()).filter(r => r.status === 'SETTLED' && (!kind || r.kind === kind));
+    // build 70.2: the biggest payments out this year, and the ones still filed as Other, so they can be filed by hand
+    if (view === 'other') rows = rows.filter(r => r.direction === 'OUT' && r.kind === 'cost' && (!r.cost_bucket || r.cost_bucket === 'Other') && r.date >= yStart).sort((a, b) => num0(b.amount) - num0(a.amount));
+    else if (view === 'out') rows = rows.filter(r => r.direction === 'OUT' && r.kind !== 'transfer' && r.date >= yStart).sort((a, b) => num0(b.amount) - num0(a.amount));
+    else rows = rows.sort((a, b) => (b.date + b.id).localeCompare(a.date + a.id));
+    res.json({ data: rows.slice(0, limit) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // payments that need one click: each with the invoices it might be for
@@ -23373,6 +23378,38 @@ app.post('/api/bank/tx/:id/tag', bankGuard, async (req, res) => {
     if (tx.adspend_id) await adSpendTable.updateWhere(s => s.id === tx.adspend_id, s => { s.role = role; s.company = company; return s; });
     kpiCache.clear();
     auditLog(auditActorOf(req), 'bank_tagged', 'bank', tx.id, `${tx.counterparty} -> ${role || 'general'}`);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// build 70.2: file one payment under a cost type by hand. By default it also adds a payee rule so the same payee is filed the same way from now on.
+app.post('/api/bank/tx/:id/file', bankGuard, async (req, res) => {
+  try {
+    const tx = (await bankTxTable.list()).find(r => r.id === req.params.id);
+    if (!tx) return res.status(404).json({ error: 'Bank item not found' });
+    if (tx.direction !== 'OUT') return res.status(400).json({ error: 'Only payments out can be filed as costs' });
+    const bucket = String((req.body || {}).bucket || '').trim().slice(0, 60);
+    if (!bucket) return res.status(400).json({ error: 'Choose what to file it under' });
+    if (bucket === '__transfer') {
+      await bankPatch(tx.id, { kind: 'transfer', cost_bucket: '' });
+    } else {
+      await bankPatch(tx.id, { kind: 'cost', cost_bucket: bucket });
+      const payee = String(tx.counterparty || '').trim();
+      if ((req.body || {}).rule !== false && payee.length >= 3) {
+        const pattern = payee.toUpperCase().replace(/\s+/g, ' ').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const rules = await bankRulesTable.list();
+        const same = rules.find(r => String(r.pattern).toUpperCase() === pattern && r.applies === 'counterparty');
+        if (same) { if (same.bucket !== bucket) await bankRulesTable.upsert({ ...same, bucket }); }
+        else await bankRulesTable.upsert({ id: 'u' + Date.now(), pattern, bucket, channel: '', applies: 'counterparty', note: 'Filed by hand from a bank item' });
+        // every other payment to the same payee follows the rule
+        for (const r of await bankTxTable.list()) {
+          if (r.id === tx.id || r.direction !== 'OUT' || r.kind === 'transfer' || String(r.counterparty || '').trim().toUpperCase().replace(/\s+/g, ' ') !== payee.toUpperCase().replace(/\s+/g, ' ')) continue;
+          await bankPatch(r.id, { kind: 'cost', cost_bucket: bucket });
+        }
+      }
+    }
+    await bankReconcile('file').catch(e => console.error('Bank file reconcile:', e.message));
+    kpiCache.clear();
+    auditLog(auditActorOf(req), 'bank_filed', 'bank', tx.id, `${tx.counterparty} -> ${bucket === '__transfer' ? 'own transfer' : bucket}`);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

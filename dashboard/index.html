@@ -17596,7 +17596,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '21 Nov 2026 - build 70.1 (Bank section: Check the bank now button and the reason for a failed read now sit at the top; built on page build 70)';
+var PAGE_BUILD = '21 Nov 2026 - build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1)';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -22938,21 +22938,52 @@ async function k63Decide(i, action){
   try{ await b2Post('/api/bank/confirm', {id: x.id, action: action, invoiceNumbers: nums}); showToast(action === 'match' ? 'Marked paid from the bank payment' : 'Saved'); k62Load(true); }
   catch(e){ showToast(e.message || 'Could not save'); }
 }
+var K63_BUCKETS = ['Advertising', 'Payroll', 'Pension', 'Tax (HMRC)', 'Payment fees', 'Software', 'Bank charges', 'Director payments', 'Other'];
+function k63BucketOptions(cur){
+  var list = K63_BUCKETS.slice();
+  (K63.rules || []).forEach(function(r){ if(r.bucket && list.indexOf(r.bucket) < 0) list.push(r.bucket); });
+  if(cur && list.indexOf(cur) < 0) list.push(cur);
+  return '<option value="">Choose...</option>' + list.map(function(x){ return '<option value="' + esc(x) + '"' + (x === cur ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('') + '<option value="__transfer">Transfer (my own money)</option>';
+}
+function k63RoleOptions(cur){
+  var roles = []; try{ roles = mergedRoles(); }catch(e){}
+  var seen = {}, opts = roles.filter(function(r){ var k = r.company + '||' + r.role; if(seen[k]) return false; seen[k] = 1; return true; })
+    .sort(function(x, y){ return (x.company + x.role).localeCompare(y.company + y.role); })
+    .map(function(r){ var v = r.company + '||' + r.role; return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(r.company + ' - ' + r.role) + '</option>'; }).join('');
+  return '<option value="">General (no role)</option>' + opts;
+}
 async function k63LoadTx(){
   var host = document.getElementById('k63Tx'); if(!host) return;
+  var view = K63.txView || 'latest';
   try{
-    var r = await b2Api('/api/bank/transactions?limit=40');
-    host.innerHTML = k62Table(['Date', 'Who', 'Type', '#In', '#Out', 'Role'], (r.data || []).map(function(x){
-      var out = x.direction === 'OUT', adv = out && x.cost_bucket === 'Advertising';
-      return '<tr><td>' + esc(k63Day(x.date)) + '</td><td class="strong">' + esc(x.counterparty) + '<div class="pool-muted">' + esc(x.reference || '') + (x.match_status === 'matched' ? ' - matched to ' + esc(x.invoice_numbers) : '') + '</div></td><td>' + esc(x.kind === 'cost' ? (x.cost_bucket || 'Cost') : x.kind === 'client_payment' ? 'Client payment' : x.kind === 'stripe_payout' ? 'Stripe payout' : x.kind === 'transfer' ? 'Transfer' : x.kind) + '</td>' +
-        '<td class="num">' + (out ? '' : k63Gbp(x.amount)) + '</td><td class="num">' + (out ? k63Gbp(x.amount) : '') + '</td>' +
-        '<td>' + (adv ? '<input style="width:130px;padding:5px 7px;border:1px solid var(--border);font-size:12px;" placeholder="role, or empty" value="' + esc(x.role_tag || '') + '" onchange="k63Tag(\'' + esc(x.id) + '\',this.value)">' : '') + '</td></tr>';
-    }), 'No bank items yet', 700);
+    if(!K63.rules){ try{ K63.rules = (await b2Api('/api/bank-rules')).data || []; }catch(e){ K63.rules = []; } }
+    var r = await b2Api('/api/bank/transactions?limit=' + (view === 'latest' ? 40 : 100) + (view === 'latest' ? '' : '&view=' + view));
+    var tab = function(v, label){ return '<button class="k62-btn' + (view === v ? ' gold' : '') + '" onclick="K63.txView=\'' + v + '\';k63LoadTx()">' + label + '</button>'; };
+    var intro = view === 'other' ? '<div class="note-line">Payments out this year still filed as Other, biggest first. These are what feeds the "less other costs from the bank" figure. Pick what each one is and the workspace files every payment to the same payee the same way.</div>'
+      : view === 'out' ? '<div class="note-line">Every payment out this year, biggest first. Change the Filed under box on any of them.</div>' : '';
+    host.innerHTML = '<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;">' + tab('latest', 'Latest') + tab('other', 'Needs filing (Other)') + tab('out', 'Biggest payments out') + '</div>' + intro +
+      k62Table(['Date', 'Who', 'Filed under', '#In', '#Out', 'Role'], (r.data || []).map(function(x){
+        var out = x.direction === 'OUT', adv = out && x.cost_bucket === 'Advertising';
+        var typ = out && x.kind !== 'transfer' ? '<select style="max-width:150px;padding:5px 7px;border:1px solid var(--border);font-size:12px;" onchange="k63File(\'' + esc(x.id) + '\',this.value)">' + k63BucketOptions(x.cost_bucket || 'Other') + '</select>'
+          : esc(x.kind === 'cost' ? (x.cost_bucket || 'Cost') : x.kind === 'client_payment' ? 'Client payment' : x.kind === 'stripe_payout' ? 'Stripe payout' : x.kind === 'transfer' ? 'Transfer' : x.kind);
+        return '<tr><td>' + esc(k63Day(x.date)) + '</td><td class="strong">' + esc(x.counterparty) + '<div class="pool-muted">' + esc(x.reference || '') + (x.match_status === 'matched' ? ' - matched to ' + esc(x.invoice_numbers) : '') + '</div></td><td>' + typ + '</td>' +
+          '<td class="num">' + (out ? '' : k63Gbp(x.amount)) + '</td><td class="num">' + (out ? k63Gbp(x.amount) : '') + '</td>' +
+          '<td>' + (adv ? '<select style="max-width:190px;padding:5px 7px;border:1px solid var(--border);font-size:12px;" onchange="k63Tag(\'' + esc(x.id) + '\',this.value)">' + k63RoleOptions(x.role_tag || '') + '</select>' : '') + '</td></tr>';
+      }), 'Nothing to show here', 760);
   }catch(e){ host.innerHTML = '<div class="note-line">The bank items could not be loaded: ' + esc(e.message || '') + '</div>'; }
 }
-async function k63Tag(id, role){
-  try{ await b2Post('/api/bank/tx/' + encodeURIComponent(id) + '/tag', {role: role}); showToast(role ? 'Cost tagged to ' + role : 'Tag cleared'); }
+async function k63Tag(id, value){
+  var parts = String(value || '').split('||'), company = parts.length > 1 ? parts[0] : '', role = parts.length > 1 ? parts[1] : String(value || '');
+  try{ await b2Post('/api/bank/tx/' + encodeURIComponent(id) + '/tag', {role: role, company: company}); showToast(role ? 'Cost tagged to ' + (company ? company + ' - ' : '') + role : 'Tag cleared'); }
   catch(e){ showToast(e.message || 'Could not tag'); }
+}
+async function k63File(id, bucket){
+  if(!bucket) return;
+  try{
+    await b2Post('/api/bank/tx/' + encodeURIComponent(id) + '/file', {bucket: bucket}); K63.rules = null;
+    showToast(bucket === '__transfer' ? 'Marked as a transfer of your own money' : 'Filed under ' + bucket + '. Other payments to the same payee follow.');
+    k62Load(true);
+  }catch(e){ showToast(e.message || 'Could not file it'); }
 }
 async function k63LoadRules(){
   var host = document.getElementById('k63Rules'); if(!host) return;
