@@ -17632,7 +17632,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '21 Nov 2026 - build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1)) preview';
+var PAGE_BUILD = '21 Nov 2026 - build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1))) preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -22983,10 +22983,14 @@ function k63BucketOptions(cur){
 }
 function k63RoleOptions(cur){
   var roles = []; try{ roles = mergedRoles(); }catch(e){}
-  var seen = {}, opts = roles.filter(function(r){ var k = r.company + '||' + r.role; if(seen[k]) return false; seen[k] = 1; return true; })
+  // build 70.4: the saved tag holds the role name, so match on that (the first role with that name is shown as picked)
+  var seen = {}, picked = false, want = String(cur || '').trim().toLowerCase();
+  var opts = roles.filter(function(r){ var k = r.company + '||' + r.role; if(seen[k]) return false; seen[k] = 1; return true; })
     .sort(function(x, y){ return (x.company + x.role).localeCompare(y.company + y.role); })
-    .map(function(r){ var v = r.company + '||' + r.role; return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(r.company + ' - ' + r.role) + '</option>'; }).join('');
-  return '<option value="">General (no role)</option>' + opts;
+    .map(function(r){ var v = r.company + '||' + r.role; var sel = !picked && want && String(r.role || '').trim().toLowerCase() === want; if(sel) picked = true; return '<option value="' + esc(v) + '"' + (sel ? ' selected' : '') + '>' + esc(r.company + ' - ' + r.role) + '</option>'; }).join('');
+  // a tag that matches no current role is still shown, so it is never silently reset to General
+  var extra = want && !picked ? '<option value="||' + esc(cur) + '" selected>' + esc(cur) + '</option>' : '';
+  return '<option value="">General (no role)</option>' + extra + opts;
 }
 async function k63LoadTx(){
   var host = document.getElementById('k63Tx'); if(!host) return;
