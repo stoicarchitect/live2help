@@ -10,6 +10,7 @@ import nodemailer from 'nodemailer';
 import pg from 'pg';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { Readable } from 'stream';
 import crypto from 'crypto';
 import https from 'https';
@@ -75,7 +76,8 @@ const perfLoop = monitorEventLoopDelay({ resolution: 20 });
 perfLoop.enable();
 setInterval(() => {
   const max = perfLoop.max / 1e6;
-  if (max > 100) console.log(`[loop] event loop delay p50=${Math.round(perfLoop.percentile(50) / 1e6)}ms p99=${Math.round(perfLoop.percentile(99) / 1e6)}ms max=${Math.round(max)}ms`);
+  const mu = process.memoryUsage();
+  if (max > 100) console.log(`[loop] heap=${Math.round(mu.heapUsed / 1048576)}MB rss=${Math.round(mu.rss / 1048576)}MB event loop delay p50=${Math.round(perfLoop.percentile(50) / 1e6)}ms p99=${Math.round(perfLoop.percentile(99) / 1e6)}ms max=${Math.round(max)}ms`);
   perfLoop.reset();
 }, 60000).unref();
 const reqStats = { since: new Date().toISOString(), total: 0, s4: 0, s5: 0, recent5: [], notFound: new Map(), probes: new Map(), lastErrors: [] };
@@ -11545,13 +11547,18 @@ async function backupDumpToDrive(drive, folderId, date) {
   const name = `${DUMP_PREFIX} ${date}.json.gz`;
   const existing = await drive.files.list({ q: `'${folderId}' in parents and name='${name}' and trashed=false`, fields: 'files(id)', pageSize: 1 });
   if (existing.data.files && existing.data.files.length) return { name, skipped: 'already made today' };
-  const d = await dumpDatabase(pgLivePool);
-  const check = await inspectDump(d.buffer); // reads the file back, so a broken dump is never stored as good
-  const file = await drive.files.create({
-    requestBody: { name, parents: [folderId] },
-    media: { mimeType: 'application/gzip', body: Readable.from([d.buffer]) },
-    fields: 'id',
-  });
+  // Nov 2026 memory fix: the dump is streamed to a temp file and uploaded from disk, never held whole in memory
+  const tmp = path.join(os.tmpdir(), `l2h-dump-${Date.now()}.json.gz`);
+  let d, check, file;
+  try {
+    d = await dumpDatabase(pgLivePool, { file: tmp });
+    check = await inspectDump(tmp); // reads the file back, so a broken dump is never stored as good
+    file = await drive.files.create({
+      requestBody: { name, parents: [folderId] },
+      media: { mimeType: 'application/gzip', body: fs.createReadStream(tmp) },
+      fields: 'id',
+    });
+  } finally { fs.promises.unlink(tmp).catch(() => {}); }
   const all = await drive.files.list({ q: `'${folderId}' in parents and name contains '${DUMP_PREFIX}' and trashed=false`, orderBy: 'createdTime desc', fields: 'files(id)', pageSize: 200 });
   for (const f of (all.data.files || []).slice(DUMP_KEEP)) await drive.files.update({ fileId: f.id, requestBody: { trashed: true } });
   return { name, fileId: file.data.id, tables: check.tables, rows: check.rows, megabytes: +(d.bytes / 1048576).toFixed(2) };

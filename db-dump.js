@@ -13,18 +13,28 @@
 
    Used by the nightly backup in server.js and by scripts/restore-dump.mjs. */
 import zlib from 'zlib';
+import fs from 'fs';
 import readline from 'readline';
 import { Readable } from 'stream';
 
 export const DUMP_FORMAT = 'l2h-dump-1';
 const q = id => '"' + String(id).replace(/"/g, '""') + '"';
 
-export async function dumpDatabase(pool, { batchRows = 400 } = {}) {
+// Pass { file } to stream the gzip straight to disk (the nightly backup does this, so a large dump never sits in memory).
+// Without it the old behaviour is kept and the result carries .buffer.
+export async function dumpDatabase(pool, { batchRows = 400, file = null } = {}) {
   const client = await pool.connect();
   const gz = zlib.createGzip({ level: 6 });
   const chunks = [];
-  gz.on('data', c => chunks.push(c));
-  const done = new Promise((resolve, reject) => { gz.on('end', resolve); gz.on('error', reject); });
+  let done;
+  if (file) {
+    const out = fs.createWriteStream(file);
+    gz.pipe(out);
+    done = new Promise((resolve, reject) => { out.on('finish', resolve); out.on('error', reject); gz.on('error', reject); });
+  } else {
+    gz.on('data', c => chunks.push(c));
+    done = new Promise((resolve, reject) => { gz.on('end', resolve); gz.on('error', reject); });
+  }
   const line = async obj => { if (!gz.write(JSON.stringify(obj) + '\n')) await new Promise(r => gz.once('drain', r)); };
   let tables = 0, rows = 0;
   const perTable = {};
@@ -81,14 +91,17 @@ export async function dumpDatabase(pool, { batchRows = 400 } = {}) {
   }
   gz.end();
   await done;
+  if (file) return { file, tables, rows, bytes: fs.statSync(file).size, perTable };
   const buffer = Buffer.concat(chunks);
   return { buffer, tables, rows, bytes: buffer.length, perTable };
 }
 
 // Reads a dump without touching any database: confirms the file is whole and counts what it holds
 // One line at a time, so a large dump is never held in memory unpacked
+// `buffer` may be a Buffer or a file path (a path is streamed from disk)
 function dumpLines(buffer) {
-  return readline.createInterface({ input: Readable.from([buffer]).pipe(zlib.createGunzip()), crlfDelay: Infinity });
+  const src = typeof buffer === 'string' ? fs.createReadStream(buffer) : Readable.from([buffer]);
+  return readline.createInterface({ input: src.pipe(zlib.createGunzip()), crlfDelay: Infinity });
 }
 export async function inspectDump(buffer) {
   let header = null, end = null;
