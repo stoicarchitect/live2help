@@ -12731,11 +12731,23 @@ async function odOpen(kind, cand){
   odRender();
   await odBuild();
 }
+// Build 71.4: the offer emails end with a fixed text signature (Ella's). Take it off and let the signed in person's own signature
+// (the saved HTML one, or their Outlook one) be added when the email is built. If no signature has loaded, use the plain text one for the person signed in.
+function odFixSignature(body){
+  let b = String(body || '');
+  const block = /\n+[^\n]+\n[^\n]+\nLive 2 Help Recruitment\n[^\n@]+@live2helprecruitment\.co\.uk\n[^\n]+\nwww\.live2helprecruitment\.co\.uk\s*$/;
+  if(!block.test(b)) return b;
+  b = b.replace(block, '');
+  try{
+    if(!(SIG.html || sigUseOutlookOwn())) b = b.replace(/\s+$/, '') + '\n\n' + senderProfile().signature;
+  }catch(e){ /* leave it without a signature rather than the wrong one */ }
+  return b;
+}
 async function odBuild(){
   OD.busy = true; OD.error = ''; odRender();
   try{
     OD.res = await b2Post('/api/offer-docs/build', {kind:OD.kind, candidate:OD.cand, extra:OD.extra});
-    OD.subject = OD.res.subject; OD.body = OD.res.body;
+    OD.subject = OD.res.subject; OD.body = odFixSignature(OD.res.body);
   }catch(e){ OD.error = e.message; }
   OD.busy = false; odRender();
 }
@@ -17605,7 +17617,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '23 Nov 2026 - build 71.1 (the start date asked for in the offer documents is a calendar picker and is saved properly; build 71.0 (offer letter and the other offer path emails go straight to Review and send instead of Outlook; Information request stays on the card after Start Date; earlier: build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1))))))';
+var PAGE_BUILD = '23 Nov 2026 - build 71.2 (offer emails use the signed in person own HTML signature instead of a fixed text one; build 71.1 (the start date asked for in the offer documents is a calendar picker and is saved properly; build 71.0 (offer letter and the other offer path emails go straight to Review and send instead of Outlook; Information request stays on the card after Start Date; earlier: build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1)))))))';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
