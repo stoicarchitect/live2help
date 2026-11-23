@@ -44,9 +44,9 @@ Draft on the Sunday before: issue = ((Tuesday - 2026-11-17) / 14 days) + 1.
 }
 ```
 
-`sector` must be exactly one of the twelve: Engineering and Technical; Manufacturing and Industrial; Procurement and Supply Chain; Sales and Business
+`sector` must be exactly one of the thirteen: Engineering and Technical; Manufacturing and Industrial; Procurement and Supply Chain; Sales and Business
 Development; Accountancy and Finance; IT and Technology; Construction and Infrastructure; Health and Social Care; AI and Emerging Technologies;
-HR and People Management; Corporate and Executive; Driving and Logistics. One brief per sector, all twelve in every issue.
+HR and People Management; Corporate and Executive; Driving and Logistics; Catering and Hospitality. One brief per sector, all thirteen in every issue.
 
 ## Rules (the workspace refuses to approve a brief that breaks the first four)
 

@@ -576,6 +576,54 @@
       "impact": "Delays and extra training cost.",
       "root_cause": "Training tickets not funded or tracked.",
       "questions": "How many operators hold valid tickets?\nWhen do they expire?\nWho pays for training?"
+    },
+    {
+      "sector": "Catering and Hospitality",
+      "problem": "Kitchen and front of house teams turn over faster than they can be replaced.",
+      "impact": "Rotas are covered by overtime and agency staff, service slips and the remaining team burns out.",
+      "root_cause": "Hiring only starts after someone resigns, so every leaver leaves a gap before a replacement can start.",
+      "questions": "How many kitchen or front of house roles did you replace in the last six months?\nHow long does a vacancy stay open before someone starts?\nWho covers the rota while you recruit?",
+      "id": "hosp-1"
+    },
+    {
+      "sector": "Catering and Hospitality",
+      "problem": "Good chefs and senior kitchen staff are hard to find and are offered more elsewhere.",
+      "impact": "Menus are simplified, quality becomes inconsistent and head chefs spend time on the line instead of managing.",
+      "root_cause": "Pay and hours are matched late, so strong candidates accept another offer while the process is still running.",
+      "questions": "How long has your hardest chef vacancy been open?\nWhat would a second head chef offer cost you in lost covers?\nHow often do chefs leave for a better offer?",
+      "id": "hosp-2"
+    },
+    {
+      "sector": "Catering and Hospitality",
+      "problem": "Seasonal and peak demand needs people in weeks, not months.",
+      "impact": "Busy periods are missed or run on a thin team, which costs sales and reviews.",
+      "root_cause": "There is no ready pool of vetted people, so hiring is rebuilt from scratch every peak.",
+      "questions": "When do you start hiring for your busiest period?\nHow many peak shifts ran short last year?\nDo you keep a list of people you would rehire?",
+      "id": "hosp-3"
+    },
+    {
+      "sector": "Catering and Hospitality",
+      "problem": "Candidates drop out between interview and start date.",
+      "impact": "Training time is wasted, rotas are rebuilt and the team loses confidence in new hires.",
+      "root_cause": "Long gaps between offer and first shift, with little contact, let candidates take another job.",
+      "questions": "How many people accepted an offer but never started?\nHow many days pass between offer and first shift?\nWho keeps in touch with a new starter before day one?",
+      "id": "hosp-4"
+    },
+    {
+      "sector": "Catering and Hospitality",
+      "problem": "Contract caterers and multi site operators struggle to cover several locations at once.",
+      "impact": "Sites share staff, managers travel between them and standards vary from site to site.",
+      "root_cause": "Each site recruits on its own with no shared process or pipeline.",
+      "questions": "How many sites are currently short staffed?\nWho owns recruitment across all your locations?\nHow consistent is your hiring standard from site to site?",
+      "id": "hosp-5"
+    },
+    {
+      "sector": "Catering and Hospitality",
+      "problem": "Managers are promoted for being good at the job, not trained to lead a team.",
+      "impact": "Rotas, stock and people problems pile up and good staff leave because of a poor manager.",
+      "root_cause": "Management roles are filled quickly from within with no structured development or external benchmark.",
+      "questions": "How many of your managers have had formal leadership training?\nHow many team members left because of their manager?\nWhat would a stronger external hire change?",
+      "id": "hosp-6"
     }
   ]
 }

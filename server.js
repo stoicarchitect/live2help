@@ -17227,7 +17227,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '21 Nov 2026 - build 70 (pension status and employer NI exempt per person in the payroll pack, payroll email and cost reports, employer NI calculated for anyone not exempt, auto-enrolment due warnings; built on server build 67.4; earlier: build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year; 67.3 chase and call tasks close once the contact is logged and Needs attention can be dismissed or snoozed; 67.4 cold sending resumes properly after a bounce pause, only bounces after the resume count, the pause email lists the bounced addresses, guessed email addresses cannot be chosen for cold outreach))';
+const SERVER_BUILD = '23 Nov 2026 - build 70.6 (Catering and Hospitality added as the 13th sector, with six starter Gap Brief problems and search words for Suggest sectors; built on server build 70; earlier: build 70 (pension status and employer NI exempt per person in the payroll pack, payroll email and cost reports, employer NI calculated for anyone not exempt, auto-enrolment due warnings; built on server build 67.4; earlier: build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year; 67.3 chase and call tasks close once the contact is logged and Needs attention can be dismissed or snoozed; 67.4 cold sending resumes properly after a bounce pause, only bounces after the resume count, the pause email lists the bounced addresses, guessed email addresses cannot be chosen for cold outreach))';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -20821,6 +20821,7 @@ const SECTORS = [
   'Engineering and Technical', 'Manufacturing and Industrial', 'Procurement and Supply Chain', 'Sales and Business Development',
   'Accountancy and Finance', 'IT and Technology', 'Construction and Infrastructure', 'Health and Social Care',
   'AI and Emerging Technologies', 'HR and People Management', 'Corporate and Executive', 'Driving and Logistics',
+  'Catering and Hospitality',
 ].map(name => ({ name, slug: name.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') }));
 const CONSENT_SOURCES = ['Client', 'Hiring Toolkit opt-in', 'Talent Suite marketing', 'Replied yes to cold email', 'Manual'];
 const AUD_DEFAULT_OWNER = 'dan';
@@ -20847,7 +20848,7 @@ function audOwners() {
 }
 const audOwnerOk = k => audOwners().some(o => o.key === lc(k));
 const audSectorOk = s => SECTORS.some(x => x.name === s);
-// a sector value may be one sector or several joined with |; keeps the 12 sectors' order
+// a sector value may be one sector or several joined with |; keeps the 13 sectors' order
 const audSectors = v => { const want = new Set((Array.isArray(v) ? v : String(v || '').split('|')).map(x => String(x).trim()).filter(Boolean)); return SECTORS.map(x => x.name).filter(n => want.has(n)); };
 const audSectorsBad = v => (Array.isArray(v) ? v : String(v || '').split('|')).map(x => String(x).trim()).filter(x => x && !audSectorOk(x));
 // which sector's brief this contact gets next: the one after the last sent, wrapping round
@@ -20999,7 +21000,7 @@ async function audSaveCompany(company, patch, actor) {
     row.owner = o;
   }
   if (patch.sector !== undefined) {
-    if (patch.sector && !audSectorOk(patch.sector)) throw Object.assign(new Error('That is not one of the 12 sectors'), { status: 400 });
+    if (patch.sector && !audSectorOk(patch.sector)) throw Object.assign(new Error('That is not one of the 13 sectors'), { status: 400 });
     row.sector = patch.sector || '';
   }
   await companySettingsTable.upsert(row);
@@ -21024,7 +21025,7 @@ app.post('/api/audience/companies/bulk', requireAdmin, async (req, res) => {
     if (b.owner === undefined && b.sector === undefined) return res.status(400).json({ error: 'Choose an owner or a sector to apply' });
     const patch = {}; if (b.owner !== undefined) patch.owner = b.owner; if (b.sector !== undefined) patch.sector = b.sector;
     if (patch.owner && !audOwnerOk(patch.owner)) return res.status(400).json({ error: 'That owner is not an active user' });
-    if (patch.sector && !audSectorOk(patch.sector)) return res.status(400).json({ error: 'That is not one of the 12 sectors' });
+    if (patch.sector && !audSectorOk(patch.sector)) return res.status(400).json({ error: 'That is not one of the 13 sectors' });
     for (const c of list) await audSaveCompany(c, patch, actorOf(req));
     auditLog(auditActorOf(req), 'updated', 'audience_company', `${list.length} companies`, `bulk: ${patch.owner !== undefined ? 'owner ' + (patch.owner || 'default') : ''} ${patch.sector !== undefined ? 'sector ' + (patch.sector || 'none') : ''}`.trim());
     res.json({ ok: true, changed: list.length });
@@ -21048,7 +21049,7 @@ async function audSaveContact(email, patch, actor) {
   }
   if (patch.sector !== undefined) {
     const bad = audSectorsBad(patch.sector);
-    if (bad.length) throw Object.assign(new Error(`${bad[0]} is not one of the 12 sectors`), { status: 400 });
+    if (bad.length) throw Object.assign(new Error(`${bad[0]} is not one of the 13 sectors`), { status: 400 });
     row.sector = audSectors(patch.sector).join('|');
   }
   if (patch.status !== undefined) {
@@ -21094,7 +21095,7 @@ app.post('/api/audience/contacts/bulk', requireAdmin, async (req, res) => {
     const patch = {};
     if (b.sectors !== undefined) {
       const bad = audSectorsBad(b.sectors);
-      if (bad.length) return res.status(400).json({ error: `${bad[0]} is not one of the 12 sectors` });
+      if (bad.length) return res.status(400).json({ error: `${bad[0]} is not one of the 13 sectors` });
       patch.sector = audSectors(b.sectors);
     }
     if (b.owner !== undefined) { if (b.owner && !audOwnerOk(b.owner)) return res.status(400).json({ error: 'That owner is not an active user' }); patch.owner = b.owner; }
@@ -21132,6 +21133,7 @@ const AUD_SECTOR_WORDS = {
   'HR and People Management': ['human resources', ' hr ', 'people', 'talent', 'recruit', 'learning and development'],
   'Corporate and Executive': ['director', 'chief', 'executive', 'managing director', 'board', 'ceo', 'cfo', 'coo'],
   'Driving and Logistics': ['driver', 'logistics', 'haulage', 'transport', 'warehouse', 'hgv', 'courier', 'distribution', 'freight'],
+  'Catering and Hospitality': ['catering', 'hospitality', 'chef', 'kitchen', 'restaurant', 'hotel', 'front of house', 'food and beverage', 'canteen', 'bar '],
 };
 app.post('/api/audience/suggest-sectors', requireAdmin, async (req, res) => {
   try {
@@ -21661,6 +21663,7 @@ const GAP_ANCHORS = {
   'Engineering and Technical': 'engineering', 'Manufacturing and Industrial': 'manufacturing', 'Procurement and Supply Chain': 'procurement', 'Sales and Business Development': 'commercial',
   'Accountancy and Finance': 'finance', 'IT and Technology': 'it', 'Construction and Infrastructure': 'construction', 'Health and Social Care': 'health',
   'AI and Emerging Technologies': 'ai', 'HR and People Management': 'hr', 'Corporate and Executive': 'executive', 'Driving and Logistics': 'logistics',
+  // 'Catering and Hospitality' has no card on the website sectors page yet, so its link falls back to /sectors/
 };
 const gapViewToken = id => crypto.createHmac('sha256', AUTH_SECRET).update('gap|' + id).digest('base64url').slice(0, 22);
 const gapViewUrl = id => `${tpPublicBase()}/gap/${encodeURIComponent(id)}.${gapViewToken(id)}`;
@@ -21679,7 +21682,7 @@ function gapContentOf(b) { try { return gapNormContent(JSON.parse(b.content || '
 // What must be true before a brief can be approved
 function gapCheck(b, c) {
   const err = [];
-  if (!gapSectorOf(b.sector)) err.push('The sector is not one of the twelve sectors');
+  if (!gapSectorOf(b.sector)) err.push('The sector is not one of the thirteen sectors');
   if (!String(b.subject || '').trim()) err.push('Add a subject line');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(b.send_date || ''))) err.push('Add a send date');
   [['headline', 'headline'], ['intro', 'opening line'], ['numberValue', 'number of the fortnight'], ['numberText', 'number explanation'], ['stateTitle', 'section 1 heading'],
@@ -21829,7 +21832,7 @@ app.get('/api/gap/problems', async (req, res) => {
 app.put('/api/gap/problems', gapNeedEdit, async (req, res) => {
   try {
     const b = req.body || {};
-    if (!gapSectorOf(b.sector)) return res.status(400).json({ error: 'Choose one of the twelve sectors' });
+    if (!gapSectorOf(b.sector)) return res.status(400).json({ error: 'Choose one of the thirteen sectors' });
     const problem = gbDash(b.problem).trim();
     if (!problem) return res.status(400).json({ error: 'Describe the problem' });
     const row = { id: b.id || rfxId('gp'), sector: b.sector, problem, impact: gbDash(b.impact).trim(), root_cause: gbDash(b.root_cause).trim(), questions: gbDash(b.questions).trim(), sources: String(b.sources || '').trim(), active: 'TRUE', updated_by: actorOf(req), updated_at: rfxNow() };
@@ -21974,7 +21977,7 @@ async function gapImportDrafts(list, by, opts = {}) {
   for (const d of Array.isArray(list) ? list : []) {
     const sec = gapSectorOf(d.sector);
     const issue = parseInt(d.issue, 10);
-    if (!sec) { out.errors.push(`"${d.sector}" is not one of the twelve sectors`); continue; }
+    if (!sec) { out.errors.push(`"${d.sector}" is not one of the thirteen sectors`); continue; }
     if (!issue || issue < 1) { out.errors.push(`${d.sector}: the issue number is missing`); continue; }
     const sendDate = String(d.sendDate || '').slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(sendDate)) { out.errors.push(`${d.sector}: the send date is missing`); continue; }
