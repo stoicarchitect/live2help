@@ -3393,41 +3393,55 @@ async function readInvoiceRows() {
   return result.data.values || [];
 }
 
-// Brevo SMTP transporter for all dashboard emails.
-// Port 2525: Render's free plan blocks the usual mail ports (25, 465 and 587), which made every send time out.
-// Brevo accepts the same login on 2525. BREVO_SMTP_PORT on Render can override it.
-const emailTransporter = nodemailer.createTransport({
-  // BREVO_SMTP_HOST is honoured only under NODE_ENV=test and only for this machine, so the report tests can read the emails a fake mail server receives
-  host: process.env.NODE_ENV === 'test' && /^127\.0\.0\.1$/.test(process.env.BREVO_SMTP_HOST || '') ? process.env.BREVO_SMTP_HOST : 'smtp-relay.brevo.com',
-  port: parseInt(process.env.BREVO_SMTP_PORT || '2525', 10),
-  secure: false,
-  connectionTimeout: 20000,
-  greetingTimeout: 15000,
-  auth: {
-    user: process.env.BREVO_SMTP_USER,
-    pass: process.env.BREVO_SMTP_PASS,
+// Build 70: every email the dashboard sends goes out through Microsoft 365 (Graph), from the sender's own mailbox
+// when the From address is Daniel's or Ella's, otherwise from Daniel's mailbox with the original address as the Reply-To.
+// Brevo is no longer used. This object keeps the old nodemailer shape (sendMail, verify) so every caller keeps working.
+const MAIL_SENDER = String(process.env.MAIL_SENDER_EMAIL || process.env.BREVO_SENDER_EMAIL || 'office@live2helprecruitment.co.uk').trim();
+function m365ParseAddr(v) {
+  const s = String(v || '').trim();
+  const m = s.match(/^"?([^"<]*?)"?\s*<([^>]+)>$/);
+  return m ? { name: m[1].trim(), email: m[2].trim().toLowerCase() } : { name: '', email: s.toLowerCase() };
+}
+function m365AddrList(x) {
+  const arr = Array.isArray(x) ? x : String(x || '').split(',');
+  return arr.map(a => m365ParseAddr(typeof a === 'string' ? a : (a && a.address) || '').email).filter(a => /^[^\s@]+@[^\s@]+$/.test(a));
+}
+// Tests only: when NODE_ENV=test and BREVO_SMTP_HOST is this machine, a fake SMTP server receives the email so the report tests can read it
+const testSmtp = (process.env.NODE_ENV === 'test' && /^127\.0\.0\.1$/.test(process.env.BREVO_SMTP_HOST || ''))
+  ? nodemailer.createTransport({ host: process.env.BREVO_SMTP_HOST, port: parseInt(process.env.BREVO_SMTP_PORT || '2525', 10), secure: false, auth: { user: 'x', pass: 'x' } })
+  : null;
+const emailTransporter = {
+  async verify() {
+    if (testSmtp) return true;
+    if (!engineMail.msConfigured()) throw new Error('Microsoft 365 is not set up on the server (MS_TENANT_ID, MS_CLIENT_ID and MS_CLIENT_SECRET on Render)');
+    return true;
   },
-});
-// Build 48.0: emails asked for from /dashboard-next are not sent
-{
-  const realSendMail = emailTransporter.sendMail.bind(emailTransporter);
-  emailTransporter.sendMail = async (msg, ...rest) => {
+  async sendMail(o) {
     if (isPreview()) {
-      console.log('Preview mode: email not sent:', msg && msg.subject);
+      console.log('Preview mode: email not sent:', o && o.subject);
       return { messageId: 'preview-not-sent', accepted: [], rejected: [], preview: true };
     }
-    return realSendMail(msg, ...rest);
-  };
-}
-// Every email shows "Live 2 Help Recruitment" as the sender name. Sent over SMTP, the From line decides the name
-// the inbox shows (not the Brevo sender settings), and a bare address made Gmail show "office".
-const EMAIL_FROM_NAME = process.env.EMAIL_FROM_NAME || 'Live 2 Help Recruitment';
-const rawSendMail = emailTransporter.sendMail.bind(emailTransporter);
-emailTransporter.sendMail = (opts, ...rest) => {
-  if (opts && typeof opts.from === 'string' && opts.from.trim() && !opts.from.includes('<')) {
-    opts = { ...opts, from: `"${EMAIL_FROM_NAME}" <${opts.from.trim()}>` };
-  }
-  return rawSendMail(opts, ...rest);
+    if (testSmtp) return testSmtp.sendMail(o);
+    const f = m365ParseAddr(o.from || MAIL_SENDER);
+    const staff = engineSenders().map(x => String(x.email || '').toLowerCase());
+    const mailbox = staff.includes(f.email) ? f.email : String(profileOf('dan').email || '').toLowerCase();
+    const ownReply = o.replyTo ? m365ParseAddr(typeof o.replyTo === 'string' ? o.replyTo : (o.replyTo.address || '')).email : '';
+    const replyTo = ownReply || (mailbox !== f.email ? f.email : '');
+    const to = m365AddrList(o.to), cc = m365AddrList(o.cc);
+    // A copy is kept in Sent Items, so a BCC to the sender's own address is not needed
+    const bcc = m365AddrList(o.bcc).filter(a => a !== mailbox);
+    const attachments = (o.attachments || []).map(a => ({
+      filename: a.filename,
+      content: Buffer.isBuffer(a.content) ? a.content.toString('base64') : (a.encoding === 'base64' ? String(a.content || '') : Buffer.from(String(a.content || '')).toString('base64')),
+      contentType: a.contentType, cid: a.cid,
+    })).filter(a => a.content);
+    const r = await engineMail.send({
+      route: 'm365', from: mailbox, fromName: f.name, to: to.join(', '), cc: cc.join(', '), bcc: bcc.join(', '), replyTo,
+      subject: o.subject, text: o.text, html: o.html, headers: o.headers, attachments,
+      kind: (o.headers && o.headers['X-L2H-Kind']) || 'email', user: 'system', skipSuppression: true, meta: {},
+    });
+    return { messageId: r.messageId || ('m365-' + r.id), accepted: to, rejected: [] };
+  },
 };
 
 // Restricts invoice create/update/delete to Dan's login. The dashboard sends
@@ -4079,8 +4093,8 @@ async function sendInvoiceReminders() {
   for (const candidate of due) {
     const { rate, fee } = calculatePlacementFee(candidate.salary);
     await emailTransporter.sendMail({
-      from: process.env.BREVO_SENDER_EMAIL,
-      to: process.env.REMINDER_EMAIL_TO || process.env.BREVO_SENDER_EMAIL,
+      from: MAIL_SENDER,
+      to: process.env.REMINDER_EMAIL_TO || MAIL_SENDER,
       subject: `Invoice Reminder - ${candidate.name} starts tomorrow`,
       text: `Hi Dan,
 
@@ -7560,7 +7574,7 @@ app.post('/api/onboarding/:clientId/upload', async (req, res) => {
      outstanding and the client is not paused. Day 10: a call task for the consultant instead.
    - Dan is emailed when a client has signed both agreements. After Dan countersigns, the client gets
      the signed copies (Dan gets a copy at clients@).
-   - Every send is checked against the 300 a day Brevo limit and logged in the Email Log and comms.
+   - Every send is checked against the 300 a day dashboard limit and logged in the Email Log and comms.
    - Preview (/dashboard-next) runs everything except the actual sending.
    ====================================================================== */
 const ONB_FROM = { name: 'Daniel Brown', email: process.env.ONBOARDING_FROM_EMAIL || 'clients@live2helprecruitment.co.uk' };
@@ -7643,7 +7657,7 @@ async function onbReviewItem({ key, from, to, vars, attachmentNames, label }) {
 async function onbSendEmail({ key, from, to, vars, attachments, company, actor, bccClients }) {
   if (!onbEmailOk(to)) throw new Error(`${to || 'The recipient'} is not a valid email address`);
   const counts = await mailCounts(actor || 'system');
-  if (counts.today >= MAIL_DAILY_LIMIT) throw new Error(`Today's limit of ${MAIL_DAILY_LIMIT} emails through Brevo has been reached. Try again tomorrow.`);
+  if (counts.today >= MAIL_DAILY_LIMIT) throw new Error(`Today's limit of ${MAIL_DAILY_LIMIT} emails through Microsoft 365 has been reached. Try again tomorrow.`);
   const { sender, sig, r } = await onbRenderEmail({ key, from, vars });
   const files = (sig.images || []).map((im, i) => ({ filename: `logo${i + 1}.${/png/.test(im.mime) ? 'png' : 'jpg'}`, content: im.base64, encoding: 'base64', contentType: im.mime, cid: im.cid }))
     .concat((attachments || []).map(a => ({ filename: a.filename, content: a.content, contentType: 'application/pdf' })));
@@ -7884,7 +7898,7 @@ async function onbMailConsultant(row, subject, lines) {
   const key = TEAM_DEFAULTS[who] ? who : 'ella';
   const p = profileOf(key);
   if (!onbEmailOk(p.email)) return null;
-  await emailTransporter.sendMail({ from: `"Live 2 Help Workspace" <${process.env.BREVO_SENDER_EMAIL || ONB_FROM.email}>`, to: p.email, subject, text: `Hi ${onbFirst(p.fullName)},\n\n${lines.join('\n\n')}\n\nLive 2 Help Workspace` });
+  await emailTransporter.sendMail({ from: `"Live 2 Help Workspace" <${MAIL_SENDER || ONB_FROM.email}>`, to: p.email, subject, text: `Hi ${onbFirst(p.fullName)},\n\n${lines.join('\n\n')}\n\nLive 2 Help Workspace` });
   return key;
 }
 function onbSignatoryLine(row) {
@@ -8942,10 +8956,10 @@ app.post('/api/funnel-lead', async (req, res) => {
       }
 
       // 3. Email the visitor their report
-      if (!obj.report_sent && process.env.BREVO_SENDER_EMAIL) {
+      if (!obj.report_sent && MAIL_SENDER) {
         try {
           await emailTransporter.sendMail({
-            from: process.env.BREVO_SENDER_EMAIL, to: email, replyTo: 'office@live2helprecruitment.co.uk',
+            from: MAIL_SENDER, to: email, replyTo: 'office@live2helprecruitment.co.uk',
             subject: `Your Hiring Report: ${obj.role || 'your vacancy'}`, html: flReportEmail(obj, pri),
           });
           obj.report_sent = 'Yes';
@@ -8955,7 +8969,7 @@ app.post('/api/funnel-lead', async (req, res) => {
       // 4. Alert Dan
       try {
         await emailTransporter.sendMail({
-          from: process.env.BREVO_SENDER_EMAIL, to: process.env.LEAD_ALERT_TO || dansInbox(),
+          from: MAIL_SENDER, to: process.env.LEAD_ALERT_TO || dansInbox(),
           subject: `${obj.status === 'hot' ? 'HOT lead' : 'New lead'} from the Hiring Toolkit: ${name}, ${company}`,
           text: `${name} (${email}) at ${company} finished the Hiring Toolkit.\nRole: ${obj.role}\nNet cost: ${flGbp(obj.net_per_week)} a week, ${flGbp(obj.total_cost)} over ${obj.weeks} weeks\nProcess score: ${obj.process_score}/100\nOffer score: ${obj.offer_score}/100 (${obj.offer_risk} counter-offer risk)\nTop gaps: ${obj.top_gaps}\nSource: ${obj.source || 'direct'}\n\nA follow-up task has been created for Ella. See the Funnel Leads tab on the dashboard.`,
         });
@@ -8988,7 +9002,7 @@ app.post('/api/funnel-lead', async (req, res) => {
    Employer enquiries land in Funnel Leads (stage "enquiry", status Hot), their company is added to
    Lead Clients if new, and Ella gets a follow-up task for the next working day.
    Candidate and other enquiries become a task for Ella only, so client leads stay clean.
-   Dan is alerted by email through Brevo either way. */
+   Dan is alerted by email through Microsoft 365 either way. */
 app.post('/api/website-enquiry', async (req, res) => {
   try {
     const b = req.body || {};
@@ -9044,7 +9058,7 @@ app.post('/api/website-enquiry', async (req, res) => {
 
     try {
       await emailTransporter.sendMail({
-        from: process.env.BREVO_SENDER_EMAIL, to: process.env.LEAD_ALERT_TO || dansInbox(), replyTo: email,
+        from: MAIL_SENDER, to: process.env.LEAD_ALERT_TO || dansInbox(), replyTo: email,
         subject: `${label} from the website: ${name}${company ? ', ' + company : ''}`,
         text: `${label} from live2helprecruitment.co.uk\n\nName: ${name}\nEmail: ${email}\nPhone: ${phone || '-'}\nCompany: ${company || '-'}\nSource: ${source}\n\n${message}\n\nA follow-up task has been created for Ella.${type === 'employer' ? ' The lead is on the Funnel Leads tab.' : ''} Reply to this email to answer them directly.`,
       });
@@ -11393,10 +11407,10 @@ function clampFuture(iso) { const t = todayISO(); return iso && iso > t ? iso : 
 
 /* ---------- Alerts ---------- */
 const alertSeen = new Map();
-function dansInbox() { return process.env.REMINDER_EMAIL_TO || process.env.BREVO_SENDER_EMAIL; }
+function dansInbox() { return process.env.REMINDER_EMAIL_TO || MAIL_SENDER; }
 async function mailDan(subject, text) {
   try {
-    await emailTransporter.sendMail({ from: process.env.BREVO_SENDER_EMAIL, to: dansInbox(), subject, text });
+    await emailTransporter.sendMail({ from: MAIL_SENDER, to: dansInbox(), subject, text });
     return true;
   } catch (e) { console.error('mailDan failed:', e.message); return false; }
 }
@@ -12218,7 +12232,7 @@ async function buildStageTasks(c, stage) {
     add('fbchase', `Chase ${c.company || 'client'} for feedback on ${c.name}`, toISODate(addDays(new Date(), 1)), `Interviewed for ${who}. If no feedback by tomorrow, call or email and log the outcome.`, 'High');
   } else if (stage === 'offer') {
     add('offer-call', `Call ${c.name} with the offer`, t, `Offer for ${who}. Ask when they can start, then call the client back to confirm the start date.`, 'High');
-    add('offer-letter', `Send offer letter to ${c.name}`, t, `Open the candidate card, then Documents and emails, then Offer letter and cover email. It fills the letter from the record and opens the email in Outlook.`, 'High');
+    add('offer-letter', `Send offer letter to ${c.name}`, t, `Open the candidate card, then Documents and emails, then Offer letter and cover email. It fills the letter from the record and opens the review card, where you read it and press Send now.`, 'High');
     add('offer-info', `Send Information Request email to ${c.name}`, toISODate(addDays(new Date(), 1)), `Open the candidate card, then Documents and emails, then Information request email. Send once the offer is accepted.`);
     add('offer-handover', `Send Client Handover Pack to ${c.company || 'client'} for ${c.name}`, toISODate(addDays(new Date(), 2)), `Open the candidate card, then Documents and emails, then Client handover pack and placement email. Do it once the candidate has returned their information and references.`);
   } else if (['start_date', 'day1', 'week1'].includes(stage)) {
@@ -12674,8 +12688,8 @@ async function sendApplicationAck({ name, email, roleName }) {
     if (!email || !/^\S+@\S+\.\S+$/.test(String(email))) return;
     const first = String(name || '').trim().split(/\s+/)[0] || 'there';
     await emailTransporter.sendMail({
-      from: `"Live 2 Help Recruitment" <${process.env.BREVO_SENDER_EMAIL}>`,
-      replyTo: process.env.BREVO_SENDER_EMAIL,
+      from: `"Live 2 Help Recruitment" <${MAIL_SENDER}>`,
+      replyTo: MAIL_SENDER,
       to: email,
       subject: `We have received your application for ${roleName}`,
       text: `Hi ${first},\n\nThank you for applying for the ${roleName} position through Live 2 Help Recruitment. Your application and CV have arrived safely and we are reviewing them now.\n\nIf your experience matches what the client needs, one of our team will call you to talk it through. Your details are held securely and only used in line with the consent you gave on the application form.\n\nKind regards,\nThe Live 2 Help Recruitment team`,
@@ -12996,6 +13010,23 @@ app.post('/api/offer-docs/build', async (req, res) => {
     console.error('POST /api/offer-docs/build error:', e.message);
     res.status(500).json({ error: e.message });
   }
+});
+
+// Build 70: called by the dashboard once an offer path email has really been sent. The offer record lets a reply be matched to it.
+app.post('/api/offer-docs/sent', async (req, res) => {
+  try {
+    const { kind, to } = req.body || {};
+    const c = (req.body || {}).candidate || {};
+    if (!OFFER_EMAILS[kind] || !c.name || !c.company) return res.status(400).json({ error: 'kind, candidate name and company are required' });
+    const id = placementKey(c.company, c.name, c.role);
+    const row = (await offerDetailsTable.list()).find(o => o.id === id);
+    let d = {}; try { d = JSON.parse((row && row.details_json) || '{}'); } catch (e) { d = {}; }
+    d[kind + '_sent_at'] = new Date().toISOString();
+    d[kind + '_sent_to'] = lc(to || '');
+    d[kind + '_sent_by'] = auditActorOf(req);
+    await offerDetailsTable.upsert({ id, candidate_name: c.name, role: c.role || '', company: c.company, details_json: JSON.stringify(d), updated_by: auditActorOf(req), updated_at: new Date().toISOString() });
+    res.json({ ok: true });
+  } catch (e) { console.error('POST /api/offer-docs/sent error:', e.message); res.status(500).json({ error: e.message }); }
 });
 
 // Fields used by each document set, so the dashboard can ask only for what is missing
@@ -13863,9 +13894,9 @@ async function runReplyJob(j) {
     : moved.changed ? `The card has moved to ${newStage.replace(/_/g, ' ')} and the reply is saved in the candidate notes.`
     : `The card was not moved because it is already at ${moved.before.replace(/_/g, ' ')}. The reply is saved in the candidate notes.`;
   try {
-    if (!process.env.BREVO_SMTP_USER || !process.env.BREVO_SMTP_PASS || !process.env.BREVO_SENDER_EMAIL) throw new Error('Brevo email settings are missing on the server');
+    if (!testSmtp && !engineMail.msConfigured()) throw new Error('Microsoft 365 sending is not set up on the server');
     await emailTransporter.sendMail({
-      from: process.env.BREVO_SENDER_EMAIL, to: notifyTo,
+      from: MAIL_SENDER, to: notifyTo,
       subject: `Client reply: ${summary}`,
       text: `${summary}\n\n${plainNote}\n\n${stageNote}\n\nA task has been added to your Tasks tab. Please reply to the client personally.\n\nLive 2 Help dashboard`,
     });
@@ -17227,7 +17258,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '23 Nov 2026 - build 70.6 (Catering and Hospitality added as the 13th sector, with six starter Gap Brief problems and search words for Suggest sectors; built on server build 70; earlier: build 70 (pension status and employer NI exempt per person in the payroll pack, payroll email and cost reports, employer NI calculated for anyone not exempt, auto-enrolment due warnings; built on server build 67.4; earlier: build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year; 67.3 chase and call tasks close once the contact is logged and Needs attention can be dismissed or snoozed; 67.4 cold sending resumes properly after a bounce pause, only bounces after the resume count, the pause email lists the bounced addresses, guessed email addresses cannot be chosen for cold outreach))';
+const SERVER_BUILD = '23 Nov 2026 - build 71.0 (every email now sends through Microsoft 365 and Brevo is gone; offer documents build with jszip; a candidate reply accepting an offer sent from the dashboard moves the card to Start Date and adds the information request and handover tasks; earlier: build 70.6 (Catering and Hospitality added as the 13th sector, with six starter Gap Brief problems and search words for Suggest sectors; built on server build 70; earlier: build 70 (pension status and employer NI exempt per person in the payroll pack, payroll email and cost reports, employer NI calculated for anyone not exempt, auto-enrolment due warnings; built on server build 67.4; earlier: build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year; 67.3 chase and call tasks close once the contact is logged and Needs attention can be dismissed or snoozed; 67.4 cold sending resumes properly after a bounce pause, only bounces after the resume count, the pause email lists the bounced addresses, guessed email addresses cannot be chosen for cold outreach)))';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
@@ -17403,7 +17434,7 @@ async function hrMailTo(key, subject, text) {
   try {
     const p = profileOf(key);
     if (!p.email) return false;
-    await emailTransporter.sendMail({ from: process.env.BREVO_SENDER_EMAIL, to: p.email, subject, text });
+    await emailTransporter.sendMail({ from: MAIL_SENDER, to: p.email, subject, text });
     return true;
   } catch (e) { console.error('HR email failed:', e.message); return false; }
 }
@@ -18818,7 +18849,7 @@ app.post('/api/talent-suite/start', async (req, res) => {
     // reply straight away; the email goes out in the background so the page never waits on the mail server
     res.json({ ok: true });
     emailTransporter.sendMail({
-      from: process.env.BREVO_SENDER_EMAIL, to: email, replyTo: 'office@live2helprecruitment.co.uk',
+      from: MAIL_SENDER, to: email, replyTo: 'office@live2helprecruitment.co.uk',
       subject: `${code} is your Live 2 Help sign-in code`, html: tsCodeEmail(name, code),
       text: `Hi ${String(name).split(' ')[0]},\n\nYour Live 2 Help Talent Suite sign-in code is ${code}. It works for 15 minutes.\n\nLive 2 Help Recruitment`,
     }).catch(e => console.error('Talent Suite code email failed:', e.message));
@@ -19355,7 +19386,7 @@ function tsSaveOrderInBackground(order, file, kind) {
     if (driveR.status === 'rejected') {
       console.error(`[talent-suite] order ${order.order_id} CV upload failed:`, driveR.reason && driveR.reason.message);
       link = 'Drive upload failed: CV emailed to office';
-      emailTransporter.sendMail({ from: process.env.BREVO_SENDER_EMAIL, to: dansInbox(),
+      emailTransporter.sendMail({ from: MAIL_SENDER, to: dansInbox(),
         subject: `Talent Suite: CV for order ${order.order_id} (Drive upload failed)`,
         text: `The CV for ${order.candidate_name} (${order.candidate_email}) could not be uploaded to Drive, so it is attached here.\nOrder ${order.order_id}, ${TS_TIERS[order.tier].name}.`,
         attachments: [{ filename: `${order.order_id} - CV.${kind}`, content: file.buffer }] }).catch(e => console.error('CV fallback email failed:', e.message));
@@ -19796,13 +19827,13 @@ async function tsAfterBooking(o, mins, when, tier, rescheduled) {
     <p style="color:#B4B8C4;font-size:12px;margin:0;">Live 2 Help Recruitment Ltd, Company No. 11731080. Order ${flEsc(o.order_id)}.</p></div></div>`;
   const attachments = [{ filename: 'Live 2 Help call.ics', content: ics, contentType: 'text/calendar; charset=utf-8; method=PUBLISH' }];
   try {
-    await emailTransporter.sendMail({ from: process.env.BREVO_SENDER_EMAIL, to: o.candidate_email, replyTo: 'office@live2helprecruitment.co.uk',
+    await emailTransporter.sendMail({ from: MAIL_SENDER, to: o.candidate_email, replyTo: 'office@live2helprecruitment.co.uk',
       subject: `${rescheduled ? 'Call moved' : 'Call booked'}: ${when} (${o.order_id})`, html, attachments,
       text: `Your ${what} with Ella is confirmed for ${when} (UK time).${meeting ? ' Join: ' + meeting : ''} Order ${o.order_id}.` });
   } catch (e) { console.error('Talent Suite call confirmation email failed:', e.message); }
   const ella = process.env.REPLY_EMAIL_ELLA;
   if (ella) {
-    emailTransporter.sendMail({ from: process.env.BREVO_SENDER_EMAIL, to: ella, subject: `Talent Suite call: ${o.candidate_name}, ${when}`, attachments,
+    emailTransporter.sendMail({ from: MAIL_SENDER, to: ella, subject: `Talent Suite call: ${o.candidate_name}, ${when}`, attachments,
       text: `${o.candidate_name} (${o.candidate_email}${o.candidate_phone ? ', ' + o.candidate_phone : ''}) booked a ${what}.\nWhen: ${when} (UK time)\nTarget: ${o.target_role}\nCV: ${o.cv_file_link}\n${o.candidate_notes ? 'Notes: ' + o.candidate_notes + '\n' : ''}Order ${o.order_id}.` })
       .catch(e => console.error('Talent Suite call invite to Ella failed:', e.message));
   }
@@ -19854,7 +19885,7 @@ async function tsFulfil(order) {
     await getSheetsClient().spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: TASKS_RANGE, valueInputOption: 'RAW', requestBody: { values: [taskToRow(task)] } });
   } catch (e) { console.error('Talent Suite task failed:', e.message); }
   try {
-    await emailTransporter.sendMail({ from: process.env.BREVO_SENDER_EMAIL, to: order.candidate_email, replyTo: 'office@live2helprecruitment.co.uk',
+    await emailTransporter.sendMail({ from: MAIL_SENDER, to: order.candidate_email, replyTo: 'office@live2helprecruitment.co.uk',
       subject: `Your ${tierName} is confirmed: book your call (${order.order_id})`, html: tsConfirmationEmail(order),
       text: `Thank you, your ${tierName} is confirmed. Order ${order.order_id}, paid £${Number(order.amount_gbp).toFixed(2)}. ${tsCallUrl(order) ? 'Book your call here: ' + tsCallUrl(order) : 'We will email you to arrange your call.'}` });
   } catch (e) { console.error('Talent Suite confirmation email failed:', e.message); }
@@ -20307,7 +20338,7 @@ app.post('/api/mail/send', async (req, res) => {
     const b = req.body || {};
     const me = actorOf(req);
     if (!me || me === 'unknown') return res.status(401).json({ error: 'Please sign in again' });
-    if (!process.env.BREVO_SMTP_USER || !process.env.BREVO_SMTP_PASS) return res.status(500).json({ error: 'Brevo email settings are missing on the server. Use the .eml backup for now.' });
+    if (!isPreview() && !testSmtp && !engineMail.msConfigured()) return res.status(500).json({ error: 'Microsoft 365 sending is not set up on the server yet. Use the .eml backup for now.' });
     const to = mailAddrs(b.to), cc = mailAddrs(b.cc);
     if (!to.length) return res.status(400).json({ error: 'Add a valid email address to send to' });
     if (to.length + cc.length > 10) return res.status(400).json({ error: 'Too many recipients for one email (10 at most)' });
@@ -20321,7 +20352,7 @@ app.post('/api/mail/send', async (req, res) => {
     if (!reviewTokenOk(me, sentHash, b.reviewToken)) return res.status(409).json(NOT_REVIEWED);
 
     const counts = await mailCounts(me);
-    if (counts.today >= MAIL_DAILY_LIMIT) return res.status(429).json({ error: `Today's limit of ${MAIL_DAILY_LIMIT} emails through Brevo has been reached. Use the .eml backup for anything else today.` });
+    if (counts.today >= MAIL_DAILY_LIMIT) return res.status(429).json({ error: `Today's limit of ${MAIL_DAILY_LIMIT} emails through Microsoft 365 has been reached. Use the .eml backup for anything else today.` });
     if (cold) {
       const st = await mailSettings();
       if (counts.mineCold >= st.outreachCap) return res.status(429).json({ error: `You have reached today's limit of ${st.outreachCap} first-contact emails. It resets at midnight, and Dan can change it under Email settings.` });
@@ -20419,12 +20450,12 @@ async function outboxRender(o) {
     return { ...it, payload: p };
   }
   if (o.kind === 'reconsent') {
-    const item = { key: 'reconsent', label: 'Talent pool re-consent', to: o.to, from: `Live 2 Help Recruitment <${process.env.BREVO_SENDER_EMAIL}>`, subject: p.subject, text: p.text, attachmentNames: [] };
+    const item = { key: 'reconsent', label: 'Talent pool re-consent', to: o.to, from: `Live 2 Help Recruitment <${MAIL_SENDER}>`, subject: p.subject, text: p.text, attachmentNames: [] };
     item.hash = onbEmailHash(item);
     return { ...item, payload: p };
   }
   if (o.kind === 'retention_request') {
-    const item = { key: 'retention_request', label: 'Request to keep records', to: o.to, from: `Live 2 Help Recruitment <${process.env.BREVO_SENDER_EMAIL}>`, subject: p.subject, text: p.text, attachmentNames: [] };
+    const item = { key: 'retention_request', label: 'Request to keep records', to: o.to, from: `Live 2 Help Recruitment <${MAIL_SENDER}>`, subject: p.subject, text: p.text, attachmentNames: [] };
     item.hash = onbEmailHash(item);
     return { ...item, payload: p };
   }
@@ -20483,20 +20514,20 @@ app.post('/api/outbox/:id/send', async (req, res) => {
       await onbSendEmail({ key: it.payload.key, from: 'clients', to: o.to, company: row.company, actor: me, vars: { ...(it.payload.vars || {}), ...onbLinkVars(url) } });
     } else if (o.kind === 'reconsent') {
       const counts = await mailCounts(me);
-      if (counts.today >= MAIL_DAILY_LIMIT) return res.status(429).json({ error: `Today's limit of ${MAIL_DAILY_LIMIT} emails through Brevo has been reached. Try again tomorrow.` });
+      if (counts.today >= MAIL_DAILY_LIMIT) return res.status(429).json({ error: `Today's limit of ${MAIL_DAILY_LIMIT} emails through Microsoft 365 has been reached. Try again tomorrow.` });
       const found = await findPoolRowById(it.payload.pool_id);
       if (!found || found.row[20]) return res.status(409).json({ error: 'This candidate has been removed from the talent pool, so nothing is sent. Skip it.' });
-      const info = await emailTransporter.sendMail({ from: `"Live 2 Help Recruitment" <${process.env.BREVO_SENDER_EMAIL}>`, replyTo: process.env.BREVO_SENDER_EMAIL, to: o.to, subject: it.subject, text: it.text });
+      const info = await emailTransporter.sendMail({ from: `"Live 2 Help Recruitment" <${MAIL_SENDER}>`, replyTo: MAIL_SENDER, to: o.to, subject: it.subject, text: it.text });
       const now = new Date().toISOString();
-      await mailLogTable.append({ id: 'em-' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), at: now, day: rfxToday(), user: me, from: process.env.BREVO_SENDER_EMAIL, to: o.to, cc: '', subject: it.subject, kind: 'candidate', company: '', role: '', entity: o.name, attachments: '', message_id: String((info && info.messageId) || '').replace(/[<>]/g, ''), status: 'sent', event_at: now, ref: 'reconsent' }).catch(() => {});
+      await mailLogTable.append({ id: 'em-' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), at: now, day: rfxToday(), user: me, from: MAIL_SENDER, to: o.to, cc: '', subject: it.subject, kind: 'candidate', company: '', role: '', entity: o.name, attachments: '', message_id: String((info && info.messageId) || '').replace(/[<>]/g, ''), status: 'sent', event_at: now, ref: 'reconsent' }).catch(() => {});
       await tpPatchCells(it.payload.pool_id, { 30: todayISO() });
     }
     else if (o.kind === 'retention_request') {
       const counts = await mailCounts(me);
-      if (counts.today >= MAIL_DAILY_LIMIT) return res.status(429).json({ error: `Today's limit of ${MAIL_DAILY_LIMIT} emails through Brevo has been reached. Try again tomorrow.` });
-      const info = await emailTransporter.sendMail({ from: `"Live 2 Help Recruitment" <${process.env.BREVO_SENDER_EMAIL}>`, replyTo: process.env.BREVO_SENDER_EMAIL, to: o.to, subject: it.subject, text: it.text });
+      if (counts.today >= MAIL_DAILY_LIMIT) return res.status(429).json({ error: `Today's limit of ${MAIL_DAILY_LIMIT} emails through Microsoft 365 has been reached. Try again tomorrow.` });
+      const info = await emailTransporter.sendMail({ from: `"Live 2 Help Recruitment" <${MAIL_SENDER}>`, replyTo: MAIL_SENDER, to: o.to, subject: it.subject, text: it.text });
       const now = new Date().toISOString();
-      await mailLogTable.append({ id: 'em-' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), at: now, day: rfxToday(), user: me, from: process.env.BREVO_SENDER_EMAIL, to: o.to, cc: '', subject: it.subject, kind: 'retention', company: o.company || '', role: '', entity: o.name, attachments: '', message_id: String((info && info.messageId) || '').replace(/[<>]/g, ''), status: 'sent', event_at: now, ref: 'retention' }).catch(() => {});
+      await mailLogTable.append({ id: 'em-' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), at: now, day: rfxToday(), user: me, from: MAIL_SENDER, to: o.to, cc: '', subject: it.subject, kind: 'retention', company: o.company || '', role: '', entity: o.name, attachments: '', message_id: String((info && info.messageId) || '').replace(/[<>]/g, ''), status: 'sent', event_at: now, ref: 'retention' }).catch(() => {});
       await retentionMarkRequestSent(it.payload.item_id).catch(() => {});
     }
     else if (o.kind === 'ella_report') {
@@ -23739,7 +23770,7 @@ async function reportsPdf(markdown) {
 // internal email to Daniel Brown's own inbox, optionally with the PDF
 async function reportsMailDan(subject, text, pdf, filename) {
   try {
-    await emailTransporter.sendMail({ from: process.env.BREVO_SENDER_EMAIL, to: dansInbox(), subject, text, attachments: pdf ? [{ filename, content: pdf, contentType: 'application/pdf' }] : undefined });
+    await emailTransporter.sendMail({ from: MAIL_SENDER, to: dansInbox(), subject, text, attachments: pdf ? [{ filename, content: pdf, contentType: 'application/pdf' }] : undefined });
     return true;
   } catch (e) { console.error('Report email failed:', e.message); return false; }
 }
@@ -24030,7 +24061,7 @@ const mailSetSet = (k, v) => settingsTable.upsert({ id: k, value: String(v == nu
 const MAIL_PUBLIC_DOMAINS = new Set(['gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'hotmail.co.uk', 'yahoo.com', 'yahoo.co.uk', 'icloud.com', 'live.com', 'live.co.uk', 'msn.com']);
 function mailInternalDomains() {
   const s = new Set(['live2helprecruitment.co.uk', 'live2help.co.uk']);
-  [profileOf('dan').email, profileOf('ella').email, process.env.BREVO_SENDER_EMAIL].forEach(e => { const d = lc(String(e || '').split('@')[1]); if (d && !MAIL_PUBLIC_DOMAINS.has(d)) s.add(d); });
+  [profileOf('dan').email, profileOf('ella').email, MAIL_SENDER].forEach(e => { const d = lc(String(e || '').split('@')[1]); if (d && !MAIL_PUBLIC_DOMAINS.has(d)) s.add(d); });
   return s;
 }
 const mailMailboxes = () => ['dan', 'ella'].map(o => ({ owner: o, mailbox: lc(profileOf(o).email) })).filter(b => b.mailbox);
@@ -24059,7 +24090,7 @@ const mailSync = createMailSync({
   loadSuppressed: async () => new Set((await suppressionTable.list().catch(() => [])).map(x => lc(x.email)).filter(Boolean)),
   internalDomains: mailInternalDomains, mailboxes: mailMailboxes,
   holidays: payrollHolidays, today: () => londonToday(), now: () => new Date().toISOString(),
-  addTasks: addAutoTasks, alert: alertDan,
+  addTasks: addAutoTasks, alert: alertDan, autoApply: mailAutoApply,
   ready: () => !isPreview() && !!pgPoolFor('system'),
   log: m => console.error('Mail sync:', m),
 });
@@ -24207,8 +24238,16 @@ async function mailSuggestApply(s, actor) {
       return r.changed ? `Moved ${s.contact_name} to Withdrawn` : `${s.contact_name} was already past that point (${String(r.before).replace(/_/g, ' ')}), so the stage was left alone and a note added`;
     }
     if (s.kind === 'offer_accepted') {
-      await stage(null, null, `Offer accepted by email on ${day}. Check the information request has gone out.`);
-      return 'Note added to the candidate card. The stage is unchanged: the next steps are on their task list';
+      // Build 70: accepting moves the card from Offer to Start Date. The information request and the client handover pack and placement
+      // email still need a person to fill in the details and send them, so each gets a High task for today.
+      const r = await stage('start_date', ['offer'], `Offer accepted by email on ${day}. Moved to Start Date.`);
+      if (!r.changed) return `${s.contact_name} is already at ${String(r.before).replace(/_/g, ' ')}, so a note was added and the stage left alone`;
+      const base = slugKey(`${s.contact_name}-${s.role}`), who = `${s.contact_name} (${s.role}${s.company ? ' at ' + s.company : ''})`, due = toISODate(new Date());
+      await addAutoTasks([
+        { key: `${base}-accepted-info`, user: 'ella', title: `Send Information Request email to ${s.contact_name}`, dueDate: due, priority: 'High', context: `Offer accepted for ${who}. Open the candidate card, then Documents and emails, then Information request email. Check it and press Send now.` },
+        { key: `${base}-accepted-handover`, user: 'ella', title: `Send Client Handover Pack and placement email to ${s.company || 'the client'} for ${s.contact_name}`, dueDate: due, priority: 'High', context: `Offer accepted for ${who}. Open the candidate card, then Documents and emails, then Client handover pack and placement email. Check right to work and references first, then press Send now.` },
+      ]).catch(e => console.error('accepted tasks failed:', e.message));
+      return `Moved ${s.contact_name} to Start date and added tasks for the information request and the client handover pack`;
     }
     if (s.kind === 'interview_confirmed') {
       const r = await stage('interview_scheduled', ['applied', 'ready_to_submit', 'submitted', 'interview_requested'], `Interview confirmed by email on ${day}`);
@@ -24241,6 +24280,26 @@ async function mailSuggestApply(s, actor) {
   throw new Error('This suggestion does not apply to this kind of contact');
 }
 const hashShort = x => crypto.createHash('sha1').update(String(x)).digest('hex').slice(0, 10);
+
+// Build 70: when the offer went out through the dashboard and the candidate's own reply (from the address it was sent to, within 21 days
+// after it was sent) accepts or withdraws, the card moves by itself. Everything else stays a one click suggestion.
+async function mailAutoApply(s, info) {
+  if (!['offer_accepted', 'candidate_withdrawn'].includes(s.kind) || s.contact_type !== 'candidate') return false;
+  const row = (await offerDetailsTable.list()).find(o => o.id === placementKey(s.company, s.contact_name, s.role));
+  if (!row) return false;
+  let d = {}; try { d = JSON.parse(row.details_json || '{}'); } catch (e) { return false; }
+  const sentAt = Date.parse(d.offer_sent_at || '');
+  if (!sentAt || lc(d.offer_sent_to) !== lc(s.contact_email)) return false;
+  const at = Date.parse((info && info.at) || '');
+  if (!at || at < sentAt || at - sentAt > 21 * 86400000) return false;
+  const result = await mailSuggestApply(s, 'auto');
+  await mailSuggestTable.updateWhere(x => x.id === s.id, x => ({ ...x, status: 'accepted', handled_by: 'auto', handled_at: new Date().toISOString(), result }));
+  auditLog('system', 'auto_accepted', 'mail_suggestion', s.id, `${s.kind} for ${s.contact_name || s.contact_email}: ${result}`.slice(0, 200));
+  const base = slugKey(`${s.contact_name}-${s.role}`), due = toISODate(new Date());
+  await addAutoTasks(['dan', 'ella'].map(u => ({ key: `${base}-offer-reply-${s.kind}-${u}`, user: u, title: s.kind === 'offer_accepted' ? `${s.contact_name} accepted the offer` : `${s.contact_name} withdrew after the offer`, dueDate: due, priority: 'High',
+    context: `${result}. This was picked up from their email reply and moved automatically. If it is wrong, use Back on the candidate card.` }))).catch(() => {});
+  return true;
+}
 
 async function mailSuggestHandle(req, res, accept) {
   try {

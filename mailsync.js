@@ -224,12 +224,18 @@ export function createMailSync(deps) {
         const sid = hashId('sg-', rowId + '|' + s.kind);
         if (ctx.sugKeys.has(sid)) continue;
         ctx.sugKeys.add(sid);
-        const made = await addNew(suggestions, {
+        const sugRow = {
           id: sid, kind: s.kind, contact_email: c.email, contact_name: c.name, contact_type: c.type, company: c.company, role: c.role,
           mailbox: n.mailbox, owner: n.owner, mail_id: rowId, subject: n.subject, evidence: s.evidence, status: 'pending', created_at: now(),
           handled_by: '', handled_at: '', result: '',
-        });
+        };
+        const made = await addNew(suggestions, sugRow);
         if (made) counts.suggested++;
+        // Build 70: a reply to an offer sent from the dashboard can be applied straight away (the server decides; anything else stays a suggestion)
+        if (made && deps.autoApply) {
+          try { if (await deps.autoApply({ ...sugRow }, { at: n.at })) counts.auto = (counts.auto || 0) + 1; }
+          catch (e) { log('auto apply failed: ' + e.message); }
+        }
       }
     }
   }

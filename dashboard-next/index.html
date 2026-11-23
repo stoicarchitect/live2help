@@ -12722,7 +12722,7 @@ var OD_SETS = {
 };
 var OD_BY_STAGE = {
   offer:['offer','info_request','placement'],
-  start_date:['prestart','placement'], day1:['feedback_week1','placement'], week1:['feedback_week1','feedback_month1','placement'], month1:['feedback_month1','placement'],
+  start_date:['info_request','placement','prestart'], day1:['feedback_week1','placement'], week1:['feedback_week1','feedback_month1','placement'], month1:['feedback_month1','placement'],
   rejected:['rejection_early','rejection']
 };
 var OD_PICKS = {
@@ -12812,13 +12812,13 @@ function odRender(){
     missing.forEach(function(m){ h += odField(m.key, m.label, OD.extra[m.key] || ''); });
     h += '<div style="margin:6px 0 14px;"><button onclick="odApply()" style="padding:9px 18px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:13px;font-weight:600;">Save and refresh the documents</button></div>';
   } else {
-    h += '<div style="padding:10px 12px;background:#f1f8f1;border-left:3px solid var(--success);font-size:12.5px;margin-bottom:12px;">Everything is filled in. Check the email below, then open it in Outlook.</div>';
+    h += '<div style="padding:10px 12px;background:#f1f8f1;border-left:3px solid var(--success);font-size:12.5px;margin-bottom:12px;">Everything is filled in. Check the email below, then press Review and send.</div>';
   }
   h += '<label style="display:block;font-size:11px;color:#999;margin-bottom:4px;">TO</label><div style="font-size:13px;margin-bottom:10px;">' + esc(r.to || '(none yet)') + '</div>' +
     '<label style="display:block;font-size:11px;color:#999;margin-bottom:4px;">SUBJECT</label><input id="odSubject" value="' + esc(OD.subject) + '" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:13px;margin-bottom:10px;">' +
     '<label style="display:block;font-size:11px;color:#999;margin-bottom:4px;">EMAIL</label><textarea id="odBody" style="width:100%;min-height:220px;padding:9px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:13px;">' + esc(OD.body) + '</textarea>';
   if(r.attachments.length) h += '<div style="font-size:12px;color:var(--grey);margin:10px 0;">Attached: ' + r.attachments.map(function(a){ return esc(a.fileName); }).join(', ') + '</div>';
-  h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;"><button onclick="odSend()" style="padding:10px 20px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:13px;font-weight:600;">Open in Outlook</button>' +
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;"><button onclick="odSend()" style="padding:10px 20px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:13px;font-weight:600;">Review and send</button>' +
     r.attachments.map(function(a, i){ return '<button onclick="odDownload(' + i + ')" style="padding:10px 16px;background:#fff;border:1px solid var(--border);border-radius:2px;cursor:pointer;font-size:13px;">Download ' + (i ? 'file ' + (i + 1) : 'Word file') + '</button>'; }).join('') +
     '</div>';
   box.innerHTML = h;
@@ -12867,15 +12867,19 @@ async function odSend(){
   odCollect();
   const r = OD.res;
   if(!r.to){ showToast('Add the email address first'); return; }
-  if((r.missing || []).length && !confirm('Some fields are still blank and show in [BRACKETS] in the document. Open in Outlook anyway?')) return;
-  const eml = emlBuildMulti(r.to, OD.subject, OD.body, r.attachments);
-  const name = 'Draft ' + String(OD.subject).replace(/[^A-Za-z0-9 \-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) + '.eml';
-  downloadText(name, eml, 'message/rfc822');
-  showToast('Draft downloaded. Open it and it opens in Outlook ready to send.');
-  try{
-    await b2Post('/api/comms', {id:'cm-' + Date.now(), timestamp:new Date().toISOString(), user:(signedInUser && signedInUser.key) || '', entity_type:'candidate',
-      entity_name:OD.cand.name, company:OD.cand.company, role:OD.cand.role, channel:'Email', direction:'Out', summary:OD.subject, follow_up_date:'', follow_up_done:''});
-  }catch(e){ /* log is best effort */ }
+  if((r.missing || []).length && !confirm('Some fields are still blank and show in [BRACKETS] in the document. Review the email anyway?')) return;
+  const cand = OD.cand, kind = OD.kind, to = r.to;
+  odClose();
+  mailOpen({
+    to:to, subject:OD.subject, body:OD.body, kind:'offer_docs',
+    atts:r.attachments.map(function(a){ return {fileName:a.fileName, mime:a.mime, base64:a.base64}; }),
+    meta:{entity:cand.name, company:cand.company, role:cand.role, entityType:(kind === 'placement' ? 'client' : 'candidate'), contactName:(kind === 'placement' ? '' : cand.name), purpose:OD_SETS[kind].label},
+    log:true,
+    emlName:'Draft ' + String(OD.subject).replace(/[^A-Za-z0-9 \-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) + '.eml',
+    onSent:async function(){
+      try{ await b2Post('/api/offer-docs/sent', {kind:kind, candidate:{name:cand.name, company:cand.company, role:cand.role}, to:to}); }catch(e){ /* the reply match is best effort */ }
+    }
+  });
 }
 </script>
 
@@ -17632,7 +17636,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '21 Nov 2026 - build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1)))) preview';
+var PAGE_BUILD = '23 Nov 2026 - build 71.0 (offer letter and the other offer path emails go straight to Review and send instead of Outlook; Information request stays on the card after Start Date; earlier: build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1))))) preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -19553,7 +19557,7 @@ function buildTagApply(){
    spec CV sends (Candidate A, B, C) and AI outreach drafts.
 
    Every email the dashboard builds now opens a Review and Send
-   panel first. Send goes out through Brevo from whoever is signed
+   panel first. Send goes out through Microsoft 365 from whoever is signed
    in. "Download .eml instead" keeps the old Outlook route as a
    backup. Nothing is ever sent without pressing Send.
    ============================================================ */
@@ -19707,14 +19711,14 @@ function mailRender(keepFields){
   const cold = d.kind === 'outreach' || d.kind === 'spec';
   const prof = me.email ? me : {fullName: (signedInUser && (signedInUser.fullName || signedInUser.name)) || '', email: (signedInUser && signedInUser.email) || ''};
   if(MAIL.done){
-    box.innerHTML = '<div class="b46-k">EMAIL SENT</div><h3>' + esc(d.subject) + '</h3><div class="b46-ok">Sent to ' + esc(d.to) + ' from ' + esc(prof.email || 'your address') + '. A copy is in your inbox (BCC) and it is logged on the dashboard.' + (MAIL.done.counts ? ' Emails today: ' + MAIL.done.counts.today + ' of ' + MAIL.done.counts.dailyLimit + '.' : '') + '</div>' +
+    box.innerHTML = '<div class="b46-k">EMAIL SENT</div><h3>' + esc(d.subject) + '</h3><div class="b46-ok">Sent to ' + esc(d.to) + ' from ' + esc(prof.email || 'your address') + '. A copy is in your Sent Items and it is logged on the dashboard.' + (MAIL.done.counts ? ' Emails today: ' + MAIL.done.counts.today + ' of ' + MAIL.done.counts.dailyLimit + '.' : '') + '</div>' +
       '<div class="b46-row" style="justify-content:flex-end;">' + (MAIL.queue ? '<button class="b46-btn gold" onclick="mailQueueNext()">Next email</button>' : '') + '<button class="b46-btn" onclick="mailClose()">Close</button></div>';
     return;
   }
   const atts = (d.atts || []).map((a, i) => '<span class="b46-att"><a style="color:var(--dark);text-decoration:underline;font-weight:400;" title="Open to check it" onclick="mailOpenAtt(' + i + ')">' + esc(a.fileName) + '</a> <a title="Remove" onclick="mailDropAtt(' + i + ')">&times;</a></span>').join('');
   box.innerHTML =
     '<div style="display:flex;justify-content:space-between;gap:10px;"><div><div class="b46-k">REVIEW AND SEND' + (MAIL.queue ? ' - ' + (MAIL.queue.i + 1) + ' OF ' + MAIL.queue.items.length : '') + '</div><h3>' + esc(MAIL_KIND_LABEL[d.kind] || 'Email') + '</h3>' +
-    '<div class="b46-sub">Sending as <strong>' + esc(prof.fullName || '') + '</strong> &lt;' + esc(prof.email || '') + '&gt;. Replies go to your inbox and you get a copy.' +
+    '<div class="b46-sub">Sending as <strong>' + esc(prof.fullName || '') + '</strong> &lt;' + esc(prof.email || '') + '&gt;. It is sent from your Microsoft 365 mailbox, so replies come straight to your inbox.' +
     (s.dailyLimit ? ' Emails today: ' + s.today + ' of ' + s.dailyLimit + '.' : '') +
     (cold && s.outreachCap != null ? ' Your first-contact emails today: ' + s.myColdToday + ' of ' + s.outreachCap + '.' : '') + '</div></div>' +
     '<button onclick="mailClose()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;align-self:flex-start;">&times;</button></div>' +
@@ -19830,7 +19834,7 @@ async function mailSend(){
   }
 }
 
-// Moves the usual "did you send it?" steps on by themselves once Brevo has sent the email
+// Moves the usual "did you send it?" steps on by themselves once Microsoft 365 has sent the email
 function mailAfterSent(d){
   if(d.kind === 'submission'){
     let tries = 0;
@@ -19957,7 +19961,7 @@ function useMailHtml(admin){
   const m = USE.mail || {};
   if(m.error) return '<div class="b46-err">' + esc(m.error) + '</div>';
   let h = '<div class="b46-tiles">' +
-    '<div class="b46-tile"><div class="n">' + (m.today || 0) + ' / ' + (m.dailyLimit || 300) + '</div><div class="l">Emails sent today (team, Brevo limit)</div></div>' +
+    '<div class="b46-tile"><div class="n">' + (m.today || 0) + ' / ' + (m.dailyLimit || 300) + '</div><div class="l">Emails sent today (team limit)</div></div>' +
     '<div class="b46-tile"><div class="n">' + (m.month || 0) + '</div><div class="l">Emails this month</div></div>' +
     '<div class="b46-tile"><div class="n">' + (m.myColdToday || 0) + ' / ' + (m.outreachCap != null ? m.outreachCap : 20) + '</div><div class="l">Your first-contact emails today</div></div></div>';
   if(admin){
@@ -21047,7 +21051,7 @@ function ivEmailInvite(who){
 /* ============================================================
    Build 47: Email and Call from any contact
    - Every email address in the workspace opens an in-workspace compose: pick what the email is for,
-     the matching template fills itself from the records, then Review and Send (Brevo) logs it.
+     the matching template fills itself from the records, then Review and Send logs it.
    - Every phone number opens Enconvo (or the phone's dialler) and then asks to log the call.
    - Contact timeline, 30+ day contact nudges on Overview, and a weekly emails and calls report on KPI Reporting.
    ============================================================ */
