@@ -12913,7 +12913,7 @@ async function gatherOfferValues(body) {
     candidate_name: c.name || '', candidate_first: parts[0] || '', candidate_last: parts.slice(1).join(' '),
     candidate_email: c.email || merged.candidate_email || '', candidate_phone: c.phone || merged.candidate_phone || '',
     company: c.company || '', job_title: merged.job_title || role.public_title || c.role || '',
-    salary: offerMoney(c.salary || merged.salary), start_date_long: offerLongDate(c.startDate || merged.start_date),
+    salary: offerMoney(c.salary || merged.salary), start_date_long: offerLongDate(c.startDate || merged.start_date || merged.start_date_long),
     start_time: merged.start_time || cdet.start_time || '', reporting_to: merged.reporting_to || cdet.reporting_to || '',
     work_location: merged.work_location || packPlace(site) || role.location || '',
     employment_type: merged.employment_type || 'Full time',
@@ -12933,7 +12933,7 @@ async function gatherOfferValues(body) {
   try {
     const pl = (await placementsTable.list()).find(o => o.id === placementKey(c.company, c.name, c.role));
     const weeks = parseInt(pl && pl.guarantee_weeks, 10) || DEFAULT_GUARANTEE_WEEKS;
-    const sd = parseISODate(c.startDate || merged.start_date);
+    const sd = parseISODate(c.startDate || merged.start_date || merged.start_date_long);
     v.guarantee_end = sd ? offerPlainDate(toISODate(new Date(sd.getTime() + weeks * 7 * 86400000))) : '';
   } catch (e) { v.guarantee_end = ''; }
   const compRec = await complianceFor(c.company, c.name, c.role);
@@ -17277,7 +17277,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '23 Nov 2026 - build 71.2 (offer letter salary keeps pence and hourly rates; build 71.1 sends as office@ and clients@ directly; build 71.0 (every email now sends through Microsoft 365 and Brevo is gone; offer documents build with jszip; a candidate reply accepting an offer sent from the dashboard moves the card to Start Date and adds the information request and handover tasks; earlier: build 70.6 (Catering and Hospitality added as the 13th sector, with six starter Gap Brief problems and search words for Suggest sectors; built on server build 70; earlier: build 70 (pension status and employer NI exempt per person in the payroll pack, payroll email and cost reports, employer NI calculated for anyone not exempt, auto-enrolment due warnings; built on server build 67.4; earlier: build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year; 67.3 chase and call tasks close once the contact is logged and Needs attention can be dismissed or snoozed; 67.4 cold sending resumes properly after a bounce pause, only bounces after the resume count, the pause email lists the bounced addresses, guessed email addresses cannot be chosen for cold outreach))))';
+const SERVER_BUILD = '23 Nov 2026 - build 71.3 (the start date in the offer documents is picked from a calendar and is no longer lost; build 71.2 (offer letter salary keeps pence and hourly rates; build 71.1 sends as office@ and clients@ directly; build 71.0 (every email now sends through Microsoft 365 and Brevo is gone; offer documents build with jszip; a candidate reply accepting an offer sent from the dashboard moves the card to Start Date and adds the information request and handover tasks; earlier: build 70.6 (Catering and Hospitality added as the 13th sector, with six starter Gap Brief problems and search words for Suggest sectors; built on server build 70; earlier: build 70 (pension status and employer NI exempt per person in the payroll pack, payroll email and cost reports, employer NI calculated for anyone not exempt, auto-enrolment due warnings; built on server build 67.4; earlier: build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year; 67.3 chase and call tasks close once the contact is logged and Needs attention can be dismissed or snoozed; 67.4 cold sending resumes properly after a bounce pause, only bounces after the resume count, the pause email lists the bounced addresses, guessed email addresses cannot be chosen for cold outreach)))))';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

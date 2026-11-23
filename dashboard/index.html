@@ -12690,7 +12690,7 @@ var OD_BY_STAGE = {
   rejected:['rejection_early','rejection']
 };
 var OD_PICKS = {
-  dob:'date', offer_reply_by:'date'
+  dob:'date', offer_reply_by:'date', start_date_long:'date'
 };
 var OD_LONG = ['special_requirements','evidence','specific_example','close_match_detail','impact_area'];
 
@@ -12790,8 +12790,13 @@ function odRender(){
 
 function odCollect(){
   document.querySelectorAll('#odBox [data-od]').forEach(function(el){
-    const k = el.getAttribute('data-od');
-    if(el.value !== '') OD.extra[k] = el.value;
+    let k = el.getAttribute('data-od');
+    // The start date is a calendar entry saved as start_date (a real date), the same field the candidate card uses
+    if(k === 'start_date_long') k = 'start_date';
+    if(el.value !== ''){
+      OD.extra[k] = el.value;
+      if(k === 'start_date'){ const si = document.getElementById('startDateInput'); if(si && !si.value) si.value = el.value; }
+    }
   });
   const s = document.getElementById('odSubject'), b = document.getElementById('odBody');
   if(s) OD.subject = s.value;
@@ -17600,7 +17605,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '23 Nov 2026 - build 71.0 (offer letter and the other offer path emails go straight to Review and send instead of Outlook; Information request stays on the card after Start Date; earlier: build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1)))))';
+var PAGE_BUILD = '23 Nov 2026 - build 71.1 (the start date asked for in the offer documents is a calendar picker and is saved properly; build 71.0 (offer letter and the other offer path emails go straight to Review and send instead of Outlook; Information request stays on the card after Start Date; earlier: build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1))))))';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
