@@ -5800,7 +5800,8 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
   // build 48.5: a whole-tab table always goes through the Sheets client, which the router sends to Postgres
   const wholeTab = !sheetId && WHOLE_TAB_TABLES.has(tab);
   const poolNow = () => (wholeTab ? null : pgPoolFor(group));
-  const pgWrote = () => { sheetsWriteGen++; };
+  let pgListCache = null; // Nov 2026: 5 second read cache for list() on database-held tables, cleared by any write through this table
+  const pgWrote = () => { sheetsWriteGen++; pgListCache = null; };
 
   async function ensure() {
     const pool = poolNow();
@@ -5916,7 +5917,15 @@ function makeSimpleTable({ tab, header, path, label, seed, guard, auditType, aud
     return r.rows[0] ? r.rows[0]._row : null;
   };
 
-  async function listAll() { return (await readRows()).filter(r => r && r[0]).map(toObj); }
+  async function listAll() {
+    let rows;
+    if (poolNow()) {
+      const c = pgListCache;
+      if (c && Date.now() - c.at < 5000) rows = c.rows;
+      else { rows = await readRows(); pgListCache = { at: Date.now(), rows }; }
+    } else rows = await readRows();
+    return rows.filter(r => r && r[0]).map(toObj);
+  }
   async function list() { return (await listAll()).filter(o => !String(o.id).startsWith('__')); }
 
   function upsert(obj) {
@@ -11953,41 +11962,38 @@ async function backupDatabaseToDrive(drive, folderId, date) {
   const titleOf = t => (t.pgName.startsWith('hr_') ? 'HR - ' : '') + t.tab;
   const meta = await sheets.spreadsheets.get({ spreadsheetId: fileId, fields: 'sheets.properties' });
   const starter = (meta.data.sheets || [])[0];
-  const data = [];
-  const requests = [];
+  // Nov 2026 memory fix: one tab at a time. Each table is read, written to its own tab and released before the next,
+  // so the whole database is never held in memory at once.
   let total = 0;
+  const cut = rows => rows.map(r => r.map(v => (v.length > 49000 ? v.slice(0, 49000) + ' [cut for backup]' : v)));
+  const writeTab = async (title, rows, cols) => {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: fileId, requestBody: { requests: [{ addSheet: { properties: { title, gridProperties: { rowCount: rows.length + 10, columnCount: Math.max(cols, 1) } } } }] } });
+    let from = 0;
+    while (from < rows.length) {
+      let size = 0, to = from;
+      while (to < rows.length && (size < 4000000 || to === from)) { size += JSON.stringify(rows[to]).length; to++; }
+      await sheets.spreadsheets.values.update({ spreadsheetId: fileId, range: `${gridQuote(title)}!A${from + 1}`, valueInputOption: 'RAW', requestBody: { values: rows.slice(from, to) } });
+      from = to;
+    }
+  };
   for (const t of tables) {
-    const rows = (await t.pgRows(pgLivePool)).map(r => r.map(v => (v.length > 49000 ? v.slice(0, 49000) + ' [cut for backup]' : v)));
+    const rows = cut(await t.pgRows(pgLivePool));
     total += rows.length;
-    requests.push({ addSheet: { properties: { title: titleOf(t), gridProperties: { rowCount: rows.length + 10, columnCount: Math.max(t.header.length, 1) } } } });
-    data.push({ range: `'${titleOf(t).replace(/'/g, "''")}'!A1`, values: [t.header, ...rows] });
+    await writeTab(titleOf(t), [t.header, ...rows], t.header.length);
   }
   for (const pr of wholeTabs) {
     const title = gridTabLabel(pr);
-    const rows = (await gridReadPgTab(pgLivePool, pr.sid, pr.title)).map(r => r.map(v => (v.length > 49000 ? v.slice(0, 49000) + ' [cut for backup]' : v)));
+    const rows = cut(await gridReadPgTab(pgLivePool, pr.sid, pr.title));
     total += nonEmptyRows(rows);
-    const cols = Math.max(1, ...rows.map(r => r.length));
-    requests.push({ addSheet: { properties: { title, gridProperties: { rowCount: rows.length + 10, columnCount: cols } } } });
-    if (rows.length) data.push({ range: `${gridQuote(title)}!A1`, values: rows });
+    await writeTab(title, rows, Math.max(1, ...rows.map(r => r.length)));
   }
   // build 49.0: onboarding tables (Postgres only, so they are not in SIMPLE_TABLES)
   for (const t of onbTabs) {
-    const rows = t.rows.map(r => r.map(v => (v.length > 49000 ? v.slice(0, 49000) + ' [cut for backup]' : v)));
+    const rows = cut(t.rows);
     total += Math.max(0, rows.length - 1);
-    requests.push({ addSheet: { properties: { title: t.title, gridProperties: { rowCount: rows.length + 10, columnCount: Math.max(1, rows[0].length) } } } });
-    data.push({ range: `${gridQuote(t.title)}!A1`, values: rows });
+    await writeTab(t.title, rows, Math.max(1, rows[0].length));
   }
-  if (starter) requests.push({ deleteSheet: { sheetId: starter.properties.sheetId } });
-  await sheets.spreadsheets.batchUpdate({ spreadsheetId: fileId, requestBody: { requests } });
-  // written in parts so one large table never makes the request too big
-  let part = [], size = 0;
-  const flush = async () => { if (part.length) await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: fileId, requestBody: { valueInputOption: 'RAW', data: part } }); part = []; size = 0; };
-  for (const d of data) {
-    const bytes = JSON.stringify(d.values).length;
-    if (size + bytes > 4000000) await flush();
-    part.push(d); size += bytes;
-  }
-  await flush();
+  if (starter) await sheets.spreadsheets.batchUpdate({ spreadsheetId: fileId, requestBody: { requests: [{ deleteSheet: { sheetId: starter.properties.sheetId } }] } });
   const all = await drive.files.list({ q: `'${folderId}' in parents and name contains 'Workspace database backup' and trashed=false`, orderBy: 'createdTime desc', fields: 'files(id)', pageSize: 100 });
   for (const f of (all.data.files || []).slice(BACKUP_KEEP)) await drive.files.update({ fileId: f.id, requestBody: { trashed: true } });
   return { name, tables: tables.length + wholeTabs.length + onbTabs.length, rows: total };
