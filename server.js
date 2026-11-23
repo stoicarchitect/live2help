@@ -3423,23 +3423,33 @@ const emailTransporter = {
     }
     if (testSmtp) return testSmtp.sendMail(o);
     const f = m365ParseAddr(o.from || MAIL_SENDER);
-    const staff = engineSenders().map(x => String(x.email || '').toLowerCase());
-    const mailbox = staff.includes(f.email) ? f.email : String(profileOf('dan').email || '').toLowerCase();
+    const dan = String(profileOf('dan').email || '').toLowerCase();
+    // Any address on our own domain (Daniel, Ella, office@, clients@) is tried as the sending mailbox first, because those were tested and work.
+    // Only if Microsoft says that address is not a mailbox does it fall back to Daniel's mailbox with the original address as the Reply-To.
+    const ownDomain = dan.split('@')[1] || 'live2helprecruitment.co.uk';
+    const mailbox = f.email.endsWith('@' + ownDomain) ? f.email : dan;
     const ownReply = o.replyTo ? m365ParseAddr(typeof o.replyTo === 'string' ? o.replyTo : (o.replyTo.address || '')).email : '';
-    const replyTo = ownReply || (mailbox !== f.email ? f.email : '');
     const to = m365AddrList(o.to), cc = m365AddrList(o.cc);
-    // A copy is kept in Sent Items, so a BCC to the sender's own address is not needed
-    const bcc = m365AddrList(o.bcc).filter(a => a !== mailbox);
     const attachments = (o.attachments || []).map(a => ({
       filename: a.filename,
       content: Buffer.isBuffer(a.content) ? a.content.toString('base64') : (a.encoding === 'base64' ? String(a.content || '') : Buffer.from(String(a.content || '')).toString('base64')),
       contentType: a.contentType, cid: a.cid,
     })).filter(a => a.content);
-    const r = await engineMail.send({
-      route: 'm365', from: mailbox, fromName: f.name, to: to.join(', '), cc: cc.join(', '), bcc: bcc.join(', '), replyTo,
+    const attempt = box => engineMail.send({
+      route: 'm365', from: box, fromName: f.name, to: to.join(', '), cc: cc.join(', '),
+      // A copy is kept in Sent Items, so a BCC to the sender's own address is not needed
+      bcc: m365AddrList(o.bcc).filter(a => a !== box).join(', '),
+      replyTo: ownReply || (box !== f.email ? f.email : ''),
       subject: o.subject, text: o.text, html: o.html, headers: o.headers, attachments,
       kind: (o.headers && o.headers['X-L2H-Kind']) || 'email', user: 'system', skipSuppression: true, meta: {},
     });
+    let r;
+    try { r = await attempt(mailbox); }
+    catch (e) {
+      if (mailbox === dan || !/not found as a mailbox|ResourceNotFound|MailboxNotEnabled|ErrorInvalidUser/i.test(e.message)) throw e;
+      console.error(`${mailbox} is not a sending mailbox, sent from ${dan} instead:`, e.message);
+      r = await attempt(dan);
+    }
     return { messageId: r.messageId || ('m365-' + r.id), accepted: to, rejected: [] };
   },
 };
