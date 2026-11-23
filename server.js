@@ -12866,8 +12866,17 @@ function offerPlainDate(iso) {
   return d ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '';
 }
 function offerMoney(v) {
-  const n = parseFloat(String(v || '').replace(/[^0-9.]/g, ''));
-  return n ? '£' + n.toLocaleString('en-GB', { maximumFractionDigits: 0 }) : '';
+  // Build 71.2: keeps pence and hourly rates ("£13.24 per hour (£25,818 a year)" used to become "£13")
+  const raw = String(v || '').trim().replace(/,/g, '');
+  const m = raw.match(/\d+(?:\.\d+)?/);
+  const n = m ? parseFloat(m[0]) : 0;
+  if (!n) return '';
+  const fmt = x => '£' + x.toLocaleString('en-GB', { minimumFractionDigits: Number.isInteger(x) ? 0 : 2, maximumFractionDigits: 2 });
+  if (/per\s*hour|an\s*hour|\/\s*h(ou)?r\b|\bph\b|hourly/i.test(raw) || n < 100) {
+    const yr = raw.match(/\(\s*£?\s*(\d+(?:\.\d+)?)\s*(?:a|per)\s*(?:year|annum)/i);
+    return `${fmt(n)} per hour` + (yr ? ` (${fmt(parseFloat(yr[1]))} a year)` : '');
+  }
+  return fmt(n);
 }
 function packPlace(s) { return [s.address, s.postcode].filter(Boolean).join(', '); }
 
@@ -17268,7 +17277,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '23 Nov 2026 - build 71.0 (every email now sends through Microsoft 365 and Brevo is gone; offer documents build with jszip; a candidate reply accepting an offer sent from the dashboard moves the card to Start Date and adds the information request and handover tasks; earlier: build 70.6 (Catering and Hospitality added as the 13th sector, with six starter Gap Brief problems and search words for Suggest sectors; built on server build 70; earlier: build 70 (pension status and employer NI exempt per person in the payroll pack, payroll email and cost reports, employer NI calculated for anyone not exempt, auto-enrolment due warnings; built on server build 67.4; earlier: build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year; 67.3 chase and call tasks close once the contact is logged and Needs attention can be dismissed or snoozed; 67.4 cold sending resumes properly after a bounce pause, only bounces after the resume count, the pause email lists the bounced addresses, guessed email addresses cannot be chosen for cold outreach)))';
+const SERVER_BUILD = '23 Nov 2026 - build 71.2 (offer letter salary keeps pence and hourly rates; build 71.1 sends as office@ and clients@ directly; build 71.0 (every email now sends through Microsoft 365 and Brevo is gone; offer documents build with jszip; a candidate reply accepting an offer sent from the dashboard moves the card to Start Date and adds the information request and handover tasks; earlier: build 70.6 (Catering and Hospitality added as the 13th sector, with six starter Gap Brief problems and search words for Suggest sectors; built on server build 70; earlier: build 70 (pension status and employer NI exempt per person in the payroll pack, payroll email and cost reports, employer NI calculated for anyone not exempt, auto-enrolment due warnings; built on server build 67.4; earlier: build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year; 67.3 chase and call tasks close once the contact is logged and Needs attention can be dismissed or snoozed; 67.4 cold sending resumes properly after a bounce pause, only bounces after the resume count, the pause email lists the bounced addresses, guessed email addresses cannot be chosen for cold outreach))))';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
