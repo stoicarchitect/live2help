@@ -22658,6 +22658,7 @@ async function coldScanAll({ since, actor } = {}) {
   if (coldScanState.running) return { skipped: 'A scan is already running' };
   if (!engineMail.msConfigured()) return { skipped: 'Microsoft 365 is not set up' };
   coldScanState.running = true;
+  const memT0 = Date.now(), memAt = process.memoryUsage();
   try {
     const [sends, seqs, scan] = await Promise.all([coldSendsTable.list().catch(() => []), coldSeqTable.list().catch(() => []), mailScanTable.list().catch(() => [])]);
     const ctx = { sends, seqs, scan, seen: new Set(scan.map(r => r.id)), touched: new Set() };
@@ -22679,7 +22680,11 @@ async function coldScanAll({ since, actor } = {}) {
     coldScanState.last = rfxNow(); if (!coldScanState.error) coldScanState.lastOk = coldScanState.last;
     coldScanState.counts = { hard: sum('hard'), soft: sum('soft'), policy: sum('policy'), replies: sum('replies'), stops: sum('stops'), moved: sum('moved'), scanned: sum('scanned') };
     return { owners, results, paused, counts: coldScanState.counts, needsPermission: coldScanState.needsPermission, error: coldScanState.error, since: from };
-  } finally { coldScanState.running = false; }
+  } finally {
+    coldScanState.running = false;
+    const m = process.memoryUsage();
+    console.log(`[mem] coldscan ${Math.round((Date.now() - memT0) / 1000)}s heap ${Math.round(memAt.heapUsed / 1048576)}->${Math.round(m.heapUsed / 1048576)}MB rss ${Math.round(memAt.rss / 1048576)}->${Math.round(m.rss / 1048576)}MB`);
+  }
 }
 
 // every 15 minutes, weekdays 07:00-19:00 UK, live database only

@@ -291,6 +291,7 @@ export function createMailSync(deps) {
     if (!ready()) return { skipped: 'no database' };
     if (state.running) return { skipped: 'A sync is already running. Wait for it to finish, then press Run now again.' };
     state.running = true; // set at once, before any await
+    const memT0 = Date.now(), memAt = process.memoryUsage();
     let leased = false;
     const counts = { scanned: 0, logged: 0, ignored: 0, skipped: 0, duplicates: 0, suggested: 0, resets: 0, tasks: 0, more: false };
     const errors = [];
@@ -315,13 +316,16 @@ export function createMailSync(deps) {
       let loaded;
       try { loaded = await Promise.all([loadDirectory(), doNotLog.list(), loadSuppressed(), mailLog.list(), suggestions.list()]); }
       catch (e) { return await stop(`Could not read the client, candidate and log records (${e.message}). No mail was read, so nothing is missed: the next run starts from the same place.`); }
-      const [dirEntries, dnlRows, suppressed, logRows, sugRows] = loaded;
+      const [dirEntries, dnlRows, suppressed] = loaded;
+      // Nov 2026 memory fix: only the ids of the mail log and suggestions are needed, so the full rows are let go at once
+      const logKeys = new Set(loaded[3].map(r => r.id)), sugKeys = new Set(loaded[4].map(r => r.id));
+      loaded.length = 0;
       // No contacts at all means the record sources could not be read. Stop here: reading mail now would move the
       // place we are up to without being able to tell who is a contact, and those messages would be missed for good.
       if (!dirEntries || !dirEntries.length) return await stop('No client, lead, prospect or candidate email addresses were found, so no mail was read. Nothing is missed: the next run starts from the same place.');
       const ctx = {
         directory: makeDirectory(dirEntries), doNotLog: new Set(dnlRows.map(r => lc(r.email))), suppressed, internalDomains: internalDomains(),
-        keys: new Set(logRows.map(r => r.id)), sugKeys: new Set(sugRows.map(r => r.id)),
+        keys: logKeys, sugKeys,
       };
       const since = (sinceDay || st.sinceDay || isoOfDaysAgo(today(), 7)) + 'T00:00:00Z';
       for (const box of mailboxes()) {
@@ -355,6 +359,7 @@ export function createMailSync(deps) {
     } finally {
       if (leased) await releaseLease();
       state.running = false;
+      { const m = process.memoryUsage(); console.log(`[mem] mailsync ${Math.round((Date.now() - memT0) / 1000)}s heap ${Math.round(memAt.heapUsed / 1048576)}->${Math.round(m.heapUsed / 1048576)}MB rss ${Math.round(memAt.rss / 1048576)}->${Math.round(m.rss / 1048576)}MB`); }
     }
   }
 
