@@ -4148,6 +4148,7 @@ function renderInvoiceCard(inv){
       <div class="invoice-dates">${fmtDateShort(inv.date)} &rarr; ${fmtDateShort(inv.dueDate)}</div>
       ${methodLabel}${payNote}${invLateLine(inv)}
       <div class="invoice-card-actions">
+        <button onclick="invoiceSendOpen('${inv.number}')" style="border-color:var(--gold);font-weight:600;">Send invoice</button>
         <button onclick="downloadInvoicePDF('${inv.number}')">Download PDF</button>
         ${canPay ? `<button onclick="copyInvoicePayLink('${inv.number}')" title="Copy the client's Pay by Bank link to paste into your email">Copy pay link</button>` : ''}
         <button class="danger" onclick="deleteInvoiceCard('${inv.number}')">Delete</button>
@@ -4237,7 +4238,7 @@ async function submitGenerateInvoice(){
 
     closeModal('generateInvoiceOverlay');
     showToast(`Invoice ${json.invoice.number} generated`);
-    downloadInvoicePDF(json.invoice.number);
+    invoiceSendOpen(json.invoice.number);
     loadInvoices();
 
     // reflect locally so the candidate modal shows it's invoiced without a reload
@@ -4278,7 +4279,7 @@ async function generateInvoiceForCandidate(){
     const json = await res.json();
     c.invoiceNumber = json.invoice.number;
     showToast(`Invoice ${json.invoice.number} generated`);
-    downloadInvoicePDF(json.invoice.number);
+    invoiceSendOpen(json.invoice.number);
     openCandidateModal(c.id);
   }catch(e){
     showToast('Could not generate invoice: ' + e.message);
@@ -4304,6 +4305,104 @@ async function copyInvoicePayLink(number){
   const url = INVOICE_PAY_URLS[number];
   if(!url){ showToast('No pay link for this invoice'); return; }
   showToast((await copyToClipboard(url)) ? 'Pay by Bank link copied - paste it into your email to the client' : 'Could not copy: ' + url);
+}
+
+/* ---------- Build 73: send an invoice to a contact chosen from the contacts list ---------- */
+var INVS = {inv:null, contacts:[], links:[], companies:[], to:'', other:''};
+function invEsc(v){ return typeof esc === 'function' ? esc(v == null ? '' : String(v)) : String(v == null ? '' : v); }
+function invLc(v){ return String(v || '').trim().toLowerCase(); }
+async function invLoadContacts(){
+  let clients = [], links = [];
+  try{ const r = await b2Api('/api/clients'); clients = (r && r.data) || []; }catch(e){}
+  try{ const r = await b2Api('/api/contact-links'); links = (r && r.data) || []; }catch(e){}
+  INVS.links = links;
+  INVS.all = clients.filter(c => c.email).map(c => ({name: c.contactName || c.email, email: c.email, title: c.jobTitle || '', company: c.company}));
+  INVS.companies = Array.from(new Set(clients.map(c => c.company).filter(Boolean))).sort();
+}
+// Contacts for one company: people listed under it, plus anyone linked to it from another company
+function invContactsFor(company){
+  const key = invLc(company), seen = {}, out = [];
+  INVS.all.forEach(c => { if(invLc(c.company) === key && !seen[invLc(c.email)]){ seen[invLc(c.email)] = 1; out.push({name:c.name, email:c.email, title:c.title, via:''}); } });
+  INVS.links.forEach(l => {
+    const cos = String(l.companies || '').split(';').map(invLc).filter(Boolean);
+    if(cos.indexOf(key) >= 0 && !seen[invLc(l.email)]){ seen[invLc(l.email)] = 1; out.push({name:l.name || l.email, email:l.email, title:'', via:'linked'}); }
+  });
+  return out;
+}
+async function invoiceSendOpen(number){
+  let inv = null;
+  try{ const r = await b2Api('/api/invoices'); inv = ((r && r.data) || []).find(x => x.number === number); }catch(e){}
+  if(!inv){ showToast('Could not find invoice ' + number); return; }
+  INVS.inv = inv; INVS.to = ''; INVS.other = '';
+  invRender(true);
+  await invLoadContacts();
+  const cs = invContactsFor(inv.company);
+  INVS.to = cs.length ? cs[0].email : '';
+  invRender(false);
+}
+function invRender(loading){
+  let el = document.getElementById('invSendOv');
+  if(!el){
+    el = document.createElement('div'); el.id = 'invSendOv';
+    el.style.cssText = 'position:fixed;inset:0;background:rgba(10,15,30,.55);z-index:5000;display:flex;align-items:center;justify-content:center;padding:16px;';
+    document.body.appendChild(el);
+  }
+  const inv = INVS.inv;
+  let h = '<div style="background:#fff;border-top:3px solid var(--gold);max-width:560px;width:100%;max-height:92vh;overflow:auto;border-radius:3px;padding:22px 24px;">' +
+    '<div style="display:flex;justify-content:space-between;"><div><div style="font-size:11px;color:var(--gold);letter-spacing:.8px;font-weight:600;">SEND INVOICE</div><h3 style="margin:4px 0 2px;">' + invEsc(inv.number) + ' to ' + invEsc(inv.company) + '</h3></div><button onclick="invClose()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;">&times;</button></div>';
+  if(loading){ el.innerHTML = h + '<div style="padding:20px 0;color:#999;font-size:13px;">Loading contacts...</div></div>'; return; }
+  const cs = invContactsFor(inv.company);
+  h += '<div style="font-size:12.5px;color:#777;margin:6px 0 12px;">Who should this go to? Contacts for ' + invEsc(inv.company) + ' and anyone linked to it.</div>';
+  if(!cs.length) h += '<div style="padding:10px 12px;background:#fffaf0;border-left:3px solid var(--gold);font-size:12.5px;margin-bottom:10px;">No contact with an email address for this company yet. Type one below or link a contact.</div>';
+  cs.forEach(function(c, i){
+    h += '<label style="display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border:1px solid var(--border);margin-bottom:6px;border-radius:2px;cursor:pointer;"><input type="radio" name="invTo" value="' + invEsc(c.email) + '"' + (INVS.to === c.email ? ' checked' : '') + ' onchange="INVS.to=this.value;INVS.other=\'\'"><span><b>' + invEsc(c.name) + '</b>' + (c.title ? ', ' + invEsc(c.title) : '') + (c.via ? ' <span style="font-size:10.5px;background:#f1e9cf;padding:1px 6px;border-radius:8px;">linked</span>' : '') + '<br><span style="font-size:12px;color:#777;">' + invEsc(c.email) + '</span></span></label>';
+  });
+  h += '<div style="margin:10px 0;"><label style="font-size:11px;color:#999;display:block;margin-bottom:3px;">OR ANOTHER EMAIL ADDRESS</label><input id="invOther" type="email" value="' + invEsc(INVS.other) + '" oninput="INVS.other=this.value;INVS.to=\'\';document.querySelectorAll(\'input[name=invTo]\').forEach(function(r){r.checked=false;})" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:13px;"></div>';
+  // link a contact to this company
+  const all = INVS.all || [];
+  h += '<details style="margin:12px 0;"><summary style="cursor:pointer;font-size:12.5px;color:var(--dark);font-weight:600;">Link a contact from another company to ' + invEsc(inv.company) + '</summary><div style="margin-top:8px;display:flex;gap:8px;">' +
+    '<select id="invLinkContact" style="flex:1;padding:8px;border:1px solid var(--border);font-size:13px;"><option value="">Choose a contact</option>' + all.filter(function(c){ return invLc(c.company) !== invLc(inv.company); }).map(function(c, i){ return '<option value="' + invEsc(c.email) + '|' + invEsc(c.name) + '">' + invEsc(c.name) + ' (' + invEsc(c.company) + ')</option>'; }).join('') + '</select>' +
+    '<button onclick="invLink()" style="padding:8px 14px;background:#fff;border:1px solid var(--gold);cursor:pointer;font-size:12.5px;font-weight:600;">Link</button></div>' +
+    '<div style="font-size:11.5px;color:#999;margin-top:6px;">They stay under their own company and also appear for ' + invEsc(inv.company) + '. Use this for someone who receives the invoices for several companies.</div></details>';
+  h += '<div id="invErr" style="color:var(--danger);font-size:12.5px;min-height:18px;"></div><div style="display:flex;gap:10px;"><button onclick="invContinue()" style="padding:10px 20px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:13px;font-weight:600;">Continue to review</button><button onclick="invClose()" style="padding:10px 16px;background:#fff;border:1px solid var(--border);border-radius:2px;cursor:pointer;font-size:13px;">Not now</button></div></div>';
+  el.innerHTML = h; el.style.display = 'flex';
+}
+function invClose(){ const el = document.getElementById('invSendOv'); if(el) el.style.display = 'none'; }
+async function invLink(){
+  const v = (document.getElementById('invLinkContact') || {}).value || '';
+  if(!v) return;
+  const parts = v.split('|'), email = parts[0], name = parts.slice(1).join('|');
+  const existing = INVS.links.find(function(l){ return invLc(l.email) === invLc(email); });
+  const cos = existing ? String(existing.companies || '').split(';').map(function(x){ return x.trim(); }).filter(Boolean) : [];
+  if(cos.map(invLc).indexOf(invLc(INVS.inv.company)) < 0) cos.push(INVS.inv.company);
+  try{
+    await b2Post('/api/contact-links', {id: invLc(email), email: email, name: name, companies: cos.join('; '), updated_by: (signedInUser && signedInUser.name) || '', updated_at: new Date().toISOString()});
+    await invLoadContacts(); INVS.to = email; INVS.other = '';
+    invRender(false); showToast(name + ' is now linked to ' + INVS.inv.company);
+  }catch(e){ const er = document.getElementById('invErr'); if(er) er.textContent = 'Could not link: ' + e.message; }
+}
+async function invContinue(){
+  const to = (INVS.to || INVS.other || '').trim(), er = document.getElementById('invErr');
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){ if(er) er.textContent = 'Please choose a contact or type a valid email address.'; return; }
+  const inv = INVS.inv;
+  if(er) er.textContent = 'Getting the invoice PDF...';
+  let b64 = '';
+  try{
+    const r = await fetch(authUrl(API_BASE + '/api/invoices/' + encodeURIComponent(inv.number) + '/pdf'));
+    if(!r.ok) throw new Error('Server returned ' + r.status);
+    const blob = await r.blob();
+    b64 = await new Promise(function(ok, bad){ const fr = new FileReader(); fr.onload = function(){ ok(String(fr.result).split(',')[1] || ''); }; fr.onerror = bad; fr.readAsDataURL(blob); });
+  }catch(e){ if(er) er.textContent = 'Could not get the PDF: ' + e.message; return; }
+  const contact = invContactsFor(inv.company).find(function(c){ return invLc(c.email) === invLc(to); });
+  const first = contact ? String(contact.name).split(/\s+/)[0] : '';
+  const amt = '£' + Number(inv.amount).toLocaleString('en-GB', {minimumFractionDigits:2});
+  const due = typeof fmtDateShort === 'function' ? fmtDateShort(inv.dueDate) : inv.dueDate;
+  const body = 'Hi ' + (first || 'there') + ',\n\nPlease find attached invoice ' + inv.number + ' for the placement of ' + inv.candidateName + (inv.role ? ' as ' + inv.role : '') + ' at ' + inv.company + '.\n\nAmount due: ' + amt + '\nDue date: ' + due + '\n\nThe payment details are on the invoice. If you have any questions, just reply to this email.\n\nThank you for working with us.\n\nKind regards,';
+  invClose();
+  mailOpen({to: to, subject: 'Invoice ' + inv.number + ' - ' + inv.company, body: body, kind: 'email',
+    atts: [{fileName: inv.number + '.pdf', mime: 'application/pdf', base64: b64}],
+    meta: {entity: inv.candidateName, company: inv.company, role: inv.role || '', entityType: 'client', contactName: contact ? contact.name : ''}, log: true,
+    onSent: async function(){ try{ await fetch(API_BASE + '/api/invoices/' + encodeURIComponent(inv.number), {method:'PUT', headers:{'Content-Type':'application/json', 'X-User-Role': currentUserRole}, body: JSON.stringify({status: 'sent'})}); if(typeof loadInvoices === 'function') loadInvoices(); }catch(e){} }});
 }
 
 function downloadInvoicePDF(number){
@@ -17710,7 +17809,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '24 Nov 2026 - build 72.10 (People has an Add employee button that goes straight on to payroll details; build 72.9 (the Who placed this candidate list comes from the People section so Ella and anyone added there appears, and commission falls back to their People commission rate; build 72.8 (earlier picker fix; build 72.6 (handover pack: correct Ella email, unknown fields left out, logo proportions fixed, job title can be changed; build 72.5 (sent emails on the offer card are greyed out once done, with a ready to move note when all three have gone; build 72.4 (you now get an email when a candidate sends their details, compliance picks up their right to work and references, the card shows the details they gave and has an I have seen it all button; build 72.2 (the client handover email no longer has the profile snapshot, invoice or review sections, clients are no longer asked for a Google review, candidates get a separate Google review request and clients get a testimonial request that can go on the website; build 72.0 (candidates accept their offer, send their details and right to work documents and confirm their first day online, with a status card on the offer stage; build 71.2 (offer emails use the signed in person own HTML signature instead of a fixed text one; build 71.1 (the start date asked for in the offer documents is a calendar picker and is saved properly; build 71.0 (offer letter and the other offer path emails go straight to Review and send instead of Outlook; Information request stays on the card after Start Date; earlier: build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1)))))))))))))';
+var PAGE_BUILD = '24 Nov 2026 - build 73.0 (invoices are numbered L2H-year-number, can be sent from the invoice card to a contact chosen from the contacts list, and a contact can be linked to several companies; build 72.10 (People has an Add employee button that goes straight on to payroll details; build 72.9 (the Who placed this candidate list comes from the People section so Ella and anyone added there appears, and commission falls back to their People commission rate; build 72.8 (earlier picker fix; build 72.6 (handover pack: correct Ella email, unknown fields left out, logo proportions fixed, job title can be changed; build 72.5 (sent emails on the offer card are greyed out once done, with a ready to move note when all three have gone; build 72.4 (you now get an email when a candidate sends their details, compliance picks up their right to work and references, the card shows the details they gave and has an I have seen it all button; build 72.2 (the client handover email no longer has the profile snapshot, invoice or review sections, clients are no longer asked for a Google review, candidates get a separate Google review request and clients get a testimonial request that can go on the website; build 72.0 (candidates accept their offer, send their details and right to work documents and confirm their first day online, with a status card on the offer stage; build 71.2 (offer emails use the signed in person own HTML signature instead of a fixed text one; build 71.1 (the start date asked for in the offer documents is a calendar picker and is saved properly; build 71.0 (offer letter and the other offer path emails go straight to Review and send instead of Outlook; Information request stays on the card after Start Date; earlier: build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1))))))))))))))';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;

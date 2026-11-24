@@ -317,7 +317,7 @@ const TABLE_GROUPS = {
   'Spec Checkins': 'candidates', 'Referrals': 'candidates',
   'Client Sites': 'clients', 'Client Terms': 'clients', 'Client Feedback': 'clients', 'Comms Log': 'clients',
   'Lead Pipeline': 'clients', 'Funnel Leads': 'clients', 'Site Details': 'clients', 'Reply Links': 'clients',
-  'Employees': 'hr', 'Holiday Requests': 'hr', 'Absences': 'hr', 'HR Documents': 'hr', 'Reviews': 'hr', 'Commission': 'hr',
+  'Contact Links': 'clients', 'Employees': 'hr', 'Holiday Requests': 'hr', 'Absences': 'hr', 'HR Documents': 'hr', 'Reviews': 'hr', 'Commission': 'hr',
   'BMS Documents': 'hr', 'BMS Acknowledgements': 'hr',
   'BMS Complaints': 'hr', 'BMS Breaches': 'hr', 'BMS SARs': 'hr', 'BMS Declarations': 'hr',
   'Role Finder Searches': 'rolefinder', 'Role Finder Results': 'rolefinder', 'Agency Block List': 'rolefinder',
@@ -3344,11 +3344,19 @@ function calculatePlacementFee(salary) {
   return { rate, fee: Math.round(s * rate * 100) / 100 };
 }
 
-function generateInvoiceNumber(date = new Date()) {
-  const dd = String(date.getDate()).padStart(2, '0');
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const yy = String(date.getFullYear()).slice(-2);
-  return `RS${dd}${mm}${yy}`;
+// Build 73: our own numbering, L2H-YYYY-NNN, a running number that restarts each year and never repeats.
+// Old RS invoices are left exactly as they were.
+async function nextInvoiceNumber(date = new Date()) {
+  const year = date.getFullYear();
+  const prefix = `L2H-${year}-`;
+  let max = 0;
+  try {
+    (await readInvoiceRows()).forEach(r => {
+      const n = String(r[0] || '');
+      if (n.startsWith(prefix)) max = Math.max(max, parseInt(n.slice(prefix.length), 10) || 0);
+    });
+  } catch (e) { /* first invoice, or the sheet could not be read */ }
+  return `${prefix}${String(max + 1).padStart(3, '0')}`;
 }
 
 function addDays(date, days) {
@@ -3584,7 +3592,7 @@ app.post('/api/invoices', requireDan, async (req, res) => {
     const { rate, fee } = calculatePlacementFee(salary);
     const termsDays = await paymentTermsDaysFor(company);
     const newInvoice = {
-      number: generateInvoiceNumber(today),
+      number: await nextInvoiceNumber(today),
       date: toISODate(today),
       dueDate: toISODate(addDays(today, termsDays)),
       company,
@@ -13369,6 +13377,16 @@ app.post('/api/offer-docs/draft-text', async (req, res) => {
    Week 1 and Month 1 client check-in emails.
    ====================================================================== */
 
+// Build 73: a contact who handles invoices for more than one company (for example Amy for Venesta and Multi Surface).
+// One row per email address; companies is a list separated by semicolons.
+const contactLinksTable = makeSimpleTable({
+  tab: 'Contact Links',
+  header: ['id', 'email', 'name', 'companies', 'updated_by', 'updated_at'],
+  path: '/api/contact-links',
+  label: 'Contact link',
+  auditType: 'contact link',
+  auditName: o => `${o.name || o.email}`,
+});
 const complianceTable = makeSimpleTable({
   tab: 'Compliance',
   header: ['id', 'candidate_name', 'role', 'company', 'rtw_status', 'rtw_doc', 'rtw_date', 'rtw_original_seen', 'ref1_status', 'ref2_status', 'notes', 'updated_by', 'updated_at'],
