@@ -297,7 +297,7 @@ export async function statusFor(pool, id) {
   return {
     exists: true, status: r.status, manual: r.manual, sent_at: r.sent_at, viewed_at: r.viewed_at, signed_at: r.signed_at, signer_name: r.signer_name, method: r.method,
     declined_at: r.declined_at, decline_reason: r.decline_reason, has_pdf: !!r.pdf,
-    info_status: r.info_status, info_requested_at: r.info_requested_at, info_submitted_at: r.info_submitted_at,
+    info_status: r.info_status, info_requested_at: r.info_requested_at, info_submitted_at: r.info_submitted_at, info: r.info_status === 'submitted' ? (r.info || {}) : null,
     prestart_status: r.prestart_status, prestart_sent_at: r.prestart_sent_at, prestart_confirmed_at: r.prestart_confirmed_at,
     client_sent_at: r.client_sent_at, client_confirmed_at: r.client_confirmed_at, expires_at: r.expires_at,
     review_status: r.review_status, review_sent_at: r.review_sent_at, review_rating: r.review_rating, review_text: r.review_text, review_consent: r.review_consent, review_submitted_at: r.review_submitted_at,

@@ -12897,6 +12897,13 @@ async function opLoad(){
   }
   const infoLabel = st.info_status === 'submitted' ? 'Received ' + when(st.info_submitted_at) : st.info_status === 'started' ? 'Started, not sent yet' : st.info_requested_at ? 'Requested ' + when(st.info_requested_at) + ', waiting' : 'Not requested yet';
   h += line('Details form', infoLabel, st.info_status === 'submitted');
+  if(st.info){
+    const i = st.info, ref = function(n){ const p = [i['ref' + n + '_name'], i['ref' + n + '_company'], i['ref' + n + '_email'], i['ref' + n + '_phone']].filter(Boolean).join(', '); return p ? esc(p) : 'Not given'; };
+    h += line('Right to work', esc(i.rtw_type || 'Not stated') + (i.rtw_share_code ? ' (share code ' + esc(i.rtw_share_code) + ')' : ''), false);
+    h += line('Reference 1', ref(1), false);
+    h += line('Reference 2', ref(2), false);
+    if(i.start_ok) h += line('Start date', esc(i.start_ok), /^Yes/.test(i.start_ok));
+  }
   if((st.files || []).length) h += '<div style="margin:0 0 8px 140px;font-size:12px;">' + st.files.map(function(f){ return '<a href="#" onclick="opDownload(\'/api/offer-portal/file/' + f.n + '\', \'' + esc(f.name).replace(/'/g, '') + '\');return false;" style="display:block;color:var(--gold-dark,#8a6d1f);">' + esc(f.name) + '</a>'; }).join('') + '<div style="color:var(--grey);margin-top:3px;">Right to work files, saved on the candidate record</div></div>';
   if(st.prestart_status && st.prestart_status !== 'none') h += line('Start details', st.prestart_status === 'confirmed' ? 'Confirmed ' + when(st.prestart_confirmed_at) : 'Sent ' + when(st.prestart_sent_at) + ', not confirmed', st.prestart_status === 'confirmed');
   if(st.client_sent_at) h += line('Client received', st.client_confirmed_at ? 'Confirmed ' + when(st.client_confirmed_at) : 'Sent, not confirmed yet', !!st.client_confirmed_at);
@@ -12956,7 +12963,14 @@ function compRender(){
     row('Original seen Day 1', '<input type="checkbox" style="width:auto;margin:0;" id="cpOrig"' + (String(r.rtw_original_seen).toLowerCase() === 'yes' ? ' checked' : '') + '>') +
     row('Reference 1', compSel('cpRef1', r.ref1_status, rf)) +
     row('Reference 2', compSel('cpRef2', r.ref2_status, rf)) +
-    '<button onclick="compSave()" style="padding:8px 16px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:12.5px;font-weight:600;">Save compliance</button>';
+    '<button onclick="compSave()" style="padding:8px 16px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:12.5px;font-weight:600;">Save compliance</button> ' +
+    '<button onclick="compSeenAll()" style="padding:8px 16px;background:#fff;border:1px solid var(--gold);color:var(--dark);border-radius:2px;cursor:pointer;font-size:12.5px;font-weight:600;" title="Right to work verified today, both references received">I have seen it all</button>';
+}
+function compSeenAll(){
+  const set = function(id, val){ const el = document.getElementById(id); if(el) el.value = val; };
+  set('cpRtw', 'verified'); set('cpRef1', 'received'); set('cpRef2', 'received');
+  const d = document.getElementById('cpDate'); if(d && !d.value) d.value = new Date().toISOString().slice(0, 10);
+  compSave();
 }
 async function compSave(){
   const c = COMP.cand; if(!c) return;
@@ -17668,7 +17682,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '24 Nov 2026 - build 72.2 (the client handover email no longer has the profile snapshot, invoice or review sections, clients are no longer asked for a Google review, candidates get a separate Google review request and clients get a testimonial request that can go on the website; build 72.0 (candidates accept their offer, send their details and right to work documents and confirm their first day online, with a status card on the offer stage; build 71.2 (offer emails use the signed in person own HTML signature instead of a fixed text one; build 71.1 (the start date asked for in the offer documents is a calendar picker and is saved properly; build 71.0 (offer letter and the other offer path emails go straight to Review and send instead of Outlook; Information request stays on the card after Start Date; earlier: build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1)))))))';
+var PAGE_BUILD = '24 Nov 2026 - build 72.4 (you now get an email when a candidate sends their details, compliance picks up their right to work and references, the card shows the details they gave and has an I have seen it all button; build 72.2 (the client handover email no longer has the profile snapshot, invoice or review sections, clients are no longer asked for a Google review, candidates get a separate Google review request and clients get a testimonial request that can go on the website; build 72.0 (candidates accept their offer, send their details and right to work documents and confirm their first day online, with a status card on the offer stage; build 71.2 (offer emails use the signed in person own HTML signature instead of a fixed text one; build 71.1 (the start date asked for in the offer documents is a calendar picker and is saved properly; build 71.0 (offer letter and the other offer path emails go straight to Review and send instead of Outlook; Information request stays on the card after Start Date; earlier: build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1))))))))';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
