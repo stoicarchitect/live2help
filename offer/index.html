@@ -370,7 +370,13 @@ textarea.in{min-height:84px;resize:vertical}
   }
 
   if(!TOKEN && !CTOKEN) return fatal('This link is not complete', 'Please open the link from our email again.');
-  load(function(){ if(CTOKEN) renderClient(); else renderHome(); });
+  load(function(){
+    if(CTOKEN) return renderClient();
+    var st = hash.get('s'), dd = S.d || {};
+    if(st === 'pre' && dd.prestart && dd.status !== 'sent' && dd.status !== 'viewed' && dd.status !== 'declined') return renderPre();
+    if(st === 'info' && dd.info && !dd.info.locked && dd.status !== 'sent' && dd.status !== 'viewed' && dd.status !== 'declined') return renderForm();
+    renderHome();
+  });
 })();
 </script>
 </body>
