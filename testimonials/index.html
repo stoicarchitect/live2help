@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="What employers say about working with Live 2 Help Recruitment.">
+<meta property="og:title" content="What our clients say - Live 2 Help Recruitment">
+<meta property="og:description" content="Feedback from the employers we have hired for.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://careers.live2helprecruitment.co.uk/testimonials/">
+<meta property="og:site_name" content="Live 2 Help Recruitment">
+<meta property="og:image" content="https://careers.live2helprecruitment.co.uk/assets/og-image.png">
+<meta name="theme-color" content="#0B0B18">
+<link rel="icon" href="/assets/logo.png" type="image/png">
+<title>What our clients say - Live 2 Help Recruitment</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--navy:#0B0B18;--navy-2:#13132A;--line:#2C2C4C;--gold:#C9A84C;--gold-soft:#E4CB8A;--text:#F3F1EA;--mute:#B4B8C4;--display:'Poppins',system-ui,sans-serif;--body:'DM Sans',system-ui,sans-serif;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{background:var(--navy);color:var(--text)}
+body{margin:0;font-family:var(--body);font-size:16px;line-height:1.6;padding:0 16px 56px}
+.wrap{max-width:980px;margin:0 auto}
+a{color:var(--gold-soft)}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+h1,h2{font-family:var(--display);margin:0;text-wrap:balance}
+.top{display:flex;align-items:center;gap:12px;padding:20px 0}
+.top img{width:40px;height:auto}
+.top b{font-family:var(--display);font-weight:500;letter-spacing:.14em;font-size:13px;text-transform:uppercase}
+.eyebrow{font-family:var(--display);font-weight:500;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold)}
+.hero{padding:22px 0 26px}
+.hero h1{font-size:clamp(30px,5.4vw,50px);font-weight:700;line-height:1.1;margin:12px 0 12px}
+.hero h1 em{font-style:normal;color:var(--gold)}
+.hero p{color:var(--mute);max-width:56ch;margin:0;font-size:17px}
+.avg{display:inline-flex;align-items:center;gap:10px;margin-top:18px;color:var(--mute);font-size:14px}
+.stars{color:var(--gold);letter-spacing:2px;font-size:18px;white-space:nowrap}
+.stars .off{color:#3A3A5C}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px;margin-top:8px}
+.card{background:var(--navy-2);border:1px solid var(--line);border-top:3px solid var(--gold);border-radius:8px;padding:22px;display:flex;flex-direction:column;gap:14px;margin:0}
+.card blockquote{margin:0;font-size:16.5px;line-height:1.65;color:var(--text)}
+.card blockquote::before{content:'\201C';font-family:var(--display);font-size:44px;line-height:.5;color:var(--gold);display:block;margin-bottom:10px}
+.who{margin-top:auto;border-top:1px solid var(--line);padding-top:12px}
+.who b{display:block;font-family:var(--display);font-weight:500;color:var(--text)}
+.who span{color:var(--mute);font-size:14px}
+.empty{background:var(--navy-2);border:1px dashed var(--line);border-radius:8px;padding:36px 22px;text-align:center;color:var(--mute)}
+.cta{margin-top:36px;background:var(--navy-2);border:1px solid var(--line);border-radius:8px;padding:24px;display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between}
+.cta h2{font-size:20px}
+.cta p{margin:4px 0 0;color:var(--mute);font-size:15px}
+.btn{display:inline-block;background:var(--gold);color:var(--navy);font-weight:700;text-decoration:none;border-radius:8px;padding:12px 20px;min-height:44px}
+.btn:hover{background:var(--gold-soft)}
+footer{margin-top:40px;color:var(--mute);font-size:13px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top"><img src="/assets/logo.png" alt=""><b>Live 2 Help Recruitment</b></header>
+  <section class="hero">
+    <span class="eyebrow">Testimonials</span>
+    <h1>What employers say about <em>working with us</em></h1>
+    <p>Feedback from the businesses we have hired for, shared with their permission.</p>
+    <div class="avg" id="avg" hidden></div>
+  </section>
+  <main id="list" aria-live="polite"><div class="empty">Loading...</div></main>
+  <section class="cta">
+    <div><h2>Hiring for your team?</h2><p>Tell us about the role and we will show you how we would fill it.</p></div>
+    <a class="btn" href="https://live2helprecruitment.co.uk">Talk to Live 2 Help</a>
+  </section>
+  <footer>Live 2 Help Recruitment &middot; Anyone &middot; Anywhere &middot; Anytime</footer>
+</div>
+<script>
+(function(){
+  'use strict';
+  var API = 'https://api.live2helprecruitment.co.uk';
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function stars(n){ var o = ''; for(var i = 1; i <= 5; i++) o += i <= n ? '&#9733;' : '<span class="off">&#9733;</span>'; return '<span class="stars" role="img" aria-label="' + n + ' out of 5">' + o + '</span>'; }
+  var list = document.getElementById('list');
+  fetch(API + '/api/testimonials').then(function(r){ if(!r.ok) throw new Error('x'); return r.json(); }).then(function(j){
+    var t = (j.testimonials || []).filter(function(x){ return x.text; });
+    if(!t.length){ list.innerHTML = '<div class="empty">Our first testimonials are on their way. Check back soon.</div>'; return; }
+    var sum = t.reduce(function(a, x){ return a + (x.rating || 0); }, 0);
+    var avg = document.getElementById('avg'); avg.hidden = false;
+    avg.innerHTML = stars(Math.round(sum / t.length)) + '<span>' + (sum / t.length).toFixed(1) + ' out of 5 from ' + t.length + ' client' + (t.length === 1 ? '' : 's') + '</span>';
+    list.innerHTML = '<div class="grid">' + t.map(function(x){
+      return '<figure class="card">' + stars(x.rating || 5) + '<blockquote>' + esc(x.text) + '</blockquote><figcaption class="who"><b>' + esc(x.name) + '</b><span>' + esc(x.company) + '</span></figcaption></figure>';
+    }).join('') + '</div>';
+  }).catch(function(){ list.innerHTML = '<div class="empty">Testimonials could not be loaded right now. Please try again shortly.</div>'; });
+})();
+</script>
+</body>
+</html>
