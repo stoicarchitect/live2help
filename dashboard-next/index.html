@@ -12714,7 +12714,8 @@ var OD_SETS = {
   offer:       {label:'Offer letter and cover email', hint:'Offer letter attached, to the candidate'},
   info_request:{label:'Information request email', hint:'Asks for details, right to work and references'},
   placement:   {label:'Client handover pack and placement email', hint:'Handover pack attached, to the client contact'},
-  review:      {label:'Candidate feedback request', hint:'Asks the candidate for a rating and a testimonial for the website'},
+  review:      {label:'Candidate Google review request', hint:'Asks the candidate for a Google review'},
+  testimonial: {label:'Client testimonial request', hint:'Asks the client for a rating and a testimonial for the website'},
   prestart:    {label:'Pre-start pack and email', hint:'Onboarding pack attached, to the candidate'},
   rejection:   {label:'Rejection email - after interview', hint:'Warm template with the free Career Toolkit, to the candidate'},
   rejection_early:{label:'Rejection email - before interview', hint:'For applicants not taken to interview, with the free Career Toolkit'},
@@ -12723,7 +12724,7 @@ var OD_SETS = {
 };
 var OD_BY_STAGE = {
   offer:['offer','info_request','placement'],
-  start_date:['info_request','placement','prestart'], day1:['feedback_week1','placement'], week1:['feedback_week1','feedback_month1','review','placement'], month1:['feedback_month1','review','placement'],
+  start_date:['info_request','placement','prestart'], day1:['feedback_week1','placement'], week1:['feedback_week1','feedback_month1','review','testimonial','placement'], month1:['feedback_month1','review','testimonial','placement'],
   rejected:['rejection_early','rejection']
 };
 var OD_PICKS = {
@@ -12893,7 +12894,7 @@ async function odSend(){
   mailOpen({
     to:to, subject:OD.subject, body:OD.body, kind:'offer_docs',
     atts:r.attachments.map(function(a){ return {fileName:a.fileName, mime:a.mime, base64:a.base64}; }),
-    meta:{entity:cand.name, company:cand.company, role:cand.role, entityType:(kind === 'placement' ? 'client' : 'candidate'), contactName:(kind === 'placement' ? '' : cand.name), purpose:OD_SETS[kind].label},
+    meta:{entity:cand.name, company:cand.company, role:cand.role, entityType:(kind === 'placement' || kind === 'testimonial' ? 'client' : 'candidate'), contactName:(kind === 'placement' || kind === 'testimonial' ? '' : cand.name), purpose:OD_SETS[kind].label},
     log:true,
     emlName:'Draft ' + String(OD.subject).replace(/[^A-Za-z0-9 \-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) + '.eml',
     onSent:async function(){
@@ -12936,13 +12937,13 @@ async function opLoad(){
   if(st.prestart_status && st.prestart_status !== 'none') h += line('Start details', st.prestart_status === 'confirmed' ? 'Confirmed ' + when(st.prestart_confirmed_at) : 'Sent ' + when(st.prestart_sent_at) + ', not confirmed', st.prestart_status === 'confirmed');
   if(st.client_sent_at) h += line('Client received', st.client_confirmed_at ? 'Confirmed ' + when(st.client_confirmed_at) : 'Sent, not confirmed yet', !!st.client_confirmed_at);
   if(st.review_status && st.review_status !== 'none'){
-    if(st.review_status === 'requested'){ h += line('Feedback', 'Asked ' + when(st.review_sent_at) + ', not answered yet', false); }
+    if(st.review_status === 'requested'){ h += line('Client testimonial', 'Asked ' + when(st.review_sent_at) + ', not answered yet', false); }
     else {
-      h += line('Feedback', (st.review_rating || 0) + ' out of 5, ' + when(st.review_submitted_at) + (st.review_status === 'approved' ? ' (on the website)' : ''), st.review_status === 'approved');
+      h += line('Client testimonial', (st.review_rating || 0) + ' out of 5, ' + when(st.review_submitted_at) + (st.review_status === 'approved' ? ' (on the website)' : ''), st.review_status === 'approved');
       if(st.review_text) h += '<div style="margin:0 0 6px 140px;font-size:12.5px;font-style:italic;">&ldquo;' + esc(st.review_text) + '&rdquo;</div>';
       h += '<div style="margin:0 0 8px 140px;font-size:12px;">' + (st.review_consent
         ? '<button type="button" onclick="opApprove(' + (st.review_status === 'approved' ? 'false' : 'true') + ')" style="padding:6px 12px;border:1px solid var(--gold);background:#fff;border-radius:2px;cursor:pointer;font-size:12px;">' + (st.review_status === 'approved' ? 'Take off the website' : 'Approve for the website') + '</button>'
-        : '<span style="color:var(--grey);">No permission to share this publicly</span>') + '</div>';
+        : '<span style="color:var(--grey);">No permission to show this on the website</span>') + '</div>';
     }
   }
   box.innerHTML = h;
@@ -17703,7 +17704,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '24 Nov 2026 - build 72.1 (the client handover email no longer has the profile snapshot, invoice or review sections, clients are no longer asked for a Google review, and candidates get a separate feedback request that can become a website testimonial; build 72.0 (candidates accept their offer, send their details and right to work documents and confirm their first day online, with a status card on the offer stage; build 71.2 (offer emails use the signed in person own HTML signature instead of a fixed text one; build 71.1 (the start date asked for in the offer documents is a calendar picker and is saved properly; build 71.0 (offer letter and the other offer path emails go straight to Review and send instead of Outlook; Information request stays on the card after Start Date; earlier: build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1))))))) preview';
+var PAGE_BUILD = '24 Nov 2026 - build 72.2 (the client handover email no longer has the profile snapshot, invoice or review sections, clients are no longer asked for a Google review, candidates get a separate Google review request and clients get a testimonial request that can go on the website; build 72.0 (candidates accept their offer, send their details and right to work documents and confirm their first day online, with a status card on the offer stage; build 71.2 (offer emails use the signed in person own HTML signature instead of a fixed text one; build 71.1 (the start date asked for in the offer documents is a calendar picker and is saved properly; build 71.0 (offer letter and the other offer path emails go straight to Review and send instead of Outlook; Information request stays on the card after Start Date; earlier: build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1))))))) preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;

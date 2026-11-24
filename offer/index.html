@@ -175,26 +175,27 @@ textarea.in{min-height:84px;resize:vertical}
   /* client received page */
   function renderClient(){
     var d = S.d;
+    if(REVIEW) return renderClientReview();
     if(d.confirmed_at){ app.innerHTML = '<div class="center"><div class="big">Thank you, all received</div><p class="lead" style="margin:0 auto">You confirmed the handover pack for ' + esc(d.candidate) + ' on ' + esc(fmt(d.confirmed_at)) + '. Nothing more to do.</p></div>' + footer(); return; }
     app.innerHTML = previewBar() + '<span class="eyebrow">Handover pack</span><h1>Got the handover pack for ' + esc(d.candidate) + '?</h1><p class="lead">' + esc(d.role) + ' at ' + esc(d.company) + (d.start ? ', starting ' + esc(d.start) : '') + '. One tap lets us know it has arrived safely.</p><div class="bar"><button class="btn gold" id="cc">Yes, received</button></div><div id="ce" class="err" style="margin-top:12px"></div>' + footer();
     $('cc').onclick = function(){ var b = this; b.disabled = true; call('/confirm', {method: 'POST', body: {}}).then(function(){ d.confirmed_at = new Date().toISOString(); renderClient(); }).catch(function(e){ b.disabled = false; $('ce').textContent = e.message; }); };
   }
 
-  /* feedback (from the review email) */
-  function renderReview(){
+  function renderClientReview(){
     var d = S.d, r = d.review || {};
-    if(r.status === 'submitted' || r.status === 'approved' || S.reviewDone){ app.innerHTML = previewBar() + '<div class="center"><div class="big">Thank you, ' + esc(d.first) + '</div><p class="lead" style="margin:0 auto">Your feedback means a lot to a growing business. We wish you every success in your new role.</p></div>' + footer(); return; }
-    var stars = [1,2,3,4,5].map(function(n){ return '<button type="button" class="star" data-star="' + n + '" aria-label="' + n + ' out of 5" style="border:none;background:none;font-size:40px;line-height:1;cursor:pointer;color:#D6D3C9;padding:2px 4px">&#9733;</button>'; }).join('');
-    app.innerHTML = previewBar() + '<span class="eyebrow">Your feedback</span><h1>How did we do, ' + esc(d.first) + '?</h1><p class="lead">It takes under a minute. Tap a star and add a few words if you like.</p>' +
+    if(r.status === 'submitted' || r.status === 'approved' || S.reviewDone){ app.innerHTML = previewBar() + '<div class="center"><div class="big">Thank you</div><p class="lead" style="margin:0 auto">Your feedback means a great deal to a growing business. We look forward to working with you again.</p></div>' + footer(); return; }
+    var stars = [1,2,3,4,5].map(function(n){ return '<button type="button" data-star="' + n + '" aria-label="' + n + ' out of 5" style="border:none;background:none;font-size:40px;line-height:1;cursor:pointer;color:#D6D3C9;padding:2px 4px">&#9733;</button>'; }).join('');
+    app.innerHTML = previewBar() + '<span class="eyebrow">Your feedback</span><h1>How did we do?</h1><p class="lead">Working with us on the ' + esc(d.role) + ' role at ' + esc(d.company) + '. It takes under a minute.</p>' +
       '<div class="sign" style="margin-top:0"><div id="stars" role="group" aria-label="Rating" style="margin-bottom:12px">' + stars + '</div>' +
-      '<label class="f"><span>A few words about your experience (optional)</span><textarea class="in" id="rtext" maxlength="1200" placeholder="What was it like working with us?"></textarea></label>' +
-      '<label class="consent"><input type="checkbox" id="rok"><span>You may share my words on the Live 2 Help website, using my first name only.</span></label><div class="err" id="re"></div><div class="bar"><button class="btn gold" id="rgo">Send feedback</button></div></div>' + footer();
+      '<label class="f"><span>A few words about working with us</span><textarea class="in" id="rtext" maxlength="1200"></textarea></label>' +
+      '<label class="f"><span>Your name and job title</span><input class="in" id="rname" autocomplete="name" value="' + esc(d.contact || '') + '"></label>' +
+      '<label class="consent"><input type="checkbox" id="rok"><span>You may show my words, name and company on the Live 2 Help website.</span></label><div class="err" id="re"></div><div class="bar"><button class="btn gold" id="rgo">Send feedback</button></div></div>' + footer();
     var rating = 0;
     app.querySelectorAll('[data-star]').forEach(function(b){ b.onclick = function(){ rating = parseInt(b.getAttribute('data-star'), 10); app.querySelectorAll('[data-star]').forEach(function(x){ x.style.color = parseInt(x.getAttribute('data-star'), 10) <= rating ? '#C9A84C' : '#D6D3C9'; }); }; });
     $('rgo').onclick = function(){
       if(!rating){ $('re').textContent = 'Please tap a star rating'; return; }
       var b = this; b.disabled = true;
-      call('/review', {method: 'POST', body: {rating: rating, text: $('rtext').value, publish_ok: !!$('rok').checked}}).then(function(){ S.reviewDone = true; renderReview(); }).catch(function(e){ b.disabled = false; $('re').textContent = e.message; });
+      call('/review', {method: 'POST', body: {rating: rating, text: $('rtext').value, name: $('rname').value, publish_ok: !!$('rok').checked}}).then(function(){ S.reviewDone = true; renderClientReview(); }).catch(function(e){ b.disabled = false; $('re').textContent = e.message; });
     };
   }
 

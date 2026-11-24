@@ -202,6 +202,7 @@ export function ensureSchema(pool) {
       );
       alter table offer_portal add column if not exists review_status text not null default 'none';
       alter table offer_portal add column if not exists review_rating int;
+      alter table offer_portal add column if not exists review_name text not null default '';
       alter table offer_portal add column if not exists review_text text not null default '';
       alter table offer_portal add column if not exists review_consent boolean not null default false;
       alter table offer_portal add column if not exists review_sent_at timestamptz;
@@ -266,7 +267,7 @@ export async function issue(d, pool, { id, candidate, values, kind, by, preview 
   }
   const row = (await pool.query('select * from offer_portal where id = $1', [id])).rows[0];
   const out = { url: d.urlFor(token, row.preview), row };
-  if (kind === 'placement') {
+  if (kind === 'placement' || kind === 'testimonial') {
     let ct = row.client_token_enc ? d.decrypt(row.client_token_enc) : null;
     if (!ct || sha(ct) !== row.client_token_hash) {
       ct = crypto.randomBytes(24).toString('base64url');
@@ -284,7 +285,7 @@ export async function markSent(pool, id, kind) {
   if (kind === 'info_request') await pool.query("update offer_portal set info_requested_at = now(), info_status = case when info_status in ('none') then 'requested' else info_status end, updated_at = now() where id = $1", [id]);
   if (kind === 'prestart') await pool.query("update offer_portal set prestart_sent_at = now(), prestart_status = case when prestart_status = 'none' then 'sent' else prestart_status end, updated_at = now() where id = $1", [id]);
   if (kind === 'placement') await pool.query("update offer_portal set client_sent_at = now(), updated_at = now() where id = $1", [id]);
-  if (kind === 'review') await pool.query("update offer_portal set review_sent_at = now(), review_status = case when review_status = 'none' then 'requested' else review_status end, updated_at = now() where id = $1", [id]);
+  if (kind === 'testimonial') await pool.query("update offer_portal set review_sent_at = now(), review_status = case when review_status = 'none' then 'requested' else review_status end, updated_at = now() where id = $1", [id]);
   await addEvent(pool, id, `Email sent: ${kind.replace(/_/g, ' ')}`, null);
 }
 
@@ -350,7 +351,6 @@ export function mountOfferPortal(app, d) {
             ['Parking', v.parking], ['What to wear', v.dress_code]].filter(x => x[1] && x[1] !== 'N/A' && x[1] !== 'To be confirmed'),
           company_item: v.company_item && v.company_item !== 'Anything specific to the site' ? [v.company_item, v.company_item_note] : null,
           checklist: DAY_ONE_CHECKLIST, first_week: FIRST_WEEK },
-        review: { status: row.review_status, rating: row.review_rating, text: row.review_text },
         contact: { name: v.sender_name || 'Ella Pietrzak', title: v.sender_title || 'Recruitment Coordinator', email: v.sender_email || 'ella.pietrzak@live2helprecruitment.co.uk', phone: v.sender_phone || '07434 351996' },
       });
     } catch (e) { fail(res, 'GET cportal', e); }
@@ -496,31 +496,13 @@ export function mountOfferPortal(app, d) {
     } catch (e) { fail(res, 'POST cportal prestart', e); }
   });
 
-  // the candidate's feedback (a star rating, a few words, and permission to share it on the website)
-  app.post('/api/cportal/:token/review', async (req, res) => {
-    try {
-      const got = await byToken(req, res); if (!got) return;
-      const { pool, row } = got;
-      const b = req.body || {};
-      const rating = parseInt(b.rating, 10);
-      if (!(rating >= 1 && rating <= 5)) return res.status(400).json({ error: 'Please choose a star rating' });
-      const text = String(b.text || '').replace(/\s+/g, ' ').trim().slice(0, 1200);
-      const consent = b.publish_ok === true && text.length > 0;
-      if (row.review_status === 'approved') return res.status(409).json({ error: 'Thank you, your feedback has already been received.' });
-      const upd = await pool.query("update offer_portal set review_status = 'submitted', review_rating = $2, review_text = $3, review_consent = $4, review_submitted_at = now(), updated_at = now() where id = $1 returning *", [row.id, rating, text, consent]);
-      await addEvent(pool, row.id, `Feedback left: ${rating} out of 5`, req);
-      try { if (d.onReview) await d.onReview(upd.rows[0]); } catch (e) { console.error('review hook failed:', e.message); }
-      res.json({ ok: true });
-    } catch (e) { fail(res, 'POST cportal review', e); }
-  });
-
-  // approved testimonials for the website (first name and role only, never an email or a surname)
+  // approved client testimonials for the website (the name they gave and their company, never an email)
   app.get('/api/testimonials', async (req, res) => {
     try {
       const pool = d.pool(); await ensureSchema(pool);
-      const rows = (await pool.query("select candidate_name, role, review_rating, review_text, review_submitted_at from offer_portal where review_status = 'approved' and review_consent = true and preview = false order by review_submitted_at desc limit 40")).rows;
+      const rows = (await pool.query("select company, review_name, review_rating, review_text, review_submitted_at from offer_portal where review_status = 'approved' and review_consent = true and preview = false order by review_submitted_at desc limit 40")).rows;
       res.setHeader('Cache-Control', 'public, max-age=300');
-      res.json({ testimonials: rows.map(r => ({ name: firstOf(r.candidate_name), role: r.role, rating: r.review_rating, text: r.review_text, date: r.review_submitted_at })) });
+      res.json({ testimonials: rows.map(r => ({ name: r.review_name, company: r.company, rating: r.review_rating, text: r.review_text, date: r.review_submitted_at })) });
     } catch (e) { fail(res, 'GET testimonials', e); }
   });
 
@@ -543,8 +525,26 @@ export function mountOfferPortal(app, d) {
     try {
       const got = await byToken(req, res, 'client_token_hash'); if (!got) return;
       const { row } = got;
-      res.json({ company: row.company, candidate: row.candidate_name, role: (row.vals || {}).job_title || row.role, start: (row.vals || {}).start_date_long || '', confirmed_at: row.client_confirmed_at });
+      res.json({ company: row.company, candidate: row.candidate_name, role: (row.vals || {}).job_title || row.role, start: (row.vals || {}).start_date_long || '', confirmed_at: row.client_confirmed_at, contact: (row.vals || {}).client_contact || '', review: { status: row.review_status, rating: row.review_rating, text: row.review_text } });
     } catch (e) { fail(res, 'GET cportal client', e); }
+  });
+  // the client's feedback: a star rating, a few words, their name, and permission to show it on the website
+  app.post('/api/cportal/c/:token/review', async (req, res) => {
+    try {
+      const got = await byToken(req, res, 'client_token_hash'); if (!got) return;
+      const { pool, row } = got;
+      const b = req.body || {};
+      const rating = parseInt(b.rating, 10);
+      if (!(rating >= 1 && rating <= 5)) return res.status(400).json({ error: 'Please choose a star rating' });
+      const text = String(b.text || '').replace(/\s+/g, ' ').trim().slice(0, 1200);
+      const name = String(b.name || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+      const consent = b.publish_ok === true && text.length > 0 && name.length > 0;
+      if (row.review_status === 'approved') return res.status(409).json({ error: 'Thank you, your feedback has already been received.' });
+      const upd = await pool.query("update offer_portal set review_status = 'submitted', review_rating = $2, review_text = $3, review_name = $4, review_consent = $5, review_submitted_at = now(), updated_at = now() where id = $1 returning *", [row.id, rating, text, name, consent]);
+      await addEvent(pool, row.id, `Client feedback left: ${rating} out of 5`, req);
+      try { if (d.onReview) await d.onReview(upd.rows[0]); } catch (e) { console.error('review hook failed:', e.message); }
+      res.json({ ok: true });
+    } catch (e) { fail(res, 'POST cportal client review', e); }
   });
   app.post('/api/cportal/c/:token/confirm', async (req, res) => {
     try {

@@ -121,22 +121,23 @@ st = await op.statusFor(pool, 'acme|jo|wo'); ok(st.status === 'sent', 'offer reb
 const m = await op.issue(deps, pool, { id: 'acme|old|wo', candidate: { name: 'Old Case', email: 'old@example.com', company: 'Acme Ltd', role: 'Warehouse Operative' }, values: vals, kind: 'info_request', by: 'ella' });
 r = await call('/api/cportal/' + tokOf(m.url)); ok(r.s === 200 && r.j.status === 'accepted' && r.j.manual && !r.j.info.locked, 'manual record opens the form');
 
-// feedback and testimonials
-const rv = await op.issue(deps, pool, { id: 'acme|thomas|wo', candidate: { name: 'Thomas Brown', email: 'tom@example.com', company: 'Acme Ltd', role: 'Warehouse Operative' }, values: vals, kind: 'review', by: 'ella' });
-ok(tokOf(rv.url) === T, 'review uses the same link');
-await op.markSent(pool, 'acme|thomas|wo', 'review');
-r = await call('/api/cportal/' + T); ok(r.j.review.status === 'requested', 'review requested');
-r = await call('/api/cportal/' + T + '/review', { rating: 0 }); ok(r.s === 400, 'rating required');
-r = await call('/api/cportal/' + T + '/review', { rating: 5, text: 'Ella made it easy.', publish_ok: true }); ok(r.s === 200, 'feedback saved');
+// client testimonials
+const tm = await op.issue(deps, pool, { id: 'acme|thomas|wo', candidate: { name: 'Thomas Brown', email: 'tom@example.com', company: 'Acme Ltd', role: 'Warehouse Operative' }, values: { ...vals, client_contact: 'Sam Lee' }, kind: 'testimonial', by: 'ella' });
+ok(tm.clientUrl && tm.clientUrl.includes('#c='), 'testimonial uses the client link');
+const TC = tm.clientUrl.split('#c=')[1];
+await op.markSent(pool, 'acme|thomas|wo', 'testimonial');
+r = await call('/api/cportal/c/' + TC); ok(r.j.review.status === 'requested', 'testimonial requested');
+r = await call('/api/cportal/c/' + TC + '/review', { rating: 0 }); ok(r.s === 400, 'rating required');
+r = await call('/api/cportal/' + T + '/review', { rating: 5 }); ok(r.s === 404 || r.s === 405 || r.s === 400, 'candidates have no review route here');
+r = await call('/api/cportal/c/' + TC + '/review', { rating: 5, text: 'Ella made hiring easy.', name: 'Sam Lee, Operations Manager', publish_ok: true }); ok(r.s === 200, 'testimonial saved');
 ok(calls.some(c => c[0] === 'review'), 'review hook');
 r = await call('/api/testimonials'); ok(r.s === 200 && r.j.testimonials.length === 0, 'not public until approved');
-st = await op.statusFor(pool, 'acme|thomas|wo'); ok(st.review_status === 'submitted' && st.review_rating === 5 && st.review_consent, 'staff sees feedback');
+st = await op.statusFor(pool, 'acme|thomas|wo'); ok(st.review_status === 'submitted' && st.review_rating === 5 && st.review_consent, 'staff sees it');
 await pool.query('update offer_portal set preview = false');
 r = await call('/api/offer-portal/review/approve', { key: 'acme|thomas|wo' }); ok(r.s === 200, 'approved');
-r = await call('/api/testimonials'); ok(r.j.testimonials.length === 1 && r.j.testimonials[0].name === 'Thomas' && !JSON.stringify(r.j).includes('Brown') && !JSON.stringify(r.j).includes('example.com'), 'public feed has first name only');
+r = await call('/api/testimonials'); ok(r.j.testimonials.length === 1 && r.j.testimonials[0].name === 'Sam Lee, Operations Manager' && r.j.testimonials[0].company === 'Acme Ltd' && !JSON.stringify(r.j).includes('example.com') && !JSON.stringify(r.j).includes('Thomas'), 'public feed shows name and company only');
 r = await call('/api/offer-portal/review/approve', { key: 'acme|thomas|wo', approve: false }); r = await call('/api/testimonials'); ok(r.j.testimonials.length === 0, 'taken off the website');
-await call('/api/cportal/' + tokOf(b.url) + '/review', { rating: 4, text: 'Fine', publish_ok: false });
-r = await call('/api/offer-portal/review/approve', { key: 'acme|jo|wo' }); ok(r.s === 409, 'no permission means no approval');
+r = await call('/api/offer-portal/review/approve', { key: 'acme|jo|wo' }); ok(r.s === 404, 'nothing to approve');
 
 // reminders
 await pool.query("update offer_portal set sent_at = now() - interval '3 days' where id = 'acme|jo|wo'");

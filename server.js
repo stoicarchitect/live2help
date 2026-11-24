@@ -1058,9 +1058,9 @@ const PUBLIC_API = [
   { method: 'POST', re: /^\/api\/portal\/[A-Za-z0-9_-]+\/(sign\/[a-z]+|site-form|partnership-interest)$/ },
   // build 72: the candidate offer portal (a secure link, checked on every call)
   { method: 'GET', re: /^\/api\/cportal\/(c\/)?[A-Za-z0-9_-]+(\/(doc|pdf))?$/ },
-  { method: 'POST', re: /^\/api\/cportal\/[A-Za-z0-9_-]+\/(sign|decline|info|upload|prestart|review|upload\/\d+\/delete)$/ },
+  { method: 'POST', re: /^\/api\/cportal\/[A-Za-z0-9_-]+\/(sign|decline|info|upload|prestart|upload\/\d+\/delete)$/ },
   { method: 'GET', re: /^\/api\/testimonials$/ },
-  { method: 'POST', re: /^\/api\/cportal\/c\/[A-Za-z0-9_-]+\/confirm$/ },
+  { method: 'POST', re: /^\/api\/cportal\/c\/[A-Za-z0-9_-]+\/(confirm|review)$/ },
 ];
 let cronWarned = false;
 // The automation sends its secret in the x-cron-key header (the ?key= form still works)
@@ -12825,7 +12825,7 @@ const OFFER_LABELS = {
   address_line2: 'ADDRESS LINE 2', postcode: 'POSTCODE', home_address: 'HOME ADDRESS', dob: 'DATE OF BIRTH',
   emergency_contact: 'EMERGENCY CONTACT', rtw_doc_type: 'RIGHT TO WORK DOCUMENT', rtw_verified: 'RTW VERIFIED', rtw_original: 'ORIGINAL ON DAY 1',
   special_requirements: 'SPECIAL REQUIREMENTS', parking: 'PARKING', dress_code: 'DRESS CODE', client_contact: 'CLIENT CONTACT NAME',
-  offer_reply_by: 'REPLY BY DATE', review_link: 'REVIEW LINK', key_strength_1: 'KEY STRENGTH 1', key_strength_2: 'KEY STRENGTH 2', evidence: 'SPECIFIC EVIDENCE',
+  offer_reply_by: 'REPLY BY DATE', testimonial_link: 'TESTIMONIAL LINK', key_strength_1: 'KEY STRENGTH 1', key_strength_2: 'KEY STRENGTH 2', evidence: 'SPECIFIC EVIDENCE',
   relevant_area: 'RELEVANT AREA', impact_area: 'SPECIFIC PROJECT OR RESPONSIBILITY', specific_strength: 'SPECIFIC STRENGTH',
   specific_example: 'SPECIFIC EXAMPLE', close_match_detail: 'WHERE THE DECISION CAME DOWN TO', sector: 'SECTOR OR SPECIALISM', future_area: 'FUTURE OPPORTUNITY AREA',
 };
@@ -12855,7 +12855,11 @@ const OFFER_EMAILS = {
   },
   review: {
     to: 'candidate_email', subject: 'How is your new role going, {{candidate_first}}?', attach: [],
-    body: `Hi {{candidate_first}},\n\nYou have now settled in at {{company}}, and we hope the role is going well.\n\nIf you have a minute, we would really value your honest feedback on how we looked after you. It is a short form on your phone: a star rating and a few words. With your permission, we may share it on our website as a testimonial, using your first name only.\n\nShare your feedback here:\n{{review_link}}\n\nThank you for trusting us with your next move. If there is ever anything we can do for you, just reply to this email.\n\nKind regards,\n\n{{sig_consultant}}`,
+    body: `Hi {{candidate_first}},\n\nYou have now settled in at {{company}}, and we hope the role is going well.\n\nIf you have a minute, a short Google review would mean a great deal to us. It helps other people looking for their next move find us, and it only takes a moment:\n\nhttps://g.page/r/CU5L4ObMovbGEBM/review\n\nThank you for trusting us with your next move. If there is ever anything we can do for you, just reply to this email.\n\nKind regards,\n\n{{sig_consultant}}`,
+  },
+  testimonial: {
+    to: 'client_email', subject: 'How did we do on the {{job_title}} role at {{company}}?', attach: [],
+    body: `Dear {{client_contact}},\n\nThank you for partnering with us on the {{job_title}} role. We would really value your honest feedback on how we worked with you.\n\nIt is a short form on any device: a star rating and a few words. With your permission, we may share it on our website as a testimonial.\n\nShare your feedback here (no sign in needed):\n{{testimonial_link}}\n\nThank you again, and we look forward to supporting you on future hires.\n\nKind regards,\n\n{{sig_consultant}}`,
   },
   rejection: {
     to: 'candidate_email', subject: 'Your application for {{job_title}} at {{company}}', attach: [],
@@ -13051,19 +13055,19 @@ app.post('/api/offer-docs/build', async (req, res) => {
       if (!String(values.reporting_to || '').trim()) tplBody = tplBody.replace(/Reporting To: \{\{reporting_to\}\}\n/, '');
     }
     // Build 72: the online link for this candidate (offer letter, details form, start details) or the client's received link
-    values.portal_link = ''; values.client_confirm_link = ''; values.review_link = '';
-    if (['offer', 'info_request', 'prestart', 'placement', 'review'].includes(kind)) {
+    values.portal_link = ''; values.client_confirm_link = ''; values.testimonial_link = '';
+    if (['offer', 'info_request', 'prestart', 'placement', 'testimonial'].includes(kind)) {
       try {
         const me = profileOf(actorOf(req));
-        const snap = { ...values }; ['_compliance', 'sig_coordinator', 'sig_consultant', 'portal_link', 'client_confirm_link', 'review_link'].forEach(k => delete snap[k]);
-        Object.assign(snap, { sender_name: me.fullName, sender_title: kind === 'offer' || kind === 'placement' ? me.title : 'Recruitment Coordinator', sender_email: me.email, sender_phone: me.phone });
+        const snap = { ...values }; ['_compliance', 'sig_coordinator', 'sig_consultant', 'portal_link', 'client_confirm_link', 'testimonial_link'].forEach(k => delete snap[k]);
+        Object.assign(snap, { sender_name: me.fullName, sender_title: kind === 'offer' || kind === 'placement' || kind === 'testimonial' ? me.title : 'Recruitment Coordinator', sender_email: me.email, sender_phone: me.phone });
         const link = await offerPortal.issue(offerPortalDeps(), onbPool(), { id, candidate: { name: c.name, email: values.candidate_email, company: c.company, role: c.role }, values: snap, kind, by: lc(actorOf(req)), preview: isPreview() });
         values.portal_link = link.url; values.client_confirm_link = link.clientUrl || '';
-        if (kind === 'review') values.review_link = link.url + '&r=1';
+        if (kind === 'testimonial') values.testimonial_link = (link.clientUrl || '') + '&r=1';
       } catch (e) {
         console.error('offer portal link failed:', e.message);
         warnings.push('The online link could not be made (' + e.message + '). Do not send this email until it can be.');
-        values.portal_link = '[ONLINE LINK COULD NOT BE MADE]'; values.client_confirm_link = '[LINK COULD NOT BE MADE]'; values.review_link = '[LINK COULD NOT BE MADE]';
+        values.portal_link = '[ONLINE LINK COULD NOT BE MADE]'; values.client_confirm_link = '[LINK COULD NOT BE MADE]'; values.testimonial_link = '[LINK COULD NOT BE MADE]';
       }
     }
     for (const t of tpl.attach) {
@@ -13234,7 +13238,7 @@ function offerPortalDeps() {
       auditLog('candidate portal', 'submitted', 'offer', `${rec.candidate_name} - ${rec.role}`, 'Information form submitted online');
     },
     async onReview(rec) {
-      try { await mailDan(`New feedback from ${rec.candidate_name}: ${rec.review_rating} out of 5`, `${rec.candidate_name} (${rec.role || ''}, ${rec.company || ''}) left feedback through the online link.\n\n"${rec.review_text || '(no comment)'}"\n\nPermission to share on the website: ${rec.review_consent ? 'yes' : 'no'}.\nOpen their card, Online offer, to approve it for the website testimonials.`); } catch (e) { /* the card still shows it */ }
+      try { await mailDan(`New client feedback from ${rec.company}: ${rec.review_rating} out of 5`, `${rec.review_name || 'A contact'} at ${rec.company} (${rec.role || ''}) left feedback.\n\n"${rec.review_text || '(no comment)'}"\n\nPermission to share on the website: ${rec.review_consent ? 'yes' : 'no'}.\nOpen their card, Online offer, to approve it for the website testimonials.`); } catch (e) { /* the card still shows it */ }
     },
     async onPrestart(rec) {
       await opMergeDetails(rec, { prestart_confirmed_at: new Date().toISOString() }).catch(() => {});
@@ -17496,7 +17500,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '24 Nov 2026 - build 72.1 (client handover email trimmed to the handover and support wording, Google review link removed from client emails, new candidate feedback request with a star rating and permission to share, approved feedback served at /api/testimonials for the website; build 72.0 (candidates get one secure online link: accept or decline the offer with a typed or drawn signature and get a signed PDF, send their details with right to work photos saved to their record, confirm their first day, and the client taps to confirm the handover pack; reminders and tasks run from the daily job; build 71.5 (the offer letter drops per annum when the salary is an hourly rate; build 71.4 (the first offer letter and offer email leave out the address and the line manager when they are not known yet, and show the start date as To be confirmed; build 71.3 (the start date in the offer documents is picked from a calendar and is no longer lost; build 71.2 (offer letter salary keeps pence and hourly rates; build 71.1 sends as office@ and clients@ directly; build 71.0 (every email now sends through Microsoft 365 and Brevo is gone; offer documents build with jszip; a candidate reply accepting an offer sent from the dashboard moves the card to Start Date and adds the information request and handover tasks; earlier: build 70.6 (Catering and Hospitality added as the 13th sector, with six starter Gap Brief problems and search words for Suggest sectors; built on server build 70; earlier: build 70 (pension status and employer NI exempt per person in the payroll pack, payroll email and cost reports, employer NI calculated for anyone not exempt, auto-enrolment due warnings; built on server build 67.4; earlier: build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year; 67.3 chase and call tasks close once the contact is logged and Needs attention can be dismissed or snoozed; 67.4 cold sending resumes properly after a bounce pause, only bounces after the resume count, the pause email lists the bounced addresses, guessed email addresses cannot be chosen for cold outreach)))))';
+const SERVER_BUILD = '24 Nov 2026 - build 72.2 (candidate Google review request email and client testimonial request; build 72.1 (client handover email trimmed to the handover and support wording, Google review link removed from client emails, new candidate feedback request with a star rating and permission to share, approved feedback served at /api/testimonials for the website; build 72.0 (candidates get one secure online link: accept or decline the offer with a typed or drawn signature and get a signed PDF, send their details with right to work photos saved to their record, confirm their first day, and the client taps to confirm the handover pack; reminders and tasks run from the daily job; build 71.5 (the offer letter drops per annum when the salary is an hourly rate; build 71.4 (the first offer letter and offer email leave out the address and the line manager when they are not known yet, and show the start date as To be confirmed; build 71.3 (the start date in the offer documents is picked from a calendar and is no longer lost; build 71.2 (offer letter salary keeps pence and hourly rates; build 71.1 sends as office@ and clients@ directly; build 71.0 (every email now sends through Microsoft 365 and Brevo is gone; offer documents build with jszip; a candidate reply accepting an offer sent from the dashboard moves the card to Start Date and adds the information request and handover tasks; earlier: build 70.6 (Catering and Hospitality added as the 13th sector, with six starter Gap Brief problems and search words for Suggest sectors; built on server build 70; earlier: build 70 (pension status and employer NI exempt per person in the payroll pack, payroll email and cost reports, employer NI calculated for anyone not exempt, auto-enrolment due warnings; built on server build 67.4; earlier: build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year; 67.3 chase and call tasks close once the contact is logged and Needs attention can be dismissed or snoozed; 67.4 cold sending resumes properly after a bounce pause, only bounces after the resume count, the pause email lists the bounced addresses, guessed email addresses cannot be chosen for cold outreach)))))';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
