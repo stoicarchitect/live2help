@@ -12705,11 +12705,28 @@ function offerDocsPanel(c){
     ? '<div class="cv-section" id="opBox"><label>Online offer</label><div style="font-size:12px;color:#999;">Loading...</div></div>' : '';
   return comp + onl + '<div class="cv-section"><label>Documents and emails</label>' +
     kinds.map(function(k){
-      return '<button onclick="odOpen(\'' + k + '\')" style="width:100%;margin-bottom:8px;padding:10px;background:#fff;border:1px solid var(--gold);color:var(--dark);border-radius:2px;cursor:pointer;font-size:13px;font-weight:600;text-align:left;">' +
+      return '<button data-odk="' + k + '" onclick="odOpen(\'' + k + '\')" style="width:100%;margin-bottom:8px;padding:10px;background:#fff;border:1px solid var(--gold);color:var(--dark);border-radius:2px;cursor:pointer;font-size:13px;font-weight:600;text-align:left;">' +
         esc(OD_SETS[k].label) + '<span style="display:block;font-weight:400;font-size:11px;color:#999;margin-top:2px;">' + esc(OD_SETS[k].hint) + '</span></button>';
     }).join('') + '</div>';
 }
 
+// Build 72.5: grey out the document and email buttons that have already gone, so only the next step stands out
+function odGreyDone(st){
+  const done = {offer: !!st.sent_at, info_request: !!st.info_requested_at, placement: !!st.client_sent_at, prestart: !!st.prestart_sent_at, testimonial: !!st.review_sent_at};
+  const stamp = {offer: st.sent_at, info_request: st.info_requested_at, placement: st.client_sent_at, prestart: st.prestart_sent_at, testimonial: st.review_sent_at};
+  document.querySelectorAll('button[data-odk]').forEach(function(b){
+    const k = b.getAttribute('data-odk');
+    if(!done[k]) return;
+    b.style.opacity = '.5'; b.style.background = '#f1f1f1'; b.style.borderColor = '#ccc';
+    let d = ''; try{ d = new Date(stamp[k]).toLocaleDateString('en-GB', {day:'numeric', month:'short'}); }catch(e){}
+    b.querySelector('span').textContent = 'Done' + (d ? ' - sent ' + d : '') + '. Tap to send again.';
+  });
+  const c = findCandidate(openCandidateId);
+  if(c && c.stage === 'offer' && done.offer && done.info_request && done.placement && !document.getElementById('odAllDone')){
+    const first = document.querySelector('button[data-odk]');
+    if(first) first.parentNode.insertAdjacentHTML('afterbegin', '<div id="odAllDone" style="margin-bottom:8px;padding:8px 10px;background:#eef7ee;border:1px solid #9bc79b;font-size:12px;color:#2d5a2d;">Everything has gone. This candidate is ready to move to Start Date.</div>');
+  }
+}
 function odSnapshot(){
   const c = findCandidate(openCandidateId);
   const v = function(id, fallback){ const el = document.getElementById(id); return el && el.value !== '' ? el.value : (fallback || ''); };
@@ -12887,6 +12904,7 @@ async function opLoad(){
   let st;
   try{ st = await b2Api('/api/offer-portal/status?key=' + encodeURIComponent(key)); }catch(e){ box.innerHTML = '<label>Online offer</label><div style="font-size:12px;color:#999;">Could not load</div>'; return; }
   if(!st.exists){ box.innerHTML = '<label>Online offer</label><div style="font-size:12px;color:#999;">Not sent yet. Use Review and send below.</div>'; return; }
+  odGreyDone(st);
   const line = function(label, val, good){ return '<div style="display:flex;gap:10px;font-size:12.5px;margin-bottom:5px;"><div style="width:130px;color:var(--grey);">' + label + '</div><div style="' + (good ? 'color:var(--success);font-weight:600;' : '') + '">' + val + '</div></div>'; };
   const when = function(t){ try{ return new Date(t).toLocaleString('en-GB', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'}); }catch(e){ return ''; } };
   let h = '<label>Online offer</label>';
@@ -17682,7 +17700,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '24 Nov 2026 - build 72.4 (you now get an email when a candidate sends their details, compliance picks up their right to work and references, the card shows the details they gave and has an I have seen it all button; build 72.2 (the client handover email no longer has the profile snapshot, invoice or review sections, clients are no longer asked for a Google review, candidates get a separate Google review request and clients get a testimonial request that can go on the website; build 72.0 (candidates accept their offer, send their details and right to work documents and confirm their first day online, with a status card on the offer stage; build 71.2 (offer emails use the signed in person own HTML signature instead of a fixed text one; build 71.1 (the start date asked for in the offer documents is a calendar picker and is saved properly; build 71.0 (offer letter and the other offer path emails go straight to Review and send instead of Outlook; Information request stays on the card after Start Date; earlier: build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1))))))))';
+var PAGE_BUILD = '24 Nov 2026 - build 72.5 (sent emails on the offer card are greyed out once done, with a ready to move note when all three have gone; build 72.4 (you now get an email when a candidate sends their details, compliance picks up their right to work and references, the card shows the details they gave and has an I have seen it all button; build 72.2 (the client handover email no longer has the profile snapshot, invoice or review sections, clients are no longer asked for a Google review, candidates get a separate Google review request and clients get a testimonial request that can go on the website; build 72.0 (candidates accept their offer, send their details and right to work documents and confirm their first day online, with a status card on the offer stage; build 71.2 (offer emails use the signed in person own HTML signature instead of a fixed text one; build 71.1 (the start date asked for in the offer documents is a calendar picker and is saved properly; build 71.0 (offer letter and the other offer path emails go straight to Review and send instead of Outlook; Information request stays on the card after Start Date; earlier: build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1)))))))))';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
