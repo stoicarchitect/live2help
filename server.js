@@ -12845,7 +12845,7 @@ const OFFER_LABELS = {
 for (let i = 1; i <= 2; i++) ['name', 'title', 'company', 'relationship', 'email', 'phone'].forEach(f => { OFFER_LABELS[`ref${i}_${f}`] = `REFEREE ${i} ${f.toUpperCase()}`; });
 
 const OFFER_SIGS = {
-  coordinator: 'Ella Pietrzak\nRecruitment Coordinator\nLive 2 Help Recruitment\nella.pietrzak@live2helprecruitment.co.uk\n07434 351996\nwww.live2helprecruitment.co.uk',
+  coordinator: 'Ella Pietrzak\nRecruitment Coordinator\nLive 2 Help Recruitment\nella@live2helprecruitment.co.uk\n07434 351996\nwww.live2helprecruitment.co.uk',
   consultant: 'Ella Pietrzak\nTalent Acquisition & Business Development Consultant\nLive 2 Help Recruitment\nella@live2helprecruitment.co.uk\n07434 351996\nwww.live2helprecruitment.co.uk',
 };
 
@@ -12998,8 +12998,8 @@ const OFFER_TEMPLATES_B64 = {
 };
 // Build 71.4: the first offer letter goes out before we hold the candidate's address or know the line manager (both come in the information request).
 // When they are blank, take the whole line (or table row) out of the letter instead of leaving a [PLACEHOLDER].
-function offerDropEmpty(xml, vals) {
-  ['address_line1', 'address_line2', 'postcode', 'reporting_to'].forEach(k => {
+function offerDropEmpty(xml, vals, keys) {
+  (keys || ['address_line1', 'address_line2', 'postcode', 'reporting_to']).forEach(k => {
     if (String(vals[k] || '').trim()) return;
     const tag = '{{' + k + '}}';
     let guard = 0;
@@ -13034,6 +13034,11 @@ async function offerFillDocx(templateName, vals, missing) {
   for (const name of Object.keys(zip.files)) {
     if (!/^word\/(document|header\d*|footer\d*)\.xml$/.test(name)) continue;
     let xml = await zip.file(name).async('string');
+    xml = xml.replace(/ella\.pietrzak@/g, 'ella@');
+    // Build 72.6: the logo was stretched to the wrong shape. Keep the picture's own proportions (664 x 602).
+    xml = xml.replace('<wp:extent cx="1143000" cy="428625"/>', '<wp:extent cx="706000" cy="640000"/>').replace('<a:ext cx="1143000" cy="428625"/>', '<a:ext cx="706000" cy="640000"/>');
+    // Build 72.6: anything we do not know yet is left out of the handover pack altogether, not shown as a blank or a placeholder
+    if (templateName === 'Client Handover Pack') xml = offerDropEmpty(xml, vals, ['start_time', 'work_location', 'reporting_to', 'ref1_title', 'ref1_relationship', 'ref1_company', 'ref1_email', 'ref1_phone', 'ref2_title', 'ref2_relationship', 'ref2_company', 'ref2_email', 'ref2_phone', 'dob', 'emergency_contact', 'home_address', 'candidate_phone']);
     if (templateName === 'Offer Letter') {
       xml = offerDropEmpty(xml, vals);
       // Hourly rates already say "per hour", so the template's "per annum" would be wrong (build 71.5)
@@ -13103,7 +13108,7 @@ app.post('/api/offer-docs/build', async (req, res) => {
       kind, to, subject, body, attachments,
       missing: [...missing].map(k => ({ key: k, label: OFFER_LABELS[k] || k })),
       missingTo: !to ? (toKey === 'client_email' ? 'client contact email' : 'candidate email') : '',
-      saved, id, hasNeeded: needed.length,
+      saved, id, hasNeeded: needed.length, job_title: values.job_title || '',
     });
   } catch (e) {
     console.error('POST /api/offer-docs/build error:', e.message);
@@ -17531,7 +17536,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '24 Nov 2026 - build 72.5 (sent emails greyed out on the offer card; build 72.4 (email to Dan and Ella when a candidate sends their details, compliance record updated from the form; build 72.3 (moving a form candidate to Offer no longer leaves them showing in both stages, the old Applications row is hidden and kept in step; build 72.2 (candidate Google review request email and client testimonial request; build 72.1 (client handover email trimmed to the handover and support wording, Google review link removed from client emails, new candidate feedback request with a star rating and permission to share, approved feedback served at /api/testimonials for the website; build 72.0 (candidates get one secure online link: accept or decline the offer with a typed or drawn signature and get a signed PDF, send their details with right to work photos saved to their record, confirm their first day, and the client taps to confirm the handover pack; reminders and tasks run from the daily job; build 71.5 (the offer letter drops per annum when the salary is an hourly rate; build 71.4 (the first offer letter and offer email leave out the address and the line manager when they are not known yet, and show the start date as To be confirmed; build 71.3 (the start date in the offer documents is picked from a calendar and is no longer lost; build 71.2 (offer letter salary keeps pence and hourly rates; build 71.1 sends as office@ and clients@ directly; build 71.0 (every email now sends through Microsoft 365 and Brevo is gone; offer documents build with jszip; a candidate reply accepting an offer sent from the dashboard moves the card to Start Date and adds the information request and handover tasks; earlier: build 70.6 (Catering and Hospitality added as the 13th sector, with six starter Gap Brief problems and search words for Suggest sectors; built on server build 70; earlier: build 70 (pension status and employer NI exempt per person in the payroll pack, payroll email and cost reports, employer NI calculated for anyone not exempt, auto-enrolment due warnings; built on server build 67.4; earlier: build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year; 67.3 chase and call tasks close once the contact is logged and Needs attention can be dismissed or snoozed; 67.4 cold sending resumes properly after a bounce pause, only bounces after the resume count, the pause email lists the bounced addresses, guessed email addresses cannot be chosen for cold outreach)))))';
+const SERVER_BUILD = '24 Nov 2026 - build 72.6 (handover pack: correct Ella email, unknown fields left out, logo proportions fixed, job title can be changed; build 72.5 (sent emails greyed out on the offer card; build 72.4 (email to Dan and Ella when a candidate sends their details, compliance record updated from the form; build 72.3 (moving a form candidate to Offer no longer leaves them showing in both stages, the old Applications row is hidden and kept in step; build 72.2 (candidate Google review request email and client testimonial request; build 72.1 (client handover email trimmed to the handover and support wording, Google review link removed from client emails, new candidate feedback request with a star rating and permission to share, approved feedback served at /api/testimonials for the website; build 72.0 (candidates get one secure online link: accept or decline the offer with a typed or drawn signature and get a signed PDF, send their details with right to work photos saved to their record, confirm their first day, and the client taps to confirm the handover pack; reminders and tasks run from the daily job; build 71.5 (the offer letter drops per annum when the salary is an hourly rate; build 71.4 (the first offer letter and offer email leave out the address and the line manager when they are not known yet, and show the start date as To be confirmed; build 71.3 (the start date in the offer documents is picked from a calendar and is no longer lost; build 71.2 (offer letter salary keeps pence and hourly rates; build 71.1 sends as office@ and clients@ directly; build 71.0 (every email now sends through Microsoft 365 and Brevo is gone; offer documents build with jszip; a candidate reply accepting an offer sent from the dashboard moves the card to Start Date and adds the information request and handover tasks; earlier: build 70.6 (Catering and Hospitality added as the 13th sector, with six starter Gap Brief problems and search words for Suggest sectors; built on server build 70; earlier: build 70 (pension status and employer NI exempt per person in the payroll pack, payroll email and cost reports, employer NI calculated for anyone not exempt, auto-enrolment due warnings; built on server build 67.4; earlier: build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year; 67.3 chase and call tasks close once the contact is logged and Needs attention can be dismissed or snoozed; 67.4 cold sending resumes properly after a bounce pause, only bounces after the resume count, the pause email lists the bounced addresses, guessed email addresses cannot be chosen for cold outreach)))))';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
