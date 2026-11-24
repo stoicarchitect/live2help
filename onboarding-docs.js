@@ -251,13 +251,14 @@ export function buildDocPdf({ PDFDocument, logo, meta, blocks, sign }) {
       doc.moveDown(0.8);
       drawBlocks(doc, blocks);
       if (sign) {
+        const L = sign.labels || {}; // build 72: the candidate offer letter has no countersignature and its own wording
         doc.addPage();
         doc.font(F.bold).fontSize(9).fillColor(GOLD).text('SIGNATURE PAGE', PAGE.m, 60);
         doc.font(F.bold).fontSize(20).fillColor(NAVY).text(meta.title || '', PAGE.m, doc.y + 4, { width: PAGE.w - 2 * PAGE.m });
-        doc.font(F.ital).fontSize(9.5).fillColor(GREY).text('Signed electronically through the Live 2 Help client portal. By signing, each party confirms it has read, understood and agrees to be bound by this document.', PAGE.m, doc.y + 6, { width: PAGE.w - 2 * PAGE.m });
+        doc.font(F.ital).fontSize(9.5).fillColor(GREY).text(L.intro || 'Signed electronically through the Live 2 Help client portal. By signing, each party confirms it has read, understood and agrees to be bound by this document.', PAGE.m, doc.y + 6, { width: PAGE.w - 2 * PAGE.m });
         doc.moveDown(1.2);
-        sigBlock(doc, 'For the Client', sign.client, 'Signed through the client portal after reading the document and agreeing to its terms');
-        sigBlock(doc, 'For and on behalf of Live 2 Help Recruitment Ltd', sign.agency, 'Countersigned in the Live 2 Help workspace');
+        sigBlock(doc, L.client || 'For the Client', sign.client, L.via || 'Signed through the client portal after reading the document and agreeing to its terms');
+        if (!L.noAgency) sigBlock(doc, 'For and on behalf of Live 2 Help Recruitment Ltd', sign.agency, 'Countersigned in the Live 2 Help workspace');
         const r = sign.record || {};
         doc.addPage();
         doc.font(F.bold).fontSize(9).fillColor(GOLD).text('SIGNING RECORD', PAGE.m, 60);
@@ -268,7 +269,7 @@ export function buildDocPdf({ PDFDocument, logo, meta, blocks, sign }) {
           ['Document', `${meta.title || ''} (${meta.version || ''})`],
           ['Document fingerprint (SHA-256)', r.docHash],
           ['Reference', r.reference],
-          ['Client company', r.company],
+          [L.party === 'Candidate' ? 'Company offering the role' : 'Client company', r.company],
           ['Signatory', sign.client ? `${sign.client.name}${sign.client.title ? ', ' + sign.client.title : ''}` : 'Not yet signed'],
           ['Signatory email', r.signerEmail],
           ['Signature method', r.method === 'drawn' ? 'Drawn on screen' : (r.method ? 'Typed name' : '')],
@@ -277,8 +278,8 @@ export function buildDocPdf({ PDFDocument, logo, meta, blocks, sign }) {
           ['Signed (UTC)', sign.client ? new Date(sign.client.at).toISOString() : ''],
           ['IP address', r.ip],
           ['Browser', r.userAgent],
-          ['Countersigned by', sign.agency ? `${sign.agency.name}${sign.agency.title ? ', ' + sign.agency.title : ''}` : ''],
-          ['Countersigned (UK time)', sign.agency ? ukTime(sign.agency.at) : ''],
+          ...(L.noAgency ? [] : [['Countersigned by', sign.agency ? `${sign.agency.name}${sign.agency.title ? ', ' + sign.agency.title : ''}` : ''],
+          ['Countersigned (UK time)', sign.agency ? ukTime(sign.agency.at) : '']]),
         ]);
         if (Array.isArray(r.events) && r.events.length) {
           doc.moveDown(0.8);

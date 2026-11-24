@@ -12735,7 +12735,9 @@ function offerDocsPanel(c){
   if(!kinds) return '';
   const comp = ['offer','start_date','day1','week1','month1'].indexOf(c.stage) >= 0
     ? '<div class="cv-section" id="compBox"><label>Compliance</label><div style="font-size:12px;color:#999;">Loading...</div></div>' : '';
-  return comp + '<div class="cv-section"><label>Documents and emails</label>' +
+  const onl = ['offer','start_date','day1','week1','month1'].indexOf(c.stage) >= 0
+    ? '<div class="cv-section" id="opBox"><label>Online offer</label><div style="font-size:12px;color:#999;">Loading...</div></div>' : '';
+  return comp + onl + '<div class="cv-section"><label>Documents and emails</label>' +
     kinds.map(function(k){
       return '<button onclick="odOpen(\'' + k + '\')" style="width:100%;margin-bottom:8px;padding:10px;background:#fff;border:1px solid var(--gold);color:var(--dark);border-radius:2px;cursor:pointer;font-size:13px;font-weight:600;text-align:left;">' +
         esc(OD_SETS[k].label) + '<span style="display:block;font-weight:400;font-size:11px;color:#999;margin-top:2px;">' + esc(OD_SETS[k].hint) + '</span></button>';
@@ -12907,8 +12909,42 @@ var COMP = {rec:null, cand:null};
 
 (function(){
   const _ocm = openCandidateModal;
-  openCandidateModal = function(id){ _ocm(id); try{ compLoad(); }catch(e){} };
+  openCandidateModal = function(id){ _ocm(id); try{ compLoad(); }catch(e){} try{ opLoad(); }catch(e){} };
 })();
+
+// Build 72: what the candidate has done on their online offer link
+async function opLoad(){
+  const box = document.getElementById('opBox');
+  if(!box) return;
+  const c = findCandidate(openCandidateId);
+  const key = compKey(c);
+  let st;
+  try{ st = await b2Api('/api/offer-portal/status?key=' + encodeURIComponent(key)); }catch(e){ box.innerHTML = '<label>Online offer</label><div style="font-size:12px;color:#999;">Could not load</div>'; return; }
+  if(!st.exists){ box.innerHTML = '<label>Online offer</label><div style="font-size:12px;color:#999;">Not sent yet. Use Review and send below.</div>'; return; }
+  const line = function(label, val, good){ return '<div style="display:flex;gap:10px;font-size:12.5px;margin-bottom:5px;"><div style="width:130px;color:var(--grey);">' + label + '</div><div style="' + (good ? 'color:var(--success);font-weight:600;' : '') + '">' + val + '</div></div>'; };
+  const when = function(t){ try{ return new Date(t).toLocaleString('en-GB', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'}); }catch(e){ return ''; } };
+  let h = '<label>Online offer</label>';
+  if(!st.manual){
+    const label = st.status === 'accepted' ? 'Accepted ' + when(st.signed_at) + ' by ' + esc(st.signer_name || '') : st.status === 'declined' ? 'Declined ' + when(st.declined_at) + (st.decline_reason ? ': ' + esc(st.decline_reason) : '') : st.status === 'viewed' ? 'Opened ' + when(st.viewed_at) + ', not answered yet' : 'Sent ' + when(st.sent_at) + ', not opened yet';
+    h += line('Offer letter', label, st.status === 'accepted');
+    if(st.has_pdf) h += '<div style="margin:0 0 8px 140px;"><a href="#" onclick="opDownload(\'/api/offer-portal/pdf?key=\' + encodeURIComponent(compKey(findCandidate(openCandidateId))), \'Offer letter signed.pdf\');return false;" style="font-size:12px;color:var(--gold-dark,#8a6d1f);">Download signed offer letter</a></div>';
+  }
+  const infoLabel = st.info_status === 'submitted' ? 'Received ' + when(st.info_submitted_at) : st.info_status === 'started' ? 'Started, not sent yet' : st.info_requested_at ? 'Requested ' + when(st.info_requested_at) + ', waiting' : 'Not requested yet';
+  h += line('Details form', infoLabel, st.info_status === 'submitted');
+  if((st.files || []).length) h += '<div style="margin:0 0 8px 140px;font-size:12px;">' + st.files.map(function(f){ return '<a href="#" onclick="opDownload(\'/api/offer-portal/file/' + f.n + '\', \'' + esc(f.name).replace(/'/g, '') + '\');return false;" style="display:block;color:var(--gold-dark,#8a6d1f);">' + esc(f.name) + '</a>'; }).join('') + '<div style="color:var(--grey);margin-top:3px;">Right to work files, saved on the candidate record</div></div>';
+  if(st.prestart_status && st.prestart_status !== 'none') h += line('Start details', st.prestart_status === 'confirmed' ? 'Confirmed ' + when(st.prestart_confirmed_at) : 'Sent ' + when(st.prestart_sent_at) + ', not confirmed', st.prestart_status === 'confirmed');
+  if(st.client_sent_at) h += line('Client received', st.client_confirmed_at ? 'Confirmed ' + when(st.client_confirmed_at) : 'Sent, not confirmed yet', !!st.client_confirmed_at);
+  box.innerHTML = h;
+}
+async function opDownload(path, name){
+  try{
+    const r = await fetch(API_BASE + path);
+    if(!r.ok) throw new Error('Could not download');
+    const url = URL.createObjectURL(await r.blob());
+    const a = document.createElement('a'); a.href = url; a.download = name || 'file'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
+  }catch(e){ showToast(e.message); }
+}
 
 async function compLoad(){
   const box = document.getElementById('compBox');
@@ -17653,7 +17689,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '23 Nov 2026 - build 71.2 (offer emails use the signed in person own HTML signature instead of a fixed text one; build 71.1 (the start date asked for in the offer documents is a calendar picker and is saved properly; build 71.0 (offer letter and the other offer path emails go straight to Review and send instead of Outlook; Information request stays on the card after Start Date; earlier: build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1))))))) preview';
+var PAGE_BUILD = '24 Nov 2026 - build 72.0 (candidates accept their offer, send their details and right to work documents and confirm their first day online, with a status card on the offer stage; build 71.2 (offer emails use the signed in person own HTML signature instead of a fixed text one; build 71.1 (the start date asked for in the offer documents is a calendar picker and is saved properly; build 71.0 (offer letter and the other offer path emails go straight to Review and send instead of Outlook; Information request stays on the card after Start Date; earlier: build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1))))))) preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;

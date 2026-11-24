@@ -18,6 +18,7 @@ import zlib from 'zlib';
 import dns from 'dns';
 import { fileURLToPath } from 'url';
 import * as onbDocs from './onboarding-docs.js';
+import * as offerPortal from './offer-portal.js'; // build 72: candidate offer portal
 import { dumpDatabase, inspectDump, restoreDatabase } from './db-dump.js'; // audit Nov 2026
 import { createMailEngine, ENGINE_LOG_HEADER, msSecretExpires, msSecretDaysLeft } from './mail-engine.js'; // build 57.0
 import { looksLikeNdr, failedRecipient, classifyBounce, replyIntent } from './cold-bounce.js'; // build 60.3
@@ -1055,6 +1056,10 @@ const PUBLIC_API = [
   // build 49.1: the client onboarding portal (a secure link, checked on every call)
   { method: 'GET', re: /^\/api\/portal\/[A-Za-z0-9_-]+(\/doc\/[a-z]+(\/pdf)?)?$/ },
   { method: 'POST', re: /^\/api\/portal\/[A-Za-z0-9_-]+\/(sign\/[a-z]+|site-form|partnership-interest)$/ },
+  // build 72: the candidate offer portal (a secure link, checked on every call)
+  { method: 'GET', re: /^\/api\/cportal\/(c\/)?[A-Za-z0-9_-]+(\/(doc|pdf))?$/ },
+  { method: 'POST', re: /^\/api\/cportal\/[A-Za-z0-9_-]+\/(sign|decline|info|upload|prestart|upload\/\d+\/delete)$/ },
+  { method: 'POST', re: /^\/api\/cportal\/c\/[A-Za-z0-9_-]+\/confirm$/ },
 ];
 let cronWarned = false;
 // The automation sends its secret in the x-cron-key header (the ?key= form still works)
@@ -12759,6 +12764,8 @@ async function runDailyJob(skipBackup) {
   await step('retentionScan', () => retentionScan());
   // build 49.4: onboarding reminders (live database only)
   if (pgLivePool) await step('onboardingReminders', () => runOnboardingReminders(pgLivePool));
+  // build 72: candidate offer reminders (live database only)
+  if (pgLivePool) await step('offerReminders', () => offerPortal.runReminders(offerPortalDeps(), pgLivePool));
   // build 55: a task reminds Dan to review whatever is waiting in Emails to review
   // build 57.0: remind Dan a month before the Microsoft 365 client secret expires (Entra, Certificates and secrets)
   await step('msSecretExpiry', async () => {
@@ -12830,20 +12837,20 @@ const OFFER_SIGS = {
 
 const OFFER_EMAILS = {
   offer: {
-    to: 'candidate_email', subject: 'Your offer: {{job_title}} at {{company}}', attach: ['Offer Letter'],
-    body: `Dear {{candidate_name}},\n\nWe are delighted to offer you the position of {{job_title}} at {{company}}.\n\nYour formal offer letter is attached to this email. Please review the key details confirmed below:\n\nStart Date: {{start_date_long}}\nAnnual Salary: {{salary}}\nReporting To: {{reporting_to}}\n\nNEXT STEPS\n\nPlease sign and return the attached offer letter by {{offer_reply_by}}. Once we receive your signed acceptance, we will arrange the following:\n\n- Pre-start onboarding pack and site information\n- Confirmation of any compliance documentation needed (ID, references, proof of right to work)\n- First day briefing and induction overview\n\nIf you have any questions or need further information before your start date, please do not hesitate to reach out. I am here to help make this transition as smooth as possible for you.\n\nCongratulations again - we look forward to welcoming you to the team.\n\nKind regards,\n\n{{sig_consultant}}`,
+    to: 'candidate_email', subject: 'Your offer: {{job_title}} at {{company}}', attach: [],
+    body: `Dear {{candidate_name}},\n\nWe are delighted to offer you the position of {{job_title}} at {{company}}.\n\nYour offer letter is ready for you to read and accept online. There is nothing to print, download or send back, it takes less than a minute and it works on your phone.\n\nReview and accept your offer here:\n{{portal_link}}\n\nThe key details are confirmed below:\n\nStart Date: {{start_date_long}}\nSalary: {{salary}}\nReporting To: {{reporting_to}}\n\nNEXT STEPS\n\nPlease accept your offer by {{offer_reply_by}}. Once we receive your acceptance, we will arrange the following:\n\n- A short online form for your details, right to work and references\n- Your pre-start information and what to expect on day one\n- Confirmation of any compliance documentation needed\n\nIf you have any questions or need further information before you accept, please do not hesitate to reach out. I am here to help make this transition as smooth as possible for you.\n\nCongratulations again - we look forward to welcoming you to the team.\n\nKind regards,\n\n{{sig_consultant}}`,
   },
   info_request: {
     to: 'candidate_email', subject: 'Next Steps - A Few Things We Need From You', attach: [],
-    body: `Hi {{candidate_first}},\n\nCongratulations again on accepting your offer - we are delighted for you and cannot wait to see you get started at {{company}}.\n\nTo make sure everything runs smoothly before your first day, we just need a few bits of information from you. This will not take long and will help us and {{company}} get everything in place ahead of your start.\n\nPlease respond to this email with the information below within 24 hours.\n\n1. YOUR DETAILS\n\nPlease confirm or provide the following:\n\n- Full legal name (as it appears on your passport or driving licence)\n- Home address (including postcode)\n- Personal email address\n- Personal mobile number\n- Date of birth\n- Emergency contact name, relationship, and phone number\n- Confirmed start date (we have noted {{start_date_long}} - please confirm this works for you)\n\n2. RIGHT TO WORK\n\nWe are required to confirm your Right to Work in the UK before your start date. Please provide one of the following:\n\n- A copy of your valid passport (photo page), or\n- A copy of your UK birth certificate and proof of National Insurance number, or\n- Your share code if you hold a Biometric Residence Permit or EU Settlement Scheme status\n\nYou can email a clear photo or scan to ella.pietrzak@live2helprecruitment.co.uk. This information is handled securely and in line with our Data Protection Policy.\n\n3. REFERENCES\n\nWe require two professional references before your start date. Please provide the details below for each referee. These should ideally be line managers or supervisors from your two most recent employers.\n\nReference 1: Full name, job title, company, relationship to you, email address, phone number\nReference 2: Full name, job title, company, relationship to you, email address, phone number\n\n4. ANYTHING ELSE WE SHOULD KNOW?\n\nIf there is anything you need us to be aware of before your start - for example, any reasonable adjustments, specific requirements for your first day, or anything that may affect your start date - please let us know here and we will make sure it is taken care of.\n\nThat is everything from us for now. Once we have received the above, we will be in touch with your pre-start onboarding information and details on what to expect before day one.\n\nIf you have any questions at all in the meantime, please do not hesitate to call or email me directly.\n\nBest regards,\n\n{{sig_coordinator}}`,
+    body: `Hi {{candidate_first}},\n\nCongratulations again on accepting your offer - we are delighted for you and cannot wait to see you get started at {{company}}.\n\nTo make sure everything runs smoothly before your first day, we just need a few bits of information from you. It is all on one secure page, takes about five minutes and works on your phone. There is nothing to print or email back, and you can even add a photo of your right to work document there.\n\nComplete your details here:\n{{portal_link}}\n\nIt covers:\n\n- Your details and an emergency contact\n- Your right to work in the UK\n- Two professional references, ideally line managers or supervisors from your two most recent employers\n- Anything else we should know, such as reasonable adjustments or anything that may affect your start date\n\nPlease complete it within 24 hours if you can. That is everything from us for now. Once we have it, we will be in touch with your pre-start information and what to expect before day one.\n\nIf you have any questions at all in the meantime, please do not hesitate to call or email me directly.\n\nBest regards,\n\n{{sig_coordinator}}`,
   },
   placement: {
     to: 'client_email', subject: '{{candidate_name}} confirmed as {{job_title}} at {{company}}', attach: ['Client Handover Pack'],
-    body: `Dear {{client_contact}},\n\nWe are delighted to confirm that {{candidate_name}} will be joining {{company}} as {{job_title}}, commencing {{start_date_long}}.\n\nCANDIDATE PROFILE SNAPSHOT\n\n{{candidate_name}} brings {{key_strength_1}} and {{key_strength_2}} to this role. During the process, {{pron_subject}} demonstrated particular capability in {{evidence}}, which aligns directly with your team's requirements. {{pron_possessive_cap}} background in {{relevant_area}} positions {{pron_object}} well for immediate impact on {{impact_area}}.\n\nHANDOVER DOCUMENTS\n\nWe have attached our Client Handover Pack which contains {{candidate_name}}'s full record for your files. This includes personal details, employment history, proof of right to work confirmation and the two professional references with full contact information for any follow up required. Please keep this for your records.\n\nINVOICE & PAYMENT\n\nYour invoice will follow separately. Please direct any billing queries to office@live2helprecruitment.co.uk.\n\nPOST-PLACEMENT SUPPORT\n\nWe will be in touch for our standard post-placement check-ins at Week 1 and Month 1 to ensure everything is progressing well on both sides. If anything requires attention before then, please contact me directly and I will respond the same day.\n\nA SMALL FAVOUR\n\nIf you have had a positive experience working with Live 2 Help Recruitment, we would be really grateful if you could take two minutes to leave us a review. It makes a genuine difference to a growing business and helps other organisations understand what we do.\n\nLeave a review here: https://g.page/r/CU5L4ObMovbGEBM/review\n\nThank you for partnering with us on this placement. We hope {{candidate_name}} makes a real difference to your team and we look forward to supporting you on future hires.\n\nKind regards,\n\n{{sig_consultant}}`,
+    body: `Dear {{client_contact}},\n\nWe are delighted to confirm that {{candidate_name}} will be joining {{company}} as {{job_title}}, commencing {{start_date_long}}.\n\nCANDIDATE PROFILE SNAPSHOT\n\n{{candidate_name}} brings {{key_strength_1}} and {{key_strength_2}} to this role. During the process, {{pron_subject}} demonstrated particular capability in {{evidence}}, which aligns directly with your team's requirements. {{pron_possessive_cap}} background in {{relevant_area}} positions {{pron_object}} well for immediate impact on {{impact_area}}.\n\nHANDOVER DOCUMENTS\n\nWe have attached our Client Handover Pack which contains {{candidate_name}}'s full record for your files. This includes personal details, employment history, proof of right to work confirmation and the two professional references with full contact information for any follow up required. Please keep this for your records.\n\nTo let us know it has reached you, just tap here (no sign in needed): {{client_confirm_link}}\n\nINVOICE & PAYMENT\n\nYour invoice will follow separately. Please direct any billing queries to office@live2helprecruitment.co.uk.\n\nPOST-PLACEMENT SUPPORT\n\nWe will be in touch for our standard post-placement check-ins at Week 1 and Month 1 to ensure everything is progressing well on both sides. If anything requires attention before then, please contact me directly and I will respond the same day.\n\nA SMALL FAVOUR\n\nIf you have had a positive experience working with Live 2 Help Recruitment, we would be really grateful if you could take two minutes to leave us a review. It makes a genuine difference to a growing business and helps other organisations understand what we do.\n\nLeave a review here: https://g.page/r/CU5L4ObMovbGEBM/review\n\nThank you for partnering with us on this placement. We hope {{candidate_name}} makes a real difference to your team and we look forward to supporting you on future hires.\n\nKind regards,\n\n{{sig_consultant}}`,
   },
   prestart: {
-    to: 'candidate_email', subject: 'Your pre-start pack: {{job_title}} at {{company}}', attach: ['Pre-Start Onboarding Pack'],
-    body: `Hi {{candidate_first}},\n\nYour start date at {{company}} is {{start_date_long}}, so we have put together your pre-start onboarding pack. It is attached, and it covers where to go, who to ask for, what to bring and what to expect in your first week.\n\nPlease read it in full and bring the items on the Day One checklist. If we do not yet have your Right to Work documents or references, please send them over today so nothing delays your start.\n\nIf anything is unclear, call or email me and I will sort it straight away.\n\nWe are rooting for you.\n\nWarm regards,\n\n{{sig_coordinator}}`,
+    to: 'candidate_email', subject: 'Your pre-start details: {{job_title}} at {{company}}', attach: [],
+    body: `Hi {{candidate_first}},\n\nYour start date at {{company}} is {{start_date_long}}, so we have put your pre-start details on one page: where to go, who to ask for, what to bring and what to expect in your first week.\n\nView your start details and confirm you have read them:\n{{portal_link}}\n\nPlease read it in full and have the items on the Day One checklist ready. If we do not yet have your Right to Work documents or references, you can add them on the same link today so nothing delays your start.\n\nIf anything is unclear, call or email me and I will sort it straight away.\n\nWe are rooting for you.\n\nWarm regards,\n\n{{sig_coordinator}}`,
   },
   rejection: {
     to: 'candidate_email', subject: 'Your application for {{job_title}} at {{company}}', attach: [],
@@ -13032,10 +13039,26 @@ app.post('/api/offer-docs/build', async (req, res) => {
     const { values, saved, id } = await gatherOfferValues(req.body);
     const missing = new Set();
     const attachments = [];
+    const warnings = [];
     let tplBody = tpl.body;
     if (kind === 'offer') {
       if (!String(values.start_date_long || '').trim()) values.start_date_long = 'To be confirmed';
       if (!String(values.reporting_to || '').trim()) tplBody = tplBody.replace(/Reporting To: \{\{reporting_to\}\}\n/, '');
+    }
+    // Build 72: the online link for this candidate (offer letter, details form, start details) or the client's received link
+    values.portal_link = ''; values.client_confirm_link = '';
+    if (['offer', 'info_request', 'prestart', 'placement'].includes(kind)) {
+      try {
+        const me = profileOf(actorOf(req));
+        const snap = { ...values }; ['_compliance', 'sig_coordinator', 'sig_consultant', 'portal_link', 'client_confirm_link'].forEach(k => delete snap[k]);
+        Object.assign(snap, { sender_name: me.fullName, sender_title: kind === 'offer' || kind === 'placement' ? me.title : 'Recruitment Coordinator', sender_email: me.email, sender_phone: me.phone });
+        const link = await offerPortal.issue(offerPortalDeps(), onbPool(), { id, candidate: { name: c.name, email: values.candidate_email, company: c.company, role: c.role }, values: snap, kind, by: lc(actorOf(req)), preview: isPreview() });
+        values.portal_link = link.url; values.client_confirm_link = link.clientUrl || '';
+      } catch (e) {
+        console.error('offer portal link failed:', e.message);
+        warnings.push('The online link could not be made (' + e.message + '). Do not send this email until it can be.');
+        values.portal_link = '[ONLINE LINK COULD NOT BE MADE]'; values.client_confirm_link = '[LINK COULD NOT BE MADE]';
+      }
     }
     for (const t of tpl.attach) {
       const buf = await offerFillDocx(t, values, missing);
@@ -13046,7 +13069,6 @@ app.post('/api/offer-docs/build', async (req, res) => {
     const needed = (tpl.body + ' ' + tpl.subject).match(/\{\{(\w+)\}\}/g) || [];
     const toKey = tpl.to === 'client_email' ? 'client_email' : 'candidate_email';
     const to = values[toKey] || '';
-    const warnings = [];
     if (kind === 'placement') {
       const cr = values._compliance;
       if (!cr || !RTW_DONE.includes(lc(cr.rtw_status))) warnings.push('Right to work is not marked as verified on the candidate card, so the handover pack says Pending.');
@@ -13079,9 +13101,162 @@ app.post('/api/offer-docs/sent', async (req, res) => {
     d[kind + '_sent_to'] = lc(to || '');
     d[kind + '_sent_by'] = auditActorOf(req);
     await offerDetailsTable.upsert({ id, candidate_name: c.name, role: c.role || '', company: c.company, details_json: JSON.stringify(d), updated_by: auditActorOf(req), updated_at: new Date().toISOString() });
+    try { await offerPortal.markSent(onbPool(), id, kind); } catch (e) { console.error('offer portal markSent failed:', e.message); }
     res.json({ ok: true });
   } catch (e) { console.error('POST /api/offer-docs/sent error:', e.message); res.status(500).json({ error: e.message }); }
 });
+
+/* ---------- Build 72: candidate offer portal (the offer stage, online) ----------
+   offer-portal.js holds the page logic, the database and the routes. These are the parts that touch the rest of the workspace:
+   moving the card, tasks, emails, Drive and the offer details record. */
+const OFFER_PORTAL_URL = (process.env.OFFER_PORTAL_URL || 'https://careers.live2helprecruitment.co.uk/offer/').replace(/\/?$/, '/');
+const opHtmlEsc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const opLinked = t => opHtmlEsc(t).replace(/(https?:\/\/[^\s<]+)/g, u => `<a href="${u}" style="color:#1A56A0;">${u}</a>`);
+async function opNote(rec, summary, entity = 'candidate') {
+  await commsTable.append({ id: 'cm-op-' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), timestamp: new Date().toISOString(), user: 'system', entity_type: entity,
+    entity_name: rec.candidate_name, company: rec.company || '', role: rec.role || '', channel: 'note', direction: 'inbound', summary: String(summary).slice(0, 480), follow_up_date: '', follow_up_done: '' }).catch(() => {});
+}
+// An email to the candidate from the consultant who sent the offer, with their own signature
+async function opMailCandidate(rec, subject, paragraphs, attachments) {
+  const me = profileOf(rec.created_by || 'ella');
+  const sig = await loadSignature(me.key).catch(() => ({}));
+  const body = paragraphs.map(p => `<p style="margin:0 0 12px;font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#222;">${opLinked(p).replace(/\n/g, '<br>')}</p>`).join('');
+  const files = ((sig && sig.images) || []).map((im, i) => ({ filename: `logo${i + 1}.${/png/.test(im.mime) ? 'png' : 'jpg'}`, content: im.base64, encoding: 'base64', contentType: im.mime, cid: im.cid }))
+    .concat((attachments || []).map(a => ({ filename: a.filename, content: a.content, contentType: 'application/pdf' })));
+  const info = await emailTransporter.sendMail({
+    from: `"${String(me.fullName).replace(/["<>]/g, '')}" <${me.email}>`, replyTo: me.email, sender: me.email, to: rec.candidate_email, subject,
+    text: paragraphs.join('\n\n') + '\n\n' + ((sig && sig.text) || me.fullName), html: `<div>${body}${(sig && sig.html) || ''}</div>`, attachments: files, headers: { 'X-L2H-Kind': 'offer-portal' },
+  });
+  const now = new Date().toISOString();
+  await mailLogTable.append({ id: 'em-' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), at: now, day: rfxToday(), user: me.key, from: me.email, to: rec.candidate_email, cc: '', subject,
+    kind: 'offer_portal', company: String(rec.company || '').slice(0, 120), role: String(rec.role || '').slice(0, 120), entity: rec.candidate_name, attachments: (attachments || []).map(a => a.filename).join(', ').slice(0, 400),
+    message_id: String((info && info.messageId) || '').replace(/[<>]/g, ''), status: 'sent', event_at: now, ref: 'offer-portal' }).catch(() => {});
+  return info;
+}
+function opTokenUrl(rec) {
+  const t = rec.token_enc ? onbDecrypt(rec.token_enc) : null;
+  return t && onbHashToken(t) === rec.token_hash ? `${OFFER_PORTAL_URL}#t=${t}${rec.preview ? '&p=1' : ''}` : '';
+}
+async function opMergeDetails(rec, patch) {
+  const row = (await offerDetailsTable.list()).find(o => o.id === rec.id);
+  let d = {}; try { d = JSON.parse((row && row.details_json) || '{}'); } catch (e) { d = {}; }
+  Object.assign(d, patch);
+  await offerDetailsTable.upsert({ id: rec.id, candidate_name: rec.candidate_name, role: rec.role || '', company: rec.company, details_json: JSON.stringify(d), updated_by: 'candidate portal', updated_at: new Date().toISOString() });
+}
+const opTaskBase = rec => slugKey(`${rec.candidate_name}-${rec.role}`);
+const opWho = rec => `${rec.candidate_name} (${rec.role}${rec.company ? ' at ' + rec.company : ''})`;
+
+function offerPortalDeps() {
+  return {
+    pool: onbPool,
+    encrypt: onbEncrypt, decrypt: onbDecrypt,
+    urlFor: (t, pv) => `${OFFER_PORTAL_URL}#t=${t}${pv ? '&p=1' : ''}`,
+    clientUrlFor: (t, pv) => `${OFFER_PORTAL_URL}#c=${t}${pv ? '&p=1' : ''}`,
+    parseDoc: onbDocs.parseDoc, docToHtml: onbDocs.docToHtml, docHash: onbDocs.docHash,
+    buildPdf: ({ meta, blocks, sign }) => onbDocs.buildDocPdf({ PDFDocument, logo: onbLogo(), meta, blocks, sign }),
+    pngFromDataUrl: hrPngFromDataUrl,
+    // the candidate accepted: move the card, add the follow up tasks, file the signed copy and email it to them
+    async onAccepted(rec, pdf) {
+      const day = formatDateUK(todayISO());
+      let result = '';
+      try {
+        const r = await applyStageChange({ name: rec.candidate_name, role: rec.role, company: rec.company }, 'start_date', ['offer'], `Offer accepted online on ${day}. Moved to Start Date.`);
+        result = !r ? 'The candidate could not be found on the pipeline, so the card was not moved' : (r.changed ? 'Moved to Start Date' : `Already at ${String(r.before).replace(/_/g, ' ')}, so the stage was left alone`);
+      } catch (e) { result = 'The card could not be moved: ' + e.message; console.error('offer accepted stage change failed:', e.message); }
+      await opMergeDetails(rec, { offer_accepted_at: new Date().toISOString(), offer_accepted_how: 'online' }).catch(() => {});
+      const base = opTaskBase(rec), who = opWho(rec), due = toISODate(new Date());
+      const tasks = [
+        { key: `${base}-accepted-info`, user: 'ella', title: `Send Information Request email to ${rec.candidate_name}`, dueDate: due, priority: 'High', context: `Offer accepted online for ${who}. Open the candidate card, then Documents and emails, Information request. They fill in an online form, nothing to print.` },
+        { key: `${base}-accepted-handover`, user: 'ella', title: `Send Client Handover Pack and placement email to ${rec.company || 'the client'} for ${rec.candidate_name}`, dueDate: due, priority: 'High', context: `Offer accepted online for ${who}. Send this once their details form is in.` },
+      ];
+      if (!/Moved to Start Date|left alone/.test(result)) tasks.push({ key: `${base}-accepted-move`, user: 'ella', title: `Move ${rec.candidate_name} to Start Date`, dueDate: due, priority: 'High', context: `${rec.candidate_name} accepted the offer online but the card was not moved automatically (${result}). Move it by hand.` });
+      await addAutoTasks(tasks).catch(e => console.error('offer accepted tasks failed:', e.message));
+      await opNote(rec, `Offer accepted online (signed by ${rec.signer_name || rec.candidate_name}). ${result}.`);
+      auditLog('candidate portal', 'signed', 'offer', `${rec.candidate_name} - ${rec.role}`, `Offer accepted online at ${rec.company}. ${result}`.slice(0, 200));
+      mailDan(`${rec.candidate_name} accepted the offer`, `${rec.candidate_name} accepted the offer for ${rec.role} at ${rec.company} online.\n\n${result}.\n\nNext: send the Information request email from their card (Documents and emails). The signed offer letter is saved with the candidate and in Drive.`).catch(() => {});
+      // signed copy to the candidate
+      try {
+        await opMailCandidate(rec, `Your accepted offer: ${rec.role} at ${rec.company}`, [
+          `Hi ${String(rec.candidate_name).split(/\s+/)[0]},`,
+          `Thank you for accepting your offer for ${rec.role} at ${rec.company}. Congratulations, and welcome. Your signed offer letter is attached for your records.`,
+          `Next you will get a short online form from us for your details, right to work and references. There is nothing to print and it works on your phone. If you have any questions in the meantime, just reply to this email.`,
+        ], [{ filename: `Offer letter ${rec.company} - signed.pdf`.replace(/[\\/:*?"<>|]/g, ''), content: pdf }]);
+      } catch (e) { console.error('signed offer copy email failed:', e.message); }
+      // filed with the client's Drive folder
+      if (!isPreview()) {
+        try {
+          const f = await ensureClientFolders(rec.company, { skipSubmissions: true });
+          const folder = await findOrCreateDriveFolder(f.clientFolderId, 'Offers');
+          const name = `Offer letter - ${rec.candidate_name} - ${rec.role} - Signed.pdf`.replace(/[\\/:*?"<>|]/g, '');
+          const fileId = (await getUploadDriveClient().files.create({ requestBody: { name, parents: [folder.id] }, media: { mimeType: 'application/pdf', body: Readable.from(pdf) }, fields: 'id' })).data.id;
+          await onbPool().query('update offer_portal set pdf_drive_id = $2 where id = $1', [rec.id, fileId]);
+        } catch (e) { console.error('signed offer Drive filing failed:', e.message); }
+      }
+      return result;
+    },
+    async onDeclined(rec) {
+      const day = formatDateUK(todayISO());
+      let result = '';
+      try {
+        const r = await applyStageChange({ name: rec.candidate_name, role: rec.role, company: rec.company }, 'withdrawn', MAIL_OPEN_STAGES, `Declined the offer online on ${day}${rec.decline_reason ? ': ' + rec.decline_reason : ''}`);
+        result = !r ? 'The card could not be found, so it was not moved' : (r.changed ? 'Moved to Withdrawn' : 'Stage left alone');
+      } catch (e) { result = 'The card could not be moved: ' + e.message; }
+      const base = opTaskBase(rec), due = toISODate(new Date());
+      await addAutoTasks(['dan', 'ella'].map(u => ({ key: `${base}-declined-${u}`, user: u, title: `${rec.candidate_name} declined the offer`, dueDate: due, priority: 'High',
+        context: `${opWho(rec)} declined the offer online. ${result}.${rec.decline_reason ? ' Reason given: ' + rec.decline_reason : ''} Let the client know and decide whether to re-open the role search.` }))).catch(() => {});
+      await opNote(rec, `Offer declined online. ${result}.${rec.decline_reason ? ' ' + rec.decline_reason : ''}`);
+      auditLog('candidate portal', 'declined', 'offer', `${rec.candidate_name} - ${rec.role}`, `Offer declined online at ${rec.company}. ${result}`.slice(0, 200));
+      mailDan(`${rec.candidate_name} declined the offer`, `${rec.candidate_name} declined the offer for ${rec.role} at ${rec.company}.\n\n${result}.${rec.decline_reason ? '\n\nReason given: ' + rec.decline_reason : ''}`).catch(() => {});
+    },
+    // the details form came in: copy it to the offer details record that fills the client handover pack
+    async onInfo(rec, a) {
+      await opMergeDetails(rec, {
+        address_line1: a.address1, address_line2: [a.address2, a.town].filter(Boolean).join(', '), postcode: a.postcode, dob: a.dob,
+        emergency_contact: `${a.em_name} (${a.em_relationship}) ${a.em_phone}`.trim(), rtw_doc_type: a.rtw_type + (a.rtw_share_code ? ` (share code ${a.rtw_share_code})` : ''),
+        candidate_phone: a.mobile, personal_email: a.email, special_requirements: a.special || 'N/A',
+        ref1_name: a.ref1_name, ref1_title: a.ref1_title, ref1_company: a.ref1_company, ref1_relationship: a.ref1_relationship, ref1_email: a.ref1_email, ref1_phone: a.ref1_phone,
+        ref2_name: a.ref2_name, ref2_title: a.ref2_title, ref2_company: a.ref2_company, ref2_relationship: a.ref2_relationship, ref2_email: a.ref2_email, ref2_phone: a.ref2_phone,
+        info_submitted_at: new Date().toISOString(),
+      });
+      const files = Number((await onbPool().query('select count(*)::int as n from offer_portal_files where offer_id = $1', [rec.id])).rows[0].n);
+      const base = opTaskBase(rec), due = toISODate(new Date());
+      const notes = [`Right to work: ${a.rtw_type}${files ? ` (${files} file${files > 1 ? 's' : ''} uploaded)` : ' (no file uploaded yet)'}`, 'Check the details and references, then send the Client Handover Pack.'];
+      if (/^No/.test(a.start_ok)) notes.unshift('They said the start date does NOT work for them. Call them before anything is sent to the client.');
+      await addAutoTasks([{ key: `${base}-info-in`, user: 'ella', title: `${rec.candidate_name} has sent their details`, dueDate: due, priority: /^No/.test(a.start_ok) ? 'High' : 'Medium',
+        context: `${opWho(rec)}. ${notes.join(' ')} Open the candidate card, Documents and emails, to see everything they entered and download any files.` }]).catch(() => {});
+      await opNote(rec, `Details form submitted online. ${notes[0]}`);
+      auditLog('candidate portal', 'submitted', 'offer', `${rec.candidate_name} - ${rec.role}`, 'Information form submitted online');
+    },
+    async onPrestart(rec) {
+      await opMergeDetails(rec, { prestart_confirmed_at: new Date().toISOString() }).catch(() => {});
+      await opNote(rec, 'Confirmed they have read their pre-start details online');
+      auditLog('candidate portal', 'confirmed', 'offer', `${rec.candidate_name} - ${rec.role}`, 'Pre-start details confirmed online');
+    },
+    async onClientConfirmed(rec) {
+      await opNote(rec, `${rec.company} confirmed they received the Client Handover Pack`, 'client');
+      auditLog('client link', 'confirmed', 'offer', `${rec.candidate_name} - ${rec.role}`, `${rec.company} confirmed the handover pack was received`);
+    },
+    // reminders from the daily job. kind: offer1 | offer2 | info1 | info2 | pre1
+    async remind(rec, kind) {
+      const url = opTokenUrl(rec); if (!url) return;
+      const first = String(rec.candidate_name).split(/\s+/)[0], role = rec.role, co = rec.company;
+      const t = {
+        offer1: [`Your offer: ${role} at ${co}`, [`Hi ${first},`, `Just a quick reminder that your offer for ${role} at ${co} is waiting. You can read and accept it online in under a minute, with nothing to print:`, url, 'If you have any questions, just reply to this email or give me a call.']],
+        offer2: [`Your offer: ${role} at ${co}`, [`Hi ${first},`, `I wanted to check in on your offer for ${role} at ${co}. It is still open for you to accept online:`, url, `If something is holding you back, or you would like to talk it through, please call me and we will sort it out together.`]],
+        info1: [`Your details for ${co}`, [`Hi ${first},`, `A quick reminder to complete your details form so everything is ready for your start at ${co}. It takes about five minutes and you can do it on your phone:`, url]],
+        info2: [`Your details for ${co}`, [`Hi ${first},`, `We still need your details, right to work and references so that nothing delays your start at ${co}. Here is your link again:`, url, 'If anything is difficult, call me and we will help.']],
+        pre1: [`Your start details: ${role} at ${co}`, [`Hi ${first},`, `Please take a minute to look over your start details and tap to confirm you have read them:`, url]],
+      }[kind];
+      if (!t) return;
+      await opMailCandidate(rec, t[0], t[1]);
+      if (kind === 'offer2' || kind === 'info2') {
+        await addAutoTasks([{ key: `${opTaskBase(rec)}-chase-${kind}`, user: rec.created_by === 'dan' ? 'dan' : 'ella', title: `Call ${rec.candidate_name}: ${kind === 'offer2' ? 'offer not accepted yet' : 'details form not completed'}`, dueDate: toISODate(new Date()), priority: 'High',
+          context: `${opWho(rec)}. Two reminder emails have gone with no response. A quick call usually sorts it.` }]).catch(() => {});
+      }
+    },
+  };
+}
+offerPortal.mountOfferPortal(app, offerPortalDeps());
 
 // Fields used by each document set, so the dashboard can ask only for what is missing
 app.get('/api/offer-docs/fields', (req, res) => {
@@ -17312,7 +17487,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '24 Nov 2026 - build 71.5 (the offer letter drops per annum when the salary is an hourly rate; build 71.4 (the first offer letter and offer email leave out the address and the line manager when they are not known yet, and show the start date as To be confirmed; build 71.3 (the start date in the offer documents is picked from a calendar and is no longer lost; build 71.2 (offer letter salary keeps pence and hourly rates; build 71.1 sends as office@ and clients@ directly; build 71.0 (every email now sends through Microsoft 365 and Brevo is gone; offer documents build with jszip; a candidate reply accepting an offer sent from the dashboard moves the card to Start Date and adds the information request and handover tasks; earlier: build 70.6 (Catering and Hospitality added as the 13th sector, with six starter Gap Brief problems and search words for Suggest sectors; built on server build 70; earlier: build 70 (pension status and employer NI exempt per person in the payroll pack, payroll email and cost reports, employer NI calculated for anyone not exempt, auto-enrolment due warnings; built on server build 67.4; earlier: build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year; 67.3 chase and call tasks close once the contact is logged and Needs attention can be dismissed or snoozed; 67.4 cold sending resumes properly after a bounce pause, only bounces after the resume count, the pause email lists the bounced addresses, guessed email addresses cannot be chosen for cold outreach)))))';
+const SERVER_BUILD = '24 Nov 2026 - build 72.0 (candidates get one secure online link: accept or decline the offer with a typed or drawn signature and get a signed PDF, send their details with right to work photos saved to their record, confirm their first day, and the client taps to confirm the handover pack; reminders and tasks run from the daily job; build 71.5 (the offer letter drops per annum when the salary is an hourly rate; build 71.4 (the first offer letter and offer email leave out the address and the line manager when they are not known yet, and show the start date as To be confirmed; build 71.3 (the start date in the offer documents is picked from a calendar and is no longer lost; build 71.2 (offer letter salary keeps pence and hourly rates; build 71.1 sends as office@ and clients@ directly; build 71.0 (every email now sends through Microsoft 365 and Brevo is gone; offer documents build with jszip; a candidate reply accepting an offer sent from the dashboard moves the card to Start Date and adds the information request and handover tasks; earlier: build 70.6 (Catering and Hospitality added as the 13th sector, with six starter Gap Brief problems and search words for Suggest sectors; built on server build 70; earlier: build 70 (pension status and employer NI exempt per person in the payroll pack, payroll email and cost reports, employer NI calculated for anyone not exempt, auto-enrolment due warnings; built on server build 67.4; earlier: build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year; 67.3 chase and call tasks close once the contact is logged and Needs attention can be dismissed or snoozed; 67.4 cold sending resumes properly after a bounce pause, only bounces after the resume count, the pause email lists the bounced addresses, guessed email addresses cannot be chosen for cold outreach)))))';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.

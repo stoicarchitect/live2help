@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#0B0B18">
+<meta name="color-scheme" content="light">
+<title>Your Offer - Live 2 Help</title>
+<link rel="icon" href="/assets/logo.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&family=Poppins:wght@400;500;600;700&family=Caveat:wght@600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#0B0B18; --navy-2:#16162C; --gold:#C9A84C; --gold-soft:#F3EAD2; --paper:#FFFFFF; --bg:#F5F3EE;
+  --ink:#1F2130; --grey:#4A4D5C; --muted:#6B6F80; --rule:#E3E1DA; --ok:#2F8F5B; --ok-bg:#E6F4EC; --warn:#A86B12; --warn-bg:#FBF0DC; --bad:#B4382B; --bad-bg:#FBE9E6;
+  --f-display:'Poppins',system-ui,sans-serif; --f-body:'DM Sans',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 var(--f-body);-webkit-text-size-adjust:100%}
+a{color:#1A56A0}
+button,input,select,textarea{font:inherit;color:inherit}
+.top{background:var(--navy);border-bottom:3px solid var(--gold);color:#fff;padding:18px 16px calc(18px)}
+.top-in{max-width:880px;margin:0 auto;display:flex;align-items:center;gap:14px}
+.top img{height:44px;width:auto;display:block}
+.top .who{margin-left:auto;text-align:right;font-size:13px;color:#C9CBD6;line-height:1.35}
+.top .who b{display:block;color:#fff;font-family:var(--f-display);font-weight:500;font-size:14px}
+main{max-width:880px;margin:0 auto;padding:22px 16px 80px}
+h1{font-family:var(--f-display);font-weight:600;font-size:clamp(24px,5vw,32px);line-height:1.2;margin:4px 0 6px;color:var(--navy);letter-spacing:-.01em}
+.lead{color:var(--grey);margin:0 0 20px;max-width:62ch}
+.eyebrow{font-family:var(--f-display);font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--gold)}
+.preview{background:var(--warn-bg);color:var(--warn);border:1px solid #EBCF9D;border-radius:10px;padding:10px 14px;font-size:14px;margin-bottom:16px}
+/* progress */
+.prog{background:var(--paper);border:1px solid var(--rule);border-radius:14px;padding:16px 18px;margin-bottom:18px;display:flex;align-items:center;gap:16px}
+.ring{--p:0;width:58px;height:58px;border-radius:50%;flex:none;display:grid;place-items:center;background:conic-gradient(var(--gold) calc(var(--p)*1%),#ECE8DD 0)}
+.ring span{width:46px;height:46px;border-radius:50%;background:var(--paper);display:grid;place-items:center;font-family:var(--f-display);font-weight:600;font-size:14px;color:var(--navy)}
+.prog b{font-family:var(--f-display);font-weight:600;color:var(--navy);display:block}
+.prog small{color:var(--muted);font-size:14px}
+/* task cards */
+.tasks{display:grid;gap:10px}
+.group-h{font-family:var(--f-display);font-weight:600;font-size:13px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin:18px 2px 8px}
+.task{display:flex;align-items:center;gap:14px;width:100%;text-align:left;background:var(--paper);border:1px solid var(--rule);border-radius:14px;padding:16px 16px;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.task:hover{border-color:var(--gold);box-shadow:0 4px 14px rgba(11,11,24,.06)}
+.task:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.task .ic{width:40px;height:40px;border-radius:10px;background:var(--gold-soft);color:var(--navy);display:grid;place-items:center;flex:none}
+.task.done .ic{background:var(--ok-bg);color:var(--ok)}
+.task .t{flex:1;min-width:0}
+.task .t b{display:block;font-family:var(--f-display);font-weight:500;color:var(--navy);font-size:16px}
+.task .t span{display:block;color:var(--muted);font-size:14px}
+.chip{flex:none;font-size:12.5px;font-weight:500;padding:4px 10px;border-radius:999px;background:#EFEDE6;color:var(--grey);white-space:nowrap}
+.chip.ok{background:var(--ok-bg);color:var(--ok)} .chip.go{background:var(--navy);color:#fff} .chip.warn{background:var(--warn-bg);color:var(--warn)}
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--rule);background:var(--paper);border-radius:10px;padding:11px 18px;font-weight:500;cursor:pointer;min-height:44px}
+.btn:hover{border-color:var(--navy)}
+.btn.pri{background:var(--navy);color:#fff;border-color:var(--navy)}
+.btn.pri:hover{background:#22223F}
+.btn.gold{background:var(--gold);border-color:var(--gold);color:var(--navy)}
+.btn[disabled]{opacity:.55;cursor:not-allowed}
+.btn.link{border:none;background:none;padding:8px 0;color:var(--navy);min-height:auto}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.back{margin-bottom:10px}
+/* document */
+.paper{background:var(--paper);border:1px solid var(--rule);border-radius:14px;overflow:hidden}
+.paper-h{background:var(--navy);color:#fff;padding:22px 22px 18px;border-bottom:3px solid var(--gold)}
+.paper-h h2{font-family:var(--f-display);font-weight:600;font-size:clamp(20px,4.4vw,26px);margin:0 0 4px;line-height:1.25}
+.paper-h .sub{color:var(--gold);font-weight:500;font-size:15px}
+.paper-h .ver{color:#B4B8C4;font-size:13px;margin-top:4px}
+.doc{padding:8px 22px 26px;font-size:15.5px;color:var(--grey)}
+.doc h2{font-family:var(--f-display);font-weight:600;font-size:18px;color:var(--navy);margin:26px 0 8px;padding-bottom:6px;border-bottom:1.5px solid var(--gold)}
+.doc h3{font-family:var(--f-display);font-weight:600;font-size:16px;color:var(--navy);margin:18px 0 6px}
+.doc p{margin:0 0 12px}
+.doc strong{color:var(--navy);font-weight:700}
+.doc ul,.doc ol{padding-left:22px;margin:0 0 14px} .doc li{margin-bottom:6px}
+.tw{overflow-x:auto;margin:6px 0 16px;border:1px solid var(--rule);border-radius:8px}
+.doc table{border-collapse:collapse;width:100%;font-size:14px;min-width:420px}
+.doc th{background:var(--navy);color:#fff;text-align:left;font-weight:500;padding:9px 12px}
+.doc td{padding:9px 12px;border-top:1px solid var(--rule);vertical-align:top}
+.doc tr:nth-child(even) td{background:#FAF9F6}
+.doc td:first-child{color:var(--navy)}
+.doc-tools{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 22px;border-top:1px solid var(--rule);background:#FBFAF7}
+/* signing */
+.sign{margin-top:16px;background:var(--paper);border:1px solid var(--gold);border-radius:14px;padding:20px}
+.sign h3{font-family:var(--f-display);font-weight:600;color:var(--navy);margin:0 0 4px;font-size:19px}
+.sign .as{color:var(--grey);margin:0 0 14px}
+.tabs{display:inline-flex;background:#F0EDE4;border-radius:10px;padding:4px;margin-bottom:12px}
+.tabs button{border:none;background:none;padding:8px 16px;border-radius:7px;cursor:pointer;font-weight:500;color:var(--grey);min-height:40px}
+.tabs button[aria-selected="true"]{background:var(--paper);color:var(--navy);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+label.f{display:block;font-size:14px;color:var(--grey);margin-bottom:12px}
+label.f > span{display:block;margin-bottom:5px;font-weight:500;color:var(--ink)}
+label.f .req{color:var(--bad)}
+.in{width:100%;border:1px solid #D6D3C9;border-radius:10px;padding:11px 12px;background:#fff;min-height:44px}
+.in:focus{outline:none;border-color:var(--navy);box-shadow:0 0 0 3px rgba(201,168,76,.35)}
+textarea.in{min-height:84px;resize:vertical}
+.typed-prev{font-family:'Caveat',cursive;font-size:38px;color:var(--navy);min-height:58px;border-bottom:1px solid var(--muted);margin:2px 0 14px;padding:0 4px;line-height:1.4;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.pad{width:100%;height:150px;border:1.5px dashed var(--gold);border-radius:10px;background:#FCFBF7;touch-action:none;display:block;cursor:crosshair}
+.pad-bar{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--muted);margin:6px 0 12px}
+.consent{display:flex;gap:10px;align-items:flex-start;background:#FAF8F2;border-radius:10px;padding:12px;margin:6px 0 14px;font-size:14.5px;color:var(--grey);cursor:pointer}
+.consent input{width:20px;height:20px;margin-top:2px;flex:none;accent-color:var(--navy)}
+.err{color:var(--bad);background:var(--bad-bg);border-radius:10px;padding:10px 12px;font-size:14px;margin:0 0 12px}
+.err:empty{display:none}
+.ok-box{background:var(--ok-bg);color:#1F5E3D;border-radius:12px;padding:14px 16px;margin-top:16px}
+.ok-box b{font-family:var(--f-display);font-weight:600}
+/* form */
+.sec{background:var(--paper);border:1px solid var(--rule);border-radius:14px;margin-bottom:10px;overflow:hidden}
+.sec > button{width:100%;display:flex;align-items:center;gap:12px;border:none;background:none;padding:16px 18px;cursor:pointer;text-align:left}
+.sec > button b{font-family:var(--f-display);font-weight:500;color:var(--navy);flex:1}
+.sec > button .n{width:28px;height:28px;border-radius:50%;background:var(--gold-soft);display:grid;place-items:center;font-size:13px;font-weight:600;color:var(--navy);flex:none}
+.sec > button .n.ok{background:var(--ok-bg);color:var(--ok)}
+.sec .body{padding:2px 18px 16px;display:none}
+.sec.open .body{display:block}
+.sec .intro{color:var(--muted);font-size:14px;margin:0 0 12px}
+.grid2{display:grid;grid-template-columns:1fr;gap:0 14px}
+@media(min-width:640px){.grid2{grid-template-columns:1fr 1fr}.grid2 .wide{grid-column:1/-1}}
+.yn{display:flex;gap:8px}
+.yn button{flex:1;max-width:120px;border:1px solid #D6D3C9;background:#fff;border-radius:10px;padding:10px;cursor:pointer;min-height:44px}
+.yn button[aria-pressed="true"]{background:var(--navy);color:#fff;border-color:var(--navy)}
+.rows .row{display:grid;grid-template-columns:1fr;gap:8px;padding:12px;border:1px solid var(--rule);border-radius:10px;margin-bottom:8px;background:#FCFBF8}
+@media(min-width:640px){.rows .row{grid-template-columns:1fr 1fr 1fr 1fr auto;align-items:center}}
+.rows .row .in{min-height:40px;padding:8px 10px}
+.sticky{position:sticky;bottom:0;background:linear-gradient(rgba(245,243,238,0),var(--bg) 30%);padding:18px 0 calc(10px + env(safe-area-inset-bottom,0px));margin-top:8px}
+.center{text-align:center;padding:48px 8px}
+.center .big{font-family:var(--f-display);font-weight:600;color:var(--navy);font-size:22px;margin:12px 0 6px}
+.spin{width:28px;height:28px;border:3px solid #E5E1D6;border-top-color:var(--gold);border-radius:50%;animation:sp 0.9s linear infinite;margin:0 auto}
+@keyframes sp{to{transform:rotate(360deg)}}
+.foot{color:var(--muted);font-size:13px;text-align:center;margin-top:30px;line-height:1.7}
+.foot i{color:var(--gold);font-style:italic}
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--navy);color:#fff;padding:12px 18px;border-radius:10px;font-size:14.5px;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:9;max-width:calc(100% - 32px)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+@media print{.top,.doc-tools,.sign,.back,.foot{display:none!important}body{background:#fff}.paper{border:none}}
+</style>
+<body>
+<header class="top"><div class="top-in"><img src="/assets/logo3-transparent.png" alt="Live 2 Help Recruitment"><div class="who" id="who"></div></div></header>
+<main id="app" aria-live="polite"><div class="center"><div class="spin"></div></div></main>
+<script>
+(function(){
+  'use strict';
+  var API = 'https://api.live2helprecruitment.co.uk';
+  var hash = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+  var TOKEN = hash.get('t') || '', CTOKEN = hash.get('c') || '';
+  var PREVIEW = hash.get('p') === '1';
+  var S = { d: null, doc: null, view: 'home', answers: {}, method: 'typed', openSec: 'a', files: [] };
+  var pad = null;
+  var $ = function(id){ return document.getElementById(id); };
+  var app = $('app');
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function fmt(iso){ try{ return new Date(iso).toLocaleString('en-GB', {day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit'}); }catch(e){ return ''; } }
+  function call(path, opts){
+    opts = opts || {};
+    var base = CTOKEN ? '/api/cportal/c/' + encodeURIComponent(CTOKEN) : '/api/cportal/' + encodeURIComponent(TOKEN);
+    return fetch(API + base + path, {method: opts.method || 'GET', headers: opts.body ? {'Content-Type': 'application/json'} : {}, body: opts.body ? JSON.stringify(opts.body) : undefined, cache: 'no-store'})
+      .then(function(r){
+        if(opts.raw){ if(!r.ok) throw new Error('Could not download'); return r; }
+        return r.json().catch(function(){ return {}; }).then(function(j){ if(!r.ok){ var e = new Error(j.error || 'Something went wrong. Please try again.'); e.code = j.code; e.status = r.status; throw e; } return j; });
+      });
+  }
+  function toast(msg){ var t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); t.textContent = msg; document.body.appendChild(t); setTimeout(function(){ t.remove(); }, 3600); }
+  function footer(){ var c = (S.d && S.d.contact) || {name: 'Ella Pietrzak', phone: '07434 351996'}; return '<p class="foot">Questions? Reply to our email, or call ' + esc(c.name) + ' on <a href="tel:' + esc(String(c.phone).replace(/\s/g, '')) + '">' + esc(c.phone) + '</a><br>Live 2 Help Recruitment<br><i>Your next move, made simple.</i></p>'; }
+  function fatal(title, msg){ app.innerHTML = '<div class="center"><div class="big">' + esc(title) + '</div><p class="lead" style="margin:0 auto">' + esc(msg) + '</p></div>' + footer(); }
+  function previewBar(){ return PREVIEW ? '<div class="preview">Preview only. Nothing you do here is saved or sent.</div>' : ''; }
+
+  function load(then){
+    call('').then(function(d){
+      S.d = d; if(d.info && d.info.answers) S.answers = Object.assign({}, d.info.answers, S.answers);
+      $('who').innerHTML = CTOKEN ? '' : '<b>' + esc(d.name || '') + '</b>' + esc(d.role || '');
+      then();
+    }).catch(function(e){
+      if(e.status === 410) fatal('This link has expired', 'Please contact us and we will send you a new one.');
+      else if(e.status === 404) fatal('We could not find this page', 'Please check you used the link from our email, or contact us.');
+      else fatal('Something went wrong', e.message);
+    });
+  }
+
+  /* client received page */
+  function renderClient(){
+    var d = S.d;
+    if(d.confirmed_at){ app.innerHTML = '<div class="center"><div class="big">Thank you, all received</div><p class="lead" style="margin:0 auto">You confirmed the handover pack for ' + esc(d.candidate) + ' on ' + esc(fmt(d.confirmed_at)) + '. Nothing more to do.</p></div>' + footer(); return; }
+    app.innerHTML = previewBar() + '<span class="eyebrow">Handover pack</span><h1>Got the handover pack for ' + esc(d.candidate) + '?</h1><p class="lead">' + esc(d.role) + ' at ' + esc(d.company) + (d.start ? ', starting ' + esc(d.start) : '') + '. One tap lets us know it has arrived safely.</p><div class="bar"><button class="btn gold" id="cc">Yes, received</button></div><div id="ce" class="err" style="margin-top:12px"></div>' + footer();
+    $('cc').onclick = function(){ var b = this; b.disabled = true; call('/confirm', {method: 'POST', body: {}}).then(function(){ d.confirmed_at = new Date().toISOString(); renderClient(); }).catch(function(e){ b.disabled = false; $('ce').textContent = e.message; }); };
+  }
+
+  /* home */
+  function renderHome(){
+    var d = S.d;
+    if(d.status === 'declined'){ app.innerHTML = previewBar() + '<div class="center"><div class="big">Offer declined</div><p class="lead" style="margin:0 auto">We have let ' + esc(d.contact.name) + ' know. If you change your mind, please get in touch.</p></div>' + footer(); return; }
+    if(d.status === 'sent' || d.status === 'viewed'){ openLetter(); return; }
+    var info = d.info, pre = d.prestart;
+    var tasks = [];
+    if(!d.manual) tasks.push({k: 'letter', t: 'Offer letter', s: 'Signed ' + (d.offer.signed_at ? fmt(d.offer.signed_at) : ''), done: true, ic: 'M5 13l4 4L19 7'});
+    tasks.push({k: 'info', t: 'Your details and right to work', s: info.status === 'submitted' ? 'Received. Thank you.' : 'About 5 minutes. Add your documents from your phone.', done: info.status === 'submitted', ic: 'M4 6h16M4 12h16M4 18h10', locked: info.locked});
+    if(pre) tasks.push({k: 'pre', t: 'Your first day', s: pre.status === 'confirmed' ? 'Confirmed. See you there.' : 'Check your start details and tap to confirm.', done: pre.status === 'confirmed', ic: 'M12 8v4l3 2M12 3a9 9 0 100 18 9 9 0 000-18z'});
+    var n = tasks.filter(function(t){ return t.done; }).length, pct = Math.round(100 * n / tasks.length);
+    app.innerHTML = previewBar() + '<span class="eyebrow">Welcome to the team</span><h1>' + esc(d.first) + ', your offer is confirmed</h1><p class="lead">' + esc(d.role) + ' at ' + esc(d.company) + '. Just the steps below left, all online. Nothing to print.</p>' +
+      '<div class="prog"><div class="ring" style="--p:' + pct + '"><span>' + n + '/' + tasks.length + '</span></div><div><b>' + (n === tasks.length ? 'All done' : 'Nearly there') + '</b><small>' + (n === tasks.length ? 'We will be in touch before your first day.' : 'Your answers save as you go.') + '</small></div></div><div class="tasks">' +
+      tasks.map(function(t){ return '<button class="task' + (t.done ? ' done' : '') + '" data-task="' + t.k + '"><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="' + t.ic + '"/></svg></span><span class="t"><b>' + esc(t.t) + '</b><span>' + esc(t.s) + '</span></span><span class="chip ' + (t.done ? 'ok' : 'go') + '">' + (t.done ? 'Done' : 'Start') + '</span></button>'; }).join('') + '</div>' +
+      (d.offer.has_letter && !d.manual ? '<p style="margin-top:18px"><button class="btn link" id="dl">Download your signed offer letter (PDF)</button></p>' : '') + footer();
+    app.querySelectorAll('[data-task]').forEach(function(b){ b.onclick = function(){ var k = b.getAttribute('data-task'); if(k === 'letter') return openLetter(); if(k === 'info') return renderForm(); if(k === 'pre') return renderPre(); }; });
+    var dl = $('dl'); if(dl) dl.onclick = function(){ call('/pdf', {raw: true}).then(function(r){ return r.blob(); }).then(function(b){ var a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'Offer letter.pdf'; a.click(); }).catch(function(e){ toast(e.message); }); };
+  }
+
+  /* offer letter and signing */
+  function openLetter(){
+    app.innerHTML = '<div class="center"><div class="spin"></div></div>';
+    call('/doc').then(function(j){ S.doc = j; renderLetter(); }).catch(function(e){ fatal('Could not open your offer', e.message); });
+  }
+  function renderLetter(){
+    var j = S.doc, d = S.d, signed = !!j.signed;
+    var m = j.meta || {};
+    app.innerHTML = previewBar() + (signed ? '<div class="back"><button class="btn link" id="bk">&larr; Back</button></div>' : '<span class="eyebrow">Your offer</span><h1>' + esc(d.first) + ', we would love you to join us</h1><p class="lead">Read your offer below, then accept it with your signature or decline. It takes about a minute.' + (d.offer.reply_by ? ' Please reply by ' + esc(d.offer.reply_by) + '.' : '') + '</p>') +
+      '<div class="paper"><div class="paper-h"><h2>' + esc(m.title || 'Offer of Employment') + '</h2><div class="sub">' + esc(m.subtitle || '') + '</div></div><div class="doc">' + j.html + '</div></div>' +
+      (signed ? '<div class="ok-box"><b>Accepted.</b> Signed by ' + esc(j.signed.signer_name) + ' on ' + esc(fmt(j.signed.signed_at)) + '.</div>' : signBox()) + footer();
+    if(signed){ $('bk').onclick = renderHome; return; }
+    wireSign();
+  }
+  function signBox(){
+    var d = S.d;
+    return '<div class="sign"><h3>Accept your offer</h3><p class="as">Signing as <b>' + esc(d.name) + '</b></p>' +
+      '<div class="tabs" role="tablist"><button role="tab" data-m="typed" aria-selected="' + (S.method === 'typed') + '">Type your name</button><button role="tab" data-m="drawn" aria-selected="' + (S.method === 'drawn') + '">Draw it</button></div>' +
+      (S.method === 'typed' ? '<label class="f"><span>Type your full name</span><input class="in" id="typed" autocomplete="name" value=""></label><div class="typed-prev" id="typedPrev" aria-hidden="true"></div>' :
+        '<canvas class="pad" id="pad" aria-label="Signature box"></canvas><div class="pad-bar"><span>Draw with your finger or mouse</span><button type="button" class="btn link" id="padClear">Clear</button></div>') +
+      '<label class="consent"><input type="checkbox" id="agree"><span>' + esc(d.offer.consent) + '</span></label><div class="err" id="signErr"></div>' +
+      '<div class="bar"><button class="btn gold" id="signGo">Accept offer</button><button class="btn" id="declineGo">Decline</button></div>' +
+      '<div id="declineBox" style="display:none;margin-top:16px"><label class="f"><span>Would you like to tell us why? (optional)</span><textarea class="in" id="declineWhy"></textarea></label><div class="bar"><button class="btn pri" id="declineSure">Yes, decline this offer</button><button class="btn link" id="declineNo">Cancel</button></div></div></div>';
+  }
+  function wireSign(){
+    app.querySelectorAll('[data-m]').forEach(function(b){ b.onclick = function(){ S.method = b.getAttribute('data-m'); renderLetter(); }; });
+    var typed = $('typed'); if(typed) typed.addEventListener('input', function(){ $('typedPrev').textContent = typed.value; });
+    var c = $('pad');
+    if(c){
+      var ctx = c.getContext('2d'), drawing = false, last = null; pad = {strokes: 0, c: c};
+      var r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1; c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.lineWidth = 2.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      var pt = function(e){ var q = c.getBoundingClientRect(); return {x: e.clientX - q.left, y: e.clientY - q.top}; };
+      c.onpointerdown = function(e){ e.preventDefault(); c.setPointerCapture(e.pointerId); drawing = true; last = pt(e); ctx.beginPath(); ctx.arc(last.x, last.y, 1.2, 0, Math.PI * 2); ctx.fillStyle = '#0B0B18'; ctx.fill(); pad.strokes++; };
+      c.onpointermove = function(e){ if(!drawing) return; var p = pt(e); ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; };
+      c.onpointerup = c.onpointercancel = function(){ drawing = false; };
+      $('padClear').onclick = function(){ ctx.clearRect(0, 0, c.width, c.height); pad.strokes = 0; };
+    }
+    $('signGo').onclick = sign;
+    $('declineGo').onclick = function(){ $('declineBox').style.display = 'block'; this.style.display = 'none'; };
+    $('declineNo').onclick = function(){ $('declineBox').style.display = 'none'; $('declineGo').style.display = ''; };
+    $('declineSure').onclick = function(){
+      var b = this; b.disabled = true;
+      call('/decline', {method: 'POST', body: {reason: $('declineWhy').value}}).then(function(){ S.d.status = 'declined'; renderHome(); }).catch(function(e){ b.disabled = false; $('signErr').textContent = e.message; });
+    };
+  }
+  function sign(){
+    var j = S.doc, err = $('signErr'); err.textContent = '';
+    var body = {method: S.method, agree: !!$('agree').checked, hash: j.hash};
+    if(S.method === 'typed'){ body.typed = $('typed').value.trim(); if(!body.typed){ err.textContent = 'Please type your full name'; return; } }
+    else { if(!pad || !pad.strokes){ err.textContent = 'Please draw your signature in the box'; return; } body.signature = pad.c.toDataURL('image/png'); }
+    if(!body.agree){ err.textContent = 'Please tick the box to confirm you agree'; return; }
+    var btn = $('signGo'); btn.disabled = true; btn.textContent = 'Accepting...';
+    call('/sign', {method: 'POST', body: body}).then(function(){
+      toast('Offer accepted. Thank you.');
+      load(function(){ renderHome(); });
+    }).catch(function(e){
+      if(e.code === 'CHANGED'){ toast(e.message); openLetter(); return; }
+      if(e.code === 'ALREADY_SIGNED'){ load(renderHome); return; }
+      err.textContent = e.message; btn.disabled = false; btn.textContent = 'Accept offer';
+    });
+  }
+
+  /* details form */
+  function fieldHtml(f){
+    var v = S.answers[f.k] || '', id = 'f_' + f.k, wide = (f.wide || f.type === 'textarea' || f.type === 'files') ? ' wide' : '';
+    var lab = '<span>' + esc(f.label) + (f.req ? ' <span class="req" aria-hidden="true">*</span>' : '') + '</span>';
+    var help = f.help ? '<small style="display:block;color:var(--muted);margin-top:4px">' + esc(f.help) + '</small>' : '';
+    if(f.type === 'files'){
+      return '<div class="f wide" style="margin-bottom:12px"><div style="font-size:14px;font-weight:500;margin-bottom:5px">' + esc(f.label) + '</div><div id="fileList"></div>' +
+        '<label class="btn" style="cursor:pointer">Add photo or scan<input type="file" id="fileIn" accept="image/*,application/pdf" multiple class="sr"></label>' + help + '<div class="err" id="fileErr" style="margin-top:8px"></div></div>';
+    }
+    if(f.type === 'select') return '<label class="f' + wide + '">' + lab + '<select class="in" data-k="' + f.k + '"><option value="">Choose...</option>' + f.options.map(function(o){ return '<option' + (v === o ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select>' + help + '</label>';
+    if(f.type === 'textarea') return '<label class="f' + wide + '">' + lab + '<textarea class="in" data-k="' + f.k + '">' + esc(v) + '</textarea>' + help + '</label>';
+    var t = f.type === 'email' ? 'email" inputmode="email' : f.type === 'tel' ? 'tel" inputmode="tel' : f.type === 'date' ? 'date' : 'text';
+    return '<label class="f' + wide + '">' + lab + '<input class="in" type="' + t + '" data-k="' + f.k + '" value="' + esc(v) + '">' + help + '</label>';
+  }
+  function secDone(sec){ return sec.fields.every(function(f){ return !f.req || String(S.answers[f.k] || '').trim(); }); }
+  function renderForm(){
+    var d = S.d, info = d.info;
+    if(info.status === 'submitted' && !S.editing){ app.innerHTML = previewBar() + '<div class="back"><button class="btn link" id="bk">&larr; Back</button></div><div class="center"><div class="big">Details received</div><p class="lead" style="margin:0 auto">Thank you. We will check your right to work and take up your references. If anything changes, <button class="btn link" id="ed" style="display:inline-flex">update your answers</button>.</p></div>' + footer(); $('bk').onclick = renderHome; $('ed').onclick = function(){ S.editing = true; renderForm(); }; return; }
+    S.files = info.files || S.files;
+    app.innerHTML = previewBar() + '<div class="back"><button class="btn link" id="bk">&larr; Back</button></div><span class="eyebrow">Step 2</span><h1>Your details</h1><p class="lead">Fill in each section. Your answers save as you go, so you can stop and come back on the same link.</p><div id="secs"></div><div class="err" id="formErr"></div><div class="sticky"><div class="bar"><button class="btn gold" id="submit">Send my details</button><button class="btn" id="save">Save and finish later</button></div></div>' + footer();
+    $('bk').onclick = renderHome;
+    drawSecs();
+    $('save').onclick = function(){ saveForm(false); };
+    $('submit').onclick = function(){ saveForm(true); };
+  }
+  function drawSecs(){
+    var wrap = $('secs');
+    wrap.innerHTML = S.d.info.schema.map(function(sec, i){
+      var open = S.openSec === sec.key, ok = secDone(sec);
+      return '<div class="sec' + (open ? ' open' : '') + '"><button type="button" data-sec="' + sec.key + '"><span class="n' + (ok ? ' ok' : '') + '">' + (ok ? '&#10003;' : (i + 1)) + '</span><b>' + esc(sec.title) + '</b></button><div class="body"><p class="intro">' + esc(sec.intro || '') + '</p><div class="grid2">' + sec.fields.map(fieldHtml).join('') + '</div></div></div>';
+    }).join('');
+    wrap.querySelectorAll('[data-sec]').forEach(function(b){ b.onclick = function(){ collect(); S.openSec = S.openSec === b.getAttribute('data-sec') ? '' : b.getAttribute('data-sec'); drawSecs(); }; });
+    wrap.querySelectorAll('[data-k]').forEach(function(el){ el.addEventListener('change', collect); });
+    var fi = $('fileIn'); if(fi) fi.onchange = function(){ uploadFiles(fi.files); fi.value = ''; };
+    drawFiles();
+  }
+  function collect(){ app.querySelectorAll('[data-k]').forEach(function(el){ S.answers[el.getAttribute('data-k')] = el.value; }); }
+  function drawFiles(){
+    var l = $('fileList'); if(!l) return;
+    l.innerHTML = (S.files || []).map(function(f){ return '<div class="bar" style="margin-bottom:8px"><span class="chip ok">Saved</span><span>' + esc(f.name) + '</span><button type="button" class="btn link" data-rm="' + f.n + '">Remove</button></div>'; }).join('');
+    l.querySelectorAll('[data-rm]').forEach(function(b){ b.onclick = function(){ call('/upload/' + b.getAttribute('data-rm') + '/delete', {method: 'POST', body: {}}).then(function(){ S.files = S.files.filter(function(f){ return String(f.n) !== b.getAttribute('data-rm'); }); drawFiles(); }).catch(function(e){ $('fileErr').textContent = e.message; }); }; });
+  }
+  function shrink(file){
+    return new Promise(function(resolve, reject){
+      var done = function(data, mime, name){ resolve({name: name, mime: mime, data: data}); };
+      var rd = new FileReader();
+      rd.onerror = function(){ reject(new Error('Could not read that file')); };
+      rd.onload = function(){
+        var url = rd.result;
+        if(file.type === 'application/pdf' || file.size < 1800000){ return done(url.split(',')[1], file.type, file.name); }
+        var im = new Image();
+        im.onload = function(){ var s = Math.min(1, 2000 / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * s); c.height = Math.round(im.height * s); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); done(c.toDataURL('image/jpeg', 0.85).split(',')[1], 'image/jpeg', file.name.replace(/\.[^.]+$/, '') + '.jpg'); };
+        im.onerror = function(){ reject(new Error('That image could not be opened')); };
+        im.src = url;
+      };
+      rd.readAsDataURL(file);
+    });
+  }
+  function uploadFiles(list){
+    var err = $('fileErr'); err.textContent = '';
+    Array.prototype.slice.call(list).reduce(function(p, f){
+      return p.then(function(){ return shrink(f).then(function(body){ err.textContent = 'Uploading ' + f.name + '...'; return call('/upload', {method: 'POST', body: body}); }).then(function(r){ S.files.push({n: r.n, name: r.name}); drawFiles(); err.textContent = ''; }); });
+    }, Promise.resolve()).catch(function(e){ err.textContent = e.message; });
+  }
+  function saveForm(submit){
+    collect();
+    var err = $('formErr'); err.textContent = '';
+    var btn = submit ? $('submit') : $('save'); btn.disabled = true; var t = btn.textContent; btn.textContent = 'Saving...';
+    call('/info', {method: 'POST', body: {answers: S.answers, submit: submit}}).then(function(r){
+      btn.disabled = false; btn.textContent = t;
+      S.d.info.status = r.status || S.d.info.status;
+      if(submit){ S.editing = false; S.d.info.status = 'submitted'; toast('Details sent. Thank you.'); renderForm(); }
+      else toast('Saved');
+    }).catch(function(e){ btn.disabled = false; btn.textContent = t; err.textContent = e.message; });
+  }
+
+  /* pre-start */
+  function renderPre(){
+    var p = S.d.prestart;
+    app.innerHTML = previewBar() + '<div class="back"><button class="btn link" id="bk">&larr; Back</button></div><span class="eyebrow">Step 3</span><h1>Your first day</h1><p class="lead">Everything you need to know before you start with ' + esc(S.d.company) + '.</p>' +
+      '<div class="paper"><div class="doc"><div class="tw"><table><tbody>' + p.details.map(function(r){ return '<tr><td>' + esc(r[0]) + '</td><td>' + esc(r[1]) + '</td></tr>'; }).join('') + '</tbody></table></div>' +
+      (p.company_item ? '<h3>' + esc(p.company_item[0]) + '</h3><p>' + esc(p.company_item[1] || '') + '</p>' : '') +
+      '<h3>On the day</h3><ul>' + p.checklist.map(function(x){ return '<li>' + esc(x) + '</li>'; }).join('') + '</ul><h3>Your first week</h3><ul>' + p.first_week.map(function(x){ return '<li>' + esc(x) + '</li>'; }).join('') + '</ul></div></div>' +
+      (p.status === 'confirmed' ? '<div class="ok-box"><b>Confirmed.</b> ' + esc(fmt(p.confirmed_at)) + '. See you there.</div>' : '<label class="consent"><input type="checkbox" id="pa"><span>I have read this and I will be there on my start date.</span></label><div class="err" id="pe"></div><div class="bar"><button class="btn gold" id="pc">Confirm</button></div>') + footer();
+    $('bk').onclick = renderHome;
+    var pc = $('pc'); if(pc) pc.onclick = function(){ if(!$('pa').checked){ $('pe').textContent = 'Please tick the box to confirm'; return; } pc.disabled = true; call('/prestart', {method: 'POST', body: {agree: true}}).then(function(){ p.status = 'confirmed'; p.confirmed_at = new Date().toISOString(); toast('Confirmed. See you there.'); renderPre(); }).catch(function(e){ pc.disabled = false; $('pe').textContent = e.message; }); };
+  }
+
+  if(!TOKEN && !CTOKEN) return fatal('This link is not complete', 'Please open the link from our email again.');
+  load(function(){ if(CTOKEN) renderClient(); else renderHome(); });
+})();
+</script>
+</body>
+</html>
