@@ -369,7 +369,7 @@ textarea.in{min-height:84px;resize:vertical}
   }
 
   if(!TOKEN && !CTOKEN) return fatal('This link is not complete', 'Please open the link from our email again.');
-  load(function(){ if(CTOKEN) renderClient(); else if(REVIEW) renderReview(); else renderHome(); });
+  load(function(){ if(CTOKEN) renderClient(); else renderHome(); });
 })();
 </script>
 </body>
