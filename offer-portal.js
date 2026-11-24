@@ -200,6 +200,12 @@ export function ensureSchema(pool) {
         created_at timestamptz not null default now(),
         updated_at timestamptz not null default now()
       );
+      alter table offer_portal add column if not exists review_status text not null default 'none';
+      alter table offer_portal add column if not exists review_rating int;
+      alter table offer_portal add column if not exists review_text text not null default '';
+      alter table offer_portal add column if not exists review_consent boolean not null default false;
+      alter table offer_portal add column if not exists review_sent_at timestamptz;
+      alter table offer_portal add column if not exists review_submitted_at timestamptz;
       create index if not exists offer_portal_token on offer_portal (token_hash);
       create index if not exists offer_portal_ctoken on offer_portal (client_token_hash);
       create table if not exists offer_portal_files (
@@ -278,6 +284,7 @@ export async function markSent(pool, id, kind) {
   if (kind === 'info_request') await pool.query("update offer_portal set info_requested_at = now(), info_status = case when info_status in ('none') then 'requested' else info_status end, updated_at = now() where id = $1", [id]);
   if (kind === 'prestart') await pool.query("update offer_portal set prestart_sent_at = now(), prestart_status = case when prestart_status = 'none' then 'sent' else prestart_status end, updated_at = now() where id = $1", [id]);
   if (kind === 'placement') await pool.query("update offer_portal set client_sent_at = now(), updated_at = now() where id = $1", [id]);
+  if (kind === 'review') await pool.query("update offer_portal set review_sent_at = now(), review_status = case when review_status = 'none' then 'requested' else review_status end, updated_at = now() where id = $1", [id]);
   await addEvent(pool, id, `Email sent: ${kind.replace(/_/g, ' ')}`, null);
 }
 
@@ -292,6 +299,7 @@ export async function statusFor(pool, id) {
     info_status: r.info_status, info_requested_at: r.info_requested_at, info_submitted_at: r.info_submitted_at,
     prestart_status: r.prestart_status, prestart_sent_at: r.prestart_sent_at, prestart_confirmed_at: r.prestart_confirmed_at,
     client_sent_at: r.client_sent_at, client_confirmed_at: r.client_confirmed_at, expires_at: r.expires_at,
+    review_status: r.review_status, review_sent_at: r.review_sent_at, review_rating: r.review_rating, review_text: r.review_text, review_consent: r.review_consent, review_submitted_at: r.review_submitted_at,
     files: files.map(f => ({ n: f.id, name: f.filename, mime: f.mime, size: Number(f.size) })),
     events: (r.events || []).slice(-12).reverse(),
   };
@@ -342,6 +350,7 @@ export function mountOfferPortal(app, d) {
             ['Parking', v.parking], ['What to wear', v.dress_code]].filter(x => x[1] && x[1] !== 'N/A' && x[1] !== 'To be confirmed'),
           company_item: v.company_item && v.company_item !== 'Anything specific to the site' ? [v.company_item, v.company_item_note] : null,
           checklist: DAY_ONE_CHECKLIST, first_week: FIRST_WEEK },
+        review: { status: row.review_status, rating: row.review_rating, text: row.review_text },
         contact: { name: v.sender_name || 'Ella Pietrzak', title: v.sender_title || 'Recruitment Coordinator', email: v.sender_email || 'ella.pietrzak@live2helprecruitment.co.uk', phone: v.sender_phone || '07434 351996' },
       });
     } catch (e) { fail(res, 'GET cportal', e); }
@@ -485,6 +494,48 @@ export function mountOfferPortal(app, d) {
       try { await d.onPrestart(upd.rows[0]); } catch (e) { console.error('prestart hook failed:', e.message); }
       res.json({ ok: true });
     } catch (e) { fail(res, 'POST cportal prestart', e); }
+  });
+
+  // the candidate's feedback (a star rating, a few words, and permission to share it on the website)
+  app.post('/api/cportal/:token/review', async (req, res) => {
+    try {
+      const got = await byToken(req, res); if (!got) return;
+      const { pool, row } = got;
+      const b = req.body || {};
+      const rating = parseInt(b.rating, 10);
+      if (!(rating >= 1 && rating <= 5)) return res.status(400).json({ error: 'Please choose a star rating' });
+      const text = String(b.text || '').replace(/\s+/g, ' ').trim().slice(0, 1200);
+      const consent = b.publish_ok === true && text.length > 0;
+      if (row.review_status === 'approved') return res.status(409).json({ error: 'Thank you, your feedback has already been received.' });
+      const upd = await pool.query("update offer_portal set review_status = 'submitted', review_rating = $2, review_text = $3, review_consent = $4, review_submitted_at = now(), updated_at = now() where id = $1 returning *", [row.id, rating, text, consent]);
+      await addEvent(pool, row.id, `Feedback left: ${rating} out of 5`, req);
+      try { if (d.onReview) await d.onReview(upd.rows[0]); } catch (e) { console.error('review hook failed:', e.message); }
+      res.json({ ok: true });
+    } catch (e) { fail(res, 'POST cportal review', e); }
+  });
+
+  // approved testimonials for the website (first name and role only, never an email or a surname)
+  app.get('/api/testimonials', async (req, res) => {
+    try {
+      const pool = d.pool(); await ensureSchema(pool);
+      const rows = (await pool.query("select candidate_name, role, review_rating, review_text, review_submitted_at from offer_portal where review_status = 'approved' and review_consent = true and preview = false order by review_submitted_at desc limit 40")).rows;
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.json({ testimonials: rows.map(r => ({ name: firstOf(r.candidate_name), role: r.role, rating: r.review_rating, text: r.review_text, date: r.review_submitted_at })) });
+    } catch (e) { fail(res, 'GET testimonials', e); }
+  });
+
+  // staff: approve or hide a testimonial
+  app.post('/api/offer-portal/review/approve', async (req, res) => {
+    try {
+      const pool = d.pool(); await ensureSchema(pool);
+      const id = String((req.body || {}).key || ''), approve = (req.body || {}).approve !== false;
+      const r = (await pool.query('select review_status, review_consent from offer_portal where id = $1', [id])).rows[0];
+      if (!r || r.review_status === 'none' || r.review_status === 'requested') return res.status(404).json({ error: 'There is no feedback to approve' });
+      if (approve && !r.review_consent) return res.status(409).json({ error: 'They did not give permission to share this, so it cannot go on the website' });
+      await pool.query('update offer_portal set review_status = $2, updated_at = now() where id = $1', [id, approve ? 'approved' : 'submitted']);
+      await addEvent(pool, id, approve ? 'Feedback approved for the website' : 'Feedback taken off the website', req);
+      res.json({ ok: true });
+    } catch (e) { fail(res, 'POST offer-portal review approve', e); }
   });
 
   // the client's one tap "received" on the handover pack email

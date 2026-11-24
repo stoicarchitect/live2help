@@ -1058,7 +1058,8 @@ const PUBLIC_API = [
   { method: 'POST', re: /^\/api\/portal\/[A-Za-z0-9_-]+\/(sign\/[a-z]+|site-form|partnership-interest)$/ },
   // build 72: the candidate offer portal (a secure link, checked on every call)
   { method: 'GET', re: /^\/api\/cportal\/(c\/)?[A-Za-z0-9_-]+(\/(doc|pdf))?$/ },
-  { method: 'POST', re: /^\/api\/cportal\/[A-Za-z0-9_-]+\/(sign|decline|info|upload|prestart|upload\/\d+\/delete)$/ },
+  { method: 'POST', re: /^\/api\/cportal\/[A-Za-z0-9_-]+\/(sign|decline|info|upload|prestart|review|upload\/\d+\/delete)$/ },
+  { method: 'GET', re: /^\/api\/testimonials$/ },
   { method: 'POST', re: /^\/api\/cportal\/c\/[A-Za-z0-9_-]+\/confirm$/ },
 ];
 let cronWarned = false;
@@ -8427,7 +8428,7 @@ const DEFAULT_TEMPLATES = [
     "name": "Client placement confirmation",
     "category": "Client",
     "subject": "Placement confirmed - {{candidate_name}} joining {{company}}",
-    "body": "Dear {{contact_name}},\n\nWe are delighted to confirm that {{candidate_name}} will be joining {{company}} as {{role}}, commencing {{start_date}}.\n\nCANDIDATE PROFILE SNAPSHOT\n{{first_name}} brings [KEY STRENGTH 1] and [KEY STRENGTH 2] to this role. During the process, [he/she/they] demonstrated particular capability in [SPECIFIC EVIDENCE], which aligns directly with your team's requirements. [His/Her/Their] background in [RELEVANT AREA] positions [him/her/them] well for immediate impact on [SPECIFIC PROJECT OR RESPONSIBILITY].\n\nA full Candidate Handover Pack is attached, containing the candidate's full record, employment details, right to work confirmation and reference contacts for your records.\n\nINVOICE AND PAYMENT\nInvoice Reference: {{invoice_ref}}\nAmount Due: {{fee_amount}}\nPayment Terms: {{payment_terms}} from invoice date\n\nYour invoice will follow separately. Please direct any billing queries to office@live2helprecruitment.co.uk.\n\nPOST-PLACEMENT SUPPORT\nWe will be in touch for our standard post-placement check-ins at Week 1 and Month 1 to ensure everything is progressing well on both sides. If anything requires attention before then, please contact me directly and I will respond the same day.\n\nA MESSAGE FROM OUR TEAM\nIf you have had a positive experience working with Live 2 Help Recruitment, we would be really grateful if you could take two minutes to leave us a review. It makes a genuine difference to a growing business and helps other organisations understand what we do.\n\nLeave a review here: https://g.page/r/CU5L4ObMovbGEBM/review\n\nThank you for partnering with us on this placement. We hope {{first_name}} makes a real difference to your team and we look forward to supporting you on future hires.\n\nKind regards,\n\n{{signature}}",
+    "body": "Dear {{contact_name}},\n\nWe are delighted to confirm that {{candidate_name}} will be joining {{company}} as {{role}}, commencing {{start_date}}.\n\nA full Candidate Handover Pack is attached, containing the candidate's full record, employment details, right to work confirmation and reference contacts for your records.\n\nPOST-PLACEMENT SUPPORT\nWe will be in touch for our standard post-placement check-ins at Week 1 and Month 1 to ensure everything is progressing well on both sides. If anything requires attention before then, please contact me directly and I will respond the same day.\n\nThank you for partnering with us on this placement. We hope {{first_name}} makes a real difference to your team and we look forward to supporting you on future hires.\n\nKind regards,\n\n{{signature}}",
     "updated_by": "system"
   },
   {
@@ -12824,7 +12825,7 @@ const OFFER_LABELS = {
   address_line2: 'ADDRESS LINE 2', postcode: 'POSTCODE', home_address: 'HOME ADDRESS', dob: 'DATE OF BIRTH',
   emergency_contact: 'EMERGENCY CONTACT', rtw_doc_type: 'RIGHT TO WORK DOCUMENT', rtw_verified: 'RTW VERIFIED', rtw_original: 'ORIGINAL ON DAY 1',
   special_requirements: 'SPECIAL REQUIREMENTS', parking: 'PARKING', dress_code: 'DRESS CODE', client_contact: 'CLIENT CONTACT NAME',
-  offer_reply_by: 'REPLY BY DATE', key_strength_1: 'KEY STRENGTH 1', key_strength_2: 'KEY STRENGTH 2', evidence: 'SPECIFIC EVIDENCE',
+  offer_reply_by: 'REPLY BY DATE', review_link: 'REVIEW LINK', key_strength_1: 'KEY STRENGTH 1', key_strength_2: 'KEY STRENGTH 2', evidence: 'SPECIFIC EVIDENCE',
   relevant_area: 'RELEVANT AREA', impact_area: 'SPECIFIC PROJECT OR RESPONSIBILITY', specific_strength: 'SPECIFIC STRENGTH',
   specific_example: 'SPECIFIC EXAMPLE', close_match_detail: 'WHERE THE DECISION CAME DOWN TO', sector: 'SECTOR OR SPECIALISM', future_area: 'FUTURE OPPORTUNITY AREA',
 };
@@ -12846,11 +12847,15 @@ const OFFER_EMAILS = {
   },
   placement: {
     to: 'client_email', subject: '{{candidate_name}} confirmed as {{job_title}} at {{company}}', attach: ['Client Handover Pack'],
-    body: `Dear {{client_contact}},\n\nWe are delighted to confirm that {{candidate_name}} will be joining {{company}} as {{job_title}}, commencing {{start_date_long}}.\n\nCANDIDATE PROFILE SNAPSHOT\n\n{{candidate_name}} brings {{key_strength_1}} and {{key_strength_2}} to this role. During the process, {{pron_subject}} demonstrated particular capability in {{evidence}}, which aligns directly with your team's requirements. {{pron_possessive_cap}} background in {{relevant_area}} positions {{pron_object}} well for immediate impact on {{impact_area}}.\n\nHANDOVER DOCUMENTS\n\nWe have attached our Client Handover Pack which contains {{candidate_name}}'s full record for your files. This includes personal details, employment history, proof of right to work confirmation and the two professional references with full contact information for any follow up required. Please keep this for your records.\n\nTo let us know it has reached you, just tap here (no sign in needed): {{client_confirm_link}}\n\nINVOICE & PAYMENT\n\nYour invoice will follow separately. Please direct any billing queries to office@live2helprecruitment.co.uk.\n\nPOST-PLACEMENT SUPPORT\n\nWe will be in touch for our standard post-placement check-ins at Week 1 and Month 1 to ensure everything is progressing well on both sides. If anything requires attention before then, please contact me directly and I will respond the same day.\n\nA SMALL FAVOUR\n\nIf you have had a positive experience working with Live 2 Help Recruitment, we would be really grateful if you could take two minutes to leave us a review. It makes a genuine difference to a growing business and helps other organisations understand what we do.\n\nLeave a review here: https://g.page/r/CU5L4ObMovbGEBM/review\n\nThank you for partnering with us on this placement. We hope {{candidate_name}} makes a real difference to your team and we look forward to supporting you on future hires.\n\nKind regards,\n\n{{sig_consultant}}`,
+    body: `Dear {{client_contact}},\n\nWe are delighted to confirm that {{candidate_name}} will be joining {{company}} as {{job_title}}, commencing {{start_date_long}}.\n\nHANDOVER DOCUMENTS\n\nWe have attached our Client Handover Pack which contains {{candidate_name}}'s full record for your files. This includes personal details, employment history, proof of right to work confirmation and the two professional references with full contact information for any follow up required. Please keep this for your records.\n\nTo let us know it has reached you, just tap here (no sign in needed): {{client_confirm_link}}\n\nPOST-PLACEMENT SUPPORT\n\nWe will be in touch for our standard post-placement check-ins at Week 1 and Month 1 to ensure everything is progressing well on both sides. If anything requires attention before then, please contact me directly and I will respond the same day.\n\nThank you for partnering with us on this placement. We hope {{candidate_name}} makes a real difference to your team and we look forward to supporting you on future hires.\n\nKind regards,\n\n{{sig_consultant}}`,
   },
   prestart: {
     to: 'candidate_email', subject: 'Your pre-start details: {{job_title}} at {{company}}', attach: [],
     body: `Hi {{candidate_first}},\n\nYour start date at {{company}} is {{start_date_long}}, so we have put your pre-start details on one page: where to go, who to ask for, what to bring and what to expect in your first week.\n\nView your start details and confirm you have read them:\n{{portal_link}}\n\nPlease read it in full and have the items on the Day One checklist ready. If we do not yet have your Right to Work documents or references, you can add them on the same link today so nothing delays your start.\n\nIf anything is unclear, call or email me and I will sort it straight away.\n\nWe are rooting for you.\n\nWarm regards,\n\n{{sig_coordinator}}`,
+  },
+  review: {
+    to: 'candidate_email', subject: 'How is your new role going, {{candidate_first}}?', attach: [],
+    body: `Hi {{candidate_first}},\n\nYou have now settled in at {{company}}, and we hope the role is going well.\n\nIf you have a minute, we would really value your honest feedback on how we looked after you. It is a short form on your phone: a star rating and a few words. With your permission, we may share it on our website as a testimonial, using your first name only.\n\nShare your feedback here:\n{{review_link}}\n\nThank you for trusting us with your next move. If there is ever anything we can do for you, just reply to this email.\n\nKind regards,\n\n{{sig_consultant}}`,
   },
   rejection: {
     to: 'candidate_email', subject: 'Your application for {{job_title}} at {{company}}', attach: [],
@@ -13046,18 +13051,19 @@ app.post('/api/offer-docs/build', async (req, res) => {
       if (!String(values.reporting_to || '').trim()) tplBody = tplBody.replace(/Reporting To: \{\{reporting_to\}\}\n/, '');
     }
     // Build 72: the online link for this candidate (offer letter, details form, start details) or the client's received link
-    values.portal_link = ''; values.client_confirm_link = '';
-    if (['offer', 'info_request', 'prestart', 'placement'].includes(kind)) {
+    values.portal_link = ''; values.client_confirm_link = ''; values.review_link = '';
+    if (['offer', 'info_request', 'prestart', 'placement', 'review'].includes(kind)) {
       try {
         const me = profileOf(actorOf(req));
-        const snap = { ...values }; ['_compliance', 'sig_coordinator', 'sig_consultant', 'portal_link', 'client_confirm_link'].forEach(k => delete snap[k]);
+        const snap = { ...values }; ['_compliance', 'sig_coordinator', 'sig_consultant', 'portal_link', 'client_confirm_link', 'review_link'].forEach(k => delete snap[k]);
         Object.assign(snap, { sender_name: me.fullName, sender_title: kind === 'offer' || kind === 'placement' ? me.title : 'Recruitment Coordinator', sender_email: me.email, sender_phone: me.phone });
         const link = await offerPortal.issue(offerPortalDeps(), onbPool(), { id, candidate: { name: c.name, email: values.candidate_email, company: c.company, role: c.role }, values: snap, kind, by: lc(actorOf(req)), preview: isPreview() });
         values.portal_link = link.url; values.client_confirm_link = link.clientUrl || '';
+        if (kind === 'review') values.review_link = link.url + '&r=1';
       } catch (e) {
         console.error('offer portal link failed:', e.message);
         warnings.push('The online link could not be made (' + e.message + '). Do not send this email until it can be.');
-        values.portal_link = '[ONLINE LINK COULD NOT BE MADE]'; values.client_confirm_link = '[LINK COULD NOT BE MADE]';
+        values.portal_link = '[ONLINE LINK COULD NOT BE MADE]'; values.client_confirm_link = '[LINK COULD NOT BE MADE]'; values.review_link = '[LINK COULD NOT BE MADE]';
       }
     }
     for (const t of tpl.attach) {
@@ -13226,6 +13232,9 @@ function offerPortalDeps() {
         context: `${opWho(rec)}. ${notes.join(' ')} Open the candidate card, Documents and emails, to see everything they entered and download any files.` }]).catch(() => {});
       await opNote(rec, `Details form submitted online. ${notes[0]}`);
       auditLog('candidate portal', 'submitted', 'offer', `${rec.candidate_name} - ${rec.role}`, 'Information form submitted online');
+    },
+    async onReview(rec) {
+      try { await mailDan(`New feedback from ${rec.candidate_name}: ${rec.review_rating} out of 5`, `${rec.candidate_name} (${rec.role || ''}, ${rec.company || ''}) left feedback through the online link.\n\n"${rec.review_text || '(no comment)'}"\n\nPermission to share on the website: ${rec.review_consent ? 'yes' : 'no'}.\nOpen their card, Online offer, to approve it for the website testimonials.`); } catch (e) { /* the card still shows it */ }
     },
     async onPrestart(rec) {
       await opMergeDetails(rec, { prestart_confirmed_at: new Date().toISOString() }).catch(() => {});
@@ -13786,7 +13795,7 @@ OFFER_EMAILS.feedback_week1 = {
 };
 OFFER_EMAILS.feedback_month1 = {
   to: 'client_email', subject: 'One month in: how is {{candidate_first}} getting on at {{company}}?', attach: [],
-  body: `Dear {{client_contact}},\n\n{{candidate_first}} reaches one month at {{company}} this week, so this is our Month 1 check-in.\n\nCould you spare two minutes to tell me:\n\n- How is {{candidate_first}} performing against what you hoped for?\n- How did you find working with Live 2 Help, and is there anything we should do better?\n- Do you have any other vacancies coming up, or know of another business who may need support with hiring?\n\nAs a reminder, your replacement guarantee on this placement runs until {{guarantee_end}}, so please tell me early if you have any concerns.\n\nIf you have been happy with the service, a short review would mean a great deal to a growing business: https://g.page/r/CU5L4ObMovbGEBM/review\n\nThank you for your continued support.\n\nKind regards,\n\n{{sig_consultant}}`,
+  body: `Dear {{client_contact}},\n\n{{candidate_first}} reaches one month at {{company}} this week, so this is our Month 1 check-in.\n\nCould you spare two minutes to tell me:\n\n- How is {{candidate_first}} performing against what you hoped for?\n- How did you find working with Live 2 Help, and is there anything we should do better?\n- Do you have any other vacancies coming up, or know of another business who may need support with hiring?\n\nAs a reminder, your replacement guarantee on this placement runs until {{guarantee_end}}, so please tell me early if you have any concerns.\n\nThank you for your continued support.\n\nKind regards,\n\n{{sig_consultant}}`,
 };
 
 
@@ -17487,7 +17496,7 @@ app.post('/api/competitors/adverts/:id/to-role-finder', async (req, res) => {
 });
 
 
-const SERVER_BUILD = '24 Nov 2026 - build 72.0 (candidates get one secure online link: accept or decline the offer with a typed or drawn signature and get a signed PDF, send their details with right to work photos saved to their record, confirm their first day, and the client taps to confirm the handover pack; reminders and tasks run from the daily job; build 71.5 (the offer letter drops per annum when the salary is an hourly rate; build 71.4 (the first offer letter and offer email leave out the address and the line manager when they are not known yet, and show the start date as To be confirmed; build 71.3 (the start date in the offer documents is picked from a calendar and is no longer lost; build 71.2 (offer letter salary keeps pence and hourly rates; build 71.1 sends as office@ and clients@ directly; build 71.0 (every email now sends through Microsoft 365 and Brevo is gone; offer documents build with jszip; a candidate reply accepting an offer sent from the dashboard moves the card to Start Date and adds the information request and handover tasks; earlier: build 70.6 (Catering and Hospitality added as the 13th sector, with six starter Gap Brief problems and search words for Suggest sectors; built on server build 70; earlier: build 70 (pension status and employer NI exempt per person in the payroll pack, payroll email and cost reports, employer NI calculated for anyone not exempt, auto-enrolment due warnings; built on server build 67.4; earlier: build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year; 67.3 chase and call tasks close once the contact is logged and Needs attention can be dismissed or snoozed; 67.4 cold sending resumes properly after a bounce pause, only bounces after the resume count, the pause email lists the bounced addresses, guessed email addresses cannot be chosen for cold outreach)))))';
+const SERVER_BUILD = '24 Nov 2026 - build 72.1 (client handover email trimmed to the handover and support wording, Google review link removed from client emails, new candidate feedback request with a star rating and permission to share, approved feedback served at /api/testimonials for the website; build 72.0 (candidates get one secure online link: accept or decline the offer with a typed or drawn signature and get a signed PDF, send their details with right to work photos saved to their record, confirm their first day, and the client taps to confirm the handover pack; reminders and tasks run from the daily job; build 71.5 (the offer letter drops per annum when the salary is an hourly rate; build 71.4 (the first offer letter and offer email leave out the address and the line manager when they are not known yet, and show the start date as To be confirmed; build 71.3 (the start date in the offer documents is picked from a calendar and is no longer lost; build 71.2 (offer letter salary keeps pence and hourly rates; build 71.1 sends as office@ and clients@ directly; build 71.0 (every email now sends through Microsoft 365 and Brevo is gone; offer documents build with jszip; a candidate reply accepting an offer sent from the dashboard moves the card to Start Date and adds the information request and handover tasks; earlier: build 70.6 (Catering and Hospitality added as the 13th sector, with six starter Gap Brief problems and search words for Suggest sectors; built on server build 70; earlier: build 70 (pension status and employer NI exempt per person in the payroll pack, payroll email and cost reports, employer NI calculated for anyone not exempt, auto-enrolment due warnings; built on server build 67.4; earlier: build 67 (targets that set themselves from the annual goal, service line reporting, role and client profitability, owner routes under /api/targets and a counts only /api/targets/mine for Ella; built on server build 66.4.1; 67.1 adds the month targets to the monthly report for Ella; 67.2 targets catch up from what is still to sell in the goal year; 67.3 chase and call tasks close once the contact is logged and Needs attention can be dismissed or snoozed; 67.4 cold sending resumes properly after a bounce pause, only bounces after the resume count, the pause email lists the bounced addresses, guessed email addresses cannot be chosen for cold outreach)))))';
 app.get('/api/version', (req, res) => res.json({ build: SERVER_BUILD }));
 
 // Recent client answers from the one-click reply links, for the pop-up on the dashboard.
