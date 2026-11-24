@@ -17746,7 +17746,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '24 Nov 2026 - build 72.9 (the Who placed this candidate list comes from the People section so Ella and anyone added there appears, and commission falls back to their People commission rate; build 72.8 (earlier picker fix; build 72.6 (handover pack: correct Ella email, unknown fields left out, logo proportions fixed, job title can be changed; build 72.5 (sent emails on the offer card are greyed out once done, with a ready to move note when all three have gone; build 72.4 (you now get an email when a candidate sends their details, compliance picks up their right to work and references, the card shows the details they gave and has an I have seen it all button; build 72.2 (the client handover email no longer has the profile snapshot, invoice or review sections, clients are no longer asked for a Google review, candidates get a separate Google review request and clients get a testimonial request that can go on the website; build 72.0 (candidates accept their offer, send their details and right to work documents and confirm their first day online, with a status card on the offer stage; build 71.2 (offer emails use the signed in person own HTML signature instead of a fixed text one; build 71.1 (the start date asked for in the offer documents is a calendar picker and is saved properly; build 71.0 (offer letter and the other offer path emails go straight to Review and send instead of Outlook; Information request stays on the card after Start Date; earlier: build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1)))))))))))) preview';
+var PAGE_BUILD = '24 Nov 2026 - build 72.10 (People has an Add employee button that goes straight on to payroll details; build 72.9 (the Who placed this candidate list comes from the People section so Ella and anyone added there appears, and commission falls back to their People commission rate; build 72.8 (earlier picker fix; build 72.6 (handover pack: correct Ella email, unknown fields left out, logo proportions fixed, job title can be changed; build 72.5 (sent emails on the offer card are greyed out once done, with a ready to move note when all three have gone; build 72.4 (you now get an email when a candidate sends their details, compliance picks up their right to work and references, the card shows the details they gave and has an I have seen it all button; build 72.2 (the client handover email no longer has the profile snapshot, invoice or review sections, clients are no longer asked for a Google review, candidates get a separate Google review request and clients get a testimonial request that can go on the website; build 72.0 (candidates accept their offer, send their details and right to work documents and confirm their first day online, with a status card on the offer stage; build 71.2 (offer emails use the signed in person own HTML signature instead of a fixed text one; build 71.1 (the start date asked for in the offer documents is a calendar picker and is saved properly; build 71.0 (offer letter and the other offer path emails go straight to Review and send instead of Outlook; Information request stays on the card after Start Date; earlier: build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1))))))))))))) preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
@@ -18647,6 +18647,60 @@ function buildTagApply(){
   }
   const empOf = id => (HR.me && HR.me.employees || []).find(e => e.id === id) || null;
   const nameOf = id => { const e = empOf(id); return e ? (e.known_as || e.full_name) : (id === 'dan' ? 'Daniel' : id); };
+  /* Build 72.10: add an employee in People, then straight on to their payroll details */
+  function hrAddEmployee(){
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,20,40,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+    document.body.appendChild(ov);
+    const inp = (id, label, val, type, extra) => `<div style="margin-bottom:10px;"><label style="display:block;font-size:11px;color:#777;margin-bottom:3px;">${label}</label><input id="${id}" type="${type || 'text'}" value="${h(val || '')}" ${extra || ''} style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:13px;"></div>`;
+    const shell = body => { ov.innerHTML = `<div style="background:#fff;border-top:3px solid var(--gold);max-width:520px;width:100%;max-height:92vh;overflow:auto;border-radius:3px;padding:22px 24px;">${body}</div>`; };
+    let emp = null;
+    function step1(){
+      shell(`<div style="font-size:11px;color:var(--gold);letter-spacing:.8px;font-weight:600;">STEP 1 OF 2</div><h3 style="margin:4px 0 14px;">Add an employee</h3>
+        ${inp('ae_full','Full legal name')}${inp('ae_known','Known as (used day to day)')}${inp('ae_title','Job title')}
+        ${inp('ae_start','Start date','', 'date')}${inp('ae_email','Work email','', 'email')}${inp('ae_phone','Phone')}
+        ${inp('ae_hours','Hours a week','37.5')}${inp('ae_hol','Holiday days a year (before bank holidays)','26','number')}
+        <div id="ae_err" style="color:var(--danger);font-size:12.5px;min-height:18px;"></div>
+        <div style="display:flex;gap:10px;"><button id="ae_next" class="p41-btn pri">Save and add payroll details</button><button id="ae_x" class="p41-btn">Cancel</button></div>`);
+      $('ae_x').onclick = () => ov.remove();
+      $('ae_next').onclick = async () => {
+        const v = id => $(id).value.trim();
+        const full = v('ae_full'), known = v('ae_known') || full.split(/\s+/)[0], start = v('ae_start');
+        if(!full || !start){ $('ae_err').textContent = 'Full name and start date are required.'; return; }
+        let id = known.toLowerCase().replace(/[^a-z0-9]+/g, '') || 'staff'; const taken = (HR.me.employees || []).map(e => e.id);
+        let n = 2, base = id; while(taken.indexOf(id) >= 0) id = base + (n++);
+        const pEnd = new Date(start + 'T00:00:00Z'); pEnd.setUTCMonth(pEnd.getUTCMonth() + 3);
+        emp = {id, full_name: full, known_as: known, title: v('ae_title'), manager: 'dan', start_date: start, continuous_date: start, hours: v('ae_hours') || '37.5',
+          work_pattern: 'Monday to Friday', place_of_work: '', salary: '', pay_frequency: 'Monthly', pension: '', notice: 'One month', sick_pay: 'Statutory Sick Pay only',
+          probation_start: start, probation_end: pEnd.toISOString().slice(0, 10), restrictive_covenant: '', holiday_days: v('ae_hol') || '26', holiday_year_start: '01-01', holiday_from: start,
+          email: v('ae_email'), phone: v('ae_phone'), emergency_contact: '', commission_rate: '0', status: 'Active'};
+        $('ae_next').disabled = true; $('ae_next').textContent = 'Saving...';
+        try{ await b2Post('/api/hr/employees', emp); }catch(e){ $('ae_err').textContent = 'Could not save: ' + e.message; $('ae_next').disabled = false; $('ae_next').textContent = 'Save and add payroll details'; return; }
+        step2();
+      };
+    }
+    function step2(){
+      shell(`<div style="font-size:11px;color:var(--gold);letter-spacing:.8px;font-weight:600;">STEP 2 OF 2</div><h3 style="margin:4px 0 4px;">Payroll details for ${h(emp.known_as)}</h3>
+        <div style="font-size:12.5px;color:#777;margin-bottom:14px;">${h(emp.full_name)} is now in People. Add their pay so payroll, commission and the invoice credit work.</div>
+        ${inp('ap_salary','Annual salary (£)','','number')}${inp('ap_pension','Employer pension % on salary','3','number')}${inp('ap_comm','Commission % of the invoice amount (0 for none)','0','number')}
+        <label style="display:flex;gap:8px;font-size:12.5px;margin-bottom:12px;"><input type="checkbox" id="ap_poc" checked> Employer pension also applies to commission</label>
+        <div id="ap_err" style="color:var(--danger);font-size:12.5px;min-height:18px;"></div>
+        <div style="display:flex;gap:10px;"><button id="ap_save" class="p41-btn pri">Save payroll details</button><button id="ap_skip" class="p41-btn">Do this later</button></div>`);
+      $('ap_skip').onclick = async () => { ov.remove(); toast41('Added to People. Payroll details still to add.'); await hrLoad(); };
+      $('ap_save').onclick = async () => {
+        const salary = parseInt($('ap_salary').value, 10) || 0;
+        if(!salary){ $('ap_err').textContent = 'Please enter their annual salary.'; return; }
+        const pensionPct = parseFloat($('ap_pension').value) || 0, commissionPct = parseFloat($('ap_comm').value) || 0;
+        try{
+          const list = payEmployees(); list.push({name: emp.known_as, role: emp.title, salary, startDate: emp.start_date, pensionPct, commissionPct, pensionOnComm: $('ap_poc').checked});
+          finSet('l2h-employees', JSON.stringify(list));
+          await b2Post('/api/hr/employees', Object.assign({}, emp, {salary: String(salary), pension: 'Employer ' + pensionPct + '%', commission_rate: String(commissionPct)}));
+        }catch(e){ $('ap_err').textContent = 'Could not save: ' + e.message; return; }
+        ov.remove(); toast41('Employee and payroll details added.'); await hrLoad();
+      };
+    }
+    step1();
+  }
   function hrRender(){
     const admin = !!(HR.me && HR.me.admin);
     $('hr41Title').textContent = admin ? 'People' : 'My HR';
@@ -18655,6 +18709,7 @@ function buildTagApply(){
     const tabs = HR_TABS.filter(([k]) => k !== 'commission' || admin);
     $('hr41Tabs').innerHTML = tabs.map(([k,l]) => `<button class="p41-chip" data-hrt="${k}" aria-pressed="${HR.tab === k}">${l}${k === 'holidays' && admin && st41.pending ? ' · ' + st41.pending : ''}</button>`).join('');
     $('hr41Who').innerHTML = admin && HR.me.employees.length > 1 ? `<select class="p41-in" id="hr41Emp">${HR.me.employees.map(e => `<option value="${h(e.id)}"${e.id === HR.emp ? ' selected' : ''}>${h(e.known_as || e.full_name)}</option>`).join('')}</select>` : '';
+    if(admin){ $('hr41Who').insertAdjacentHTML('beforeend', '<button class="p41-btn pri sm" id="hr41AddEmp" style="margin-left:8px;">Add employee</button>'); $('hr41AddEmp').onclick = hrAddEmployee; }
     if(!HR.me.employees.length){ $('hr41Body').innerHTML = `<div class="p41-panel"><div class="p41-empty">${admin ? 'No employee records yet.' : 'You do not have an HR record yet. Ask Daniel to add you.'}</div></div>`; return; }
     const fn = {overview:hrOverview, holidays:hrHolidays, calendar:hrCalendar, sickness:hrSickness, documents:hrDocs, pay:hrPay, reviews:hrReviews, profile:hrProfile, commission:hrCommission}[HR.tab] || hrOverview;
     $('hr41Body').innerHTML = fn(admin);
