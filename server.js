@@ -12450,9 +12450,9 @@ async function buildStageTasks(c, stage) {
     } else {
       const s = toISODate(sd);
       add('prestart', `Send Pre-Start Onboarding Pack to ${c.name}`, clampFuture(toISODate(new Date(sd.getTime() - 3 * 86400000))), `Three days before the start on ${formatDateUK(s)} for ${who}. Open the candidate card, then Documents and emails, then Pre-start pack and email.`, 'High');
-      add('day1', `Day 1 message to ${c.name}`, clampFuture(s), `Starting today at ${c.company || 'the client'}. Send the Day 1 message and check the client has what they need.`, 'High');
-      add('week1', `Week 1 check-in: ${c.name}`, toISODate(new Date(sd.getTime() + 7 * 86400000)), `Check in with ${c.name} and with ${c.company || 'the client'}. Open the candidate card, then Documents and emails, then Week 1 client check-in. Move the card to Week 1 Check-in afterwards.`);
-      add('month1', `Month 1 check-in: ${c.name}`, toISODate(new Date(sd.getTime() + 30 * 86400000)), `Check in with both sides. Open the candidate card, then Documents and emails, then Month 1 client feedback request, which also asks for new vacancies and a review.`);
+      add('day1', `Day 1 message to ${c.name}`, clampFuture(s), `Starting today at ${c.company || 'the client'}. A Day 1 welcome email is waiting under Emails to review. Read it, send it, and check the client has what they need.`, 'High');
+      add('week1', `Week 1 check-in: ${c.name}`, toISODate(new Date(sd.getTime() + 7 * 86400000)), `Check in with ${c.name} and with ${c.company || 'the client'}. Open the candidate card, then Documents and emails, then Week 1 client check-in. The email to the client is waiting under Emails to review. Move the card to Week 1 Check-in afterwards.`);
+      add('month1', `Month 1 check-in: ${c.name}`, toISODate(new Date(sd.getTime() + 30 * 86400000)), `Check in with both sides. Open the candidate card, then Documents and emails, then Month 1 client feedback request, which also asks for new vacancies and a review. It is waiting under Emails to review.`);
     }
   } else if (stage === 'rejected') {
     add('reject-email', `Send rejection email to ${c.name}`, t, `Open the candidate card, then Documents and emails, then Rejection email, for ${who}. Log the reason in Client Feedback if it came from the client.`);
@@ -12978,6 +12978,7 @@ async function runDailyJob(skipBackup) {
   await step('kpiDaily', kpiDailyStep);
   // build 64: payroll reminders (3 working days before, the day before, on the day, then daily if missed)
   await step('payrollDaily', payrollDailyStep);
+  await step('checkinQueue', checkinQueueStep);
   await step('outboxTask', async () => {
     const n = (await emailOutboxTable.list()).filter(o => o.status === 'pending').length;
     if (!n) return 0;
@@ -14023,6 +14024,10 @@ async function complianceTasks() {
 
 /* ---------- Client check-in emails ---------- */
 OFFER_LABELS.guarantee_end = 'GUARANTEE END DATE';
+OFFER_EMAILS.day1_welcome = {
+  to: 'candidate_email', subject: 'Good luck today, {{candidate_first}}', attach: [],
+  body: `Hi {{candidate_first}},\n\nToday is the day. You start as {{job_title}} at {{company}}, and I wanted to wish you the best of luck.\n\nA quick reminder of the details:\n\nReport time: {{start_time}}\nLocation: {{work_location}}\nReporting to: {{reporting_to}}\n\nIf anything is not as expected when you arrive, or you cannot find the entrance, call me on 07434 351996 and I will sort it straight away.\n\nI will check in with you at the end of the week to see how it is going.\n\nBest wishes,\n\n{{sig_coordinator}}`,
+};
 OFFER_EMAILS.feedback_week1 = {
   to: 'client_email', subject: 'Checking in on {{candidate_first}}: week one at {{company}}', attach: [],
   body: `Dear {{client_contact}},\n\nI hope {{candidate_first}}'s first week as {{job_title}} has gone well.\n\nThis is our standard Week 1 check-in. Two quick questions, and a short reply is perfect:\n\n- How is {{candidate_first}} settling in, and is the role what you expected?\n- Is there anything you would like us to pick up with {{candidate_first}} on your behalf?\n\nIf anything needs attention, call me and I will deal with it the same day.\n\nKind regards,\n\n{{sig_consultant}}`,
@@ -20897,6 +20902,57 @@ app.post('/api/mail/send', async (req, res) => {
 });
 
 
+/* ---------- Build 74: Day 1, Week 1 and Month 1 emails are written to Emails to review ----------
+   Nothing sends by itself. On the due date the email is written here, ready to read and send or skip. */
+const CHECKIN_RULES = [
+  { email: 'day1_welcome', stages: ['start_date', 'day1'], from: 0, to: 3 },
+  { email: 'feedback_week1', stages: ['start_date', 'day1', 'week1'], from: 7, to: 14 },
+  { email: 'feedback_month1', stages: ['start_date', 'day1', 'week1'], from: 30, to: 40 },
+];
+async function checkinBuild(emailKind, c) {
+  const tpl = OFFER_EMAILS[emailKind];
+  if (!tpl) throw new Error('Unknown check-in email');
+  const { values } = await gatherOfferValues({ candidate: c });
+  // lines about details we do not hold are dropped, not left as [PLACEHOLDERS]
+  const body = tpl.body.split('\n').filter(l => { const m = l.match(/\{\{(\w+)\}\}/); return !(m && ['start_time', 'work_location', 'reporting_to'].includes(m[1]) && !String(values[m[1]] || '').trim()); }).join('\n');
+  const missing = new Set();
+  return { label: ({ day1_welcome: 'Day 1 welcome message', feedback_week1: 'Week 1 client check-in', feedback_month1: 'Month 1 client feedback request' })[emailKind], subject: offerFill(tpl.subject, values, missing), text: offerFill(body, values, missing),
+    to: tpl.to === 'client_email' ? values.client_email : values.candidate_email };
+}
+async function checkinMarkSent(emailKind, c, to, by) {
+  const id = placementKey(c.company, c.name, c.role);
+  const row = (await offerDetailsTable.list()).find(o => o.id === id);
+  let d = {}; try { d = JSON.parse((row && row.details_json) || '{}'); } catch (e) { d = {}; }
+  d[emailKind + '_sent_at'] = new Date().toISOString(); d[emailKind + '_sent_to'] = lc(to || ''); d[emailKind + '_sent_by'] = by;
+  await offerDetailsTable.upsert({ id, candidate_name: c.name, role: c.role || '', company: c.company, details_json: JSON.stringify(d), updated_by: by, updated_at: new Date().toISOString() });
+}
+async function checkinQueueStep() {
+  const rows = (await readAllRows()).filter(r => r && r[0]).map(rowToCandidate).filter(c => !isTestRecord(c.name, c.notes));
+  const queued = new Set((await emailOutboxTable.list().catch(() => [])).filter(o => o.kind === 'checkin').map(o => { try { return JSON.parse(o.payload || '{}').key; } catch (e) { return ''; } }));
+  const details = new Map((await offerDetailsTable.list().catch(() => [])).map(o => [o.id, o.details_json || '']));
+  let added = 0;
+  for (const c of rows) {
+    const st = normStage(c.stage), sd = parseISODate(c.startDate);
+    if (!sd) continue;
+    const days = Math.floor((new Date(todayISO() + 'T12:00:00Z').getTime() - sd.getTime()) / 86400000);
+    for (const r of CHECKIN_RULES) {
+      if (!r.stages.includes(st) || days < r.from || days > r.to) continue;
+      const pid = placementKey(c.company, c.name, c.role);
+      const key = pid + '|' + r.email;
+      if (queued.has(key) || String(details.get(pid) || '').includes('"' + r.email + '_sent_at"')) continue;
+      const cand = { name: c.name, company: c.company, role: c.role, startDate: c.startDate, email: c.email, phone: c.phone, salary: c.salary };
+      try {
+        const m = await checkinBuild(r.email, cand);
+        if (!m.to) continue; // no address held: the task on the card covers it
+        await outboxAdd({ kind: 'checkin', company: c.company, name: c.name, to: m.to, subject: m.subject, payload: { key, email: r.email, candidate: cand } });
+        queued.add(key); added++;
+        auditLog('system', 'check-in email queued for review', 'candidate', `${c.name} - ${c.role}`, r.email);
+      } catch (e) { console.error('checkinQueue failed for', c.name, e.message); }
+    }
+  }
+  return added;
+}
+
 /* ---------- Build 55: Emails to review (the outbox) ----------
    Emails the system used to send on its own (onboarding reminders to clients, talent pool re-consent
    emails to candidates) are now written here instead. Nothing goes until Dan or Ella opens it, reads
@@ -20928,6 +20984,12 @@ async function outboxRender(o) {
   }
   if (o.kind === 'retention_request') {
     const item = { key: 'retention_request', label: 'Request to keep records', to: o.to, from: `Live 2 Help Recruitment <${MAIL_SENDER}>`, subject: p.subject, text: p.text, attachmentNames: [] };
+    item.hash = onbEmailHash(item);
+    return { ...item, payload: p };
+  }
+  if (o.kind === 'checkin') {
+    const m = await checkinBuild(p.email, p.candidate || {});
+    const item = { key: 'checkin', label: m.label, to: o.to, from: `Live 2 Help Recruitment <${MAIL_SENDER}>`, subject: m.subject, text: m.text, attachmentNames: [] };
     item.hash = onbEmailHash(item);
     return { ...item, payload: p };
   }
@@ -21001,6 +21063,14 @@ app.post('/api/outbox/:id/send', async (req, res) => {
       const now = new Date().toISOString();
       await mailLogTable.append({ id: 'em-' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), at: now, day: rfxToday(), user: me, from: MAIL_SENDER, to: o.to, cc: '', subject: it.subject, kind: 'retention', company: o.company || '', role: '', entity: o.name, attachments: '', message_id: String((info && info.messageId) || '').replace(/[<>]/g, ''), status: 'sent', event_at: now, ref: 'retention' }).catch(() => {});
       await retentionMarkRequestSent(it.payload.item_id).catch(() => {});
+    }
+    else if (o.kind === 'checkin') {
+      const counts = await mailCounts(me);
+      if (counts.today >= MAIL_DAILY_LIMIT) return res.status(429).json({ error: `Today's limit of ${MAIL_DAILY_LIMIT} emails through Microsoft 365 has been reached. Try again tomorrow.` });
+      const info = await emailTransporter.sendMail({ from: `"Live 2 Help Recruitment" <${MAIL_SENDER}>`, replyTo: MAIL_SENDER, to: o.to, subject: it.subject, text: it.text });
+      const now = new Date().toISOString();
+      await mailLogTable.append({ id: 'em-' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), at: now, day: rfxToday(), user: me, from: MAIL_SENDER, to: o.to, cc: '', subject: it.subject, kind: it.payload.email === 'day1_welcome' ? 'candidate' : 'checkin', company: o.company || '', role: (it.payload.candidate || {}).role || '', entity: o.name, attachments: '', message_id: String((info && info.messageId) || '').replace(/[<>]/g, ''), status: 'sent', event_at: now, ref: it.payload.email }).catch(() => {});
+      await checkinMarkSent(it.payload.email, it.payload.candidate || {}, o.to, auditActorOf(req)).catch(() => {});
     }
     else if (o.kind === 'ella_report') {
       const sent = await reportsSendElla(o, it, me);
