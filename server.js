@@ -28,6 +28,7 @@ import { contactDoneReason as contactDoneReasonPure } from './attention.js'; // 
 import { createMailSync, SUGGESTION_KINDS, isClientType } from './mailsync.js'; // build 66
 import { niRatesFrom } from './employee-pay.js'; // build 70
 import { forceOwnerSender } from './owner-mail.js'; // build 73.1: owner only mail always sent from Daniel's own mailbox
+import { planMove, belongsTo, retarget, rekey, invoiceFollows, summaryText } from './role-move.js'; // build 73.3: move a candidate to another role
 import { londonToday, monthOf, readPayrollSettings, validOverride, payDateFor, payrollWatch, currentPayrollMonth, bannerFor, reminderFor, payrollPack, clawbackCheck, payrollBankCheck, payrollEmail, runRecords, monthName as payrollMonthName } from './payroll.js'; // build 64
 import { computeTargets, backwardsTargets, historicalRatios, normaliseGoal, targetsForPerson, personProgress, goalProgress, salesByLine, SERVICE_LINES, cleanLine } from './targets.js'; // build 67
 import { computeOwnerKpi, computeMyKpi, vatAlertsDue, vatAlertText, monthKey, KPI_SETTING_DEFAULTS, KPI_SETTING_KEYS, personKey } from './kpi-owner.js'; // build 62
@@ -1714,6 +1715,99 @@ async function buildCandidatesGrouped() {
     return grouped;
   }
 }
+
+// Build 73.3: move a candidate to another role (and company if needed), keeping their stage and every record.
+// Body: { candidate: { id, name, company, role }, to: { company, role }, dryRun }. With dryRun the answer lists what would change and nothing is written.
+// The new role must already exist (the page creates it first when asked). The stage is never touched.
+app.post('/api/candidates/move-role', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const want = b.candidate || {};
+    const dryRun = b.dryRun === true;
+    const lcx = v => String(v == null ? '' : v).trim().toLowerCase();
+    const grouped = await buildCandidatesGrouped();
+    const existing = []; let cur = null, curCompany = '';
+    for (const co of Object.keys(grouped)) for (const r of Object.keys(grouped[co])) for (const x of grouped[co][r]) {
+      const company = co === UNASSIGNED_LABEL ? '' : co;
+      existing.push({ name: x.name, role: x.role || r, company });
+      if (!cur && ((want.id && x.id === want.id) || (!want.id && lcx(x.name) === lcx(want.name))) && lcx(x.role || r) === lcx(want.role) && lcx(company) === lcx(want.company)) { cur = x; curCompany = company; }
+    }
+    if (!cur) return res.status(404).json({ error: 'Could not find that candidate on that role. Refresh the board and try again.' });
+    const plan = planMove({ name: cur.name, company: curCompany, role: cur.role }, b.to || {}, existing);
+    if (plan.error) return res.status(400).json({ error: plan.error });
+
+    const acts = []; const counts = {}; const warnings = [];
+    const act = (label, run) => { counts[label] = (counts[label] || 0) + 1; acts.push(run); };
+    const sheets = getSheetsClient();
+
+    // the candidate card: the Dashboard row (if there is one) and the form application (if there is one, even hidden behind a Dashboard row)
+    const dashRows = await readAllRows();
+    const dIdx = cur.sourceTab === 'application' ? -1 : dashRows.findIndex(r => r && r[0] === cur.id);
+    if (dIdx >= 0) act('candidate card', async () => {
+      const row = [...dashRows[dIdx]]; while (row.length < 12) row.push('');
+      row[1] = plan.to.company; row[2] = plan.to.role;
+      await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `${TAB}!A${dIdx + 2}:L${dIdx + 2}`, valueInputOption: 'RAW', requestBody: { values: [row] } });
+    });
+    const appRows = await readApplicationsRows().catch(() => []);
+    const appRec = cur.sourceTab === 'application' ? cur
+      : appRows.find(a => lcx(a.name) === lcx(cur.name) && lcx(a.role) === lcx(plan.from.role) && (!a.company || lcx(a.company) === lcx(curCompany)));
+    if (appRec) act(cur.sourceTab === 'application' ? 'candidate card' : 'application record', async () => {
+      const tabRef = `'${`Applications - ${appRec.formRole}`.replace(/'/g, "''")}'`;
+      const got = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${tabRef}!A2:T` });
+      const i = (got.data.values || []).findIndex(r => (r[0] || '') === appRec.id);
+      if (i === -1) throw new Error(`Could not find the application in ${appRec.formRole}`);
+      await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `${tabRef}!R${i + 2}`, valueInputOption: 'RAW', requestBody: { values: [[plan.to.company]] } });
+      await syncApplicantRole({ id: appRec.id, name: appRec.name, role: plan.to.role, formRole: appRec.formRole, sourceTab: 'application' });
+    });
+    if (dIdx < 0 && !appRec) return res.status(404).json({ error: 'Could not find the candidate record to move.' });
+
+    // records keyed by company + name + role: same record under the new key
+    for (const [table, label] of [[placementsTable, 'placement records'], [offerDetailsTable, 'offer records'], [complianceTable, 'compliance records']]) {
+      const rows = await table.list().catch(() => []);
+      const row = rows.find(r => r.id === plan.oldKey);
+      if (!row) continue;
+      if (rows.some(r => r.id === plan.newKey)) { warnings.push(`A ${label.replace(/s$/, '')} already existed under the new role and was left as it is.`); continue; }
+      act(label, async () => { await table.upsert(rekey(row, plan)); await table.remove(plan.oldKey); });
+    }
+    // records that just carry the role and company as fields
+    for (const [table, label] of [[interviewsTable, 'interviews'], [interviewPackDraftsTable, 'interview packs'], [submissionDraftsTable, 'submission drafts'], [feedbackTable, 'client feedback'], [candidateDetailsTable, 'candidate details'], [replyLinksTable, 'reply links']]) {
+      const rows = await table.list().catch(() => []);
+      for (const row of rows.filter(r => belongsTo(r, plan))) act(label, async () => { await table.upsert(retarget(row, plan)); });
+    }
+    // the candidate's online offer page (Postgres): the links they were sent keep working
+    try {
+      const pool = onbPool();
+      const f = pool ? (await pool.query('select id from offer_portal where id = $1', [plan.oldKey])).rows[0] : null;
+      if (f) act('online offer pages', async () => {
+        await pool.query('update offer_portal set id = $2, role = $3, company = $4, updated_at = now() where id = $1', [plan.oldKey, plan.newKey, plan.to.role, plan.to.company]);
+        await pool.query('update offer_portal_files set offer_id = $2 where offer_id = $1', [plan.oldKey, plan.newKey]);
+      });
+    } catch (e) { /* no online offer page */ }
+    // unpaid invoices follow the candidate; paid and refunded invoices are never changed
+    const invRows = await readInvoiceRows().catch(() => []);
+    invRows.forEach((r, i) => {
+      if (!r || !r[0] || !invoiceFollows(rowToInvoice(r), plan)) return;
+      act('invoices', async () => {
+        const row = [...r]; while (row.length < 18) row.push('');
+        row[3] = plan.to.company; row[4] = plan.to.role;
+        await sheets.spreadsheets.values.update({ spreadsheetId: CLIENT_SHEET_ID, range: `${INVOICES_TAB}!A${i + 2}:R${i + 2}`, valueInputOption: 'RAW', requestBody: { values: [row] } });
+      });
+    });
+
+    const summary = summaryText(plan, counts);
+    if (!dryRun) {
+      for (const run of acts) await run();
+      await commsTable.append({ id: 'cm-mv-' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), timestamp: new Date().toISOString(), user: auditActorOf(req), entity_type: 'candidate',
+        entity_name: plan.name, company: plan.to.company, role: plan.to.role, channel: 'note', direction: 'inbound', summary: summary.slice(0, 480), follow_up_date: '', follow_up_done: '' }).catch(() => {});
+      auditLog(auditActorOf(req), 'moved role', 'candidate', `${plan.name} - ${plan.to.role}`, summary.slice(0, 400));
+      dropApplicantRolesCache(); candidatesCache = null;
+    }
+    res.json({ ok: true, dryRun, moved: !dryRun, from: plan.from, to: plan.to, stage: cur.stage, counts, warnings, summary });
+  } catch (e) {
+    console.error('POST /api/candidates/move-role error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // Create or update a single candidate (upsert by id).
 // Applications-tab candidates (sourceTab === 'application') are written back to

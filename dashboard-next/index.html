@@ -3483,6 +3483,7 @@ function buildStageButtons(c){
   html += backStageControl(c);
   html += `<button onclick="logContactFromCandidate()">Log contact</button>`;
   html += `<button onclick="saveNotesOnly()">Save notes</button>`;
+  if(currentCompany && currentCompany !== UNASSIGNED_LABEL) html += `<button onclick="moveRoleOpen()" title="Move them to another role and keep their stage and records">Move to another role</button>`;
   html += `<button class="reject" onclick="openDeleteConfirm()" style="margin-top:8px;width:100%;">Delete from pipeline</button>`;
   html += '</div>';
   return html;
@@ -4450,6 +4451,116 @@ async function invContinue(){
     atts: [{fileName: inv.number + '.pdf', mime: 'application/pdf', base64: b64}],
     meta: {entity: inv.candidateName, company: inv.company, role: inv.role || '', entityType: 'client', contactName: contact ? contact.name : ''}, log: true,
     onSent: async function(){ try{ await fetch(API_BASE + '/api/invoices/' + encodeURIComponent(inv.number), {method:'PUT', headers:{'Content-Type':'application/json', 'X-User-Role': currentUserRole}, body: JSON.stringify({status: 'sent'})}); if(typeof loadInvoices === 'function') loadInvoices(); }catch(e){} }});
+}
+
+
+/* ---------- Build 73.3: move a candidate to another role, keeping their stage ---------- */
+var MVR = {c:null, fromCo:'', fromRole:'', toCo:'', toRole:'', plan:null, msg:'', busy:false};
+function moveRoleOpen(){
+  const c = findCandidate(openCandidateId); if(!c) return;
+  MVR = {c:c, fromCo:currentCompany, fromRole:currentRole, toCo:currentCompany, toRole:'', plan:null, msg:'', busy:false};
+  mvrRender();
+}
+function mvrClose(){ const el = document.getElementById('mvrOv'); if(el) el.style.display = 'none'; }
+function mvrCompanies(){
+  const seen = {}, out = [];
+  mergedRoles().forEach(function(r){ if(r.company && !seen[r.company.toLowerCase()]){ seen[r.company.toLowerCase()] = 1; out.push(r.company); } });
+  return out.sort(function(a, b){ return a.localeCompare(b); });
+}
+function mvrRolesFor(co){
+  const same = function(a, b){ return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); };
+  return mergedRoles().filter(function(r){ return same(r.company, co) && !(same(r.company, MVR.fromCo) && same(r.role, MVR.fromRole)); }).map(function(r){ return r.role; });
+}
+function mvrRender(){
+  let el = document.getElementById('mvrOv');
+  if(!el){
+    el = document.createElement('div'); el.id = 'mvrOv';
+    el.style.cssText = 'position:fixed;inset:0;background:rgba(10,15,30,.55);z-index:6000;display:flex;align-items:center;justify-content:center;padding:16px;';
+    document.body.appendChild(el);
+  }
+  const c = MVR.c, stage = (STAGES.find(function(x){ return x.key === c.stage; }) || {}).label || c.stage;
+  const isNew = MVR.toRole === '__new';
+  const roles = mvrRolesFor(MVR.toCo);
+  const inp = 'width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:2px;font-size:13px;';
+  const lab = function(t){ return '<label style="font-size:11px;color:#999;display:block;margin:10px 0 3px;">' + t + '</label>'; };
+  let h = '<div style="background:#fff;border-top:3px solid var(--gold);max-width:520px;width:100%;max-height:92vh;overflow:auto;border-radius:3px;padding:22px 24px;">' +
+    '<div style="display:flex;justify-content:space-between;"><div><div style="font-size:11px;color:var(--gold);letter-spacing:.8px;font-weight:600;">MOVE TO ANOTHER ROLE</div><h3 style="margin:4px 0 2px;">' + esc(c.name) + '</h3>' +
+    '<div style="font-size:12.5px;color:#777;">Now on ' + esc(MVR.fromRole) + ' at ' + esc(MVR.fromCo) + ', stage: ' + esc(stage) + '. The stage stays exactly as it is.</div></div><button onclick="mvrClose()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;">&times;</button></div>' +
+    lab('COMPANY') + '<select id="mv_co" onchange="MVR.toCo=this.value;MVR.toRole=\'\';MVR.plan=null;mvrRender()" style="' + inp + '">' + mvrCompanies().map(function(co){ return '<option value="' + esc(co) + '"' + (co === MVR.toCo ? ' selected' : '') + '>' + esc(co) + '</option>'; }).join('') + '</select>' +
+    lab('ROLE') + '<select id="mv_role" onchange="MVR.toRole=this.value;MVR.plan=null;mvrRender()" style="' + inp + '"><option value="">Choose a role...</option>' +
+      roles.map(function(r){ return '<option value="' + esc(r) + '"' + (r === MVR.toRole ? ' selected' : '') + '>' + esc(r) + '</option>'; }).join('') +
+      '<option value="__new"' + (isNew ? ' selected' : '') + '>+ Create a new role</option></select>';
+  if(isNew){
+    h += '<div style="margin-top:10px;padding:10px 12px;background:#fffaf0;border-left:3px solid var(--gold);">' +
+      '<div style="font-size:12px;color:#777;">The new role is created open for ' + esc(MVR.toCo) + ', not shown on the careers page, with no application form.</div>' +
+      lab('NEW ROLE TITLE') + '<input id="mv_title" type="text" style="' + inp + '" value="' + esc(MVR.newTitle || '') + '" oninput="MVR.newTitle=this.value;MVR.plan=null">' +
+      '<div style="display:flex;gap:10px;"><div style="flex:2;">' + lab('SALARY OR HOURLY RATE') + '<input id="mv_sal" type="text" style="' + inp + '" placeholder="e.g. 28000, or 13.24 per hour" value="' + esc(MVR.newSal || '') + '" oninput="MVR.newSal=this.value;MVR.plan=null;mvrFee()"></div>' +
+      '<div style="flex:1;">' + lab('POSITIONS') + '<input id="mv_pos" type="number" min="1" style="' + inp + '" value="' + esc(MVR.newPos || '1') + '" oninput="MVR.newPos=this.value"></div></div>' +
+      '<div style="display:flex;gap:10px;"><div style="flex:1;">' + lab('PAY BASIS') + '<select id="mv_basis" style="' + inp + '" onchange="MVR.newBasis=this.value;mvrFee()"><option value="annual"' + (MVR.newBasis !== 'hourly' ? ' selected' : '') + '>Annual salary</option><option value="hourly"' + (MVR.newBasis === 'hourly' ? ' selected' : '') + '>Hourly rate</option></select></div>' +
+      '<div style="flex:1;">' + lab('WEEKLY HOURS (hourly only)') + '<input id="mv_hours" type="number" style="' + inp + '" value="' + esc(MVR.newHours || '') + '" oninput="MVR.newHours=this.value;mvrFee()"></div></div>' +
+      '<div id="mv_fee" style="font-size:12.5px;margin-top:8px;color:var(--dark);"></div></div>';
+  }
+  if(MVR.plan){
+    const pl = MVR.plan, parts = Object.keys(pl.counts || {}).map(function(k){ return pl.counts[k] + ' ' + k; });
+    h += '<div style="margin-top:12px;padding:10px 12px;background:#f4f8f4;border-left:3px solid #4a7c59;font-size:12.5px;"><b>This will move:</b><br>' + esc(pl.to.role) + ' at ' + esc(pl.to.company) + ', stage stays ' + esc(stage) + '.' +
+      (parts.length ? '<br>Updated: ' + esc(parts.join(', ')) + '.' : '') + ((pl.warnings || []).length ? '<br><span style="color:var(--danger);">' + esc(pl.warnings.join(' ')) + '</span>' : '') +
+      '<br>Paid invoices are never changed. The old role stays live.</div>';
+  }
+  h += '<div id="mvrMsg" style="color:var(--danger);font-size:12.5px;min-height:18px;margin-top:8px;">' + esc(MVR.msg) + '</div><div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+    (MVR.plan ? '<button onclick="mvrDo()" style="padding:10px 18px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:13px;font-weight:600;"' + (MVR.busy ? ' disabled' : '') + '>Move now</button>' : '<button onclick="mvrCheck()" style="padding:10px 18px;background:var(--gold);border:none;color:var(--dark);border-radius:2px;cursor:pointer;font-size:13px;font-weight:600;"' + (MVR.busy ? ' disabled' : '') + '>Check what will move</button>') +
+    '<button onclick="mvrClose()" style="padding:10px 14px;background:#fff;border:1px solid var(--border);border-radius:2px;cursor:pointer;font-size:13px;">Cancel</button></div></div>';
+  el.innerHTML = h; el.style.display = 'flex';
+  if(isNew) mvrFee();
+}
+function mvrPay(){
+  const sal = String(MVR.newSal || '').trim(), basis = MVR.newBasis === 'hourly' ? 'hourly' : 'annual';
+  return {sal:sal, basis:basis, hours:MVR.newHours, band: sal && basis === 'hourly' && !looksHourly(sal) ? sal + ' per hour' : sal};
+}
+function mvrFee(){
+  const el = document.getElementById('mv_fee'); if(!el) return;
+  const p = mvrPay(), fee = p.sal ? roleAutoFee(p.sal, {basis:p.basis, hours:p.hours}) : '';
+  el.textContent = fee ? 'Fee for this role: ' + Math.round(fee * 100) + '% of the starting salary (set from the pay entered).' : 'Enter the pay and the fee is worked out from it.';
+}
+function mvrTarget(){
+  if(!MVR.toCo) return {error:'Choose a company.'};
+  if(!MVR.toRole) return {error:'Choose a role, or create a new one.'};
+  if(MVR.toRole === '__new'){
+    const t = String(MVR.newTitle || '').trim();
+    if(!t) return {error:'Enter the new role title.'};
+    if(!String(MVR.newSal || '').trim()) return {error:'Enter the salary or hourly rate so the fee can be worked out.'};
+    if(MVR.newBasis === 'hourly' && !(parseFloat(MVR.newHours) > 0)) return {error:'Enter the weekly hours for an hourly role.'};
+    return {company:MVR.toCo, role:t, create:true};
+  }
+  return {company:MVR.toCo, role:MVR.toRole};
+}
+async function mvrCheck(){
+  const t = mvrTarget(); if(t.error){ MVR.msg = t.error; mvrRender(); return; }
+  MVR.busy = true; MVR.msg = 'Checking...'; mvrRender();
+  try{
+    const r = await b2Post('/api/candidates/move-role', {candidate:{id:MVR.c.id, name:MVR.c.name, company:MVR.fromCo, role:MVR.fromRole}, to:{company:t.company, role:t.role}, dryRun:true});
+    MVR.plan = r; MVR.msg = '';
+  }catch(e){ MVR.plan = null; MVR.msg = e.message; }
+  MVR.busy = false; mvrRender();
+}
+async function mvrDo(){
+  const t = mvrTarget(); if(t.error){ MVR.msg = t.error; mvrRender(); return; }
+  MVR.busy = true; MVR.msg = 'Moving...'; mvrRender();
+  try{
+    if(t.create){
+      const p = mvrPay();
+      const body = {id: opsRoleKey(t.company, t.role), company:t.company, role:t.role, contact:'', salary_band:p.band,
+        fee_percent: String(roleAutoFee(p.sal, {basis:p.basis, hours:p.hours}) || ''), pay_basis:p.basis, hours_per_week: p.basis === 'hourly' ? String(parseFloat(p.hours) || '') : '',
+        status:'open', date_opened:opsToday(), date_closed:'', notes:'Created to move ' + MVR.c.name + ' from ' + MVR.fromRole, positions:String(Math.max(1, parseInt(MVR.newPos, 10) || 1)),
+        public_title:'', form_slug:'', show_on_careers:'No', location:'', public_content:''};
+      const rr = await b2Post('/api/roles', body);
+      const i = OPS.roles.findIndex(function(x){ return x.id === body.id; });
+      if(rr && rr.data){ if(i >= 0) OPS.roles[i] = rr.data; else OPS.roles.push(rr.data); }
+    }
+    const r = await b2Post('/api/candidates/move-role', {candidate:{id:MVR.c.id, name:MVR.c.name, company:MVR.fromCo, role:MVR.fromRole}, to:{company:t.company, role:t.role}});
+    mvrClose(); closeModal('candModalOverlay');
+    await loadCandidates(); try{ recomputeOps(); }catch(e){}
+    showToast(r.summary || 'Moved');
+  }catch(e){ MVR.busy = false; MVR.msg = 'Could not move: ' + e.message; mvrRender(); }
 }
 
 function invToggleCc(email, on){
@@ -17947,7 +18058,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '25 Nov 2026 - build 73.2 (invoices can be reviewed and edited before sending with a PDF preview, Cc when sending, one entry per person when choosing who placed a candidate; built on page build 73.0; earlier: build 73.0 (invoices are numbered L2H-year-number, can be sent from the invoice card to a contact chosen from the contacts list, and a contact can be linked to several companies; build 72.10 (People has an Add employee button that goes straight on to payroll details; build 72.9 (the Who placed this candidate list comes from the People section so Ella and anyone added there appears, and commission falls back to their People commission rate; build 72.8 (earlier picker fix; build 72.6 (handover pack: correct Ella email, unknown fields left out, logo proportions fixed, job title can be changed; build 72.5 (sent emails on the offer card are greyed out once done, with a ready to move note when all three have gone; build 72.4 (you now get an email when a candidate sends their details, compliance picks up their right to work and references, the card shows the details they gave and has an I have seen it all button; build 72.2 (the client handover email no longer has the profile snapshot, invoice or review sections, clients are no longer asked for a Google review, candidates get a separate Google review request and clients get a testimonial request that can go on the website; build 72.0 (candidates accept their offer, send their details and right to work documents and confirm their first day online, with a status card on the offer stage; build 71.2 (offer emails use the signed in person own HTML signature instead of a fixed text one; build 71.1 (the start date asked for in the offer documents is a calendar picker and is saved properly; build 71.0 (offer letter and the other offer path emails go straight to Review and send instead of Outlook; Information request stays on the card after Start Date; earlier: build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1)))))))))))))) preview';
+var PAGE_BUILD = '25 Nov 2026 - build 73.3 (Move to another role on the candidate card: pick or create the role, and the stage and records move with them; build 73.2 (invoices can be reviewed and edited before sending with a PDF preview, Cc when sending, one entry per person when choosing who placed a candidate; built on page build 73.0; earlier: build 73.0 (invoices are numbered L2H-year-number, can be sent from the invoice card to a contact chosen from the contacts list, and a contact can be linked to several companies; build 72.10 (People has an Add employee button that goes straight on to payroll details; build 72.9 (the Who placed this candidate list comes from the People section so Ella and anyone added there appears, and commission falls back to their People commission rate; build 72.8 (earlier picker fix; build 72.6 (handover pack: correct Ella email, unknown fields left out, logo proportions fixed, job title can be changed; build 72.5 (sent emails on the offer card are greyed out once done, with a ready to move note when all three have gone; build 72.4 (you now get an email when a candidate sends their details, compliance picks up their right to work and references, the card shows the details they gave and has an I have seen it all button; build 72.2 (the client handover email no longer has the profile snapshot, invoice or review sections, clients are no longer asked for a Google review, candidates get a separate Google review request and clients get a testimonial request that can go on the website; build 72.0 (candidates accept their offer, send their details and right to work documents and confirm their first day online, with a status card on the offer stage; build 71.2 (offer emails use the signed in person own HTML signature instead of a fixed text one; build 71.1 (the start date asked for in the offer documents is a calendar picker and is saved properly; build 71.0 (offer letter and the other offer path emails go straight to Review and send instead of Outlook; Information request stays on the card after Start Date; earlier: build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1)))))))))))))) preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
