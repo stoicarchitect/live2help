@@ -2986,6 +2986,35 @@ document.getElementById('gateNewPw2').addEventListener('keydown', e => { if(e.ke
 // moment it is opened (even before anyone applies) and drops off once it is Filled or Lost.
 // Closed roles that still have candidates stay reachable under "Closed roles".
 let sbShowClosed = false;
+/*SB-FILLED-START*/
+// Build 73.4: a Filled role stays in the sidebar while someone on it is still in a check-in stage (Offer to Month 1)
+// and their 12 week guarantee (or the length set on the placement) has not ended. It then drops off by itself.
+var SB_CHECKIN_STAGES = ['offer', 'start_date', 'day1', 'week1', 'month1'];
+function sbStillCheckingIn(c, placement, defaultWeeks, todayISO){
+  if(SB_CHECKIN_STAGES.indexOf(c.stage) === -1) return false;
+  if(c.stage === 'offer') return true;
+  if(placement && placement.status && placement.status !== 'active') return false;
+  let end = placement && placement.guaranteeEnd ? String(placement.guaranteeEnd).slice(0, 10) : '';
+  if(!end){
+    const sd = String(c.startDate || '').slice(0, 10);
+    if(/^\d{4}-\d{2}-\d{2}$/.test(sd)){
+      const d = new Date(sd + 'T00:00:00Z');
+      d.setUTCDate(d.getUTCDate() + 7 * (parseInt(placement && placement.guaranteeWeeks, 10) || defaultWeeks || 12));
+      end = d.toISOString().slice(0, 10);
+    }
+  }
+  if(!end) return true;
+  return end >= todayISO;
+}
+/*SB-FILLED-END*/
+function sbPlacementFor(c){
+  const k = function(x){ return String(x || '').trim().toLowerCase(); };
+  return (typeof OPS !== 'undefined' && OPS.placements || []).find(function(p){ return k(p.name) === k(c.name) && k(p.company) === k(c.company) && k(p.role) === k(c.role); }) || null;
+}
+function sbCheckinCands(r){
+  const today = new Date().toISOString().slice(0, 10);
+  return sbCandidatesFor(r.company, r.role).filter(function(c){ return sbStillCheckingIn(Object.assign({company:r.company, role:r.role}, c), sbPlacementFor(Object.assign({company:r.company, role:r.role}, c)), OPS.defaultWeeks, today); });
+}
 const SB_STAGE_SUMMARY = [
   {label:'new', stages:['applied','ready_to_submit'], hot:true},
   {label:'submitted', stages:['submitted']},
@@ -3002,7 +3031,7 @@ function sbCandidatesFor(company, role){
 }
 function sbRoleItem(r, extraClass){
   const cands = sbCandidatesFor(r.company, r.role);
-  const live = cands.filter(c => c.stage !== 'rejected');
+  const live = r.status === 'filled' ? sbCheckinCands(r) : cands.filter(c => c.stage !== 'rejected');
   const item = document.createElement('div');
   item.className = 'role-item live' + (extraClass ? ' ' + extraClass : '') + (r.status === 'hold' ? ' hold' : '') +
     (!boardScope.all && sbSame(r.company, currentCompany) && sbSame(r.role, currentRole) ? ' active' : '');
@@ -3011,6 +3040,7 @@ function sbRoleItem(r, extraClass){
     return n ? `<span class="${g.hot ? 'hot' : ''}">${n} ${g.label}</span>` : '';
   }).filter(Boolean);
   if(r.status === 'hold') bits.unshift('<span>On hold</span>');
+  if(r.status === 'filled') bits.unshift('<span style="background:#f1e9cf;color:#7a5c00;padding:0 6px;border-radius:8px;font-weight:600;">Filled</span>');
   if(!bits.length) bits.push('<span>No candidates yet</span>');
   item.innerHTML = `<div class="rl-top"><span class="rl-title">${esc(r.role)}</span><span class="role-count">${live.length}</span></div>
     <div class="rl-meta">${bits.join('')}${r.ref ? `<span class="rl-ref">${esc(r.ref)}</span>` : ''}</div>`;
@@ -3026,7 +3056,10 @@ function renderSidebar(){
   list.innerHTML = '';
   const roles = mergedRoles();
   const liveRoles = roles.filter(r => r.status === 'open' || r.status === 'hold');
-  const closedWithPeople = roles.filter(r => (r.status === 'filled' || r.status === 'lost') &&
+  // Build 73.4: filled roles with someone still in their check-ins get their own section, always visible
+  const filledCheckins = roles.filter(r => r.status === 'filled' && sbCheckinCands(r).length)
+    .sort((a, b) => String(a.company).localeCompare(String(b.company)) || String(a.role).localeCompare(String(b.role)));
+  const closedWithPeople = roles.filter(r => (r.status === 'filled' || r.status === 'lost') && !filledCheckins.includes(r) &&
     sbCandidatesFor(r.company, r.role).some(c => c.stage !== 'rejected'));
 
   const liveCount = liveRoles.reduce((n, r) => n + sbCandidatesFor(r.company, r.role).filter(c => c.stage !== 'rejected').length, 0);
@@ -3081,6 +3114,14 @@ function renderSidebar(){
     list.appendChild(block);
   });
 
+  if(filledCheckins.length){
+    const fh = document.createElement('div');
+    fh.className = 'sb-head';
+    fh.title = 'Filled roles where someone is still in their offer or start, Week 1 and Month 1 check-ins, until their guarantee period ends';
+    fh.innerHTML = `<span>Filled roles (check-ins)</span><b>${filledCheckins.length}</b>`;
+    list.appendChild(fh);
+    filledCheckins.forEach(r => list.appendChild(sbRoleItem(r, 'closed-role')));
+  }
   if(closedWithPeople.length){
     const t = document.createElement('div');
     t.className = 'sb-toggle';
@@ -13662,6 +13703,8 @@ async function bulkTest(){
     if(!rk) return;
     const active = ['applied','ready_to_submit','submitted','interview_requested','interview_scheduled','interviewed'];
     const items = DATA[co][rk].filter(function(c){ return active.indexOf(c.stage) >= 0; }).map(function(c){ return {c:c, co:co, role:rk}; });
+    const kept = DATA[co][rk].filter(function(c){ return sbStillCheckingIn(c, sbPlacementFor(c), OPS.defaultWeeks, new Date().toISOString().slice(0, 10)); }).length;
+    if(status === 'filled' && kept) showToast(role + ' is filled. ' + kept + ' placed candidate' + (kept === 1 ? ' stays' : 's stay') + ' on the pipeline for their check-ins until the guarantee ends.');
     if(!items.length) return;
     bkOverlay('<h3 style="margin:0 0 6px;">' + esc(role) + ' is now ' + (status === 'filled' ? 'filled' : 'closed') + '</h3><p style="font-size:13.5px;">' + items.length + ' candidate' + (items.length === 1 ? ' is' : 's are') + ' still active on this role.</p>' + bkNames(items) +
       '<div class="bk-act"><button class="gold" id="bkRejAll">Reject them all</button><button onclick="bkClose()">Leave them for now</button></div>');
@@ -18058,7 +18101,7 @@ async function secSave(){
 
 <script>
 /* Shows which versions are live, so it is easy to tell whether an update has been deployed */
-var PAGE_BUILD = '25 Nov 2026 - build 73.3 (Move to another role on the candidate card: pick or create the role, and the stage and records move with them; build 73.2 (invoices can be reviewed and edited before sending with a PDF preview, Cc when sending, one entry per person when choosing who placed a candidate; built on page build 73.0; earlier: build 73.0 (invoices are numbered L2H-year-number, can be sent from the invoice card to a contact chosen from the contacts list, and a contact can be linked to several companies; build 72.10 (People has an Add employee button that goes straight on to payroll details; build 72.9 (the Who placed this candidate list comes from the People section so Ella and anyone added there appears, and commission falls back to their People commission rate; build 72.8 (earlier picker fix; build 72.6 (handover pack: correct Ella email, unknown fields left out, logo proportions fixed, job title can be changed; build 72.5 (sent emails on the offer card are greyed out once done, with a ready to move note when all three have gone; build 72.4 (you now get an email when a candidate sends their details, compliance picks up their right to work and references, the card shows the details they gave and has an I have seen it all button; build 72.2 (the client handover email no longer has the profile snapshot, invoice or review sections, clients are no longer asked for a Google review, candidates get a separate Google review request and clients get a testimonial request that can go on the website; build 72.0 (candidates accept their offer, send their details and right to work documents and confirm their first day online, with a status card on the offer stage; build 71.2 (offer emails use the signed in person own HTML signature instead of a fixed text one; build 71.1 (the start date asked for in the offer documents is a calendar picker and is saved properly; build 71.0 (offer letter and the other offer path emails go straight to Review and send instead of Outlook; Information request stays on the card after Start Date; earlier: build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1)))))))))))))) preview';
+var PAGE_BUILD = '25 Nov 2026 - build 73.4 (a Filled role stays in the sidebar under Filled roles (check-ins) while someone is in Offer to Month 1, until their 12 week guarantee ends; build 73.3 (Move to another role on the candidate card: pick or create the role, and the stage and records move with them; build 73.2 (invoices can be reviewed and edited before sending with a PDF preview, Cc when sending, one entry per person when choosing who placed a candidate; built on page build 73.0; earlier: build 73.0 (invoices are numbered L2H-year-number, can be sent from the invoice card to a contact chosen from the contacts list, and a contact can be linked to several companies; build 72.10 (People has an Add employee button that goes straight on to payroll details; build 72.9 (the Who placed this candidate list comes from the People section so Ella and anyone added there appears, and commission falls back to their People commission rate; build 72.8 (earlier picker fix; build 72.6 (handover pack: correct Ella email, unknown fields left out, logo proportions fixed, job title can be changed; build 72.5 (sent emails on the offer card are greyed out once done, with a ready to move note when all three have gone; build 72.4 (you now get an email when a candidate sends their details, compliance picks up their right to work and references, the card shows the details they gave and has an I have seen it all button; build 72.2 (the client handover email no longer has the profile snapshot, invoice or review sections, clients are no longer asked for a Google review, candidates get a separate Google review request and clients get a testimonial request that can go on the website; build 72.0 (candidates accept their offer, send their details and right to work documents and confirm their first day online, with a status card on the offer stage; build 71.2 (offer emails use the signed in person own HTML signature instead of a fixed text one; build 71.1 (the start date asked for in the offer documents is a calendar picker and is saved properly; build 71.0 (offer letter and the other offer path emails go straight to Review and send instead of Outlook; Information request stays on the card after Start Date; earlier: build 70.5 (refunds: mark a payment in as a refund of a cost so costs and money out are worked out net; earlier: build 70.4 (advertising role tag stays selected after saving; earlier: build 70.3 (more cost types such as Fees and licences (ICO), Professional fees and Insurance; earlier: build 70.2 (Bank items: file any payment out under a cost type from a drop down, Needs filing and Biggest payments out views, role drop down for advertising costs; built on page build 70.1)))))))))))))) preview';
 function buildTagApply(){
   const chip = document.getElementById('userChip');
   if(!chip) return;
