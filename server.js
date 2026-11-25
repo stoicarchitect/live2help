@@ -326,7 +326,7 @@ const TABLE_GROUPS = {
   'Talent Suite Users': 'talentsuite', 'Talent Suite Orders': 'talentsuite', 'Credit Purchases': 'talentsuite',
   'Week Plans': 'planning', 'Roadmap': 'planning', 'Marketing': 'planning', 'Ad Spend': 'planning',
   'Roles': 'records', 'Role Notes': 'records', 'Role Briefs': 'records', 'Placements': 'records',
-  'Interviews': 'records', 'Templates': 'records', 'Activity': 'records', 'Invoice Charges': 'records',
+  'Interviews': 'records', 'Templates': 'records', 'Activity': 'records', 'Invoice Charges': 'records', 'Invoice Edits': 'records',
   'Audit Log': 'system', 'Retention Reviews': 'system', 'Email Log': 'system', 'Engine Log': 'system', 'AI Usage': 'system', 'Settings': 'system', 'Suppression List': 'system', 'Bank Transactions': 'system', 'Bank Rules': 'system',
   'Payroll Settings': 'system', 'Payroll Runs': 'system', 'Commission Ledger': 'system', // build 64
   'Report Runs': 'system', // build 65
@@ -3531,7 +3531,11 @@ app.get('/api/invoices', async (req, res) => {
   try {
     const rows = await readInvoiceRows();
     const admin = isAdmin(req);
+    const editRows = await invoiceEditsTable.list().catch(() => []);
+    const editsBy = new Map(editRows.map(e => [String(e.id), e]));
     const invoices = (await withLateCharges(rows.filter(r => r[0]).map(rowToInvoice))).map(inv => {
+      const ed = editsBy.get(String(inv.number));
+      inv.billName = (ed && ed.bill_name) || ''; inv.billAddress = (ed && ed.bill_address) || ''; inv.billContact = (ed && ed.bill_contact) || ''; inv.notes = (ed && ed.notes) || '';
       // the client's Pay by Bank page, only shown to Dan so he can copy it into an email
       if (admin) { inv.payUrl = invoicePayUrl(inv); inv.payByBankEligible = invoicePayByBankEligible(inv); }
       return inv;
@@ -3539,6 +3543,60 @@ app.get('/api/invoices', async (req, res) => {
     res.json({ data: invoices });
   } catch (e) {
     console.error('GET /api/invoices error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Build 73.2: edit the details of a generated invoice before it is sent. Dan only. Paid invoices are locked.
+// The invoice number, the fee and the commission are never changed here. Only the fields below, and every change is written to the Audit Trail.
+const INVOICE_EDIT_FIELDS = { company: 60, role: 80, candidateName: 80 };
+app.post('/api/invoices/:number/edit', requireDan, async (req, res) => {
+  try {
+    const number = String(req.params.number || '');
+    const found = await findInvoice(number);
+    if (!found) return res.status(404).json({ error: 'Invoice not found' });
+    const st = lc(found.inv.status);
+    if (st === 'paid' || st === 'refunded') return res.status(409).json({ error: 'This invoice is ' + st + ' and is locked. Paid invoices cannot be edited.' });
+    const b = req.body || {};
+    const clean = (v, n) => String(v == null ? '' : v).replace(/\r/g, '').trim().slice(0, n);
+    const iso = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) && !isNaN(Date.parse(String(v)));
+    const row = [...found.row]; while (row.length < 18) row.push('');
+    const changes = [];
+    for (const [k, max] of Object.entries(INVOICE_EDIT_FIELDS)) {
+      if (b[k] === undefined) continue;
+      const v = clean(b[k], max);
+      if (k !== 'role' && !v) return res.status(400).json({ error: (k === 'company' ? 'Company' : 'Candidate name') + ' cannot be blank.' });
+      const idx = { company: 3, role: 4, candidateName: 5 }[k];
+      if (row[idx] !== v) { changes.push(`${k}: ${row[idx]} -> ${v}`); row[idx] = v; }
+    }
+    if (b.date !== undefined) { if (!iso(b.date)) return res.status(400).json({ error: 'The invoice date must be a valid date.' }); if (row[1] !== b.date) { changes.push(`date: ${row[1]} -> ${b.date}`); row[1] = b.date; } }
+    if (b.dueDate !== undefined) { if (!iso(b.dueDate)) return res.status(400).json({ error: 'The due date must be a valid date.' }); if (row[2] !== b.dueDate) { changes.push(`dueDate: ${row[2]} -> ${b.dueDate}`); row[2] = b.dueDate; } }
+    if (Date.parse(row[2]) < Date.parse(row[1])) return res.status(400).json({ error: 'The due date cannot be before the invoice date.' });
+    const sheets = getSheetsClient();
+    if (changes.length) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: CLIENT_SHEET_ID, range: `${INVOICES_TAB}!A${found.rowIndex + 2}:R${found.rowIndex + 2}`,
+        valueInputOption: 'RAW', requestBody: { values: [row] },
+      });
+    }
+    const cur = (await invoiceEditsTable.list().catch(() => [])).find(e => String(e.id) === number) || {};
+    const next = {
+      id: number,
+      bill_name: b.billName !== undefined ? clean(b.billName, 100) : (cur.bill_name || ''),
+      bill_address: b.billAddress !== undefined ? clean(b.billAddress, 300) : (cur.bill_address || ''),
+      bill_contact: b.billContact !== undefined ? clean(b.billContact, 80) : (cur.bill_contact || ''),
+      notes: b.notes !== undefined ? clean(b.notes, 300) : (cur.notes || ''),
+    };
+    for (const [k, col] of [['bill_name', 'billName'], ['bill_address', 'billAddress'], ['bill_contact', 'billContact'], ['notes', 'notes']]) if ((cur[k] || '') !== next[k]) changes.push(`${col} changed`);
+    if (changes.length) {
+      await invoiceEditsTable.upsert({ ...next, updated_by: actorOf(req), updated_at: new Date().toISOString() });
+      auditLog(auditActorOf(req), 'edited', 'invoice', number, changes.join('; ').slice(0, 400));
+    }
+    const inv = (await withLateCharges([rowToInvoice(row)]))[0];
+    inv.billName = next.bill_name; inv.billAddress = next.bill_address; inv.billContact = next.bill_contact; inv.notes = next.notes;
+    res.json({ ok: true, changed: changes.length, resendNeeded: changes.length > 0 && st === 'sent', invoice: inv });
+  } catch (e) {
+    console.error('POST /api/invoices/:number/edit error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -3729,6 +3787,7 @@ app.get('/api/invoices/:number/pdf', async (req, res) => {
     if (!row) return res.status(404).json({ error: 'Invoice not found' });
     const inv = (await withLateCharges([rowToInvoice(row)]))[0];
     const billing = await clientBillingFor(inv.company); // build 49.6: from the onboarding site form
+    const edit = (await invoiceEditsTable.list().catch(() => [])).find(e => String(e.id) === String(number)) || {}; // build 73.2: Dan's edits for this invoice
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=${inv.number}.pdf`);
@@ -3753,8 +3812,13 @@ app.get('/api/invoices/:number/pdf', async (req, res) => {
       .text('www.live2helprecruitment.co.uk', 50, colY + 56);
 
     doc.font('Helvetica-Bold').fontSize(9).fillColor(GOLD).text('BILLED TO', 220, colY);
-    doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text((billing && billing.reg_name) || inv.company, 220, colY + 14, { width: 170 });
-    if (billing) {
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text(edit.bill_name || (billing && billing.reg_name) || inv.company, 220, colY + 14, { width: 170 });
+    if (edit.bill_address || edit.bill_contact) {
+      // build 73.2: an address or FAO contact typed on the edit screen replaces the one from the site form
+      const lines = [edit.bill_address, edit.bill_contact ? `FAO ${edit.bill_contact}` : (billing && billing.billing_name ? `FAO ${billing.billing_name}` : ''),
+        billing ? (billing.ap_email || billing.billing_email) : '', billing && billing.po_required === 'Yes' ? `PO number: ${billing.po_number || 'to be confirmed'}` : ''].filter(Boolean);
+      doc.font('Helvetica').fontSize(8).fillColor(GREY).text(lines.join('\n'), 220, doc.y + 2, { width: 170, height: 70, ellipsis: true });
+    } else if (billing) {
       // build 49.6: registered address, billing contact and purchase order from the site form
       const addr = onbSplitAddress(billing.reg_address);
       const lines = [[addr.address, addr.postcode].filter(Boolean).join(', '),
@@ -3785,6 +3849,7 @@ app.get('/api/invoices/:number/pdf', async (req, res) => {
       .text(`Supply of Permanent Staff - ${inv.candidateName}`, 60, rowY, { width: 260 });
     doc.font('Helvetica').fontSize(8).fillColor(LIGHT_GREY).text('Permanent placement fee', 60, rowY + 14, { width: 260 });
     if (inv.payNote) doc.font('Helvetica').fontSize(7.5).fillColor(LIGHT_GREY).text(`Basic pay: ${inv.payNote}`, 60, rowY + 25, { width: 260 });
+    if (edit.notes) doc.font('Helvetica').fontSize(7.5).fillColor(LIGHT_GREY).text(edit.notes, 60, rowY + (inv.payNote ? 36 : 25), { width: 260, height: 22, ellipsis: true });
     doc.font('Helvetica').fontSize(10).fillColor(DARK)
       .text('1', 340, rowY)
       .text(formatCurrency(inv.amount), 400, rowY)
@@ -8183,6 +8248,13 @@ const clientTermsTable = makeSimpleTable({
   auditName: o => `${o.company} - ${o.payment_terms_days} days`,
 });
 // build 49.6: late payment charges Dan has waived (one row per invoice number)
+// Build 73.2: details Dan can change on a generated invoice that are not part of the invoice row (billed to name, address, FAO contact, notes). One row per invoice number.
+const invoiceEditsTable = makeSimpleTable({
+  tab: 'Invoice Edits',
+  header: ['id', 'bill_name', 'bill_address', 'bill_contact', 'notes', 'updated_by', 'updated_at'],
+  path: null,
+  label: 'Invoice edit',
+});
 const invoiceChargesTable = makeSimpleTable({
   tab: 'Invoice Charges',
   header: ['id', 'waived', 'note', 'updated_by', 'updated_at'],
