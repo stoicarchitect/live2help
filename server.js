@@ -27,6 +27,7 @@ import * as reports from './reports.js'; // build 65
 import { contactDoneReason as contactDoneReasonPure } from './attention.js'; // build 67.3
 import { createMailSync, SUGGESTION_KINDS, isClientType } from './mailsync.js'; // build 66
 import { niRatesFrom } from './employee-pay.js'; // build 70
+import { forceOwnerSender } from './owner-mail.js'; // build 73.1: owner only mail always sent from Daniel's own mailbox
 import { londonToday, monthOf, readPayrollSettings, validOverride, payDateFor, payrollWatch, currentPayrollMonth, bannerFor, reminderFor, payrollPack, clawbackCheck, payrollBankCheck, payrollEmail, runRecords, monthName as payrollMonthName } from './payroll.js'; // build 64
 import { computeTargets, backwardsTargets, historicalRatios, normaliseGoal, targetsForPerson, personProgress, goalProgress, salesByLine, SERVICE_LINES, cleanLine } from './targets.js'; // build 67
 import { computeOwnerKpi, computeMyKpi, vatAlertsDue, vatAlertText, monthKey, KPI_SETTING_DEFAULTS, KPI_SETTING_KEYS, personKey } from './kpi-owner.js'; // build 62
@@ -3448,9 +3449,12 @@ const emailTransporter = {
       console.log('Preview mode: email not sent:', o && o.subject);
       return { messageId: 'preview-not-sent', accepted: [], rejected: [], preview: true };
     }
+    const dan = String(profileOf('dan').email || '').toLowerCase();
+    // Build 73.1: mail addressed only to Daniel (payroll, bank, reports, alerts) is always sent from his own mailbox, never Ella's or office@,
+    // so it can never appear in anyone else's Sent Items, whatever From address the caller passed in.
+    o = forceOwnerSender(o, { danEmail: dan, danName: profileOf('dan').fullName, inboxEmail: dansInbox() });
     if (testSmtp) return testSmtp.sendMail(o);
     const f = m365ParseAddr(o.from || MAIL_SENDER);
-    const dan = String(profileOf('dan').email || '').toLowerCase();
     // Any address on our own domain (Daniel, Ella, office@, clients@) is tried as the sending mailbox first, because those were tested and work.
     // Only if Microsoft says that address is not a mailbox does it fall back to Daniel's mailbox with the original address as the Reply-To.
     const ownDomain = dan.split('@')[1] || 'live2helprecruitment.co.uk';
@@ -11444,7 +11448,8 @@ function clampFuture(iso) { const t = todayISO(); return iso && iso > t ? iso : 
 
 /* ---------- Alerts ---------- */
 const alertSeen = new Map();
-function dansInbox() { return process.env.REMINDER_EMAIL_TO || MAIL_SENDER; }
+// Build 73.1: the fallback is Daniel's own address, never MAIL_SENDER (which may be Ella's or office@)
+function dansInbox() { return process.env.REMINDER_EMAIL_TO || String(profileOf('dan').email || '').toLowerCase() || MAIL_SENDER; }
 async function mailDan(subject, text) {
   try {
     await emailTransporter.sendMail({ from: MAIL_SENDER, to: dansInbox(), subject, text });
